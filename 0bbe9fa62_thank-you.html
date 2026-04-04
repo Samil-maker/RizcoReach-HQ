@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <!-- Meta Pixel Code -->
+  <script>
+  !function(f,b,e,v,n,t,s)
+  {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+  n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+  if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+  n.queue=[];t=b.createElement(e);t.async=!0;
+  t.src=v;s=b.getElementsByTagName(e)[0];
+  s.parentNode.insertBefore(t,s)}(window, document,'script',
+  'https://connect.facebook.net/en_US/fbevents.js');
+  fbq('init', '26457150590591664');
+  fbq('track', 'PageView');
+  fbq('track', 'Lead');
+  </script>
+  <noscript><img height="1" width="1" style="display:none"
+  src="https://www.facebook.com/tr?id=26457150590591664&ev=Lead&noscript=1"
+  /></noscript>
+  <!-- End Meta Pixel Code -->
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Application Received – RizcoReach</title>
+  <link rel="icon" type="image/png" href="https://media.base44.com/images/public/69b48b64852868d19b78812f/93673ba10_IMG_2008_Nero_AI_Background_Remover_transparent.png"/>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+  <style>
+    :root {
+      --black: #0a0a0a;
+      --dark: #111111;
+      --card: #161616;
+      --accent: #c8a96e;
+      --accent2: #d4ba88;
+      --white: #ffffff;
+      --gray: #888888;
+      --light-gray: #cccccc;
+      --border: #2a2a2a;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--black);
+      color: var(--white);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 40px 20px;
+    }
+
+    nav {
+      position: fixed; top: 0; width: 100%; z-index: 100;
+      background: rgba(10,10,10,0.97);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 5%;
+      display: flex; align-items: center; justify-content: space-between;
+      height: 70px;
+    }
+    .nav-logo { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+    .nav-logo img { height: 58px; width: 58px; object-fit: contain; }
+    .nav-logo-text { font-weight: 700; font-size: 18px; color: var(--white); letter-spacing: 2px; text-transform: uppercase; }
+    .nav-logo-text span { color: var(--accent); }
+
+    .container {
+      max-width: 600px;
+      width: 100%;
+      margin-top: 70px;
+    }
+
+    .checkmark {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      background: rgba(200, 169, 110, 0.1);
+      border: 2px solid var(--accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 32px;
+      font-size: 36px;
+      animation: popIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+    @keyframes popIn {
+      from { opacity: 0; transform: scale(0.6); }
+      to { opacity: 1; transform: scale(1); }
+    }
+
+    .label {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 16px;
+      animation: fadeUp 0.6s ease 0.1s both;
+    }
+
+    h1 {
+      font-family: 'Playfair Display', serif;
+      font-size: clamp(32px, 6vw, 52px);
+      font-weight: 900;
+      line-height: 1.1;
+      margin-bottom: 20px;
+      animation: fadeUp 0.6s ease 0.2s both;
+    }
+
+    p {
+      font-size: 17px;
+      color: var(--light-gray);
+      line-height: 1.7;
+      margin-bottom: 40px;
+      animation: fadeUp 0.6s ease 0.3s both;
+    }
+
+    .steps {
+      background: var(--card);
+      border: 1px solid var(--border);
+      padding: 32px;
+      text-align: left;
+      margin-bottom: 40px;
+      animation: fadeUp 0.6s ease 0.4s both;
+    }
+    .steps-title {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--gray);
+      margin-bottom: 20px;
+    }
+    .step {
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    .step:last-child { margin-bottom: 0; }
+    .step-num {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: var(--black);
+      font-size: 13px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .step-text {
+      font-size: 15px;
+      color: var(--light-gray);
+      line-height: 1.5;
+      padding-top: 3px;
+    }
+    .step-text strong { color: var(--white); }
+
+    .back-btn {
+      display: inline-block;
+      background: var(--accent);
+      color: var(--black);
+      font-weight: 700;
+      font-size: 14px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      padding: 14px 32px;
+      text-decoration: none;
+      transition: background 0.2s, transform 0.2s;
+      animation: fadeUp 0.6s ease 0.5s both;
+    }
+    .back-btn:hover {
+      background: var(--accent2);
+      transform: translateY(-2px);
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+
+  <nav>
+    <a href="/" class="nav-logo">
+      <img src="https://media.base44.com/images/public/69b48b64852868d19b78812f/93673ba10_IMG_2008_Nero_AI_Background_Remover_transparent.png" alt="RizcoReach Logo"/>
+      <span class="nav-logo-text">RIZCO<span>REACH</span></span>
+    </a>
+  </nav>
+
+  <div class="container">
+    <div class="checkmark">✓</div>
+    <p class="label">Application Received</p>
+    <h1>You're one step closer to more leads.</h1>
+    <p>We've received your application and will review it within <strong>24 hours</strong>. If you're a good fit, we'll reach out to schedule your free strategy call.</p>
+
+    <div class="steps">
+      <p class="steps-title">What happens next</p>
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-text"><strong>We review your application</strong> — usually within 24 hours.</div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-text"><strong>We reach out via WhatsApp or phone</strong> to schedule your free strategy call.</div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-text"><strong>On the call</strong> — we audit your current situation and map out exactly how we'd get you more qualified leads.</div>
+      </div>
+    </div>
+
+    <a href="/" class="back-btn">← Back to RizcoReach</a>
+  </div>
+
+</body>
+</html>
