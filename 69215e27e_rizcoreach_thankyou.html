@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <!-- Meta Pixel Code -->
+  <script>
+  !function(f,b,e,v,n,t,s)
+  {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+  n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+  if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+  n.queue=[];t=b.createElement(e);t.async=!0;
+  t.src=v;s=b.getElementsByTagName(e)[0];
+  s.parentNode.insertBefore(t,s)}(window, document,'script',
+  'https://connect.facebook.net/en_US/fbevents.js');
+  fbq('init', '26457150590591664');
+  fbq('track', 'PageView');
+  fbq('track', 'Lead'); // Track form submission as Lead conversion
+  </script>
+  <noscript><img height="1" width="1" style="display:none"
+  src="https://www.facebook.com/tr?id=26457150590591664&ev=PageView&noscript=1"
+  /></noscript>
+  <!-- End Meta Pixel Code -->
+
+  <link rel="icon" type="image/png" href="https://media.base44.com/images/public/69b48b64852868d19b78812f/93673ba10_IMG_2008_Nero_AI_Background_Remover_transparent.png"/>
+  <link rel="apple-touch-icon" href="https://media.base44.com/images/public/69b48b64852868d19b78812f/93673ba10_IMG_2008_Nero_AI_Background_Remover_transparent.png"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Thank You – RizcoReach</title>
+  <meta name="robots" content="noindex, nofollow"/>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+
+  <style>
+    :root {
+      --black: #0a0a0a;
+      --dark: #111111;
+      --card: #161616;
+      --accent: #c8a96e;
+      --accent2: #d4ba88;
+      --white: #ffffff;
+      --gray: #888888;
+      --light-gray: #cccccc;
+      --border: #2a2a2a;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { overflow-x: hidden; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--black);
+      color: var(--white);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 60px 5% 40px;
+    }
+
+    /* ===== GLOW ===== */
+    .glow-ring {
+      width: 120px; height: 120px;
+      border-radius: 50%;
+      background: rgba(200, 169, 110, 0.08);
+      border: 2px solid rgba(200, 169, 110, 0.35);
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 36px;
+      animation: ringPulse 2.5s ease-in-out infinite;
+      box-shadow:
+        0 0 20px rgba(200,169,110,0.2),
+        0 0 60px rgba(200,169,110,0.1);
+    }
+    @keyframes ringPulse {
+      0%, 100% { box-shadow: 0 0 20px rgba(200,169,110,0.2), 0 0 60px rgba(200,169,110,0.1); }
+      50% { box-shadow: 0 0 40px rgba(200,169,110,0.4), 0 0 100px rgba(200,169,110,0.2); }
+    }
+    .check-icon { font-size: 52px; }
+
+    /* ===== CONTENT ===== */
+    .content { max-width: 560px; animation: fadeInUp 0.8s ease both; }
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(30px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .page-label {
+      font-size: 12px; font-weight: 700; letter-spacing: 3px;
+      text-transform: uppercase; color: var(--accent); margin-bottom: 20px;
+    }
+    .page-title {
+      font-family: 'Playfair Display', serif;
+      font-size: clamp(36px, 6vw, 64px);
+      font-weight: 900; line-height: 1.1;
+      margin-bottom: 24px;
+    }
+    .page-sub {
+      font-size: 17px; color: var(--light-gray);
+      line-height: 1.8; margin-bottom: 48px;
+    }
+    .page-sub strong { color: var(--white); }
+
+    /* ===== NEXT STEPS ===== */
+    .next-steps {
+      background: var(--card);
+      border: 1px solid var(--border);
+      padding: 32px 36px;
+      text-align: left;
+      margin-bottom: 48px;
+      border-top: 2px solid var(--accent);
+    }
+    .next-steps-title {
+      font-size: 12px; font-weight: 700; letter-spacing: 2px;
+      text-transform: uppercase; color: var(--accent); margin-bottom: 20px;
+    }
+    .step-item {
+      display: flex; align-items: flex-start; gap: 16px;
+      margin-bottom: 18px;
+    }
+    .step-item:last-child { margin-bottom: 0; }
+    .step-num {
+      width: 28px; height: 28px; border-radius: 50%;
+      background: rgba(200,169,110,0.15);
+      border: 1px solid rgba(200,169,110,0.4);
+      color: var(--accent);
+      font-size: 12px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; margin-top: 2px;
+    }
+    .step-text { font-size: 14px; color: var(--light-gray); line-height: 1.6; }
+    .step-text strong { color: var(--white); }
+
+    /* ===== BUTTON ===== */
+    .actions { display: flex; justify-content: center; }
+    .btn-secondary {
+      border: 1px solid var(--border);
+      color: var(--light-gray);
+      font-size: 14px; font-weight: 500;
+      padding: 16px 32px;
+      text-decoration: none; display: inline-block;
+      transition: border-color 0.2s, color 0.2s;
+      border-radius: 4px;
+    }
+    .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* ===== FOOTER ===== */
+    footer {
+      margin-top: 48px;
+      padding-top: 24px;
+      border-top: 1px solid var(--border);
+      width: 100%;
+      max-width: 560px;
+    }
+    .footer-copy { font-size: 11px; color: #444; }
+  </style>
+</head>
+<body>
+
+  <div class="content">
+
+    <!-- ICON -->
+    <div class="glow-ring">
+      <span class="check-icon">✓</span>
+    </div>
+
+    <!-- HEADER -->
+    <p class="page-label">Application Received</p>
+    <h1 class="page-title">You're one step<br/>closer.</h1>
+    <p class="page-sub">
+      We've received your application and will be in touch within <strong>24 hours</strong> to schedule your free 30-minute strategy call. Keep an eye on your inbox — or your WhatsApp.
+    </p>
+
+    <!-- NEXT STEPS -->
+    <div class="next-steps">
+      <p class="next-steps-title">What happens next</p>
+      <div class="step-item">
+        <div class="step-num">1</div>
+        <p class="step-text"><strong>We review your application</strong> — we take a quick look at your business and goals so we can make your call as valuable as possible.</p>
+      </div>
+      <div class="step-item">
+        <div class="step-num">2</div>
+        <p class="step-text"><strong>We reach out within 24 hours</strong> — by email or WhatsApp to confirm your strategy call time.</p>
+      </div>
+      <div class="step-item">
+        <div class="step-num">3</div>
+        <p class="step-text"><strong>Free 30-minute strategy call</strong> — we dig into your business, identify your biggest opportunity, and show you exactly how we'd get you results.</p>
+      </div>
+    </div>
+
+    <!-- ACTION -->
+    <div class="actions">
+      <a href="index.html" class="btn-secondary">← Back to Website</a>
+    </div>
+
+  </div>
+
+  <footer>
+    <p class="footer-copy">© 2026 RizcoReach · Dubai, UAE</p>
+  </footer>
+
+</body>
+</html>
