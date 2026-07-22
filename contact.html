@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <!-- Meta Pixel Code -->
+  <script>
+  !function(f,b,e,v,n,t,s)
+  {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+  n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+  if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+  n.queue=[];t=b.createElement(e);t.async=!0;
+  t.src=v;s=b.getElementsByTagName(e)[0];
+  s.parentNode.insertBefore(t,s)}(window, document,'script',
+  'https://connect.facebook.net/en_US/fbevents.js');
+  fbq('init', '26457150590591664');
+  fbq('track', 'PageView');
+  </script>
+  <noscript><img height="1" width="1" style="display:none"
+  src="https://www.facebook.com/tr?id=26457150590591664&ev=PageView&noscript=1"
+  /></noscript>
+  <!-- End Meta Pixel Code -->
+
+  <link rel="icon" type="image/png" href="https://media.base44.com/images/public/69b48b64852868d19b78812f/93673ba10_IMG_2008_Nero_AI_Background_Remover_transparent.png"/>
+  <link rel="apple-touch-icon" href="https://media.base44.com/images/public/69b48b64852868d19b78812f/93673ba10_IMG_2008_Nero_AI_Background_Remover_transparent.png"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Check Project Fit   RizcoReach</title>
+  <meta name="description" content="Apply for a free strategy call with RizcoReach   Dubai's home improvement marketing agency. Fill in the form to check if we can help your business."/>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+
+  <style>
+    :root {
+      --black: #0a0a0a;
+      --dark: #111111;
+      --card: #161616;
+      --accent: #ffffff;
+      --accent2: #e0e0e0;
+      --white: #ffffff;
+      --gray: #888888;
+      --light-gray: #cccccc;
+      --border: #2a2a2a;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html { scroll-behavior: smooth; overflow-x: hidden; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--black);
+      color: var(--white);
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    /* NAV */
+    nav {
+      position: fixed; top: 0; width: 100%; z-index: 100;
+      background: rgba(10,10,10,0.97);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 5%;
+      display: flex; align-items: center; justify-content: space-between;
+      height: 70px;
+    }
+    .nav-logo { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+    .nav-logo img { height: 48px; width: 48px; object-fit: contain; }
+    .nav-logo-text { font-weight: 800; font-size: 17px; color: var(--white); letter-spacing: 1.5px; text-transform: uppercase; display: flex; align-items: baseline; }
+    .nav-logo-text .nav-logo-domain { font-weight: 300; color: var(--white); opacity: 0.55; letter-spacing: 1px; margin-left: 1px; }
+    .nav-back {
+      color: var(--gray); font-size: 13px; font-weight: 500; text-decoration: none;
+      display: flex; align-items: center; gap: 6px;
+      transition: color 0.2s;
+    }
+    .nav-back:hover { color: var(--accent); }
+
+    /* PAGE LAYOUT   SPLIT */
+    .page-wrap {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      padding-top: 70px;
+    }
+
+    /* LEFT   info */
+    .page-left {
+      padding: 72px 6% 72px 5%;
+      display: flex; flex-direction: column; justify-content: center;
+      border-right: 1px solid var(--border);
+    }
+    .page-eyebrow {
+      font-size: 11px; font-weight: 700; letter-spacing: 2.5px; text-transform: uppercase;
+      color: var(--accent); margin-bottom: 20px;
+    }
+    .page-title {
+      font-family: 'Playfair Display', serif;
+      font-size: clamp(36px, 4.5vw, 60px);
+      font-weight: 900; line-height: 1.05; margin-bottom: 20px;
+    }
+    .page-sub {
+      font-size: 15px; color: var(--light-gray); max-width: 460px; line-height: 1.8; margin-bottom: 40px;
+    }
+
+    /* What happens next */
+    .next-steps-title {
+      font-size: 11px; font-weight: 700; letter-spacing: 2.5px; text-transform: uppercase;
+      color: var(--accent); margin-bottom: 18px;
+    }
+    .step-list { display: flex; flex-direction: column; gap: 14px; margin-bottom: 40px; }
+    .step-row { display: flex; align-items: flex-start; gap: 14px; }
+    .step-badge {
+      width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: var(--accent); font-size: 11px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    }
+    .step-text { font-size: 14px; color: var(--light-gray); line-height: 1.65; }
+    .step-text strong { color: var(--white); }
+
+    /* Trust items */
+    .trust-list { display: flex; flex-direction: column; gap: 10px; }
+    .trust-item {
+      display: flex; align-items: center; gap: 10px;
+      font-size: 13px; color: var(--gray);
+    }
+    .trust-check {
+      width: 18px; height: 18px; border-radius: 50%; flex-shrink: 0;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.25);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .trust-check svg { width: 10px; height: 10px; }
+
+    /* AVAILABILITY NOTICE */
+    .availability-notice {
+      margin-top: 36px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      padding: 18px 20px; border-radius: 8px;
+    }
+    .availability-notice p { font-size: 13px; color: var(--light-gray); line-height: 1.65; }
+    .availability-notice strong { color: var(--white); }
+
+    /* RIGHT   form */
+    .page-right {
+      padding: 72px 5% 72px 6%;
+      background: var(--dark);
+      display: flex; flex-direction: column; justify-content: center;
+    }
+
+    .form-header { margin-bottom: 32px; }
+    .form-header h2 { font-family: 'Playfair Display', serif; font-size: 24px; font-weight: 900; margin-bottom: 6px; }
+    .form-header p { font-size: 14px; color: var(--gray); }
+
+    .form-grid { display: grid; gap: 18px; }
+    .form-group { display: flex; flex-direction: column; gap: 7px; }
+    .form-group label {
+      font-size: 12px; font-weight: 600; letter-spacing: 1px;
+      text-transform: uppercase; color: var(--gray);
+    }
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+      background: var(--black); border: 1px solid var(--border);
+      color: var(--white); padding: 13px 15px;
+      font-size: 14px; font-family: 'Inter', sans-serif;
+      outline: none; transition: border-color 0.2s; border-radius: 8px;
+    }
+    .form-group input:focus,
+    .form-group select:focus,
+    .form-group textarea:focus { border-color: var(--accent); }
+    .form-group textarea { resize: vertical; min-height: 100px; }
+    .form-group select option { background: var(--card); }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+
+    .btn-submit {
+      background: var(--accent); color: var(--black);
+      font-weight: 700; font-size: 15px;
+      letter-spacing: 0.8px; text-transform: uppercase;
+      padding: 16px 32px; border: none; cursor: pointer;
+      width: 100%; border-radius: 8px;
+      transition: background 0.2s, transform 0.2s, box-shadow 0.2s;
+    }
+    .btn-submit:hover {
+      background: var(--accent2);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(255,255,255,0.2);
+    }
+    .form-note { font-size: 11px; color: #555; text-align: center; margin-top: 12px; line-height: 1.6; }
+
+    /* FOOTER */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 24px 5%; text-align: center;
+      background: var(--dark);
+    }
+    .footer-copy { font-size: 12px; color: #555; }
+
+    /* RESPONSIVE */
+    @media (max-width: 860px) {
+      .page-wrap { grid-template-columns: 1fr; }
+      .page-left { border-right: none; border-bottom: 1px solid var(--border); padding: 56px 5%; }
+      .page-right { padding: 56px 5%; }
+    }
+    @media (max-width: 480px) {
+      .form-row { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- NAV -->
+  <nav>
+    <a href="index.html" class="nav-logo">
+      <img src="https://media.base44.com/images/public/69b48b64852868d19b78812f/93673ba10_IMG_2008_Nero_AI_Background_Remover_transparent.png" alt="RizcoReach"/>
+      <span class="nav-logo-text">RIZCOREACH<span class="nav-logo-domain">.AE</span></span>
+    </a>
+    <a href="index.html" class="nav-back">← Back to website</a>
+  </nav>
+
+  <!-- MAIN SPLIT LAYOUT -->
+  <div class="page-wrap">
+
+    <!-- LEFT INFO -->
+    <div class="page-left">
+      <p class="page-eyebrow">Free Consultation</p>
+      <h1 class="page-title">Tell us about your<br/>business.</h1>
+      <p class="page-sub">A short form, a quick call, a clear plan. Fill this in and we'll be in touch within 24 hours by email or WhatsApp to book your free strategy session.</p>
+
+      <p class="next-steps-title">What happens next</p>
+      <div class="step-list">
+        <div class="step-row">
+          <div class="step-badge">1</div>
+          <p class="step-text"><strong>We review what you've shared</strong>   your industry, your situation, your goals. So when we speak, we're already on the same page.</p>
+        </div>
+        <div class="step-row">
+          <div class="step-badge">2</div>
+          <p class="step-text"><strong>We reach out within 24 hours</strong> by email or WhatsApp to lock in a time that works for you.</p>
+        </div>
+        <div class="step-row">
+          <div class="step-badge">3</div>
+          <p class="step-text"><strong>Free strategy session (30 min)</strong>. We talk through your current situation, what's holding you back, and whether we can genuinely help. No obligation either way.</p>
+        </div>
+      </div>
+
+      <div class="trust-list">
+        <div class="trust-item">
+          <div class="trust-check"><svg viewBox="0 0 10 10" fill="none"><polyline points="2,5 4,7.5 8,3" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          Honest conversation, no pitch
+        </div>
+        <div class="trust-item">
+          <div class="trust-check"><svg viewBox="0 0 10 10" fill="none"><polyline points="2,5 4,7.5 8,3" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          We'll be honest if ads aren't the right move for you right now
+        </div>
+        <div class="trust-item">
+          <div class="trust-check"><svg viewBox="0 0 10 10" fill="none"><polyline points="2,5 4,7.5 8,3" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          You leave the call knowing exactly what to expect
+        </div>
+        <div class="trust-item">
+          <div class="trust-check"><svg viewBox="0 0 10 10" fill="none"><polyline points="2,5 4,7.5 8,3" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          Most businesses are live and generating leads within 2 4 weeks
+        </div>
+      </div>
+
+      <div class="availability-notice">
+        <p>⚠️ <strong>Limited spots.</strong> We work with a small number of businesses at any given time. It's how we keep the quality of work high. If you're not a fit, we'll tell you.</p>
+      </div>
+    </div>
+
+    <!-- RIGHT FORM -->
+    <div class="page-right">
+      <div class="form-header">
+        <h2>A few quick questions.</h2>
+        <p>Takes about 3 minutes. We read every submission before we call.</p>
+      </div>
+
+      <form class="form-grid" id="contactForm" name="contact" method="POST" netlify data-netlify="true" action="/success">
+          <input type="hidden" name="form-name" value="contact" />
+        <div class="form-row">
+          <div class="form-group">
+            <label>First Name *</label>
+            <input type="text" name="first_name" placeholder="John" required/>
+          </div>
+          <div class="form-group">
+            <label>Last Name *</label>
+            <input type="text" name="last_name" placeholder="Smith" required/>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Business Email *</label>
+          <input type="email" name="email" placeholder="john@yourbusiness.com" required/>
+        </div>
+        <div class="form-group">
+          <label>Phone / WhatsApp</label>
+          <input type="tel" name="phone" placeholder="+971 XX XXX XXXX"/>
+        </div>
+        <div class="form-group">
+          <label>Type of Business *</label>
+          <select name="business_type" required>
+            <option value="">Select your industry</option>
+            <option>Construction &amp; Home Improvement</option>
+            <option>IT &amp; Software</option>
+            <option>Landscaping &amp; Agriculture</option>
+            <option>Permanent Makeup &amp; Aesthetics</option>
+            <option>Healthcare &amp; Clinics</option>
+            <option>Corporate Services &amp; Accounting</option>
+            <option>Fitness, Sports &amp; Pilates</option>
+            <option>Professional &amp; B2B Services</option>
+            <option>Other / Not Listed</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Monthly Ad Budget (AED)</label>
+          <select name="ad_budget">
+            <option value="">Select your budget range</option>
+            <option>AED 1,000   3,000</option>
+            <option>AED 3,000   7,000</option>
+            <option>AED 7,000   15,000</option>
+            <option>AED 15,000   30,000</option>
+            <option>AED 30,000+</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>How long have you been in business?</label>
+          <select name="business_age">
+            <option value="">Select</option>
+            <option>Less than 1 year</option>
+            <option>1 2 years</option>
+            <option>3 5 years</option>
+            <option>5 10 years</option>
+            <option>10+ years</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>What's your biggest challenge right now?</label>
+          <textarea name="challenge" placeholder="What does your current lead situation look like? What are the biggest issues   too few leads, wrong type of leads, inconsistent flow? Be as specific as you like."></textarea>
+        </div>
+        <button type="submit" class="btn-submit">Send My Application →</button>
+        <p class="form-note">By submitting this form you agree to be contacted by the RizcoReach team regarding your application.</p>
+      </form>
+    </div>
+
+  </div>
+
+  <!-- FOOTER -->
+  <footer>
+    <p class="footer-copy">© 2026 RizcoReach · Dubai, UAE · <a href="index.html" style="color:var(--gray);text-decoration:underline;">Back to website</a></p>
+  </footer>
+
+  <script>
+    const form = document.getElementById('contactForm');
+    if (form) {
+      form.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const btn = form.querySelector('.btn-submit');
+        btn.textContent = 'Sending...';
+        btn.disabled = true;
+
+        try {
+          const formData = new FormData(form);
+          const res = await fetch('/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams(formData).toString()
+          });
+          if (res.ok) {
+            window.location.href = 'thankyou.html';
+          } else {
+            btn.textContent = 'Something went wrong   try again';
+            btn.disabled = false;
+          }
+        } catch(err) {
+          btn.textContent = 'Something went wrong   try again';
+          btn.disabled = false;
+        }
+      });
+    }
+  </script>
+</body>
+</html>

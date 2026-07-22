@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <!-- Meta Pixel Code -->
+  <script>
+  !function(f,b,e,v,n,t,s)
+  {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+  n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+  if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+  n.queue=[];t=b.createElement(e);t.async=!0;
+  t.src=v;s=b.getElementsByTagName(e)[0];
+  s.parentNode.insertBefore(t,s)}(window, document,'script',
+  'https://connect.facebook.net/en_US/fbevents.js');
+  fbq('init', '26457150590591664');
+  fbq('track', 'PageView');
+  </script>
+  <noscript><img height="1" width="1" style="display:none"
+  src="https://www.facebook.com/tr?id=26457150590591664&ev=PageView&noscript=1"
+  /></noscript>
+  <!-- End Meta Pixel Code -->
+  <link rel="icon" type="image/png" href="https://media.base44.com/images/public/69b48b64852868d19b78812f/93673ba10_IMG_2008_Nero_AI_Background_Remover_transparent.png"/>
+  <link rel="apple-touch-icon" href="https://media.base44.com/images/public/69b48b64852868d19b78812f/93673ba10_IMG_2008_Nero_AI_Background_Remover_transparent.png"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>IT & Software Marketing Agency · Dubai, UAE | RizcoReach</title>
+  <meta name="description" content="Cut through the noise in a saturated tech market and get in front of the exact SME owners and IT managers who need your solution."/>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+  <style>
+    :root {
+      --black: #0a0a0a; --dark: #111111; --card: #161616;
+      --border: rgba(255,255,255,0.07); --white: #ffffff;
+      --light-gray: #c8c8c8; --gray: #888888;
+      --accent: #ffffff; --accent2: #e0e0e0;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: var(--black); color: var(--white); font-family: 'Inter', sans-serif; line-height: 1.75; padding-top: 70px; }
+
+    /* NAV */
+    nav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      background: rgba(10,10,10,0.96); backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 5%; height: 70px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .nav-logo { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+    .nav-logo img { height: 44px; width: 44px; object-fit: contain; }
+    .nav-logo-text { font-weight: 800; font-size: 16px; color: var(--white); letter-spacing: 1.5px; text-transform: uppercase; }
+    .nav-logo-domain { font-weight: 300; opacity: 0.5; letter-spacing: 1px; font-size: 14px; }
+    .nav-links { display: flex; align-items: center; gap: 28px; list-style: none; }
+    .nav-links a { color: var(--gray); font-size: 13px; text-decoration: none; transition: color 0.2s; }
+    .nav-links a:hover { color: var(--white); }
+    .nav-cta {
+      background: var(--white); color: var(--black); font-size: 12px; font-weight: 700;
+      letter-spacing: 1.5px; text-transform: uppercase; padding: 10px 22px;
+      border-radius: 999px; text-decoration: none; transition: opacity 0.2s;
+      white-space: nowrap;
+    }
+    .nav-cta:hover { opacity: 0.85; }
+    @media (max-width: 768px) {
+      .nav-links { display: none; }
+      nav { padding: 0 4%; height: 60px; }
+    }
+    /* HERO */
+    .hero-industry {
+      min-height: 100vh;
+      display: flex; flex-direction: column;
+      justify-content: center; align-items: center; text-align: center;
+      padding: 140px 5% 100px; position: relative; overflow: hidden;
+      background: radial-gradient(ellipse 80% 60% at 50% 0%, rgba(60,100,200,0.18) 0%, transparent 70%);
+    }
+    .hero-grain {
+      position: absolute; inset: 0; pointer-events: none;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+      opacity: 0.5;
+    }
+    .hero-grid-lines {
+      position: absolute; inset: 0; pointer-events: none;
+      background-image: linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+                        linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+      background-size: 60px 60px;
+    }
+    .hero-bg-text {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+      font-size: 26vw; font-weight: 900; color: rgba(255,255,255,0.03);
+      font-family: 'Playfair Display', serif; white-space: nowrap;
+      user-select: none; pointer-events: none; letter-spacing: -4px;
+    }
+    .hero-eyebrow {
+      font-size: 12px; color: var(--gray); letter-spacing: 3px;
+      text-transform: uppercase; margin-bottom: 28px; position: relative; z-index: 1;
+      display: inline-flex; align-items: center; gap: 12px;
+    }
+    .hero-eyebrow::before, .hero-eyebrow::after {
+      content: ''; display: block; width: 32px; height: 1px; background: rgba(255,255,255,0.2);
+    }
+    .hero-title {
+      font-family: 'Playfair Display', serif; font-size: clamp(40px,5.5vw,80px);
+      font-weight: 900; line-height: 1.05; max-width: 900px; margin-bottom: 24px;
+      position: relative; z-index: 1;
+    }
+    .hero-title em {
+      font-style: italic;
+      background: linear-gradient(135deg, #fff 0%, rgba(255,255,255,0.7) 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+      text-decoration: underline; text-decoration-color: rgba(255,255,255,0.3); text-underline-offset: 6px;
+    }
+    .hero-subtitle {
+      font-size: 18px; color: var(--light-gray); max-width: 620px; line-height: 1.7; margin-bottom: 40px;
+      position: relative; z-index: 1;
+    }
+    .hero-cta {
+      background: var(--white); color: var(--black); font-weight: 700;
+      font-size: 13px; letter-spacing: 1.5px; text-transform: uppercase;
+      padding: 18px 44px; border: none; border-radius: 999px; cursor: pointer;
+      text-decoration: none; display: inline-block; transition: all 0.2s;
+      position: relative; z-index: 1;
+      box-shadow: 0 4px 24px rgba(255,255,255,0.15);
+    }
+    .hero-cta:hover { transform: translateY(-3px); box-shadow: 0 8px 36px rgba(255,255,255,0.2); }
+    .hero-trust {
+      margin-top: 24px; font-size: 13px; color: var(--gray);
+      display: flex; align-items: center; gap: 10px; position: relative; z-index: 1;
+    }
+    .hero-trust .stars { color: #fbbf24; font-size: 13px; letter-spacing: 2px; }
+
+    /* SECTIONS */
+    section { padding: 110px 5%; }
+    .section-label {
+      font-size: 11px; font-weight: 700; letter-spacing: 4px; text-transform: uppercase;
+      color: rgba(255,255,255,0.4); margin-bottom: 16px; display: block;
+    }
+    .section-title {
+      font-family: 'Playfair Display', serif; font-size: clamp(30px,4vw,54px);
+      font-weight: 900; line-height: 1.05; margin-bottom: 18px;
+    }
+    .section-title.centered { text-align: center; }
+    .section-title em { font-style: italic; }
+    .section-sub {
+      font-size: 15px; color: var(--light-gray); max-width: 580px; line-height: 1.8; margin-bottom: 60px;
+    }
+    .section-sub.centered { text-align: center; margin-left: auto; margin-right: auto; }
+    .section-divider { border: none; border-top: 1px solid var(--border); margin: 0; }
+
+    .btn-primary {
+      background: var(--white); color: var(--black); font-weight: 700; font-size: 13px;
+      letter-spacing: 1px; text-transform: uppercase; padding: 16px 38px;
+      text-decoration: none; display: inline-block; transition: all 0.2s; border-radius: 999px;
+    }
+    .btn-primary:hover { transform: translateY(-2px); opacity: 0.9; }
+
+    /* RESULTS */
+    .results-wrap { max-width: 900px; margin: 0 auto; }
+    .results-card {
+      background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 56px 48px;
+      position: relative; overflow: hidden;
+    }
+    .results-card::before {
+      content: '"';
+      position: absolute; top: -10px; left: 40px;
+      font-family: 'Playfair Display', serif; font-size: 160px; color: rgba(255,255,255,0.04);
+      line-height: 1; pointer-events: none;
+    }
+    .results-quote {
+      font-family: 'Playfair Display', serif; font-size: 22px; font-style: italic;
+      color: var(--light-gray); line-height: 1.6; margin-bottom: 28px; position: relative; z-index: 1;
+    }
+    .results-author { font-weight: 700; font-size: 15px; margin-bottom: 4px; }
+    .results-role { font-size: 13px; color: var(--gray); margin-bottom: 28px; }
+    .results-metric {
+      font-size: 14px; color: var(--accent); font-weight: 600;
+      padding: 12px 20px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 8px; display: inline-block;
+    }
+
+    /* WHO WE HELP */
+    .who-help-grid {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 48px;
+    }
+    .who-help-item {
+      background: var(--card); border: 1px solid var(--border); padding: 16px 20px;
+      border-radius: 8px; font-size: 14px; color: var(--light-gray);
+      display: flex; align-items: flex-start; gap: 10px;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .who-help-item:hover { border-color: rgba(255,255,255,0.2); background: rgba(255,255,255,0.04); }
+    .who-help-item::before {
+      content: '✓'; color: rgba(255,255,255,0.6); font-weight: 700; font-size: 12px;
+      flex-shrink: 0; margin-top: 2px;
+    }
+
+    /* MISTAKES */
+    .mistakes-grid {
+      display: grid; grid-template-columns: repeat(3,1fr); gap: 2px;
+      border: 1px solid var(--border); border-radius: 16px; overflow: hidden; margin-top: 60px;
+    }
+    .mistake-card {
+      background: var(--card); padding: 44px 36px;
+      border-right: 1px solid var(--border);
+      transition: background 0.2s;
+    }
+    .mistake-card:last-child { border-right: none; }
+    .mistake-card:hover { background: rgba(255,255,255,0.03); }
+    .mistake-num {
+      font-family: 'Playfair Display', serif; font-size: 64px; font-weight: 900;
+      color: rgba(255,255,255,0.06); line-height: 1; margin-bottom: 20px;
+    }
+    .mistake-card h3 { font-size: 17px; font-weight: 700; margin-bottom: 12px; color: var(--white); line-height: 1.3; }
+    .mistake-card p { font-size: 14px; color: var(--gray); line-height: 1.8; }
+
+    /* EXPECT */
+    .expect-grid {
+      display: grid; grid-template-columns: repeat(2,1fr); gap: 16px;
+      margin-top: 48px; max-width: 820px; margin-left: auto; margin-right: auto;
+    }
+    .expect-item {
+      background: var(--card); border: 1px solid var(--border); padding: 24px 28px;
+      border-radius: 10px; display: flex; align-items: center; gap: 16px;
+      font-size: 15px; color: var(--light-gray); line-height: 1.5;
+      transition: border-color 0.2s; cursor: default;
+    }
+    .expect-item:hover { border-color: rgba(255,255,255,0.15); }
+    .expect-icon {
+      width: 32px; height: 32px; border-radius: 50%;
+      background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; color: var(--accent); flex-shrink: 0;
+    }
+
+    /* APART */
+    .apart-grid {
+      display: grid; grid-template-columns: repeat(3,1fr); gap: 24px; margin-top: 60px;
+    }
+    .apart-card {
+      background: var(--dark); border: 1px solid var(--border); padding: 44px 36px; border-radius: 16px;
+      position: relative; overflow: hidden; transition: border-color 0.2s, transform 0.2s;
+    }
+    .apart-card:hover { border-color: rgba(255,255,255,0.15); transform: translateY(-4px); }
+    .apart-card::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.1) 50%, transparent 100%);
+    }
+    .apart-card h3 { font-size: 17px; font-weight: 700; margin-bottom: 12px; color: var(--white); }
+    .apart-card p { font-size: 14px; color: var(--gray); line-height: 1.8; }
+
+    /* CONTACT STEPS */
+    .contact-steps-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 24px; margin-top: 60px; }
+    .contact-step-box {
+      background: var(--card); border: 1px solid var(--border); padding: 44px 36px; border-radius: 16px;
+      position: relative;
+    }
+    .contact-step-num {
+      font-family: 'Playfair Display', serif; font-size: 56px; font-weight: 900;
+      color: rgba(255,255,255,0.08); margin-bottom: 20px; line-height: 1;
+    }
+    .contact-step-box h3 { font-size: 18px; font-weight: 700; margin-bottom: 10px; color: var(--white); }
+    .contact-step-box p { font-size: 14px; color: var(--light-gray); line-height: 1.8; }
+
+    /* CTA SECTION */
+    .cta-section {
+      background: var(--white); padding: 120px 5%; text-align: center;
+      position: relative; overflow: hidden;
+    }
+    .cta-section .section-title {
+      color: var(--black); margin: 0 auto 20px; max-width: 700px; font-size: clamp(32px,4vw,60px);
+    }
+    .cta-section .section-sub { color: rgba(0,0,0,0.55); margin: 0 auto 44px; }
+    .btn-dark {
+      background: var(--black); color: var(--white); font-weight: 700; font-size: 13px;
+      letter-spacing: 1.5px; text-transform: uppercase; padding: 18px 44px;
+      text-decoration: none; display: inline-block; transition: all 0.2s; border-radius: 999px;
+    }
+    .btn-dark:hover { opacity: 0.8; transform: translateY(-2px); }
+
+    /* FOOTER */
+    footer {
+      background: var(--dark); padding: 56px 5% 40px; border-top: 1px solid var(--border);
+    }
+    .footer-top {
+      display: flex; justify-content: space-between; align-items: center;
+      flex-wrap: wrap; gap: 24px; margin-bottom: 32px;
+      padding-bottom: 32px; border-bottom: 1px solid var(--border);
+    }
+    .footer-logo { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+    .footer-logo img { height: 40px; width: 40px; object-fit: contain; }
+    .footer-logo-text {
+      font-weight: 800; font-size: 15px; color: var(--white); letter-spacing: 1.5px; text-transform: uppercase;
+    }
+    .footer-links { display: flex; gap: 28px; flex-wrap: wrap; }
+    .footer-links a { color: var(--gray); font-size: 13px; text-decoration: none; transition: color 0.2s; }
+    .footer-links a:hover { color: var(--white); }
+    .footer-bottom {
+      display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;
+    }
+    .footer-copy { font-size: 12px; color: #555; }
+    .footer-copy a { color: var(--gray); text-decoration: underline; }
+
+    /* REVEAL ANIMATION */
+    .reveal { opacity: 0; transform: translateY(24px); transition: opacity 0.7s ease, transform 0.7s ease; }
+    .reveal.visible { opacity: 1; transform: translateY(0); }
+
+    @media (max-width: 900px) {
+      nav { padding: 0 4%; height: 60px; }
+      .who-help-grid { grid-template-columns: repeat(2, 1fr); }
+      .mistakes-grid { grid-template-columns: 1fr; border: none; gap: 16px; }
+      .mistake-card { border: 1px solid var(--border); border-radius: 12px; border-right: 1px solid var(--border); }
+      .expect-grid { grid-template-columns: 1fr; }
+      .apart-grid { grid-template-columns: 1fr; }
+      .contact-steps-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 600px) {
+      .who-help-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <nav>
+    <a href="index.html" class="nav-logo">
+      <img src="https://media.base44.com/images/public/69b48b64852868d19b78812f/93673ba10_IMG_2008_Nero_AI_Background_Remover_transparent.png" alt="RizcoReach Logo"/>
+      <span class="nav-logo-text">RIZCOREACH<span class="nav-logo-domain">.AE</span></span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="index.html">Home</a></li>
+      <li><a href="index.html#audio-testimonial">Testimonials</a></li>
+      <li><a href="index.html#industries">Industries</a></li>
+      <li><a href="blog.html">Blog</a></li>
+      <li><a href="index.html#faq">FAQ</a></li>
+    </ul>
+    <a href="contact.html" class="nav-cta">Book a Meeting</a>
+  </nav>
+
+  <!-- HERO -->
+  <section class="hero-industry">
+    <div class="hero-grain"></div>
+    <div class="hero-grid-lines"></div>
+    <div class="hero-bg-text">TECH</div>
+    <p class="hero-eyebrow">IT & Software Marketing · Dubai & UAE</p>
+    <h1 class="hero-title">Attract <em>decision-makers</em><br/>who are ready to buy</h1>
+    <p class="hero-subtitle">Cut through the noise in a saturated tech market and get in front of the exact SME owners and IT managers who need your solution.</p>
+    <a href="contact.html" class="hero-cta">Schedule Your Free Consultation</a>
+    <div class="hero-trust">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+        <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+        <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+        <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+        <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84C6.71 7.31 9.14 5.38 12 5.38z" fill="#EA4335"/>
+      </svg>
+      <span class="stars">★★★★★</span>
+      <span>4.9 · Rated on Google</span>
+    </div>
+  </section>
+
+  <hr class="section-divider"/>
+
+  <!-- RESULTS / TESTIMONIAL -->
+  <section style="background: var(--dark);">
+    <span class="section-label reveal" style="display:block; text-align:center;">Real Results</span>
+    <h2 class="section-title centered reveal">What our clients say</h2>
+    <div class="results-wrap">
+      <div class="results-card reveal">
+        <p class="results-quote">"We had tried ads before and wasted our budget. RizcoReach was different / they actually understood our buyers and built campaigns that hit the right people."</p>
+        <p class="results-author">IT Solutions Client</p>
+        <p class="results-role">Software Company · Dubai</p>
+        <span class="results-metric">✦ Qualified decision-maker leads within 30 days of launch</span>
+      </div>
+    </div>
+  </section>
+
+  <hr class="section-divider"/>
+
+  <!-- WHO WE HELP -->
+  <section>
+    <span class="section-label reveal">Who We Help</span>
+    <h2 class="section-title reveal">The businesses <em>we get results for</em></h2>
+    <p class="section-sub reveal">We work exclusively with businesses that have a strong service and real ambition to grow. Here's who we typically work with in this space.</p>
+    <div class="who-help-grid">
+      <div class="who-help-item reveal">SaaS & software companies</div>
+<div class="who-help-item reveal">IT support & managed services</div>
+<div class="who-help-item reveal">Cybersecurity firms</div>
+<div class="who-help-item reveal">Custom software developers</div>
+<div class="who-help-item reveal">Cloud solution providers</div>
+<div class="who-help-item reveal">ERP & CRM implementors</div>
+<div class="who-help-item reveal">Web & mobile app agencies</div>
+<div class="who-help-item reveal">IT infrastructure suppliers</div>
+<div class="who-help-item reveal">Digital transformation consultants</div>
+<div class="who-help-item reveal">Hardware & networking suppliers</div>
+<div class="who-help-item reveal">Data & analytics companies</div>
+<div class="who-help-item reveal">AI solution providers</div>
+    </div>
+  </section>
+
+  <hr class="section-divider"/>
+
+  <!-- 3 MISTAKES -->
+  <section style="background: var(--dark);">
+    <span class="section-label reveal" style="display:block; text-align:center;">Common Pitfalls</span>
+    <h2 class="section-title centered reveal">The 3 mistakes <em>keeping you stuck</em></h2>
+    <p class="section-sub centered reveal">Before we even start running campaigns, we fix these three problems that silently kill most advertising spend.</p>
+    <div class="mistakes-grid">
+      <div class="mistake-card reveal">
+        <div class="mistake-num">01</div>
+        <h3>Talking features, not outcomes</h3>
+        <p>Tech buyers don't care about your stack / they care about what problem it solves. Lead with the outcome, not the spec sheet.</p>
+      </div>
+      <div class="mistake-card reveal">
+        <div class="mistake-num">02</div>
+        <h3>Targeting too broadly</h3>
+        <p>Spending budget on audiences that will never buy. You need laser-targeted campaigns aimed at the exact company size and role that converts.</p>
+      </div>
+      <div class="mistake-card reveal">
+        <div class="mistake-num">03</div>
+        <h3>No nurture after the first touch</h3>
+        <p>Most IT leads need multiple touchpoints before they commit. Without retargeting and follow-up sequences, you're leaving money on the table.</p>
+      </div>
+    </div>
+  </section>
+
+  <hr class="section-divider"/>
+
+  <!-- WHAT TO EXPECT -->
+  <section>
+    <span class="section-label reveal" style="display:block; text-align:center;">What You Can Expect</span>
+    <h2 class="section-title centered reveal">When we work together</h2>
+    <p class="section-sub centered reveal">No vague promises. Here's exactly what you get when you partner with RizcoReach.</p>
+    <div class="expect-grid">
+      <div class="expect-item reveal">Quality B2B leads from relevant decision-makers</div>
+<div class="expect-item reveal">Industry-specific ad copy that resonates with IT buyers</div>
+<div class="expect-item reveal">LinkedIn and Meta campaigns working in tandem</div>
+<div class="expect-item reveal">CRM-ready lead data delivered on day one</div>
+    </div>
+  </section>
+
+  <hr class="section-divider"/>
+
+  <!-- WHAT SETS US APART -->
+  <section style="background: var(--dark);">
+    <span class="section-label reveal">Why RizcoReach</span>
+    <h2 class="section-title reveal">What sets us <em>apart</em></h2>
+    <p class="section-sub reveal">We're not a full-service agency that does everything for everyone. We go deep in specific verticals / and that's exactly why we get results.</p>
+    <div class="apart-grid">
+      <div class="apart-card reveal">
+        <h3>B2B Lead Qualification</h3>
+        <p>We pre-qualify leads so your sales team only speaks to prospects with real intent and budget.</p>
+      </div>
+      <div class="apart-card reveal">
+        <h3>Full-Funnel Approach</h3>
+        <p>From awareness to conversion / we build the whole acquisition machine, not just ads.</p>
+      </div>
+      <div class="apart-card reveal">
+        <h3>UAE Market Knowledge</h3>
+        <p>We understand the enterprise buying cycle in the Gulf and build campaigns that reflect it.</p>
+      </div>
+    </div>
+  </section>
+
+  <hr class="section-divider"/>
+
+  <!-- HOW TO GET IN CONTACT -->
+  <section>
+    <span class="section-label reveal">Next Steps</span>
+    <h2 class="section-title reveal">How it works</h2>
+    <p class="section-sub reveal">Three simple steps from first conversation to live campaigns.</p>
+    <div class="contact-steps-grid">
+      <div class="contact-step-box reveal">
+        <div class="contact-step-num">01</div>
+        <h3>Apply for a Consultation</h3>
+        <p>Fill in a short form so we can understand your business, your goals, and whether we're the right fit for each other.</p>
+      </div>
+      <div class="contact-step-box reveal">
+        <div class="contact-step-num">02</div>
+        <h3>Strategy Call</h3>
+        <p>We get on a call to map out exactly how we'd approach your market, build your acquisition system, and what results you can expect.</p>
+      </div>
+      <div class="contact-step-box reveal">
+        <div class="contact-step-num">03</div>
+        <h3>We Go Live</h3>
+        <p>Campaigns are built, launched and optimised. You start receiving qualified leads while we handle everything on the ad side.</p>
+      </div>
+    </div>
+    <div style="text-align:center; margin-top:48px;">
+      <a href="contact.html" class="btn-primary reveal">Apply for Your Free Consultation</a>
+    </div>
+  </section>
+
+  <!-- FINAL CTA -->
+  <section class="cta-section">
+    <h2 class="section-title">Ready to build your <em>acquisition engine?</em></h2>
+    <p class="section-sub">Apply for a free strategy consultation. We'll tell you exactly what we'd do for your business / no fluff, no hard sell.</p>
+    <a href="contact.html" class="btn-dark">Apply Now / It's Free</a>
+  </section>
+
+  <footer>
+    <div class="footer-top">
+      <a href="index.html" class="footer-logo">
+        <img src="https://media.base44.com/images/public/69b48b64852868d19b78812f/93673ba10_IMG_2008_Nero_AI_Background_Remover_transparent.png" alt="RizcoReach"/>
+        <span class="footer-logo-text">RIZCOREACH<span class="nav-logo-domain">.AE</span></span>
+      </a>
+      <div class="footer-links">
+        <a href="index.html">Home</a>
+        <a href="index.html#industries">Industries</a>
+        <a href="contact.html">Apply</a>
+        <a href="privacy.html">Privacy</a>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <p class="footer-copy">© 2026 RizcoReach. All rights reserved. Dubai, UAE. &nbsp;·&nbsp;
+        <a href="privacy.html">Privacy Policy</a>
+      </p>
+    </div>
+  </footer>
+
+  <!-- WhatsApp -->
+  <a href="https://wa.me/971XXXXXXXX" target="_blank" rel="noopener" style="position:fixed;bottom:24px;right:24px;width:56px;height:56px;background:#25D366;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 20px rgba(37,211,102,0.4);z-index:999;text-decoration:none;">
+    <svg width="30" height="30" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+  </a>
+
+  <script>
+    // Reveal on scroll
+    const reveals = document.querySelectorAll('.reveal');
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('visible'); } });
+    }, { threshold: 0.12 });
+    reveals.forEach(el => io.observe(el));
+  </script>
+
+</body>
+</html>
