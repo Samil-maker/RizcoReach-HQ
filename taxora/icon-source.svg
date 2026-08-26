@@ -1,0 +1,44 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1024" y2="1024" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#141414"/>
+      <stop offset="1" stop-color="#050505"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="512" cy="380" r="480" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fbbf24" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#fbbf24" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="glass" x1="330" y1="230" x2="700" y2="820" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff7e0"/>
+      <stop offset="0.35" stop-color="#fbbf24"/>
+      <stop offset="0.7" stop-color="#d99a1f"/>
+      <stop offset="1" stop-color="#8a5b0c"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="360" y1="260" x2="560" y2="420" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="soft" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="18"/>
+    </filter>
+    <clipPath id="round">
+      <rect x="0" y="0" width="1024" height="1024" rx="224"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#round)">
+    <rect width="1024" height="1024" fill="url(#bg)"/>
+    <circle cx="512" cy="380" r="420" fill="url(#glow)"/>
+
+    <!-- glass T monogram -->
+    <g filter="url(#soft)" opacity="0.55">
+      <path d="M330 300 h360 v90 h-135 v420 h-90 v-420 h-135 z" fill="#fbbf24" opacity="0.5"/>
+    </g>
+    <path d="M330 290 h360 v96 h-133 v426 h-94 v-426 h-133 z" fill="url(#glass)"/>
+    <path d="M330 290 h360 v40 h-360 z" fill="url(#sheen)"/>
+    <path d="M446 386 h94 v426 h-94 z" fill="#ffffff" opacity="0.12"/>
+
+    <!-- rim highlight -->
+    <rect x="0" y="0" width="1024" height="1024" rx="224" fill="none" stroke="#ffffff" stroke-opacity="0.06" stroke-width="2"/>
+  </g>
+</svg>

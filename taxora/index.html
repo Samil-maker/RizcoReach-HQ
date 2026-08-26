@@ -5,27 +5,35 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Taxora — AI Compliance Copilot for UAE Businesses</title>
 <meta name="description" content="Taxora helps UAE business owners generate FTA-compliant tax invoices, estimate VAT &amp; Corporate Tax, track filing deadlines, and get ready for the UAE e-invoicing mandate." />
-<link rel="icon" href="data:," />
+<link rel="manifest" href="manifest.json" />
+<link rel="icon" href="icon-192.png" />
+<link rel="apple-touch-icon" href="icon-180.png" />
+<meta name="theme-color" content="#050505" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Taxora" />
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+<div class="bg-orbs"></div>
 
 <nav class="nav-public">
-  <a href="index.html" style="display:flex; align-items:center; gap:10px;">
-    <div class="mark" style="width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,var(--gold),#b8860b);display:flex;align-items:center;justify-content:center;font-family:'Playfair Display',serif;font-weight:900;color:#100c00;">T</div>
-    <span style="font-family:'Playfair Display',serif; font-weight:700; font-size:18px;">Tax<span style="color:var(--gold);">ora</span></span>
+  <a href="index.html" class="brand">
+    <div class="mark">T</div>
+    <span class="name">Tax<span style="color:var(--gold);">ora</span></span>
   </a>
   <div class="links">
-    <a href="#features">Features</a>
-    <a href="#how">How it works</a>
-    <a href="#pricing">Pricing</a>
+    <a href="#features" class="link">Features</a>
+    <a href="#how" class="link">How it works</a>
+    <a href="#pricing" class="link">Pricing</a>
     <a href="dashboard.html" class="btn btn-gold btn-sm">Launch Dashboard</a>
   </div>
 </nav>
 
 <section class="hero">
-  <span class="eyebrow">● Built for the UAE 2026 e-invoicing mandate</span>
+  <img src="icon-192.png" alt="Taxora" class="icon-hero" />
+  <span class="eyebrow"><span class="pulse"></span> Built for the UAE 2026 e-invoicing mandate</span>
   <h1>The tax compliance <em>copilot</em><br/>every UAE business needs.</h1>
   <p class="lead">Taxora generates FTA-compliant tax invoices, estimates your VAT and Corporate Tax position in real time, and keeps you ahead of every filing deadline — so you never guess what you owe.</p>
   <div class="cta-row">
@@ -165,5 +173,6 @@
   <p>© 2026 Taxora. Built for UAE business owners.</p>
 </footer>
 
+<script src="app.js"></script>
 </body>
 </html>
