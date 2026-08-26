@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>VAT Return · Taxora</title>
+<link rel="icon" href="data:," />
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+<style>
+  .box-table .row { display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--border-soft); font-size:14px; }
+  .box-table .row:last-child { border-bottom:none; }
+  .box-table .row .lbl { color: var(--muted); }
+  .net-banner { text-align:center; padding: 28px; border-radius: var(--radius); }
+  .net-banner .amt { font-family:'Playfair Display',serif; font-size:42px; font-weight:900; margin: 8px 0; }
+</style>
+</head>
+<body>
+<div class="app-shell">
+
+  <aside class="sidebar">
+    <a href="index.html" class="sidebar-brand">
+      <div class="mark">T</div>
+      <div class="name">Tax<span>ora</span></div>
+    </a>
+    <div class="nav-group-label">Workspace</div>
+    <a href="dashboard.html" class="nav-link"><span class="ic">▣</span> Dashboard</a>
+    <a href="invoices.html" class="nav-link"><span class="ic">▤</span> Invoices</a>
+    <a href="vat-return.html" class="nav-link active"><span class="ic">◐</span> VAT Return</a>
+    <a href="corporate-tax.html" class="nav-link"><span class="ic">◈</span> Corporate Tax</a>
+    <a href="assistant.html" class="nav-link"><span class="ic">✦</span> Compliance Assistant</a>
+    <div class="sidebar-foot"><strong style="color:#fff;">Demo mode</strong><br/>Data stored locally in your browser only.</div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div>
+        <button class="mobile-menu-btn btn btn-outline btn-sm" style="margin-bottom:10px;">☰ Menu</button>
+        <h1>VAT Return Estimator</h1>
+        <p class="sub">A VAT201-style summary calculated from your saved invoices &amp; expenses.</p>
+      </div>
+    </div>
+
+    <div class="grid" style="grid-template-columns: 1fr 1fr; gap:20px; margin-bottom:20px;">
+      <div class="card">
+        <div class="card-head"><h3>Output VAT (on sales)</h3></div>
+        <div class="box-table" id="outputBox"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h3>Input VAT (on purchases)</h3></div>
+        <div class="box-table" id="inputBox"></div>
+        <div class="divider"></div>
+        <div class="field">
+          <label>Log an expense</label>
+          <div class="form-row" style="grid-template-columns: 2fr 1fr 1fr; margin-bottom:8px;">
+            <input id="expDesc" placeholder="Description" />
+            <input id="expAmount" type="number" placeholder="Amount (AED)" />
+            <input id="expVat" type="number" placeholder="VAT recoverable" />
+          </div>
+          <button class="btn btn-outline btn-block" id="addExpBtn">+ Add expense</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card net-banner" id="netBanner" style="margin-bottom:20px;">
+      <div class="stat-label">Net VAT position for this period</div>
+      <div class="amt" id="netAmt">AED 0.00</div>
+      <div id="netNote" class="text-muted"></div>
+      <button class="btn btn-gold" id="markFiledBtn" style="margin-top:14px;">Mark period as filed</button>
+    </div>
+
+    <div class="grid grid-2">
+      <div class="card">
+        <div class="card-head"><h3>Filing deadline</h3></div>
+        <div id="deadlineInfo"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h3>Logged expenses</h3></div>
+        <div id="expList"></div>
+      </div>
+    </div>
+
+    <div class="disclaimer">
+      This is a simplified estimate for planning purposes (e.g. it does not model reverse charge on imports, capital asset scheme adjustments, or bad-debt relief). Always reconcile with your accounting records and file through the FTA's official EmaraTax portal.
+    </div>
+  </main>
+</div>
+
+<script src="app.js"></script>
+<script>
+  Taxora.seedIfEmpty();
+
+  function render() {
+    const vr = Taxora.vatReturnSummary();
+
+    document.getElementById('outputBox').innerHTML = `
+      <div class="row"><span class="lbl">Standard-rated sales (5%)</span><span>${Taxora.aed(vr.standardSales)}</span></div>
+      <div class="row"><span class="lbl">Zero-rated sales (0%)</span><span>${Taxora.aed(vr.zeroSales)}</span></div>
+      <div class="row"><span class="lbl">Exempt sales</span><span>${Taxora.aed(vr.exemptSales)}</span></div>
+      <div class="row"><span class="lbl"><strong>Total output VAT</strong></span><span><strong>${Taxora.aed(vr.outputVat)}</strong></span></div>
+    `;
+    document.getElementById('inputBox').innerHTML = `
+      <div class="row"><span class="lbl">Total expenses logged</span><span>${Taxora.aed(vr.expenseTotal)}</span></div>
+      <div class="row"><span class="lbl"><strong>Total recoverable input VAT</strong></span><span><strong>${Taxora.aed(vr.inputVat)}</strong></span></div>
+    `;
+
+    const banner = document.getElementById('netBanner');
+    document.getElementById('netAmt').textContent = Taxora.aed(Math.abs(vr.net));
+    const note = document.getElementById('netNote');
+    if (vr.net > 0) {
+      banner.style.background = 'var(--red-soft)';
+      note.textContent = 'Payable to the FTA for this period.';
+    } else if (vr.net < 0) {
+      banner.style.background = 'var(--emerald-soft)';
+      note.textContent = 'Recoverable — input VAT exceeds output VAT.';
+    } else {
+      banner.style.background = 'var(--panel-2)';
+      note.textContent = 'No net VAT movement yet — add invoices and expenses.';
+    }
+
+    // deadline
+    const { periodEnd, due } = Taxora.nextVatDeadline();
+    const days = Taxora.daysUntil(due);
+    document.getElementById('deadlineInfo').innerHTML = `
+      <div class="checklist-item"><span class="dot ${days>21?'pass':'fail'}">${days}d</span>
+      <span>Return for the period ending <strong>${periodEnd.toLocaleDateString('en-GB',{day:'2-digit',month:'long',year:'numeric'})}</strong> is due <strong>${due.toLocaleDateString('en-GB',{day:'2-digit',month:'long',year:'numeric'})}</strong> (28 days after period end).</span></div>
+      <p class="hint" style="margin-top:10px;">Filed periods: ${Taxora.state.filedPeriods.length ? Taxora.state.filedPeriods.join(', ') : 'none yet'}</p>
+    `;
+
+    // expenses list
+    const list = document.getElementById('expList');
+    if (!Taxora.state.expenses.length) {
+      list.innerHTML = `<div class="empty-state">No expenses logged.</div>`;
+    } else {
+      list.innerHTML = Taxora.state.expenses.map(ex => `
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid var(--border-soft);">
+          <div>
+            <div>${ex.desc}</div>
+            <div class="text-muted" style="font-size:12.5px;">${ex.date} · VAT ${Taxora.aed(ex.vatRecoverable)}</div>
+          </div>
+          <div style="display:flex; align-items:center; gap:10px;">
+            <span class="mono">${Taxora.aed(ex.amount)}</span>
+            <button class="btn btn-danger btn-sm" data-del="${ex.id}">✕</button>
+          </div>
+        </div>`).join('');
+      list.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', e => {
+        Taxora.deleteExpense(e.target.dataset.del);
+        render();
+      }));
+    }
+  }
+
+  document.getElementById('addExpBtn').addEventListener('click', () => {
+    const desc = document.getElementById('expDesc').value;
+    const amount = Number(document.getElementById('expAmount').value) || 0;
+    const vatRecoverable = Number(document.getElementById('expVat').value) || 0;
+    if (!desc || !amount) { alert('Enter a description and amount.'); return; }
+    Taxora.addExpense({ desc, amount, vatRecoverable, date: new Date().toISOString().slice(0,10) });
+    document.getElementById('expDesc').value = '';
+    document.getElementById('expAmount').value = '';
+    document.getElementById('expVat').value = '';
+    render();
+  });
+
+  document.getElementById('markFiledBtn').addEventListener('click', () => {
+    const { periodEnd } = Taxora.nextVatDeadline();
+    const label = periodEnd.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
+    if (!Taxora.state.filedPeriods.includes(label)) {
+      Taxora.state.filedPeriods.push(label);
+      Taxora.save();
+      alert('Marked as filed locally. Remember: this demo does not submit anything to the FTA — file via EmaraTax.');
+      render();
+    }
+  });
+
+  render();
+</script>
+</body>
+</html>

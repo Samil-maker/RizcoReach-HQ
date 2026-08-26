@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Compliance Assistant · Taxora</title>
+<link rel="icon" href="data:," />
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+<style>
+  .chat-input-row { display:flex; gap:10px; }
+</style>
+</head>
+<body>
+<div class="app-shell">
+
+  <aside class="sidebar">
+    <a href="index.html" class="sidebar-brand">
+      <div class="mark">T</div>
+      <div class="name">Tax<span>ora</span></div>
+    </a>
+    <div class="nav-group-label">Workspace</div>
+    <a href="dashboard.html" class="nav-link"><span class="ic">▣</span> Dashboard</a>
+    <a href="invoices.html" class="nav-link"><span class="ic">▤</span> Invoices</a>
+    <a href="vat-return.html" class="nav-link"><span class="ic">◐</span> VAT Return</a>
+    <a href="corporate-tax.html" class="nav-link"><span class="ic">◈</span> Corporate Tax</a>
+    <a href="assistant.html" class="nav-link active"><span class="ic">✦</span> Compliance Assistant</a>
+    <div class="sidebar-foot"><strong style="color:#fff;">Demo mode</strong><br/>Answers come from a small built-in rule set, not a live AI model.</div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div>
+        <button class="mobile-menu-btn btn btn-outline btn-sm" style="margin-bottom:10px;">☰ Menu</button>
+        <h1>Compliance Assistant</h1>
+        <p class="sub">Quick answers on UAE VAT, Corporate Tax, and e-invoicing basics.</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <div id="chatLog" class="chat-log"></div>
+      <div style="margin-bottom:14px;">
+        <span class="chip" data-ask="What's the VAT registration threshold?">VAT registration threshold</span>
+        <span class="chip" data-ask="When is my VAT return due?">VAT return deadline</span>
+        <span class="chip" data-ask="What is the UAE e-invoicing mandate?">E-invoicing mandate</span>
+        <span class="chip" data-ask="What's the corporate tax rate?">Corporate tax rate</span>
+        <span class="chip" data-ask="What are the penalties for late filing?">Late filing penalties</span>
+        <span class="chip" data-ask="What is a TRN?">What is a TRN?</span>
+        <span class="chip" data-ask="Difference between zero-rated and exempt?">Zero-rated vs exempt</span>
+      </div>
+      <div class="chat-input-row">
+        <input id="chatInput" placeholder="Ask about VAT, corporate tax, deadlines, TRNs…" />
+        <button class="btn btn-gold" id="sendBtn">Ask</button>
+      </div>
+    </div>
+
+    <div class="disclaimer">
+      This assistant runs on a small set of built-in rules for this demo — it is not connected to a live AI model or the FTA, and its answers are general information, not tax advice. For filing decisions, confirm with a registered UAE tax agent or the FTA directly.
+    </div>
+  </main>
+</div>
+
+<script src="app.js"></script>
+<script>
+  const log = document.getElementById('chatLog');
+
+  function addMsg(text, who) {
+    const div = document.createElement('div');
+    div.className = 'msg ' + who;
+    div.innerHTML = text;
+    log.appendChild(div);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function ask(q) {
+    if (!q.trim()) return;
+    addMsg(q, 'user');
+    const answer = Taxora.askAssistant(q);
+    setTimeout(() => addMsg(answer, 'bot'), 250);
+  }
+
+  addMsg('Hi 👋 I\'m the Taxora compliance assistant. Ask me about VAT registration, filing deadlines, corporate tax, TRNs, or the upcoming e-invoicing mandate — or tap a suggestion below.', 'bot');
+
+  document.getElementById('sendBtn').addEventListener('click', () => {
+    const input = document.getElementById('chatInput');
+    ask(input.value);
+    input.value = '';
+  });
+  document.getElementById('chatInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') document.getElementById('sendBtn').click();
+  });
+  document.querySelectorAll('.chip').forEach(chip => {
+    chip.addEventListener('click', () => ask(chip.dataset.ask));
+  });
+</script>
+</body>
+</html>

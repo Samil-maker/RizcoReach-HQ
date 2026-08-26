@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Invoices · Taxora</title>
+<link rel="icon" href="data:," />
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+<style>
+  .item-row { display: grid; grid-template-columns: 1fr 70px 110px 120px 32px; gap: 8px; align-items: end; margin-bottom: 10px; }
+  .item-row label { margin-bottom: 4px; }
+  @media (max-width: 720px) { .item-row { grid-template-columns: 1fr 1fr; } }
+  .remove-item { background: var(--red-soft); color: #ff9d9d; border: none; border-radius: 8px; height: 38px; width: 32px; }
+  .totals-box { text-align: right; font-size: 14px; }
+  .totals-box .row { display: flex; justify-content: space-between; gap: 30px; padding: 6px 0; }
+  .totals-box .row.grand { border-top: 1px solid var(--border); margin-top: 6px; padding-top: 12px; font-size: 18px; font-family: 'Playfair Display', serif; font-weight: 700; }
+</style>
+</head>
+<body>
+<div class="app-shell">
+
+  <aside class="sidebar">
+    <a href="index.html" class="sidebar-brand">
+      <div class="mark">T</div>
+      <div class="name">Tax<span>ora</span></div>
+    </a>
+    <div class="nav-group-label">Workspace</div>
+    <a href="dashboard.html" class="nav-link"><span class="ic">▣</span> Dashboard</a>
+    <a href="invoices.html" class="nav-link active"><span class="ic">▤</span> Invoices</a>
+    <a href="vat-return.html" class="nav-link"><span class="ic">◐</span> VAT Return</a>
+    <a href="corporate-tax.html" class="nav-link"><span class="ic">◈</span> Corporate Tax</a>
+    <a href="assistant.html" class="nav-link"><span class="ic">✦</span> Compliance Assistant</a>
+    <div class="sidebar-foot"><strong style="color:#fff;">Demo mode</strong><br/>Data stored locally in your browser only.</div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div>
+        <button class="mobile-menu-btn btn btn-outline btn-sm" style="margin-bottom:10px;">☰ Menu</button>
+        <h1>Invoices</h1>
+        <p class="sub">Build FTA-compliant tax invoices and track their compliance status.</p>
+      </div>
+    </div>
+
+    <div class="grid" style="grid-template-columns: 1.1fr 0.9fr; gap:20px;" id="mainGrid">
+      <div class="card">
+        <div class="card-head"><h3>New tax invoice</h3><span class="badge badge-neutral" id="nextInvNo"></span></div>
+
+        <div class="form-row">
+          <div class="field">
+            <label>Your TRN (supplier)</label>
+            <input id="supplierTrn" placeholder="15-digit TRN" />
+          </div>
+          <div class="field">
+            <label>Invoice date</label>
+            <input id="invDate" type="date" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="field">
+            <label>Customer name</label>
+            <input id="customerName" placeholder="Customer / business name" />
+          </div>
+          <div class="field">
+            <label>Customer TRN (optional)</label>
+            <input id="customerTrn" placeholder="15-digit TRN, if registered" />
+          </div>
+        </div>
+
+        <div class="divider"></div>
+        <label>Line items</label>
+        <div id="itemsWrap"></div>
+        <button class="btn btn-outline btn-sm" id="addItemBtn" type="button">+ Add line item</button>
+
+        <div class="divider"></div>
+        <div class="totals-box" id="totalsBox"></div>
+
+        <div class="field" style="margin-top:14px;">
+          <label>Notes (optional)</label>
+          <textarea id="notes" rows="2" placeholder="Payment terms, bank details, etc."></textarea>
+        </div>
+
+        <button class="btn btn-gold btn-block" id="saveInvoiceBtn" style="margin-top:8px;">Save invoice</button>
+      </div>
+
+      <div>
+        <div class="card" style="margin-bottom:20px;">
+          <div class="card-head"><h3>Live compliance check</h3></div>
+          <ul id="liveChecklist"></ul>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>Saved invoices</h3></div>
+          <div id="savedList"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="disclaimer">
+      Invoice compliance checks in this demo follow common UAE tax-invoice requirements (TRN, sequential numbering, VAT breakdown). They are a helpful pre-check, not a legal guarantee of FTA compliance — verify formatting requirements for your specific case.
+    </div>
+  </main>
+</div>
+
+<!-- Printable invoice template (hidden until print) -->
+<div id="printArea" style="display:none;"></div>
+
+<script src="app.js"></script>
+<script>
+  Taxora.seedIfEmpty();
+  let items = [{ desc: '', qty: 1, price: 0, vatRate: 5 }];
+
+  document.getElementById('nextInvNo').textContent = '#' + Taxora.state.nextInvoiceNo;
+  document.getElementById('supplierTrn').value = Taxora.state.profile.trn || '';
+  document.getElementById('invDate').value = new Date().toISOString().slice(0,10);
+
+  function renderItems() {
+    const wrap = document.getElementById('itemsWrap');
+    wrap.innerHTML = items.map((it, i) => `
+      <div class="item-row">
+        <div><label>Description</label><input data-i="${i}" data-f="desc" value="${it.desc.replace(/"/g,'&quot;')}" placeholder="e.g. Consulting services" /></div>
+        <div><label>Qty</label><input data-i="${i}" data-f="qty" type="number" min="0" value="${it.qty}" /></div>
+        <div><label>Unit price (AED)</label><input data-i="${i}" data-f="price" type="number" min="0" step="0.01" value="${it.price}" /></div>
+        <div><label>VAT</label>
+          <select data-i="${i}" data-f="vatRate">
+            ${Taxora.VAT_RATES.map(r => `<option value="${r.value}" ${Number(it.vatRate)===r.value?'selected':''}>${r.label}</option>`).join('')}
+          </select>
+        </div>
+        <button type="button" class="remove-item" data-remove="${i}">✕</button>
+      </div>`).join('');
+
+    wrap.querySelectorAll('input,select').forEach(el => {
+      el.addEventListener('input', (e) => {
+        const i = +e.target.dataset.i, f = e.target.dataset.f;
+        items[i][f] = f === 'desc' ? e.target.value : Number(e.target.value);
+        renderTotals(); renderChecklist();
+      });
+    });
+    wrap.querySelectorAll('[data-remove]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        items.splice(+e.target.dataset.remove, 1);
+        if (!items.length) items.push({ desc:'', qty:1, price:0, vatRate:5 });
+        renderItems(); renderTotals(); renderChecklist();
+      });
+    });
+  }
+
+  function renderTotals() {
+    const t = Taxora.invoiceTotals(items);
+    document.getElementById('totalsBox').innerHTML = `
+      <div class="row"><span class="text-muted">Subtotal</span><span>${Taxora.aed(t.subtotal)}</span></div>
+      <div class="row"><span class="text-muted">VAT</span><span>${Taxora.aed(t.vat)}</span></div>
+      <div class="row grand"><span>Total</span><span>${Taxora.aed(t.total)}</span></div>
+    `;
+  }
+
+  function currentDraftInvoice() {
+    return {
+      supplierTrn: document.getElementById('supplierTrn').value,
+      customerName: document.getElementById('customerName').value,
+      customerTrn: document.getElementById('customerTrn').value,
+      date: document.getElementById('invDate').value,
+      items,
+      notes: document.getElementById('notes').value,
+      number: Taxora.state.nextInvoiceNo,
+    };
+  }
+
+  function renderChecklist() {
+    const c = Taxora.invoiceCompliance(currentDraftInvoice());
+    document.getElementById('liveChecklist').innerHTML = c.checks.map(chk => `
+      <li class="checklist-item">
+        <span class="dot ${chk.pass ? 'pass' : 'fail'}">${chk.pass ? '✓' : '!'}</span>
+        <span>${chk.label}</span>
+      </li>`).join('') + `<li style="padding-top:10px;"><span class="badge ${c.compliant ? 'badge-good' : 'badge-warn'}">${c.score}% ready</span></li>`;
+  }
+
+  function renderSaved() {
+    const list = document.getElementById('savedList');
+    if (!Taxora.state.invoices.length) {
+      list.innerHTML = `<div class="empty-state">No saved invoices yet.</div>`;
+      return;
+    }
+    list.innerHTML = Taxora.state.invoices.map(inv => {
+      const t = Taxora.invoiceTotals(inv.items);
+      const c = Taxora.invoiceCompliance(inv);
+      return `<div style="display:flex; align-items:center; justify-content:space-between; padding:12px 0; border-bottom:1px solid var(--border-soft);">
+        <div>
+          <div style="font-weight:600;">#${inv.number} · ${inv.customerName || 'Untitled'}</div>
+          <div class="text-muted" style="font-size:12.5px;">${inv.date || ''} · ${Taxora.aed(t.total)}</div>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <span class="badge ${c.compliant ? 'badge-good' : 'badge-warn'}">${c.compliant ? 'Compliant' : c.score+'%'}</span>
+          <button class="btn btn-outline btn-sm" data-print="${inv.id}">Print</button>
+          <button class="btn btn-danger btn-sm" data-del="${inv.id}">Delete</button>
+        </div>
+      </div>`;
+    }).join('');
+
+    list.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', (e) => {
+      Taxora.deleteInvoice(e.target.dataset.del);
+      renderSaved();
+    }));
+    list.querySelectorAll('[data-print]').forEach(b => b.addEventListener('click', (e) => {
+      printInvoice(Taxora.state.invoices.find(i => i.id === e.target.dataset.print));
+    }));
+  }
+
+  function printInvoice(inv) {
+    const t = Taxora.invoiceTotals(inv.items);
+    const rows = inv.items.map(it => {
+      const lineTotal = it.qty * it.price;
+      const vatLabel = it.vatRate === -1 ? 'Exempt' : it.vatRate + '%';
+      return `<tr><td>${it.desc}</td><td style="text-align:right">${it.qty}</td><td style="text-align:right">${it.price.toFixed(2)}</td><td style="text-align:right">${vatLabel}</td><td style="text-align:right">${lineTotal.toFixed(2)}</td></tr>`;
+    }).join('');
+    const win = window.open('', '_blank');
+    win.document.write(`
+      <html><head><title>Tax Invoice #${inv.number}</title>
+      <style>
+        body{font-family: Arial, sans-serif; padding:40px; color:#111;}
+        h1{font-size:22px; margin-bottom:0;}
+        table{width:100%; border-collapse:collapse; margin-top:20px;}
+        th,td{border-bottom:1px solid #ddd; padding:8px; font-size:13px;}
+        th{text-align:left; background:#f5f5f5;}
+        .totals{margin-top:16px; float:right; width:260px;}
+        .totals div{display:flex; justify-content:space-between; padding:4px 0;}
+        .grand{font-weight:bold; border-top:1px solid #111; padding-top:8px;}
+      </style></head><body>
+      <h1>TAX INVOICE</h1>
+      <p>Invoice #${inv.number} &nbsp;|&nbsp; Date: ${inv.date}</p>
+      <p><strong>Supplier TRN:</strong> ${inv.supplierTrn || '—'}</p>
+      <p><strong>Bill to:</strong> ${inv.customerName || '—'} ${inv.customerTrn ? '(TRN ' + inv.customerTrn + ')' : ''}</p>
+      <table><thead><tr><th>Description</th><th>Qty</th><th>Unit Price (AED)</th><th>VAT</th><th>Line Total (AED)</th></tr></thead>
+      <tbody>${rows}</tbody></table>
+      <div class="totals">
+        <div><span>Subtotal</span><span>AED ${t.subtotal.toFixed(2)}</span></div>
+        <div><span>VAT</span><span>AED ${t.vat.toFixed(2)}</span></div>
+        <div class="grand"><span>Total</span><span>AED ${t.total.toFixed(2)}</span></div>
+      </div>
+      <div style="clear:both;"></div>
+      ${inv.notes ? '<p style="margin-top:40px;"><strong>Notes:</strong> ' + inv.notes + '</p>' : ''}
+      </body></html>
+    `);
+    win.document.close();
+    setTimeout(() => win.print(), 300);
+  }
+
+  document.getElementById('addItemBtn').addEventListener('click', () => {
+    items.push({ desc: '', qty: 1, price: 0, vatRate: 5 });
+    renderItems(); renderTotals(); renderChecklist();
+  });
+
+  document.getElementById('saveInvoiceBtn').addEventListener('click', () => {
+    const draft = currentDraftInvoice();
+    if (!draft.customerName) { alert('Please enter a customer name.'); return; }
+    Taxora.addInvoice(draft);
+    Taxora.state.profile.trn = draft.supplierTrn;
+    Taxora.save();
+    // reset form
+    items = [{ desc: '', qty: 1, price: 0, vatRate: 5 }];
+    document.getElementById('customerName').value = '';
+    document.getElementById('customerTrn').value = '';
+    document.getElementById('notes').value = '';
+    document.getElementById('invDate').value = new Date().toISOString().slice(0,10);
+    document.getElementById('nextInvNo').textContent = '#' + Taxora.state.nextInvoiceNo;
+    renderItems(); renderTotals(); renderChecklist(); renderSaved();
+  });
+
+  ['supplierTrn','customerName','customerTrn','invDate','notes'].forEach(id => {
+    document.getElementById(id).addEventListener('input', renderChecklist);
+  });
+
+  renderItems(); renderTotals(); renderChecklist(); renderSaved();
+</script>
+</body>
+</html>

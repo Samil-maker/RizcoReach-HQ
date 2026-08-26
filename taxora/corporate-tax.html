@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Corporate Tax · Taxora</title>
+<link rel="icon" href="data:," />
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+<style>
+  .toggle-row { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
+  .toggle-row input { width:auto; }
+  .result-banner { text-align:center; padding: 30px; border-radius: var(--radius); background: var(--panel-2); border: 1px solid var(--border); }
+  .result-banner .amt { font-family:'Playfair Display',serif; font-size:44px; font-weight:900; margin: 10px 0; color: var(--gold); }
+</style>
+</head>
+<body>
+<div class="app-shell">
+
+  <aside class="sidebar">
+    <a href="index.html" class="sidebar-brand">
+      <div class="mark">T</div>
+      <div class="name">Tax<span>ora</span></div>
+    </a>
+    <div class="nav-group-label">Workspace</div>
+    <a href="dashboard.html" class="nav-link"><span class="ic">▣</span> Dashboard</a>
+    <a href="invoices.html" class="nav-link"><span class="ic">▤</span> Invoices</a>
+    <a href="vat-return.html" class="nav-link"><span class="ic">◐</span> VAT Return</a>
+    <a href="corporate-tax.html" class="nav-link active"><span class="ic">◈</span> Corporate Tax</a>
+    <a href="assistant.html" class="nav-link"><span class="ic">✦</span> Compliance Assistant</a>
+    <div class="sidebar-foot"><strong style="color:#fff;">Demo mode</strong><br/>Data stored locally in your browser only.</div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div>
+        <button class="mobile-menu-btn btn btn-outline btn-sm" style="margin-bottom:10px;">☰ Menu</button>
+        <h1>Corporate Tax Estimator</h1>
+        <p class="sub">Estimate your UAE Corporate Tax position under the current federal regime.</p>
+      </div>
+    </div>
+
+    <div class="grid" style="grid-template-columns: 1fr 1fr; gap:20px;">
+      <div class="card">
+        <div class="card-head"><h3>Your figures</h3></div>
+        <div class="field">
+          <label>Annual taxable income (AED)</label>
+          <input id="income" type="number" placeholder="e.g. 500000" />
+          <p class="hint">Net profit for tax purposes, after allowable adjustments.</p>
+        </div>
+        <div class="field">
+          <label>Annual revenue (AED)</label>
+          <input id="revenue" type="number" placeholder="e.g. 1200000" />
+          <p class="hint">Used to check eligibility for Small Business Relief (≤ AED 3,000,000).</p>
+        </div>
+        <div class="toggle-row">
+          <input type="checkbox" id="fzToggle" style="width:18px;height:18px;" />
+          <label style="margin:0;">We are a Qualifying Free Zone Person (on qualifying income)</label>
+        </div>
+        <button class="btn btn-gold btn-block" id="calcBtn">Calculate estimate</button>
+
+        <div class="divider"></div>
+        <h3 style="font-size:15px; font-family:'Inter',sans-serif;">How the rate works</h3>
+        <ul>
+          <li class="checklist-item"><span class="dot pass">0%</span><span>Taxable income up to <strong>AED 375,000</strong></span></li>
+          <li class="checklist-item"><span class="dot fail">9%</span><span>Taxable income above <strong>AED 375,000</strong></span></li>
+          <li class="checklist-item"><span class="dot pass">0%</span><span>Qualifying income for <strong>Qualifying Free Zone Persons</strong></span></li>
+          <li class="checklist-item"><span class="dot pass">Relief</span><span><strong>Small Business Relief</strong> — elect nil taxable income if revenue ≤ AED 3,000,000</span></li>
+        </ul>
+      </div>
+
+      <div>
+        <div class="card result-banner" style="margin-bottom:20px;">
+          <div class="stat-label">Estimated Corporate Tax due</div>
+          <div class="amt" id="ctAmt">AED 0.00</div>
+          <p id="ctNote" class="text-muted" style="max-width:340px; margin:0 auto;"></p>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>Key deadlines</h3></div>
+          <ul id="ctDeadlines"></ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="disclaimer">
+      Figures are simplified estimates based on published UAE Corporate Tax rates and thresholds. They do not account for transfer pricing adjustments, tax groups, or sector-specific rules. Confirm your Financial Year and filing obligations with a registered tax agent or the FTA.
+    </div>
+  </main>
+</div>
+
+<script src="app.js"></script>
+<script>
+  Taxora.seedIfEmpty();
+
+  const incomeEl = document.getElementById('income');
+  const revenueEl = document.getElementById('revenue');
+  const fzEl = document.getElementById('fzToggle');
+
+  incomeEl.value = localStorage.getItem('taxora_ct_income') || '';
+  revenueEl.value = localStorage.getItem('taxora_ct_revenue') || '';
+  fzEl.checked = localStorage.getItem('taxora_ct_fz') === '1';
+
+  function calc() {
+    const income = Number(incomeEl.value) || 0;
+    const revenue = Number(revenueEl.value) || 0;
+    const fz = fzEl.checked;
+    localStorage.setItem('taxora_ct_income', income);
+    localStorage.setItem('taxora_ct_revenue', revenue);
+    localStorage.setItem('taxora_ct_fz', fz ? '1' : '0');
+
+    const result = Taxora.estimateCorporateTax(income, revenue, fz);
+    document.getElementById('ctAmt').textContent = Taxora.aed(result.tax);
+    document.getElementById('ctNote').textContent = result.note;
+  }
+
+  document.getElementById('calcBtn').addEventListener('click', calc);
+  if (incomeEl.value) calc();
+
+  const fyEnd = Taxora.state.profile.financialYearEnd || '12-31';
+  document.getElementById('ctDeadlines').innerHTML = `
+    <li class="checklist-item"><span class="dot pass">✓</span><span><strong>Corporate Tax return</strong> is due within 9 months of your financial year end (e.g. FY ending Dec 31 → return due by Sep 30 the following year).</span></li>
+    <li class="checklist-item"><span class="dot pass">✓</span><span><strong>Registration</strong> is required for nearly all UAE businesses and Free Zone entities, regardless of whether tax is ultimately due.</span></li>
+    <li class="checklist-item"><span class="dot fail">!</span><span>Your financial year end is currently set to <strong>${fyEnd}</strong> — update this in your profile as your business grows.</span></li>
+  `;
+</script>
+</body>
+</html>

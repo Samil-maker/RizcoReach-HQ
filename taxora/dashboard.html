@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Dashboard · Taxora</title>
+<link rel="icon" href="data:," />
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="app-shell">
+
+  <aside class="sidebar">
+    <a href="index.html" class="sidebar-brand">
+      <div class="mark">T</div>
+      <div class="name">Tax<span>ora</span></div>
+    </a>
+    <div class="nav-group-label">Workspace</div>
+    <a href="dashboard.html" class="nav-link active"><span class="ic">▣</span> Dashboard</a>
+    <a href="invoices.html" class="nav-link"><span class="ic">▤</span> Invoices</a>
+    <a href="vat-return.html" class="nav-link"><span class="ic">◐</span> VAT Return</a>
+    <a href="corporate-tax.html" class="nav-link"><span class="ic">◈</span> Corporate Tax</a>
+    <a href="assistant.html" class="nav-link"><span class="ic">✦</span> Compliance Assistant</a>
+    <div class="sidebar-foot">
+      <strong style="color:#fff;">Demo mode</strong><br/>
+      Data is stored only in your browser (localStorage) — nothing is sent to a server.
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div>
+        <button class="mobile-menu-btn btn btn-outline btn-sm" style="margin-bottom:10px;">☰ Menu</button>
+        <h1>Good to see you 👋</h1>
+        <p class="sub" id="profileLine">Loading your compliance snapshot…</p>
+      </div>
+      <a href="invoices.html" class="btn btn-gold">+ New Invoice</a>
+    </div>
+
+    <div class="grid grid-4" style="margin-bottom:22px;">
+      <div class="card stat-card">
+        <div class="stat-label">VAT Payable (this period)</div>
+        <div class="stat-value" id="statVatPayable">—</div>
+        <div class="stat-note" id="statVatNote">Based on invoices &amp; expenses logged</div>
+      </div>
+      <div class="card stat-card">
+        <div class="stat-label">Est. Corporate Tax (annualized)</div>
+        <div class="stat-value" id="statCt">—</div>
+        <div class="stat-note">Set your income on the Corporate Tax page</div>
+      </div>
+      <div class="card stat-card">
+        <div class="stat-label">Next VAT Deadline</div>
+        <div class="stat-value" id="statDeadline">—</div>
+        <div class="stat-note" id="statDeadlineNote"></div>
+      </div>
+      <div class="card stat-card">
+        <div class="stat-label">Invoice Compliance Score</div>
+        <div class="stat-value" id="statCompliance">—</div>
+        <div class="stat-note" id="statComplianceNote"></div>
+      </div>
+    </div>
+
+    <div class="grid grid-2">
+      <div class="card">
+        <div class="card-head">
+          <h3>Recent invoices</h3>
+          <a href="invoices.html" class="btn btn-outline btn-sm">View all</a>
+        </div>
+        <div class="table-wrap">
+          <table id="recentInvoicesTable">
+            <thead><tr><th>Invoice</th><th>Customer</th><th>Date</th><th class="text-right">Total</th><th>Status</th></tr></thead>
+            <tbody id="recentInvoicesBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3>Compliance readiness</h3></div>
+        <ul id="readinessList"></ul>
+        <div class="divider"></div>
+        <p style="font-size:13px;">Ask the assistant for guidance on any of these.</p>
+        <a href="assistant.html" class="btn btn-outline btn-sm">Open assistant →</a>
+      </div>
+    </div>
+
+    <div class="disclaimer">
+      Taxora is a demo compliance workspace for informational purposes only. It does not file returns with the UAE Federal Tax Authority (FTA) and is not a substitute for professional tax advice. Always verify figures and deadlines directly with the FTA or a registered tax agent.
+    </div>
+  </main>
+</div>
+
+<script src="app.js"></script>
+<script>
+  Taxora.seedIfEmpty();
+  const s = Taxora.state;
+
+  document.getElementById('profileLine').textContent =
+    `${s.profile.businessName} · TRN ${s.profile.trn || 'not set'} · ${s.profile.emirate}`;
+
+  // VAT payable
+  const vr = Taxora.vatReturnSummary();
+  document.getElementById('statVatPayable').textContent = Taxora.aed(Math.abs(vr.net));
+  document.getElementById('statVatNote').textContent = vr.net >= 0
+    ? `Payable to FTA · Output ${Taxora.aed(vr.outputVat)} − Input ${Taxora.aed(vr.inputVat)}`
+    : `Recoverable / refund position`;
+
+  // Corporate tax placeholder (uses last saved estimate if present)
+  const ctIncome = Number(localStorage.getItem('taxora_ct_income') || 0);
+  const ctRevenue = Number(localStorage.getItem('taxora_ct_revenue') || 0);
+  const ctFz = localStorage.getItem('taxora_ct_fz') === '1';
+  const ct = Taxora.estimateCorporateTax(ctIncome, ctRevenue, ctFz);
+  document.getElementById('statCt').textContent = Taxora.aed(ct.tax);
+
+  // Next deadline
+  const { periodEnd, due } = Taxora.nextVatDeadline();
+  const days = Taxora.daysUntil(due);
+  document.getElementById('statDeadline').textContent = due.toLocaleDateString('en-GB', { day:'2-digit', month:'short' });
+  const dEl = document.getElementById('statDeadlineNote');
+  dEl.textContent = `${days} day${days===1?'':'s'} left · period ends ${periodEnd.toLocaleDateString('en-GB',{day:'2-digit',month:'short'})}`;
+  dEl.className = 'stat-note ' + (days <= 7 ? 'bad' : days <= 21 ? 'warn' : 'good');
+
+  // Compliance score across invoices
+  const invoices = s.invoices;
+  let avgScore = 0;
+  if (invoices.length) {
+    avgScore = Math.round(invoices.reduce((sum, inv) => sum + Taxora.invoiceCompliance(inv).score, 0) / invoices.length);
+  }
+  document.getElementById('statCompliance').textContent = invoices.length ? avgScore + '%' : '—';
+  const cEl = document.getElementById('statComplianceNote');
+  cEl.textContent = invoices.length ? `${invoices.length} invoice${invoices.length===1?'':'s'} checked` : 'Create your first invoice';
+  cEl.className = 'stat-note ' + (avgScore === 100 ? 'good' : avgScore >= 60 ? 'warn' : 'bad');
+
+  // Recent invoices table
+  const tbody = document.getElementById('recentInvoicesBody');
+  if (!invoices.length) {
+    tbody.innerHTML = `<tr><td colspan="5" class="empty-state">No invoices yet. <a href="invoices.html" style="color:var(--gold)">Create one →</a></td></tr>`;
+  } else {
+    tbody.innerHTML = invoices.slice(0, 5).map(inv => {
+      const t = Taxora.invoiceTotals(inv.items);
+      const c = Taxora.invoiceCompliance(inv);
+      const badge = c.compliant ? '<span class="badge badge-good">Compliant</span>' : '<span class="badge badge-warn">Missing info</span>';
+      return `<tr>
+        <td>#${inv.number}</td>
+        <td>${inv.customerName || '—'}</td>
+        <td>${inv.date || '—'}</td>
+        <td class="text-right mono">${Taxora.aed(t.total)}</td>
+        <td>${badge}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  // Readiness checklist
+  const readiness = [
+    { label: 'TRN registered & saved to profile', pass: Taxora.isValidTRN(s.profile.trn) },
+    { label: 'At least one FTA-compliant invoice issued', pass: invoices.some(i => Taxora.invoiceCompliance(i).compliant) },
+    { label: 'Expenses logged for input VAT recovery', pass: s.expenses.length > 0 },
+    { label: 'Corporate tax position estimated', pass: !!localStorage.getItem('taxora_ct_income') },
+    { label: 'Ready for UAE e-invoicing mandate (2026 phase-in)', pass: false },
+  ];
+  document.getElementById('readinessList').innerHTML = readiness.map(r => `
+    <li class="checklist-item">
+      <span class="dot ${r.pass ? 'pass' : 'fail'}">${r.pass ? '✓' : '!'}</span>
+      <span>${r.label}</span>
+    </li>`).join('');
+</script>
+</body>
+</html>
