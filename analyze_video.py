@@ -13,7 +13,7 @@ import time
 
 from dotenv import load_dotenv
 from google import genai
-from google.genai import types
+from google.genai import errors, types
 
 # gemini-2.5-flash is no longer served to new API keys; 3.6-flash is the
 # migration target Google's API points at. Override with GEMINI_MODEL in .env.
@@ -46,6 +46,24 @@ def get_model() -> str:
     return os.getenv("GEMINI_MODEL") or DEFAULT_MODEL
 
 
+def _retry(call, what: str, attempts: int = 4):
+    """Run call(), retrying transient 5xx / rate-limit errors with backoff."""
+    for attempt in range(1, attempts + 1):
+        try:
+            return call()
+        except errors.APIError as exc:
+            transient = exc.code in (429, 500, 502, 503, 504)
+            if not transient or attempt == attempts:
+                raise
+            wait = 2 ** attempt
+            print(
+                f"  {what}: transient error {exc.code}, retrying in {wait}s "
+                f"({attempt}/{attempts - 1})",
+                file=sys.stderr,
+            )
+            time.sleep(wait)
+
+
 def upload_video(client: genai.Client, path: str) -> types.File:
     """Upload the video and block until Gemini has finished processing it."""
     if not os.path.isfile(path):
@@ -53,12 +71,12 @@ def upload_video(client: genai.Client, path: str) -> types.File:
 
     size_mb = os.path.getsize(path) / (1024 * 1024)
     print(f"Uploading {os.path.basename(path)} ({size_mb:.1f} MB)...", file=sys.stderr)
-    video = client.files.upload(file=path)
+    video = _retry(lambda: client.files.upload(file=path), "upload")
 
     while video.state.name == "PROCESSING":
         print("  processing...", file=sys.stderr)
         time.sleep(5)
-        video = client.files.get(name=video.name)
+        video = _retry(lambda: client.files.get(name=video.name), "poll")
 
     if video.state.name == "FAILED":
         sys.exit(f"Gemini failed to process the video: {video.state.name}")
@@ -68,9 +86,12 @@ def upload_video(client: genai.Client, path: str) -> types.File:
 
 
 def analyze(client: genai.Client, video: types.File, prompt: str, model: str) -> str:
-    response = client.models.generate_content(
-        model=model,
-        contents=[video, prompt],
+    response = _retry(
+        lambda: client.models.generate_content(
+            model=model,
+            contents=[video, prompt],
+        ),
+        "analyze",
     )
     return response.text
 
@@ -99,13 +120,22 @@ def main() -> None:
 
     client = get_client()
     model = args.model or get_model()
-    video = upload_video(client, args.video)
+
+    try:
+        video = upload_video(client, args.video)
+    except errors.APIError as exc:
+        sys.exit(f"Upload failed ({exc.code}): {exc.message}")
 
     try:
         print(analyze(client, video, args.prompt, model))
+    except errors.APIError as exc:
+        sys.exit(f"Analysis failed ({exc.code}): {exc.message}")
     finally:
         if not args.keep:
-            client.files.delete(name=video.name)
+            try:
+                client.files.delete(name=video.name)
+            except errors.APIError:
+                pass  # cleanup is best-effort; the file expires on its own
 
 
 if __name__ == "__main__":
