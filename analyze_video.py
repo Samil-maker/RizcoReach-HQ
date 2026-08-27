@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Send a video file to Gemini 2.5 Flash and print a description of what happens in it.
+"""Send a video file to Gemini and print a description of what happens in it.
 
 Usage:
     python3 analyze_video.py path/to/video.mp4
@@ -15,7 +15,9 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
-MODEL = "gemini-2.5-flash"
+# gemini-2.5-flash is no longer served to new API keys; 3.6-flash is the
+# migration target Google's API points at. Override with GEMINI_MODEL in .env.
+DEFAULT_MODEL = "gemini-3.6-flash"
 
 DEFAULT_PROMPT = (
     "Describe what is happening in this video. Cover the setting, the people or "
@@ -39,6 +41,11 @@ def get_client() -> genai.Client:
     return genai.Client(api_key=api_key)
 
 
+def get_model() -> str:
+    """Model id, overridable via GEMINI_MODEL in .env."""
+    return os.getenv("GEMINI_MODEL") or DEFAULT_MODEL
+
+
 def upload_video(client: genai.Client, path: str) -> types.File:
     """Upload the video and block until Gemini has finished processing it."""
     if not os.path.isfile(path):
@@ -60,9 +67,9 @@ def upload_video(client: genai.Client, path: str) -> types.File:
     return video
 
 
-def analyze(client: genai.Client, video: types.File, prompt: str) -> str:
+def analyze(client: genai.Client, video: types.File, prompt: str, model: str) -> str:
     response = client.models.generate_content(
-        model=MODEL,
+        model=model,
         contents=[video, prompt],
     )
     return response.text
@@ -70,13 +77,18 @@ def analyze(client: genai.Client, video: types.File, prompt: str) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Analyze a video with Gemini 2.5 Flash."
+        description="Analyze a video with Gemini."
     )
     parser.add_argument("video", help="Path to the video file (mp4, mov, webm, ...)")
     parser.add_argument(
         "--prompt",
         default=DEFAULT_PROMPT,
         help="Custom question to ask about the video",
+    )
+    parser.add_argument(
+        "--model",
+        default=None,
+        help=f"Model id to use (default: $GEMINI_MODEL or {DEFAULT_MODEL})",
     )
     parser.add_argument(
         "--keep",
@@ -86,10 +98,11 @@ def main() -> None:
     args = parser.parse_args()
 
     client = get_client()
+    model = args.model or get_model()
     video = upload_video(client, args.video)
 
     try:
-        print(analyze(client, video, args.prompt))
+        print(analyze(client, video, args.prompt, model))
     finally:
         if not args.keep:
             client.files.delete(name=video.name)
