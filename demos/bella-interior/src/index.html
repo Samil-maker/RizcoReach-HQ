@@ -1,0 +1,1178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Bella Interior | Design and build fit-out in Dubai</title>
+<meta name="description" content="Bella Interior LLC designs and builds boutique offices, restaurants and cafés, homes and shops in Dubai. One team from first drawing to handover, since 2008.">
+<meta name="theme-color" content="#E6DED4">
+<link rel="icon" type="image/png" href="asset:logo-b.png">
+<script>
+  // Decide on motion before first paint so nothing flashes.
+  if (!matchMedia('(prefers-reduced-motion: reduce)').matches) document.documentElement.classList.add('motion');
+</script>
+<style>
+@font-face { font-family: "Marcellus"; src: url(asset:marcellus.woff2) format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "Hanken Grotesk"; src: url(asset:hanken-grotesk.woff2) format("woff2"); font-weight: 400 600; font-display: swap; }
+
+:root {
+  /* Palette taken from Bella's own projects: lime plaster, travertine, walnut, oxblood velvet */
+  --plaster: #E6DED4;
+  --plaster-2: #DAD0C4;
+  --plaster-3: #CDBFAF;
+  --paper: #EFE9E1;
+  --stone: #B9A690;
+  --line: #7E6A5A;
+  --ink: #2A201B;
+  --ink-2: #5A4B42;
+  --walnut: #3A2A22;
+  --walnut-2: #4A372D;
+  --oxblood: #74332C;
+  --oxblood-2: #5C2722;
+  --on-dark: #EFE7DD;
+  --on-dark-2: #C4B6A8;
+  --rule: rgba(42, 32, 27, .16);
+  --rule-strong: rgba(42, 32, 27, .38);
+
+  --font-display: "Marcellus", "Iowan Old Style", "Times New Roman", serif;
+  --font-body: "Hanken Grotesk", -apple-system, system-ui, "Segoe UI", Roboto, sans-serif;
+
+  --gutter: clamp(20px, 5vw, 64px);
+  --maxw: 1320px;
+  --header-h: 72px;
+
+  --ease-out: cubic-bezier(.22, .8, .12, 1);
+  --ease-in: cubic-bezier(.55, 0, .8, .2);
+  --d-fast: 180ms;
+  --d-mid: 420ms;
+  --d-slow: 1150ms;
+
+  --logo: url(asset:logo-b.png);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; scroll-padding-top: calc(var(--header-h) + 16px); }
+body {
+  margin: 0;
+  background: var(--plaster);
+  color: var(--ink);
+  font: 400 17px/1.6 var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+img, svg { display: block; max-width: 100%; }
+h1, h2, h3 { font-family: var(--font-display); font-weight: 400; font-synthesis: none; margin: 0; text-wrap: balance; }
+p { text-wrap: pretty; }
+p { margin: 0; }
+.statement { text-wrap: balance; }
+a { color: inherit; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--oxblood); outline-offset: 3px; }
+.on-dark :focus-visible { outline-color: var(--on-dark); }
+[tabindex="-1"]:focus { outline: none; }
+
+.visually-hidden { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.skip-link { position: fixed; left: 12px; top: -60px; z-index: 100; background: var(--ink); color: var(--plaster); padding: 12px 16px; text-decoration: none; transition: top var(--d-fast); }
+.skip-link:focus { top: 12px; }
+
+.wrap { max-width: var(--maxw); margin-inline: auto; padding-inline: max(var(--gutter), env(safe-area-inset-left)); }
+.section { padding-block: clamp(80px, 11vw, 160px); }
+.on-dark { background: var(--walnut); color: var(--on-dark); }
+
+/* ---------- Type ---------- */
+.display { font-size: clamp(44px, 5.7vw, 88px); line-height: 1.02; letter-spacing: -.015em; }
+.display-2 { font-size: clamp(44px, 6.2vw, 92px); line-height: 1.04; letter-spacing: -.012em; }
+.h2 { font-size: clamp(34px, 4.6vw, 64px); line-height: 1.06; letter-spacing: -.01em; }
+.h3 { font-size: clamp(24px, 2.2vw, 30px); line-height: 1.15; }
+.lead { font-size: clamp(18px, 1.55vw, 21px); line-height: 1.55; color: var(--ink-2); max-width: 38ch; }
+.on-dark .lead, .on-dark .muted { color: var(--on-dark-2); }
+.muted { color: var(--ink-2); }
+.prose p { max-width: 62ch; }
+.prose p + p { margin-top: 1.1em; }
+.statement { font-family: var(--font-display); font-size: clamp(28px, 3.2vw, 44px); line-height: 1.22; max-width: 26ch; }
+
+.link { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 5px; text-decoration-color: var(--rule-strong); transition: color var(--d-fast), text-decoration-color var(--d-fast); }
+.link:hover { color: var(--oxblood); text-decoration-color: currentColor; }
+.on-dark .link { text-decoration-color: rgba(239, 231, 221, .4); }
+.on-dark .link:hover { color: #fff; }
+
+/* ---------- Buttons ---------- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+  min-height: 50px; padding: 0 24px; border: 0; border-radius: 2px;
+  font: 500 16px/1 var(--font-body); letter-spacing: .005em; text-decoration: none; cursor: pointer;
+  touch-action: manipulation;
+  transition: background-color var(--d-fast), color var(--d-fast), box-shadow var(--d-fast), transform var(--d-fast) var(--ease-out);
+}
+.btn:active { transform: scale(.98); }
+.btn-primary { background: var(--oxblood); color: #F7EFE7; }
+.btn-primary:hover { background: var(--oxblood-2); }
+.btn-quiet { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1px var(--rule-strong); }
+.btn-quiet:hover { background: var(--plaster-2); box-shadow: inset 0 0 0 1px var(--ink); }
+.on-dark .btn-quiet { color: var(--on-dark); box-shadow: inset 0 0 0 1px rgba(239, 231, 221, .45); }
+.on-dark .btn-quiet:hover { background: var(--walnut-2); box-shadow: inset 0 0 0 1px var(--on-dark); }
+.btn-sm { min-height: 44px; padding: 0 18px; font-size: 15px; }
+.btn[disabled] { opacity: .5; cursor: progress; }
+.actions { display: flex; flex-wrap: wrap; gap: 12px; }
+
+/* ---------- Logo ---------- */
+.logo-b {
+  display: inline-block; flex: none; aspect-ratio: 199 / 260; background: currentColor;
+  -webkit-mask: var(--logo) center / contain no-repeat; mask: var(--logo) center / contain no-repeat;
+}
+
+/* ---------- Header ---------- */
+.site-header {
+  position: sticky; top: 0; z-index: 50;
+  background: rgba(230, 222, 212, .9);
+  -webkit-backdrop-filter: saturate(1.2) blur(12px); backdrop-filter: saturate(1.2) blur(12px);
+  border-bottom: 1px solid transparent;
+  transition: border-color var(--d-mid);
+  padding-top: env(safe-area-inset-top);
+}
+.site-header.is-scrolled { border-bottom-color: var(--rule); }
+.header-inner { height: var(--header-h); display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+.brand { display: inline-flex; align-items: center; gap: 12px; text-decoration: none; color: var(--ink); min-height: 44px; }
+.brand .logo-b { height: 38px; }
+.brand-name { font-family: var(--font-display); font-size: 21px; letter-spacing: .01em; }
+.nav { display: none; align-items: center; gap: 34px; }
+.nav a:not(.btn) { text-decoration: none; font-size: 16px; padding-block: 10px; background: linear-gradient(currentColor, currentColor) 0 calc(100% - 4px) / 0 1px no-repeat; transition: background-size var(--d-mid) var(--ease-out), color var(--d-fast); }
+.nav a:not(.btn):hover, .nav a:not(.btn)[aria-current="page"] { background-size: 100% 1px; }
+.nav a:not(.btn)[aria-current="page"] { color: var(--oxblood); }
+.menu-btn { min-height: 44px; min-width: 44px; padding: 0 4px; background: none; border: 0; font-size: 16px; font-weight: 500; cursor: pointer; text-decoration: underline; text-underline-offset: 5px; text-decoration-color: var(--rule-strong); }
+@media (min-width: 920px) { .nav { display: flex; } .menu-btn { display: none; } }
+
+/* Mobile menu */
+.menu {
+  position: fixed; inset: 0; z-index: 45; background: var(--plaster);
+  padding: calc(var(--header-h) + env(safe-area-inset-top) + 24px) max(var(--gutter), env(safe-area-inset-left)) calc(32px + env(safe-area-inset-bottom));
+  display: flex; flex-direction: column; justify-content: space-between; gap: 40px; overflow-y: auto;
+  opacity: 0; transition: opacity 260ms var(--ease-out);
+}
+.menu.is-open { opacity: 1; }
+.menu[hidden] { display: none; }
+.menu-links { list-style: none; margin: 0; padding: 0; }
+.menu-links a { display: block; padding-block: 10px; font-family: var(--font-display); font-size: clamp(40px, 11vw, 60px); line-height: 1.1; text-decoration: none; }
+.menu-links a[aria-current="page"] { color: var(--oxblood); }
+.motion .menu-links li { transform: translateY(18px); opacity: 0; transition: transform 520ms var(--ease-out), opacity 520ms var(--ease-out); }
+.motion .menu.is-open .menu-links li { transform: none; opacity: 1; }
+.motion .menu.is-open .menu-links li:nth-child(2) { transition-delay: 40ms; }
+.motion .menu.is-open .menu-links li:nth-child(3) { transition-delay: 80ms; }
+.motion .menu.is-open .menu-links li:nth-child(4) { transition-delay: 120ms; }
+.motion .menu.is-open .menu-links li:nth-child(5) { transition-delay: 160ms; }
+.menu-foot { display: grid; gap: 6px; color: var(--ink-2); }
+body.menu-open { overflow: hidden; }
+body.menu-open .site-header { background: var(--plaster); }
+
+/* ---------- View transitions between pages ---------- */
+#main { min-height: 60vh; }
+.motion #main { transition: opacity var(--d-mid) var(--ease-out), transform var(--d-mid) var(--ease-out); }
+.motion #main.is-leaving { opacity: 0; transition-duration: 170ms; transition-timing-function: var(--ease-in); }
+.motion #main.is-entering { opacity: 0; transform: translateY(14px); transition: none; }
+
+/* ---------- Media (drawings now, photos later) ---------- */
+.media { position: relative; overflow: hidden; background: var(--plaster-2); }
+.media > svg, .media > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.media .art { position: absolute; inset: 0; }
+.media .art > svg, .media .art > img { width: 100%; height: 100%; object-fit: cover; }
+.ratio-43 { aspect-ratio: 4 / 3; }
+.ratio-34 { aspect-ratio: 3 / 4; }
+.ratio-45 { aspect-ratio: 4 / 5; }
+.ratio-169 { aspect-ratio: 16 / 9; }
+.ratio-32 { aspect-ratio: 3 / 2; }
+
+/* Drawing styles */
+.dr * { stroke: var(--line); stroke-width: 1.25; vector-effect: non-scaling-stroke; stroke-linecap: round; stroke-linejoin: round; }
+.dr .n { fill: none; }
+.dr .w { fill: #DDD3C7; }
+.dr .r { fill: #CFC3B4; }
+.dr .f { fill: #E8E1D8; }
+.dr .l { fill: #F2EDE6; }
+.dr .t { fill: #BDAA93; }
+.dr .s { fill: #5B4437; }
+.dr .a { fill: #7B3F36; }
+.dr .c { fill: #D3C8BA; }
+.dr .g { fill: none; stroke: #A08D7A; }
+.dr .h { fill: none; stroke: #C9BBAB; }
+
+/* Curtain reveal: a plaster panel that draws aside once the image is on screen */
+.curtain { display: none; }
+.motion .curtain { display: block; position: absolute; inset: 0; z-index: 2; background: var(--plaster-3); transform-origin: 100% 50%; transition: transform 1s var(--ease-out); }
+.motion .reveal .art { transform: scale(1.07); transition: transform 1.6s var(--ease-out); }
+.motion .reveal.is-in .curtain { transform: scaleX(0); }
+.motion .reveal.is-in .art { transform: none; }
+
+/* ---------- Hero ---------- */
+.hero { display: grid; gap: clamp(40px, 6vw, 80px); padding-block: clamp(28px, 6vw, 72px) clamp(72px, 9vw, 128px); align-items: end; }
+.hero h1 { max-width: 12ch; }
+@media (min-width: 900px) { .hero h1 { max-width: none; } }
+.hero .lead { margin: clamp(24px, 3vw, 36px) 0 clamp(28px, 3.4vw, 40px); }
+.hero-arch { margin: 0; width: min(100%, 470px); justify-self: center; }
+.arch-frame { position: relative; aspect-ratio: 3 / 4; overflow: hidden; clip-path: inset(0 round 999px 999px 0 0); background: var(--plaster-2); }
+.arch-frame .art { position: absolute; inset: 0; }
+.arch-frame svg, .arch-frame img { width: 100%; height: 100%; object-fit: cover; }
+.hero-arch figcaption { margin-top: 14px; font-size: 15px; color: var(--ink-2); }
+@media (min-width: 900px) {
+  .hero { grid-template-columns: minmax(0, 1.3fr) minmax(0, .7fr); }
+  .hero-arch { justify-self: end; }
+  .arch-frame { aspect-ratio: auto; height: min(74vh, 640px); min-height: 460px; }
+}
+.line { display: block; overflow: hidden; padding-bottom: .08em; margin-bottom: -.08em; }
+.line > span { display: block; }
+
+/* Hero load sequence: the arch's curtain lifts, the lines rise. The one orchestrated moment. */
+.motion .hero .line > span { transform: translateY(108%); transition: transform 1s var(--ease-out); }
+.motion .hero .line:nth-child(2) > span { transition-delay: 90ms; }
+.motion .hero .line:nth-child(3) > span { transition-delay: 180ms; }
+.motion .hero .fade { opacity: 0; transform: translateY(10px); transition: opacity .8s var(--ease-out) .5s, transform .8s var(--ease-out) .5s; }
+.motion .hero .arch-frame .curtain { transform-origin: 50% 0; transition: transform var(--d-slow) var(--ease-out) .15s; }
+.motion .hero .arch-frame .art { transform: scale(1.1); transition: transform 2s var(--ease-out) .15s; }
+.motion .hero .hero-arch figcaption { opacity: 0; transition: opacity .8s var(--ease-out) 1s; }
+.motion .hero.is-in .line > span, .motion .hero.is-in .fade { transform: none; opacity: 1; }
+.motion .hero.is-in .arch-frame .curtain { transform: scaleY(0); }
+.motion .hero.is-in .arch-frame .art { transform: none; }
+.motion .hero.is-in .hero-arch figcaption { opacity: 1; }
+
+/* ---------- Section heads ---------- */
+.sec-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 20px 40px; margin-bottom: clamp(36px, 5vw, 64px); }
+.sec-head .h2 { max-width: 16ch; }
+.sec-head .lead { margin-top: 18px; }
+
+/* ---------- Sectors list ---------- */
+.sectors { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--rule); }
+.sectors a { display: grid; gap: 8px; padding-block: clamp(24px, 3vw, 36px); border-bottom: 1px solid var(--rule); text-decoration: none; }
+.sector-name { font-family: var(--font-display); font-size: clamp(32px, 3.8vw, 52px); line-height: 1.08; transition: color var(--d-fast); }
+.sector-desc { color: var(--ink-2); max-width: 44ch; }
+.sector-more { font-size: 15px; text-decoration: underline; text-underline-offset: 5px; text-decoration-color: var(--rule-strong); white-space: nowrap; }
+.sectors a:hover .sector-name { color: var(--oxblood); }
+@media (min-width: 820px) {
+  .sectors a { grid-template-columns: minmax(0, 5fr) minmax(0, 6fr) auto; align-items: baseline; gap: 40px; }
+}
+
+/* ---------- Project cards ---------- */
+.pgrid { display: grid; gap: clamp(48px, 6vw, 88px) clamp(20px, 3vw, 40px); }
+.card a { display: block; text-decoration: none; }
+.card-meta { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 16px; margin-top: 18px; }
+.card-name { font-family: var(--font-display); font-size: clamp(24px, 2.2vw, 30px); line-height: 1.15; }
+.card-sector { font-size: 15px; color: var(--ink-2); white-space: nowrap; }
+.card-sum { margin-top: 6px; color: var(--ink-2); max-width: 44ch; }
+@media (hover: hover) {
+  .card .media .art > * { transition: transform .9s var(--ease-out); }
+  .card a:hover .media .art > * { transform: scale(1.035); }
+  .card a:hover .card-name { color: var(--oxblood); }
+}
+@media (min-width: 820px) {
+  .pgrid { grid-template-columns: repeat(12, minmax(0, 1fr)); }
+  .pgrid > .card:nth-child(4n+1) { grid-column: 1 / span 7; }
+  .pgrid > .card:nth-child(4n+2) { grid-column: 9 / span 4; margin-top: clamp(80px, 10vw, 160px); }
+  .pgrid > .card:nth-child(4n+3) { grid-column: 2 / span 5; }
+  .pgrid > .card:nth-child(4n+4) { grid-column: 8 / span 5; margin-top: clamp(100px, 12vw, 200px); }
+}
+.empty { padding: 48px 0; border-top: 1px solid var(--rule); }
+.empty p { margin-bottom: 20px; }
+
+/* ---------- Process ---------- */
+.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 36px; }
+.steps li { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 4px 16px; align-content: start; }
+.step-no { font-family: var(--font-display); font-size: 40px; line-height: 1; color: var(--on-dark-2); grid-row: span 2; }
+.step-title { font-family: var(--font-display); font-size: 25px; line-height: 1.2; }
+.step-text { color: var(--on-dark-2); max-width: 36ch; }
+@media (min-width: 1000px) {
+  .steps { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 28px; }
+  .steps li { grid-template-columns: 1fr; padding-top: 28px; border-top: 1px solid rgba(239, 231, 221, .22); }
+  .step-no { grid-row: auto; margin-bottom: 24px; }
+}
+
+/* ---------- Studio teaser / split ---------- */
+.split { display: grid; gap: clamp(40px, 6vw, 96px); align-items: center; }
+.split .statement + p { margin-top: 28px; }
+.small-arch { width: min(100%, 380px); }
+.small-arch .arch-frame { aspect-ratio: 3 / 4; height: auto; min-height: 0; }
+@media (min-width: 900px) { .split { grid-template-columns: minmax(0, 1.25fr) minmax(0, .75fr); } .small-arch { justify-self: end; } }
+
+/* ---------- CTA ---------- */
+.cta { display: grid; gap: 28px; }
+.cta .h2 { max-width: 14ch; }
+.cta .lead { max-width: 44ch; }
+@media (min-width: 900px) { .cta { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: end; } .cta-side { display: grid; gap: 28px; } }
+
+/* ---------- Page heads ---------- */
+.page-head { padding-block: clamp(40px, 7vw, 104px) clamp(36px, 5vw, 64px); }
+.page-head .lead { margin-top: clamp(20px, 2.4vw, 32px); }
+.back { display: inline-flex; align-items: center; min-height: 44px; margin-bottom: 20px; font-size: 15px; }
+
+/* ---------- Filters ---------- */
+.filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: clamp(40px, 5vw, 64px); }
+.chip { min-height: 44px; padding: 0 18px; border-radius: 999px; border: 1px solid var(--rule-strong); background: transparent; font-size: 15px; cursor: pointer; touch-action: manipulation; transition: background-color var(--d-fast), color var(--d-fast), border-color var(--d-fast); }
+.chip:hover { border-color: var(--ink); }
+.chip[aria-pressed="true"] { background: var(--ink); color: var(--plaster); border-color: var(--ink); }
+.chip .count { color: inherit; opacity: .65; margin-left: 4px; font-variant-numeric: tabular-nums; }
+
+/* ---------- Project detail ---------- */
+.facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 20px; margin: clamp(36px, 5vw, 56px) 0 0; padding-top: 28px; border-top: 1px solid var(--rule); }
+.facts dt { font-size: 15px; color: var(--ink-2); }
+.facts dd { margin: 4px 0 0; font-family: var(--font-display); font-size: 22px; line-height: 1.2; }
+@media (min-width: 820px) { .facts { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+.about { display: grid; gap: 24px; }
+@media (min-width: 900px) { .about { grid-template-columns: minmax(0, 4fr) minmax(0, 7fr); gap: 64px; } }
+.gallery { display: grid; gap: clamp(20px, 3vw, 40px); margin-top: clamp(56px, 7vw, 104px); }
+@media (min-width: 760px) { .gallery { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .gallery > :nth-child(2) { margin-top: clamp(60px, 8vw, 140px); } }
+.next { display: block; text-decoration: none; padding-block: clamp(48px, 7vw, 96px); border-top: 1px solid var(--rule); }
+.next .muted { font-size: 15px; }
+.next .display-2 { margin-top: 8px; transition: color var(--d-fast); }
+.next:hover .display-2 { color: var(--oxblood); }
+
+/* ---------- Services ---------- */
+.sector-blocks { display: grid; gap: 0 clamp(24px, 4vw, 64px); }
+.sector-block { padding-block: 32px 40px; border-top: 1px solid var(--rule); }
+.sector-block p { margin-top: 12px; color: var(--ink-2); max-width: 46ch; }
+.sector-block ul { margin: 18px 0 0; padding-left: 1.1em; color: var(--ink); }
+.sector-block li + li { margin-top: 4px; }
+@media (min-width: 820px) { .sector-blocks { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.included { display: grid; gap: 40px clamp(24px, 4vw, 56px); }
+.included h3 { font-size: 24px; }
+.included p { margin-top: 10px; color: var(--ink-2); max-width: 38ch; }
+@media (min-width: 700px) { .included { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1040px) { .included { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+/* ---------- Studio ---------- */
+.principles { display: grid; gap: 40px; }
+.principles h3 { font-size: 26px; }
+.principles p { margin-top: 12px; color: var(--ink-2); max-width: 40ch; }
+@media (min-width: 900px) { .principles { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 48px; } }
+.keyfacts { display: grid; gap: 24px; margin: 0; }
+.keyfacts dt { font-size: 15px; color: var(--ink-2); }
+.keyfacts dd { margin: 4px 0 0; font-family: var(--font-display); font-size: 24px; line-height: 1.25; }
+
+/* ---------- Contact ---------- */
+.contact-grid { display: grid; gap: clamp(56px, 7vw, 96px); padding-bottom: clamp(80px, 10vw, 140px); }
+@media (min-width: 960px) { .contact-grid { grid-template-columns: minmax(0, 7fr) minmax(0, 4fr); } }
+.form { display: grid; gap: 22px; }
+.form-row { display: grid; gap: 22px; }
+@media (min-width: 640px) { .form-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+.field { display: grid; gap: 8px; align-content: start; }
+.field label { font-weight: 500; font-size: 16px; }
+.field .req { color: var(--oxblood); }
+.field .hint { font-size: 14px; color: var(--ink-2); }
+.input {
+  width: 100%; min-height: 52px; padding: 12px 14px; border-radius: 2px;
+  border: 1px solid var(--rule-strong); background: var(--paper); color: var(--ink);
+  font: 400 17px/1.4 var(--font-body); -webkit-appearance: none; appearance: none;
+  transition: border-color var(--d-fast), box-shadow var(--d-fast);
+}
+textarea.input { min-height: 140px; resize: vertical; }
+select.input { padding-right: 40px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%232A201B' stroke-width='1.5'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 16px center; }
+.input:hover { border-color: var(--ink-2); }
+.input:focus { outline: none; border-color: var(--ink); box-shadow: 0 0 0 2px var(--oxblood); }
+.input[aria-invalid="true"] { border-color: #8E2A1F; }
+.error { font-size: 15px; color: #8E2A1F; display: flex; gap: 6px; align-items: baseline; }
+.error[hidden] { display: none; }
+.error-summary { padding: 18px 20px; border: 1px solid #8E2A1F; background: #F1E3DC; }
+.error-summary h2 { font-family: var(--font-body); font-weight: 600; font-size: 17px; }
+.error-summary ul { margin: 8px 0 0; padding-left: 1.1em; }
+.form-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 16px 24px; margin-top: 6px; }
+.form-foot p { font-size: 15px; color: var(--ink-2); max-width: 36ch; }
+.success { padding: clamp(28px, 4vw, 44px); background: var(--paper); border-top: 3px solid var(--oxblood); }
+.success h2 { font-size: clamp(30px, 3.4vw, 42px); }
+.success p { margin-top: 14px; color: var(--ink-2); max-width: 44ch; }
+.success .actions { margin-top: 28px; }
+.motion .success { animation: rise .6s var(--ease-out); }
+@keyframes rise { from { opacity: 0; transform: translateY(10px); } }
+.direct { display: grid; gap: 28px; align-content: start; }
+.direct dl { margin: 0; display: grid; gap: 22px; }
+.direct dt { font-size: 15px; color: var(--ink-2); }
+.direct dd { margin: 4px 0 0; font-size: 19px; }
+.direct dd a { text-decoration: none; display: inline-block; min-height: 32px; }
+.direct dd a:hover { color: var(--oxblood); text-decoration: underline; text-underline-offset: 5px; }
+
+/* ---------- Footer ---------- */
+.site-footer { padding-block: clamp(64px, 8vw, 112px) calc(32px + env(safe-area-inset-bottom)); }
+.foot-grid { display: grid; gap: 44px 32px; }
+.foot-brand .logo-b { height: 84px; color: var(--on-dark); }
+.foot-brand p { margin-top: 20px; color: var(--on-dark-2); max-width: 30ch; }
+.foot-col h2 { font-family: var(--font-body); font-weight: 500; font-size: 15px; color: var(--on-dark-2); margin-bottom: 12px; }
+.foot-col ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.foot-col a { text-decoration: none; display: inline-block; padding-block: 3px; }
+.foot-col a:hover { text-decoration: underline; text-underline-offset: 5px; }
+.foot-base { margin-top: clamp(56px, 7vw, 96px); padding-top: 24px; border-top: 1px solid rgba(239, 231, 221, .18); display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; font-size: 14px; color: var(--on-dark-2); }
+@media (min-width: 700px) { .foot-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1040px) { .foot-grid { grid-template-columns: minmax(0, 1.6fr) repeat(3, minmax(0, 1fr)); } }
+
+/* ---------- WhatsApp shortcut ---------- */
+.wa {
+  position: fixed; z-index: 40; right: max(16px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom));
+  width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--walnut); color: var(--on-dark); box-shadow: 0 6px 18px rgba(42, 32, 27, .22);
+  transition: transform var(--d-fast) var(--ease-out), background-color var(--d-fast);
+}
+.wa:hover { background: var(--oxblood); }
+.wa:active { transform: scale(.94); }
+.wa svg { width: 26px; height: 26px; }
+body.menu-open .wa { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; scroll-behavior: auto !important; }
+}
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="site-header" id="top">
+  <div class="wrap header-inner">
+    <a class="brand" href="#/" aria-label="Bella Interior, home">
+      <span class="logo-b" aria-hidden="true"></span>
+      <span class="brand-name">Bella Interior</span>
+    </a>
+    <nav class="nav" aria-label="Main">
+      <a href="#/projects" data-nav="projects">Projects</a>
+      <a href="#/services" data-nav="services">Services</a>
+      <a href="#/studio" data-nav="studio">Studio</a>
+      <a class="btn btn-primary btn-sm" href="#/contact" data-nav="contact">Start a project</a>
+    </nav>
+    <button class="menu-btn" type="button" aria-expanded="false" aria-controls="menu">Menu</button>
+  </div>
+</header>
+
+<div class="menu" id="menu" hidden>
+  <nav aria-label="Menu">
+    <ul class="menu-links">
+      <li><a href="#/" data-nav="home">Home</a></li>
+      <li><a href="#/projects" data-nav="projects">Projects</a></li>
+      <li><a href="#/services" data-nav="services">Services</a></li>
+      <li><a href="#/studio" data-nav="studio">Studio</a></li>
+      <li><a href="#/contact" data-nav="contact">Start a project</a></li>
+    </ul>
+  </nav>
+  <div class="menu-foot" data-slot="menu-contact"></div>
+</div>
+
+<main id="main" tabindex="-1"></main>
+
+<footer class="site-footer on-dark">
+  <div class="wrap">
+    <div class="foot-grid" data-slot="footer"></div>
+    <div class="foot-base">
+      <span>© <span data-year></span> Bella Interior LLC. Dubai, United Arab Emirates.</span>
+      <a class="link" href="#top">Back to top</a>
+    </div>
+  </div>
+</footer>
+
+<a class="wa" data-slot="wa" target="_blank" rel="noopener" aria-label="Chat with Bella Interior on WhatsApp">
+  <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12.04 2a9.9 9.9 0 0 0-8.5 14.96L2 22l5.2-1.5A9.9 9.9 0 1 0 12.04 2Zm0 18.1a8.2 8.2 0 0 1-4.2-1.15l-.3-.18-3.08.9.9-3-.2-.31a8.2 8.2 0 1 1 6.88 3.74Zm4.5-6.14c-.25-.12-1.46-.72-1.69-.8-.23-.08-.39-.12-.55.12-.17.25-.64.8-.78.97-.14.16-.29.18-.53.06a6.7 6.7 0 0 1-3.32-2.9c-.25-.43.25-.4.72-1.33.08-.16.04-.3-.02-.43-.06-.12-.55-1.33-.76-1.82-.2-.48-.4-.41-.55-.42h-.47a.9.9 0 0 0-.65.3 2.74 2.74 0 0 0-.86 2.04c0 1.2.88 2.37 1 2.53.12.17 1.73 2.64 4.2 3.7 1.56.67 2.17.73 2.95.62.48-.07 1.46-.6 1.67-1.18.2-.58.2-1.07.14-1.18-.06-.1-.22-.17-.47-.28Z"/></svg>
+</a>
+
+<script>
+(() => {
+'use strict';
+
+/* =====================================================================
+   CONTENT — edit here. Everything marked PLACEHOLDER needs Bella's real info.
+   To use a real photo for a project, add  photo: 'asset:<file name>'
+   (file in src/assets/, gallery: [...] for the two detail shots) and run build.py.
+   ===================================================================== */
+const CONTACT = {
+  phone: '+971 4 000 0000',            // PLACEHOLDER
+  whatsapp: '+971 50 000 0000',        // PLACEHOLDER
+  email: 'hello@bellainterior.ae',     // PLACEHOLDER
+  instagram: 'bella.interior.ae',
+  hours: 'Monday to Saturday, 9am to 6pm', // PLACEHOLDER
+  address: 'Dubai, United Arab Emirates'   // PLACEHOLDER: street / building
+};
+
+const SECTORS = [
+  { id: 'offices', name: 'Boutique offices', short: 'Offices',
+    desc: 'Workspaces for small teams and headquarters, with reception, meeting rooms, private offices and pantries.',
+    typical: ['Reception and waiting areas', 'Glazed meeting rooms', 'Open-plan desks and private offices', 'Pantries and breakout space'] },
+  { id: 'fnb', name: 'F&B', short: 'F&B',
+    desc: 'Cafés, restaurants and bakeries, from the kitchen layout and seating plan to the counter guests queue at.',
+    typical: ['Front-of-house seating and bars', 'Counters and display', 'Kitchen layouts with your operator', 'Washrooms and back-of-house'] },
+  { id: 'residences', name: 'Residences', short: 'Residences',
+    desc: 'Villas and apartments: kitchens, living rooms, bedrooms and full renovations.',
+    typical: ['Full villa and apartment renovations', 'Kitchens and dressing rooms', 'Custom joinery and wardrobes', 'Lighting and ceiling design'] },
+  { id: 'retail', name: 'Retail', short: 'Retail',
+    desc: 'Boutiques and showrooms where display, lighting and fitting rooms are planned around what you sell.',
+    typical: ['Boutiques and flagship stores', 'Display joinery and rails', 'Fitting rooms and stockrooms', 'Mall approvals and fit-out'] }
+];
+
+// PLACEHOLDER project details (names apart from Elyah, sizes, durations, write-ups).
+const PROJECTS = [
+  { slug: 'elyah', name: 'Elyah', sector: 'retail', scene: 'arches',
+    summary: 'A womenswear boutique where lime plaster arches frame each rail.',
+    size: '1,900 sq ft', duration: '9 weeks', scope: 'Design and build',
+    body: ['Elyah wanted a shop that felt calm enough to linger in. We set each collection inside its own plaster arch, kept the floor in pale marble and let a single plinth anchor the middle of the room.',
+           'The rails, lighting and arches were drawn together, so every piece hangs under the same warm, even light. Fitting rooms sit behind the last arch, out of sight of the entrance.'] },
+  { slug: 'womenswear-boutique', name: 'Womenswear boutique', sector: 'retail', scene: 'curtain',
+    summary: 'Deep curtains and a hand-tiled plinth for a fashion label.',
+    size: '1,400 sq ft', duration: '8 weeks', scope: 'Design and build',
+    body: ['The brief was a boutique that could change its mood with each collection. Floor-to-ceiling curtains soften the shell and can close off the fitting area in seconds.',
+           'At the centre, a plinth clad in hand-made tiles holds the hero piece of the season, with a sculptural chair behind it for clients who stay a while.'] },
+  { slug: 'all-day-cafe', name: 'All-day café', sector: 'fnb', scene: 'cafe',
+    summary: 'Walnut panelling, a long velvet banquette and low pendant light.',
+    size: '2,200 sq ft', duration: '12 weeks', scope: 'Design and build',
+    body: ['An all-day café has to work at 8am and at 10pm. We used walnut panelling to hold the room together and a single long banquette so the space feels full even when it is quiet.',
+           'Pendants hang low over every table to keep the light on the food, and the kitchen pass was planned with the operator so service runs in a straight line.'] },
+  { slug: 'boutique-office', name: 'Boutique office', sector: 'offices', scene: 'office',
+    summary: 'A small headquarters with a glazed meeting room and a library wall.',
+    size: '3,000 sq ft', duration: '10 weeks', scope: 'Fit-out',
+    body: ['A growing team needed an office that clients would enjoy visiting. A full-height library wall gives the entrance something to look at, and a glazed meeting room keeps daylight moving through the plan.',
+           'Joinery, acoustic ceilings and lighting were installed while the team kept working from the floor below, with a weekly walk-through so nothing was a surprise.'] },
+  { slug: 'family-villa', name: 'Family villa', sector: 'residences', scene: 'villa',
+    summary: 'A living room opened up to the garden, with sheer curtains and soft stone.',
+    size: '2,600 sq ft', duration: '14 weeks', scope: 'Design and build',
+    body: ['The family wanted their living room to feel part of the garden. We widened the opening to the terrace, added sheer curtains for the afternoon sun and kept the palette to plaster, stone and oak.',
+           'A low, deep sofa faces the view rather than the television, and a travertine table sits at the centre of the room where everyone gathers.'] }
+];
+
+const STEPS = [
+  ['Brief and site visit', 'We visit the space, take measurements and talk through how you will use it, your budget and your opening date.'],
+  ['Concept and estimate', 'You get a layout, a material palette and a clear estimate before any work starts.'],
+  ['Drawings and approvals', 'We prepare the technical drawings and handle landlord, mall and authority approvals.'],
+  ['Fit-out', 'Our site team builds it: partitions, joinery, ceilings, flooring, lighting and MEP works, managed day to day.'],
+  ['Handover', 'We walk you through the finished space, hand over the documents and stay on call after opening.']
+];
+
+/* =====================================================================
+   DRAWINGS — fine-line elevations used until real photos arrive
+   ===================================================================== */
+const el = (tag, cls, attrs) => `<${tag} class="${cls}" ${attrs}/>`;
+const R = (x, y, w, h, cls, rx = 0) => el('rect', cls, `x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}"`);
+const L = (x1, y1, x2, y2, cls = 'n') => el('line', cls, `x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"`);
+const P = (d, cls) => el('path', cls, `d="${d}"`);
+const E = (cx, cy, rx, ry, cls) => el('ellipse', cls, `cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}"`);
+
+function rng(seed) { return () => (seed = (seed * 16807) % 2147483647) / 2147483647; }
+
+function base(wall = 'w') {
+  let o = R(0, 0, 1200, 760, wall) + R(0, 760, 1200, 140, 'f');
+  for (let x = -600; x <= 1800; x += 150) o += L(x, 760, 600 + (x - 600) * 1.55, 900, 'h');
+  [784, 818, 862].forEach(y => { o += L(0, y, 1200, y, 'h'); });
+  o += L(0, 760, 1200, 760) + L(0, 64, 1200, 64) + L(0, 72, 1200, 72, 'g');
+  return o;
+}
+function garment(x, top, len, cls) {
+  return L(x, top - 14, x, top) + P(`M${x - 15} ${top + 7} L${x} ${top} L${x + 15} ${top + 7} L${x + 20} ${top + len} L${x - 20} ${top + len} Z`, cls);
+}
+function rail(x1, x2, y, count, seed, palette) {
+  const r = rng(seed); let o = L(x1, y, x2, y) + L(x1, y, x1, y - 40) + L(x2, y, x2, y - 40);
+  const step = (x2 - x1 - 40) / (count - 1);
+  for (let i = 0; i < count; i++) o += garment(x1 + 20 + i * step, y + 2, 170 + r() * 90, palette[i % palette.length]);
+  return o;
+}
+function folds(x0, x1, y0, y1, cls, step = 22) {
+  let o = R(x0, y0, x1 - x0, y1 - y0, cls);
+  for (let x = x0 + step / 2; x < x1; x += step) {
+    const h = y1 - y0;
+    o += P(`M${x} ${y0} C${x + 7} ${y0 + h * .33} ${x - 7} ${y0 + h * .66} ${x} ${y1}`, 'g');
+  }
+  return o;
+}
+function pendant(x, len, w) {
+  return L(x, 0, x, len) + P(`M${x - w / 2} ${len + 34} Q${x - w / 2} ${len} ${x} ${len} Q${x + w / 2} ${len} ${x + w / 2} ${len + 34} Z`, 's') + E(x, len + 40, w * .42, 5, 'l');
+}
+function palm(x, ground) {
+  let o = P(`M${x - 50} ${ground - 120} H${x + 50} L${x + 40} ${ground} H${x - 40} Z`, 't');
+  const top = ground - 120;
+  [[-170, -260], [-120, -330], [-40, -370], [50, -360], [130, -310], [175, -230], [-70, -200], [90, -190]].forEach(([dx, dy], i) => {
+    const ex = x + dx, ey = top + dy, cx = x + dx * .3, cy = top + dy * .9;
+    o += P(`M${x} ${top} Q${cx} ${cy} ${ex} ${ey}`, 'n');
+    for (let t = .35; t < 1; t += .13) {
+      const px = (1 - t) * (1 - t) * x + 2 * (1 - t) * t * cx + t * t * ex;
+      const py = (1 - t) * (1 - t) * top + 2 * (1 - t) * t * cy + t * t * ey;
+      const s = 26 * (1 - t * .6);
+      o += L(px, py, px + (i % 2 ? s : -s) * .6, py + s * .7, 'g');
+    }
+  });
+  return o;
+}
+function tree(x, ground, h = 420) {
+  let o = P(`M${x - 46} ${ground - 96} H${x + 46} L${x + 38} ${ground} H${x - 38} Z`, 't');
+  o += P(`M${x} ${ground - 96} C${x - 6} ${ground - h * .5} ${x + 10} ${ground - h * .7} ${x} ${ground - h * .85}`, 'n');
+  const r = rng(x);
+  for (let i = 0; i < 9; i++) {
+    const a = r() * Math.PI * 2, d = 20 + r() * 70;
+    o += E(x + Math.cos(a) * d, ground - h + Math.sin(a) * d * .7, 34 + r() * 22, 26 + r() * 16, 'c');
+  }
+  return o;
+}
+
+const SCENES = {
+  arches() {
+    let o = base('w');
+    const tones = [['t', 'l', 's', 'c', 'a'], ['c', 's', 'l', 't', 'l'], ['l', 'a', 't', 'c', 's']];
+    [250, 600, 950].forEach((cx, i) => {
+      const r = 130, top = 210, a = cx - r, b = cx + r;
+      o += P(`M${a} 760 V${top + r} A${r} ${r} 0 0 1 ${b} ${top + r} V760 Z`, 'r');
+      o += P(`M${a + 16} 760 V${top + r} A${r - 16} ${r - 16} 0 0 1 ${b - 16} ${top + r} V760`, 'g');
+      o += rail(a + 30, b - 30, 372, 5, 11 + i * 7, tones[i]);
+      o += E(cx, 96, 66, 6, 'l');
+    });
+    o += P('M520 642 Q520 628 540 628 H660 Q680 628 680 642 V760 H520 Z', 't');
+    o += L(520, 650, 680, 650, 'g');
+    o += P('M585 628 Q570 590 592 566 Q600 556 608 566 Q630 590 615 628 Z', 's');
+    return o;
+  },
+  curtain() {
+    let o = base('w');
+    o += folds(56, 330, 72, 760, 'a') + folds(870, 1144, 72, 760, 'a');
+    o += L(40, 72, 1160, 72);
+    o += E(600, 290, 30, 30, 'l') + P('M588 292 H612 A12 12 0 1 0 607 301', 'n');
+    o += rail(360, 500, 370, 4, 5, ['l', 't', 'c', 's']) + rail(700, 840, 370, 4, 9, ['c', 's', 'l', 't']);
+    o += P('M536 640 V572 Q536 532 576 532 H624 Q664 532 664 572 V640 Z', 'l');
+    o += R(530, 612, 140, 148, 's');
+    for (let x = 550; x < 670; x += 20) o += L(x, 612, x, 760, 'g');
+    for (let y = 632; y < 760; y += 20) o += L(530, y, 670, y, 'g');
+    o += E(420, 92, 40, 5, 'l') + E(780, 92, 40, 5, 'l');
+    return o;
+  },
+  cafe() {
+    let o = base('w');
+    o += R(0, 430, 1200, 330, 's');
+    for (let x = 100; x < 1200; x += 100) o += L(x, 430, x, 760, 'g');
+    o += L(0, 444, 1200, 444, 'g');
+    o += R(430, 170, 240, 190, 't') + P('M480 360 V282 A70 70 0 0 1 620 282 V360 Z', 'l');
+    o += P('M96 612 V522 Q96 492 126 492 H874 Q904 492 904 522 V612 Z', 'a');
+    for (let x = 136; x < 880; x += 40) o += L(x, 498, x, 608, 'g');
+    o += R(86, 612, 828, 40, 'a', 6) + R(96, 652, 808, 108, 't');
+    [240, 500, 760].forEach(x => {
+      o += pendant(x, 300, 72);
+      o += L(x, 680, x, 752) + E(x, 755, 30, 5, 's') + E(x, 674, 72, 9, 'l');
+    });
+    o += palm(1065, 760);
+    return o;
+  },
+  office() {
+    let o = base('w');
+    o += R(70, 140, 310, 620, 'r');
+    o += L(225, 140, 225, 760);
+    const r = rng(42);
+    [240, 340, 440, 540, 640].forEach(y => {
+      o += L(70, y, 380, y);
+      [[80, 215], [235, 370]].forEach(([s, e]) => {
+        let x = s + r() * 20;
+        while (x < e - 30) {
+          if (r() < .18) { o += E(x + 16, y - 18, 14, 18, 't'); x += 40; continue; }
+          const w = 9 + r() * 9, h = 52 + r() * 30;
+          o += R(x, y - h, w, h, r() < .5 ? 'c' : (r() < .5 ? 't' : 'l'));
+          x += w + 1;
+        }
+      });
+    });
+    o += R(985, 110, 215, 650, 'l');
+    [1055, 1125].forEach(x => { o += L(x, 110, x, 760); });
+    o += L(985, 220, 1200, 220) + L(1040, 470, 1040, 520);
+    o += L(560, 0, 560, 246) + L(880, 0, 880, 246) + R(512, 246, 416, 10, 's', 3);
+    o += R(560, 470, 108, 104, 't', 22) + R(772, 470, 108, 104, 't', 22);
+    o += R(456, 558, 508, 18, 's', 2) + R(478, 576, 18, 184, 's') + R(924, 576, 18, 184, 's');
+    o += P('M600 558 L612 524 H676 L684 558 Z', 'l');
+    o += L(890, 558, 890, 502) + L(890, 502, 860, 476) + P('M840 488 Q846 462 870 466 Q884 470 878 492 Z', 's');
+    return o;
+  },
+  villa() {
+    let o = base('w');
+    o += R(380, 120, 640, 530, 'l');
+    [593, 806].forEach(x => { o += L(x, 120, x, 650); });
+    o += L(380, 236, 1020, 236) + L(370, 650, 1030, 650);
+    o += L(280, 96, 1120, 96);
+    o += folds(296, 412, 96, 760, 'c', 18) + folds(988, 1104, 96, 760, 'c', 18);
+    o += P('M280 772 H1010 L1090 870 H200 Z', 'c');
+    o += P('M330 652 V604 Q330 572 362 572 H988 Q1020 572 1020 604 V652 Z', 't');
+    o += R(380, 590, 110, 70, 'l', 18) + R(870, 590, 110, 70, 'l', 18);
+    o += R(316, 652, 718, 54, 't', 14) + R(340, 706, 670, 12, 's');
+    o += L(360, 718, 360, 742) + L(990, 718, 990, 742);
+    o += R(560, 716, 230, 38, 'l', 19) + R(630, 754, 90, 10, 't');
+    o += P('M1124 760 V320 Q1124 270 1064 270 Q1004 270 990 306', 'n') + E(1124, 762, 34, 5, 's');
+    o += P('M960 340 Q960 306 990 306 Q1020 306 1020 340 Z', 's') + E(990, 346, 26, 4, 'l');
+    o += tree(190, 760, 470);
+    return o;
+  }
+};
+
+const ALIGN = { center: 'xMidYMid slice', left: 'xMinYMid slice', right: 'xMaxYMid slice', top: 'xMidYMin slice' };
+function drawing(scene, label, align = 'center') {
+  return `<svg class="dr" viewBox="0 0 1200 900" preserveAspectRatio="${ALIGN[align]}" role="img" aria-label="${label}">${SCENES[scene]()}</svg>`;
+}
+
+/* A project image: real photo if supplied, otherwise its drawing. */
+function art(p, align, n = 0) {
+  const photo = n === 0 ? p.photo : (p.gallery || [])[n - 1];
+  const label = `${p.name}, ${sector(p.sector).name.toLowerCase()} interior`;
+  const inner = photo
+    ? `<img src="${photo}" alt="${label}" loading="${n === 0 && align === 'eager' ? 'eager' : 'lazy'}" decoding="async">`
+    : drawing(p.scene, `Drawing of ${label}`, align === 'eager' ? 'center' : align);
+  return `<div class="art">${inner}</div>`;
+}
+function media(p, ratio, align = 'center', n = 0) {
+  return `<div class="media ${ratio} reveal">${art(p, align, n)}<span class="curtain" aria-hidden="true"></span></div>`;
+}
+
+/* =====================================================================
+   VIEWS
+   ===================================================================== */
+const sector = id => SECTORS.find(s => s.id === id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const tel = n => n.replace(/[^+\d]/g, '');
+const waLink = () => `https://wa.me/${tel(CONTACT.whatsapp).replace('+', '')}`;
+const RATIOS = ['ratio-43', 'ratio-34', 'ratio-45', 'ratio-43'];
+
+function card(p, i) {
+  return `<article class="card"><a href="#/projects/${p.slug}">
+    ${media(p, RATIOS[i % 4])}
+    <div class="card-meta"><h3 class="card-name">${esc(p.name)}</h3><span class="card-sector">${esc(sector(p.sector).name)}</span></div>
+    <p class="card-sum">${esc(p.summary)}</p>
+  </a></article>`;
+}
+
+function stepsList() {
+  return `<ol class="steps">${STEPS.map(([t, d], i) => `<li><span class="step-no" aria-hidden="true">${i + 1}</span><h3 class="step-title">${t}</h3><p class="step-text">${d}</p></li>`).join('')}</ol>`;
+}
+
+function processBand(title = 'From first drawing to handover') {
+  return `<section class="section on-dark" aria-labelledby="process-h"><div class="wrap">
+    <div class="sec-head"><div><h2 class="h2" id="process-h">${title}</h2>
+    <p class="lead">One team designs and builds your space, so you deal with one contract and one point of contact.</p></div></div>
+    ${stepsList()}
+  </div></section>`;
+}
+
+function ctaBand() {
+  return `<section class="section" aria-labelledby="cta-h"><div class="wrap cta">
+    <h2 class="h2" id="cta-h">Have a space in mind?</h2>
+    <div class="cta-side">
+      <p class="lead">Tell us the size, the location and when you would like to open. We will come back within one working day with next steps.</p>
+      <div class="actions"><a class="btn btn-primary" href="#/contact">Start a project</a><a class="btn btn-quiet" href="${waLink()}" target="_blank" rel="noopener">Message on WhatsApp</a></div>
+    </div>
+  </div></section>`;
+}
+
+const VIEWS = {
+  home() {
+    const hero = PROJECTS[0];
+    return {
+      title: 'Bella Interior | Design and build fit-out in Dubai',
+      html: `
+      <section class="wrap hero" data-hero>
+        <div>
+          <h1 class="display" tabindex="-1"><span class="line"><span>Interiors designed</span></span><span class="line"><span>and built in Dubai</span></span><span class="line"><span>since 2008.</span></span></h1>
+          <p class="lead fade">We design and fit out boutique offices, restaurants and cafés, homes and shops. One team takes your space from first drawing to handover.</p>
+          <div class="actions fade"><a class="btn btn-primary" href="#/contact">Start a project</a><a class="btn btn-quiet" href="#/projects">See our projects</a></div>
+        </div>
+        <figure class="hero-arch">
+          <a class="arch-frame" href="#/projects/${hero.slug}" style="display:block">${art(hero, 'eager')}<span class="curtain" aria-hidden="true"></span></a>
+          <figcaption>${esc(hero.name)}, ${esc(sector(hero.sector).name.toLowerCase())} boutique</figcaption>
+        </figure>
+      </section>
+
+      <section class="section" style="padding-top:0" aria-labelledby="sectors-h"><div class="wrap">
+        <div class="sec-head"><h2 class="h2" id="sectors-h">What we build</h2></div>
+        <ul class="sectors">${SECTORS.map(s => {
+          const n = PROJECTS.filter(p => p.sector === s.id).length;
+          return `<li><a href="#/projects?s=${s.id}"><span class="sector-name">${s.name}</span><span class="sector-desc">${s.desc}</span><span class="sector-more">${n ? `See ${n} project${n > 1 ? 's' : ''}` : 'See projects'}</span></a></li>`;
+        }).join('')}</ul>
+      </div></section>
+
+      <section class="section" style="padding-top:0" aria-labelledby="recent-h"><div class="wrap">
+        <div class="sec-head"><h2 class="h2" id="recent-h">Recent projects</h2><a class="link" href="#/projects">All projects</a></div>
+        <div class="pgrid">${PROJECTS.slice(0, 4).map(card).join('')}</div>
+      </div></section>
+
+      ${processBand()}
+
+      <section class="section" aria-labelledby="studio-h"><div class="wrap split">
+        <div>
+          <h2 class="visually-hidden" id="studio-h">The studio</h2>
+          <p class="statement">Since 2008, the people who draw your space have been the people who build it.</p>
+          <p class="lead">Our designers and site team work under one roof in Dubai. Decisions are made faster, details survive the site, and you always have one number to call.</p>
+          <p style="margin-top:28px"><a class="link" href="#/studio">About the studio</a></p>
+        </div>
+        <figure class="hero-arch small-arch" style="margin:0"><div class="arch-frame reveal">${art(PROJECTS[4], 'left')}<span class="curtain" aria-hidden="true"></span></div></figure>
+      </div></section>
+
+      ${ctaBand()}`
+    };
+  },
+
+  projects(q) {
+    const active = SECTORS.some(s => s.id === q.s) ? q.s : 'all';
+    const list = active === 'all' ? PROJECTS : PROJECTS.filter(p => p.sector === active);
+    const chip = (id, label, n) => `<button type="button" class="chip" data-filter="${id}" aria-pressed="${id === active}">${label}<span class="count">${n}</span></button>`;
+    return {
+      title: 'Projects | Bella Interior',
+      html: `
+      <section class="wrap page-head">
+        <h1 class="display-2" tabindex="-1">Projects</h1>
+        <p class="lead">Offices, restaurants, homes and shops we have designed and built across Dubai.</p>
+      </section>
+      <section class="wrap" style="padding-bottom:clamp(80px,10vw,150px)" aria-label="Project list">
+        <div class="filters" role="group" aria-label="Filter by sector">
+          ${chip('all', 'All', PROJECTS.length)}
+          ${SECTORS.map(s => chip(s.id, s.short, PROJECTS.filter(p => p.sector === s.id).length)).join('')}
+        </div>
+        <p class="visually-hidden" role="status">${list.length} project${list.length === 1 ? '' : 's'} shown</p>
+        ${list.length
+          ? `<div class="pgrid">${list.map(card).join('')}</div>`
+          : `<div class="empty"><p class="lead">No ${esc(sector(active).name.toLowerCase())} projects to show yet. Ask us about recent work in this sector.</p><div class="actions"><a class="btn btn-primary" href="#/contact">Start a project</a><button type="button" class="btn btn-quiet" data-filter="all">See all projects</button></div></div>`}
+      </section>`
+    };
+  },
+
+  project(q, slug) {
+    const i = PROJECTS.findIndex(p => p.slug === slug);
+    if (i < 0) return VIEWS.notFound();
+    const p = PROJECTS[i], next = PROJECTS[(i + 1) % PROJECTS.length], s = sector(p.sector);
+    return {
+      title: `${p.name} | Bella Interior`,
+      html: `
+      <section class="wrap page-head" style="padding-bottom:clamp(28px,4vw,48px)">
+        <a class="back link" href="#/projects">All projects</a>
+        <h1 class="display-2" tabindex="-1">${esc(p.name)}</h1>
+        <p class="lead">${esc(p.summary)}</p>
+      </section>
+      <div class="wrap">${media(p, 'ratio-169', 'center')}
+        <dl class="facts">
+          <div><dt>Sector</dt><dd>${esc(s.name)}</dd></div>
+          <div><dt>Location</dt><dd>Dubai</dd></div>
+          <div><dt>Scope</dt><dd>${esc(p.scope)}</dd></div>
+          <div><dt>Size</dt><dd>${esc(p.size)}</dd></div>
+          <div><dt>Programme</dt><dd>${esc(p.duration)}</dd></div>
+        </dl>
+      </div>
+      <section class="section" aria-labelledby="about-h" style="padding-bottom:0"><div class="wrap">
+        <div class="about"><h2 class="h3" id="about-h">About the project</h2><div class="prose">${p.body.map(t => `<p>${esc(t)}</p>`).join('')}</div></div>
+        <div class="gallery">${media(p, 'ratio-45', 'left', 1)}${media(p, 'ratio-45', 'right', 2)}</div>
+      </div></section>
+      <div class="wrap" style="margin-top:clamp(80px,10vw,140px)">
+        <a class="next" href="#/projects/${next.slug}"><span class="muted">Next project</span><span class="display-2" style="display:block">${esc(next.name)}</span></a>
+      </div>
+      ${ctaBand()}`
+    };
+  },
+
+  services() {
+    const included = [
+      ['Interior design', 'Layouts, material palettes, lighting and 3D visuals so you can see the space before it is built.'],
+      ['Technical drawings', 'Detailed drawings for joinery, ceilings, flooring, lighting and MEP that the site team builds from.'],
+      ['Approvals', 'Submissions to landlords, malls and the relevant Dubai authorities, followed through to sign-off.'],
+      ['Joinery and finishes', 'Custom joinery, plaster, stone, timber and tiling, installed by people we work with every week.'],
+      ['MEP works', 'Air conditioning, electrical, plumbing and lighting coordinated with the design from day one.'],
+      ['Project management', 'One point of contact, a programme you can hold us to and a weekly update on site.']
+    ];
+    return {
+      title: 'Services | Bella Interior',
+      html: `
+      <section class="wrap page-head">
+        <h1 class="display-2" tabindex="-1">Design and build, under one contract</h1>
+        <p class="lead">We design your interior and build it with our own site team. You get one price, one programme and one company responsible for the result.</p>
+      </section>
+      <section class="wrap" aria-labelledby="sectors-h" style="padding-bottom:clamp(80px,10vw,150px)">
+        <h2 class="visually-hidden" id="sectors-h">Sectors</h2>
+        <div class="sector-blocks">${SECTORS.map(s => `
+          <div class="sector-block">
+            <h3 class="h3">${s.name}</h3>
+            <p>${s.desc}</p>
+            <ul>${s.typical.map(t => `<li>${t}</li>`).join('')}</ul>
+            <p style="margin-top:20px"><a class="link" href="#/projects?s=${s.id}">${s.short} projects</a></p>
+          </div>`).join('')}</div>
+      </section>
+      <section class="section" style="padding-top:0" aria-labelledby="inc-h"><div class="wrap">
+        <div class="sec-head"><h2 class="h2" id="inc-h">What is included</h2></div>
+        <div class="included">${included.map(([t, d]) => `<div><h3>${t}</h3><p>${d}</p></div>`).join('')}</div>
+      </div></section>
+      ${processBand('How a project runs')}
+      ${ctaBand()}`
+    };
+  },
+
+  studio() {
+    return {
+      title: 'Studio | Bella Interior',
+      html: `
+      <section class="wrap page-head">
+        <h1 class="display-2" tabindex="-1">A Dubai fit-out studio, since 2008</h1>
+        <p class="lead">Bella Interior LLC designs and builds boutique offices, restaurants and cafés, homes and shops across Dubai and the UAE.</p>
+      </section>
+      <section class="wrap split" aria-labelledby="story-h" style="padding-bottom:clamp(80px,10vw,150px)">
+        <div class="prose">
+          <h2 class="h3" id="story-h" style="margin-bottom:20px">How we work</h2>
+          <p>Most fit-outs pass through several hands: a designer, a contractor, a joinery shop and a project manager trying to keep them in step. We keep all of that in one company.</p>
+          <p>Our designers draw the space knowing exactly how it will be built, and our site team builds it knowing why each detail matters. When something changes on site, the person who can decide is already in the room.</p>
+          <dl class="keyfacts" style="margin-top:44px">
+            <div><dt>Founded</dt><dd>2008</dd></div>
+            <div><dt>Based in</dt><dd>Dubai, United Arab Emirates</dd></div>
+            <div><dt>We build</dt><dd>Boutique offices, F&amp;B, residences and retail</dd></div>
+          </dl>
+        </div>
+        <figure class="hero-arch small-arch" style="margin:0"><div class="arch-frame reveal">${art(PROJECTS[2], 'center')}<span class="curtain" aria-hidden="true"></span></div></figure>
+      </section>
+      <section class="section on-dark" aria-labelledby="believe-h"><div class="wrap">
+        <div class="sec-head"><h2 class="h2" id="believe-h">What we care about</h2></div>
+        <div class="principles">
+          <div><h3>One contract, one team</h3><p class="muted">Design and construction sit under the same roof, so nothing gets lost between the drawing and the site.</p></div>
+          <div><h3>Materials that age well</h3><p class="muted">Lime plaster, natural stone, solid timber. We choose finishes that look better after five years of use, not just on opening day.</p></div>
+          <div><h3>Built around daily use</h3><p class="muted">A café counter, a fitting room, a meeting table: we plan each space around the people who use it every day.</p></div>
+        </div>
+      </div></section>
+      ${ctaBand()}`
+    };
+  },
+
+  contact() {
+    const opt = (v) => `<option>${v}</option>`;
+    return {
+      title: 'Start a project | Bella Interior',
+      html: `
+      <section class="wrap page-head">
+        <h1 class="display-2" tabindex="-1">Start a project</h1>
+        <p class="lead">Tell us about your space. We reply within one working day, usually with a call to arrange a site visit.</p>
+      </section>
+      <div class="wrap contact-grid">
+        <div data-form-slot>
+          <form class="form" novalidate aria-describedby="form-note">
+            <div class="error-summary" tabindex="-1" hidden role="alert" aria-labelledby="sum-h"><h2 id="sum-h">Please check these fields</h2><ul></ul></div>
+            <div class="form-row">
+              <div class="field"><label for="f-name">Name <span class="req" aria-hidden="true">*</span></label>
+                <input class="input" id="f-name" name="name" autocomplete="name" required aria-describedby="e-name"><p class="error" id="e-name" hidden></p></div>
+              <div class="field"><label for="f-phone">Phone <span class="req" aria-hidden="true">*</span></label>
+                <input class="input" id="f-phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" required aria-describedby="h-phone e-phone"><p class="hint" id="h-phone">UAE or international, e.g. +971 50 123 4567</p><p class="error" id="e-phone" hidden></p></div>
+            </div>
+            <div class="field"><label for="f-email">Email</label>
+              <input class="input" id="f-email" name="email" type="email" autocomplete="email" aria-describedby="e-email"><p class="error" id="e-email" hidden></p></div>
+            <div class="form-row">
+              <div class="field"><label for="f-type">Type of space <span class="req" aria-hidden="true">*</span></label>
+                <select class="input" id="f-type" name="type" required aria-describedby="e-type"><option value="">Choose one</option>${['Boutique office', 'Restaurant or café', 'Villa or apartment', 'Shop or showroom', 'Something else'].map(opt).join('')}</select><p class="error" id="e-type" hidden></p></div>
+              <div class="field"><label for="f-size">Approximate size</label>
+                <input class="input" id="f-size" name="size" inputmode="numeric" aria-describedby="h-size"><p class="hint" id="h-size">In square feet, if you know it</p></div>
+            </div>
+            <div class="field"><label for="f-when">When would you like to start?</label>
+              <select class="input" id="f-when" name="when">${['As soon as possible', 'In 1 to 3 months', 'In 3 to 6 months', 'Just exploring for now'].map(opt).join('')}</select></div>
+            <div class="field"><label for="f-msg">About the project</label>
+              <textarea class="input" id="f-msg" name="message" aria-describedby="h-msg"></textarea><p class="hint" id="h-msg">Location, what the space is for, and anything you already have, such as drawings or a lease.</p></div>
+            <div class="form-foot">
+              <button class="btn btn-primary" type="submit">Send enquiry</button>
+              <p id="form-note">Fields marked * are required. We only use your details to reply to this enquiry.</p>
+            </div>
+          </form>
+        </div>
+        <aside class="direct" aria-labelledby="direct-h">
+          <h2 class="h3" id="direct-h">Or talk to us directly</h2>
+          <dl>
+            <div><dt>Call</dt><dd><a href="tel:${tel(CONTACT.phone)}">${CONTACT.phone}</a></dd></div>
+            <div><dt>WhatsApp</dt><dd><a href="${waLink()}" target="_blank" rel="noopener">${CONTACT.whatsapp}</a></dd></div>
+            <div><dt>Email</dt><dd><a href="mailto:${CONTACT.email}">${CONTACT.email}</a></dd></div>
+            <div><dt>Instagram</dt><dd><a href="https://instagram.com/${CONTACT.instagram}" target="_blank" rel="noopener">@${CONTACT.instagram}</a></dd></div>
+            <div><dt>Office hours</dt><dd>${CONTACT.hours}</dd></div>
+            <div><dt>Office</dt><dd>${CONTACT.address}</dd></div>
+          </dl>
+        </aside>
+      </div>`
+    };
+  },
+
+  notFound() {
+    return {
+      title: 'Page not found | Bella Interior',
+      html: `<section class="wrap page-head" style="padding-bottom:clamp(100px,12vw,180px)">
+        <h1 class="display-2" tabindex="-1">This page does not exist</h1>
+        <p class="lead">The link may be out of date. Go back to the home page or browse our projects.</p>
+        <div class="actions" style="margin-top:32px"><a class="btn btn-primary" href="#/">Go to home page</a><a class="btn btn-quiet" href="#/projects">See projects</a></div>
+      </section>`
+    };
+  }
+};
+
+/* =====================================================================
+   ROUTER + TRANSITIONS
+   ===================================================================== */
+const main = document.getElementById('main');
+const reduce = matchMedia('(prefers-reduced-motion: reduce)');
+let navToken = 0, firstRender = true;
+
+function parse() {
+  const raw = location.hash.replace(/^#/, '') || '/';
+  const [path, qs = ''] = raw.split('?');
+  const q = Object.fromEntries(new URLSearchParams(qs));
+  const parts = path.split('/').filter(Boolean);
+  if (!parts.length) return { name: 'home', nav: 'home', q };
+  if (parts[0] === 'projects' && parts[1]) return { name: 'project', nav: 'projects', q, arg: parts[1] };
+  if (VIEWS[parts[0]] && parts[0] !== 'project' && parts[0] !== 'notFound') return { name: parts[0], nav: parts[0], q };
+  return { name: 'notFound', nav: '', q };
+}
+
+function render() {
+  let r = parse();
+  if (location.hash && !location.hash.startsWith('#/')) { // in-page anchors like #main / #top
+    if (!firstRender) return;
+    r = { name: 'home', nav: 'home', q: {} };
+  }
+  const view = VIEWS[r.name](r.q, r.arg);
+  const token = ++navToken;
+  const swap = () => {
+    if (token !== navToken) return;
+    main.innerHTML = view.html;
+    document.title = view.title;
+    document.querySelectorAll('[data-nav]').forEach(a => a.dataset.nav === r.nav ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current'));
+    window.scrollTo(0, 0);
+    if (!firstRender) main.querySelector('h1')?.focus({ preventScroll: true });
+    setupView();
+  };
+  closeMenu(false);
+  if (firstRender || reduce.matches || !document.documentElement.classList.contains('motion')) {
+    swap(); firstRender = false; return;
+  }
+  main.classList.add('is-leaving');
+  setTimeout(() => {
+    if (token !== navToken) return;
+    main.classList.remove('is-leaving');
+    main.classList.add('is-entering');
+    swap();
+    requestAnimationFrame(() => requestAnimationFrame(() => { if (token === navToken) main.classList.remove('is-entering'); }));
+  }, 170);
+}
+
+/* Reveals: each image's curtain draws aside once, when it scrolls into view */
+let io;
+function setupView() {
+  const hero = main.querySelector('[data-hero]');
+  if (hero) requestAnimationFrame(() => requestAnimationFrame(() => hero.classList.add('is-in')));
+  io?.disconnect();
+  const items = main.querySelectorAll('.reveal');
+  if (!('IntersectionObserver' in window)) { items.forEach(n => n.classList.add('is-in')); return; }
+  io = new IntersectionObserver(entries => entries.forEach(e => {
+    if (e.isIntersecting) { e.target.classList.add('is-in'); io.unobserve(e.target); }
+  }), { rootMargin: '0px 0px -12% 0px', threshold: 0.08 });
+  items.forEach(n => io.observe(n));
+}
+
+/* =====================================================================
+   INTERACTIONS
+   ===================================================================== */
+// Filters
+main.addEventListener('click', e => {
+  const b = e.target.closest('[data-filter]');
+  if (!b) return;
+  const id = b.dataset.filter;
+  const target = id === 'all' ? '#/projects' : `#/projects?s=${id}`;
+  if (location.hash !== target) {
+    history.replaceState(null, '', target);
+    const view = VIEWS.projects(parse().q);
+    const y = window.scrollY;
+    main.innerHTML = view.html;
+    window.scrollTo(0, y);
+    setupView();
+    main.querySelector(`[data-filter="${id}"]`)?.focus();
+  }
+});
+
+// Mobile menu
+const menu = document.getElementById('menu');
+const menuBtn = document.querySelector('.menu-btn');
+let menuTimer;
+function openMenu() {
+  clearTimeout(menuTimer);
+  menu.hidden = false;
+  document.body.classList.add('menu-open');
+  menuBtn.setAttribute('aria-expanded', 'true');
+  menuBtn.textContent = 'Close';
+  requestAnimationFrame(() => requestAnimationFrame(() => menu.classList.add('is-open')));
+  menu.querySelector('a')?.focus({ preventScroll: true });
+}
+function closeMenu(returnFocus = true) {
+  if (menu.hidden) return;
+  menu.classList.remove('is-open');
+  document.body.classList.remove('menu-open');
+  menuBtn.setAttribute('aria-expanded', 'false');
+  menuBtn.textContent = 'Menu';
+  menuTimer = setTimeout(() => { menu.hidden = true; }, 260);
+  if (returnFocus) menuBtn.focus();
+}
+menuBtn.addEventListener('click', () => (menu.hidden ? openMenu() : closeMenu()));
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !menu.hidden) closeMenu(); });
+matchMedia('(min-width: 920px)').addEventListener?.('change', ev => { if (ev.matches) closeMenu(false); });
+
+// Header border once scrolled
+const header = document.querySelector('.site-header');
+let ticking = false;
+addEventListener('scroll', () => {
+  if (ticking) return; ticking = true;
+  requestAnimationFrame(() => { header.classList.toggle('is-scrolled', scrollY > 8); ticking = false; });
+}, { passive: true });
+
+// Contact form: validate on blur, summarise on submit
+const RULES = {
+  name: v => v.trim().length >= 2 || 'Enter your name so we know who to ask for.',
+  phone: v => v.replace(/[^\d]/g, '').length >= 8 || 'Enter a phone number with at least 8 digits, e.g. +971 50 123 4567.',
+  email: v => !v.trim() || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim()) || 'Enter an email like name@company.com, or leave it empty.',
+  type: v => !!v || 'Choose the type of space so we can send the right person.'
+};
+function check(input) {
+  const rule = RULES[input.name];
+  if (!rule) return true;
+  const res = rule(input.value);
+  const err = document.getElementById('e-' + input.name);
+  if (res === true) { input.removeAttribute('aria-invalid'); err.hidden = true; err.textContent = ''; return true; }
+  input.setAttribute('aria-invalid', 'true'); err.hidden = false; err.textContent = res;
+  return res;
+}
+main.addEventListener('focusout', e => {
+  const f = e.target.closest('form.form');
+  if (f && e.target.name && (e.target.value || e.target.hasAttribute('aria-invalid'))) check(e.target);
+});
+main.addEventListener('input', e => {
+  if (e.target.closest('form.form') && e.target.getAttribute('aria-invalid') === 'true') check(e.target);
+});
+main.addEventListener('submit', e => {
+  const form = e.target.closest('form.form');
+  if (!form) return;
+  e.preventDefault();
+  const problems = [];
+  ['name', 'phone', 'email', 'type'].forEach(n => {
+    const input = form.elements[n]; const res = check(input);
+    if (res !== true) problems.push([input.id, res]);
+  });
+  const summary = form.querySelector('.error-summary');
+  if (problems.length) {
+    summary.querySelector('ul').innerHTML = problems.map(([id, msg]) => `<li><a class="link" href="#${id}" data-focus="${id}">${msg}</a></li>`).join('');
+    summary.hidden = false; summary.focus();
+    return;
+  }
+  summary.hidden = true;
+  const btn = form.querySelector('[type=submit]');
+  btn.disabled = true; btn.textContent = 'Sending…';
+  // DEMO: no backend yet. Connect to email/CRM before going live.
+  setTimeout(() => {
+    const name = form.elements.name.value.trim().split(/\s+/)[0];
+    const slot = form.parentElement;
+    slot.innerHTML = `<div class="success" tabindex="-1" role="status">
+      <h2>Enquiry sent</h2>
+      <p>Thanks, ${esc(name)}. We will call you within one working day to talk through your project and arrange a site visit.</p>
+      <div class="actions"><a class="btn btn-quiet" href="#/projects">See our projects</a></div>
+    </div>`;
+    slot.querySelector('.success').focus();
+  }, 700);
+});
+main.addEventListener('click', e => {
+  const a = e.target.closest('[data-focus]');
+  if (!a) return;
+  e.preventDefault();
+  const t = document.getElementById(a.dataset.focus);
+  t?.focus(); t?.scrollIntoView({ block: 'center', behavior: reduce.matches ? 'auto' : 'smooth' });
+});
+
+// Shared contact slots
+document.querySelector('[data-slot="wa"]').href = waLink();
+document.querySelector('[data-year]').textContent = new Date().getFullYear();
+document.querySelector('[data-slot="menu-contact"]').innerHTML =
+  `<a class="link" href="tel:${tel(CONTACT.phone)}">${CONTACT.phone}</a><a class="link" href="mailto:${CONTACT.email}">${CONTACT.email}</a>`;
+document.querySelector('[data-slot="footer"]').innerHTML = `
+  <div class="foot-brand"><span class="logo-b" aria-hidden="true"></span><p>Bella Interior LLC. Design and build fit-out for offices, F&amp;B, residences and retail in Dubai, since 2008.</p></div>
+  <div class="foot-col"><h2>Visit</h2><ul><li>${CONTACT.address}</li><li>${CONTACT.hours}</li></ul></div>
+  <div class="foot-col"><h2>Contact</h2><ul><li><a href="tel:${tel(CONTACT.phone)}">${CONTACT.phone}</a></li><li><a href="${waLink()}" target="_blank" rel="noopener">WhatsApp</a></li><li><a href="mailto:${CONTACT.email}">${CONTACT.email}</a></li></ul></div>
+  <div class="foot-col"><h2>Explore</h2><ul><li><a href="#/projects">Projects</a></li><li><a href="#/services">Services</a></li><li><a href="#/studio">Studio</a></li><li><a href="https://instagram.com/${CONTACT.instagram}" target="_blank" rel="noopener">Instagram</a></li></ul></div>`;
+
+addEventListener('hashchange', render);
+render();
+})();
+</script>
+</body>
+</html>
