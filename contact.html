@@ -23,8 +23,8 @@
   <link rel="icon" type="image/png" href="https://media.base44.com/images/public/69b48b64852868d19b78812f/93673ba10_IMG_2008_Nero_AI_Background_Remover_transparent.png"/>
   <link rel="apple-touch-icon" href="https://media.base44.com/images/public/69b48b64852868d19b78812f/93673ba10_IMG_2008_Nero_AI_Background_Remover_transparent.png"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Check Project Fit   RizcoReach</title>
-  <meta name="description" content="Apply for a free strategy call with RizcoReach   Dubai's home improvement marketing agency. Fill in the form to check if we can help your business."/>
+  <title>Book a Free Strategy Call | RizcoReach Website &amp; SEO Agency Dubai</title>
+  <meta name="description" content="Book a free strategy call with RizcoReach, Dubai's website development and SEO agency. Tell us about your business and we'll be in touch within 24 hours."/>
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
 
   <style>
@@ -229,7 +229,7 @@
       <div class="step-list">
         <div class="step-row">
           <div class="step-badge">1</div>
-          <p class="step-text"><strong>We review what you've shared</strong>   your industry, your situation, your goals. So when we speak, we're already on the same page.</p>
+          <p class="step-text"><strong>We review what you've shared</strong> &mdash; your industry, your current website, your goals. So when we speak, we're already on the same page.</p>
         </div>
         <div class="step-row">
           <div class="step-badge">2</div>
@@ -248,7 +248,7 @@
         </div>
         <div class="trust-item">
           <div class="trust-check"><svg viewBox="0 0 10 10" fill="none"><polyline points="2,5 4,7.5 8,3" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-          We'll be honest if ads aren't the right move for you right now
+          We'll be honest about what you actually need, whether that's a new website, SEO or ads
         </div>
         <div class="trust-item">
           <div class="trust-check"><svg viewBox="0 0 10 10" fill="none"><polyline points="2,5 4,7.5 8,3" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
@@ -256,7 +256,7 @@
         </div>
         <div class="trust-item">
           <div class="trust-check"><svg viewBox="0 0 10 10" fill="none"><polyline points="2,5 4,7.5 8,3" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-          Most businesses are live and generating leads within 2 4 weeks
+          Websites built to rank on Google and turn visitors into enquiries
         </div>
       </div>
 
@@ -310,13 +310,13 @@
         <div class="form-group">
           <label>What Service Are You Looking For? *</label>
           <select name="service_type" id="serviceType" required>
-            <option value="">Select a service</option>
+            <option value="website-development" selected>Website Development</option>
+            <option value="seo">SEO (Search Engine Optimisation)</option>
             <option value="meta-google-ads">Meta &amp; Google Ads</option>
-            <option value="website-development">Website Development</option>
           </select>
         </div>
         <div class="form-group">
-          <label id="budgetLabel">Monthly Ad Budget (AED)</label>
+          <label id="budgetLabel">Website Development Budget (AED)</label>
           <select name="ad_budget" id="adBudget">
             <option value="">Select your budget range</option>
           </select>
@@ -326,15 +326,15 @@
           <select name="business_age">
             <option value="">Select</option>
             <option>Less than 1 year</option>
-            <option>1 2 years</option>
-            <option>3 5 years</option>
-            <option>5 10 years</option>
+            <option>1&ndash;2 years</option>
+            <option>3&ndash;5 years</option>
+            <option>5&ndash;10 years</option>
             <option>10+ years</option>
           </select>
         </div>
         <div class="form-group">
           <label>What's your biggest challenge right now?</label>
-          <textarea name="challenge" placeholder="What does your current lead situation look like? What are the biggest issues   too few leads, wrong type of leads, inconsistent flow? Be as specific as you like."></textarea>
+          <textarea name="challenge" id="challenge" placeholder="Do you have a website today? What's not working about it, or what do you need built? Be as specific as you like."></textarea>
         </div>
         <button type="submit" class="btn-submit">Send My Application →</button>
         <p class="form-note">By submitting this form you agree to be contacted by the RizcoReach team regarding your application.</p>
@@ -378,48 +378,39 @@
     }
   </script>
   <script>
-    // Budget options for each service type
-    const adBudgetOptions = [
-      { value: "", text: "Select your budget range" },
-      { value: "AED 1,000 - 3,000", text: "AED 1,000 - 3,000" },
-      { value: "AED 3,000 - 7,000", text: "AED 3,000 - 7,000" },
-      { value: "AED 7,000 - 15,000", text: "AED 7,000 - 15,000" },
-      { value: "AED 15,000 - 30,000", text: "AED 15,000 - 30,000" },
-      { value: "AED 30,000+", text: "AED 30,000+" }
-    ];
-
-    const webDevBudgetOptions = [
-      { value: "", text: "Select your budget range" },
-      { value: "AED 2,000 - 5,000", text: "AED 2,000 - 5,000" },
-      { value: "AED 5,000 - 10,000", text: "AED 5,000 - 10,000" },
-      { value: "AED 10,000 - 20,000", text: "AED 10,000 - 20,000" },
-      { value: "AED 20,000 - 40,000", text: "AED 20,000 - 40,000" },
-      { value: "AED 40,000+", text: "AED 40,000+" }
-    ];
+    // Budget label, budget ranges and challenge placeholder for each service type.
+    // Website Development is the default; links can pre-select another service
+    // with ?service=seo or ?service=meta-google-ads.
+    const serviceConfig = {
+      'website-development': {
+        label: 'Website Development Budget (AED)',
+        budgets: ['AED 2,000 - 5,000', 'AED 5,000 - 10,000', 'AED 10,000 - 20,000', 'AED 20,000 - 40,000', 'AED 40,000+'],
+        placeholder: "Do you have a website today? What's not working about it, or what do you need built? Be as specific as you like."
+      },
+      'seo': {
+        label: 'Monthly SEO Budget (AED)',
+        budgets: ['AED 1,500 - 3,000', 'AED 3,000 - 6,000', 'AED 6,000 - 10,000', 'AED 10,000 - 20,000', 'AED 20,000+'],
+        placeholder: 'Where do you show up on Google today? Which services and areas do you want to rank for? Be as specific as you like.'
+      },
+      'meta-google-ads': {
+        label: 'Monthly Ad Budget (AED)',
+        budgets: ['AED 1,000 - 3,000', 'AED 3,000 - 7,000', 'AED 7,000 - 15,000', 'AED 15,000 - 30,000', 'AED 30,000+'],
+        placeholder: 'What does your current lead situation look like? What are the biggest issues: too few leads, wrong type of leads, inconsistent flow? Be as specific as you like.'
+      }
+    };
 
     function updateBudgetOptions() {
       const serviceSelect = document.getElementById('serviceType');
       const budgetSelect = document.getElementById('adBudget');
-      const budgetLabel = document.getElementById('budgetLabel');
-      const selectedService = serviceSelect.value;
+      const config = serviceConfig[serviceSelect.value] || serviceConfig['website-development'];
 
-      let options;
-      let labelText;
-
-      if (selectedService === 'website-development') {
-        options = webDevBudgetOptions;
-        labelText = 'Website Development Budget (AED)';
-      } else {
-        options = adBudgetOptions;
-        labelText = 'Monthly Ad Budget (AED)';
-      }
-
-      budgetLabel.textContent = labelText;
+      document.getElementById('budgetLabel').textContent = config.label;
+      document.getElementById('challenge').placeholder = config.placeholder;
       budgetSelect.innerHTML = '';
-      options.forEach(opt => {
+      ['Select your budget range'].concat(config.budgets).forEach((text, i) => {
         const option = document.createElement('option');
-        option.value = opt.value;
-        option.textContent = opt.text;
+        option.value = i === 0 ? '' : text;
+        option.textContent = text;
         budgetSelect.appendChild(option);
       });
     }
@@ -427,8 +418,11 @@
     document.addEventListener('DOMContentLoaded', function() {
       const serviceSelect = document.getElementById('serviceType');
       if (serviceSelect) {
+        const requested = new URLSearchParams(window.location.search).get('service');
+        if (requested && serviceConfig[requested]) {
+          serviceSelect.value = requested;
+        }
         serviceSelect.addEventListener('change', updateBudgetOptions);
-        // Initialize with default ad budget options
         updateBudgetOptions();
       }
     });
