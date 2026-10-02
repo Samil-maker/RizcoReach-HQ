@@ -9,7 +9,14 @@
 <link rel="icon" type="image/png" href="asset:logo-b.png">
 <script>
   // Decide on motion before first paint so nothing flashes.
-  if (!matchMedia('(prefers-reduced-motion: reduce)').matches) document.documentElement.classList.add('motion');
+  (function () {
+    var d = document.documentElement;
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    d.classList.add('motion');
+    try { if (!sessionStorage.getItem('bella-intro')) { d.classList.add('is-intro'); sessionStorage.setItem('bella-intro', '1'); } }
+    catch (e) { d.classList.add('is-intro'); }
+    if (matchMedia('(hover: hover) and (pointer: fine)').matches) d.classList.add('has-cursor');
+  })();
 </script>
 <style>
 @font-face { font-family: "Marcellus"; src: url(asset:marcellus.woff2) format("woff2"); font-weight: 400; font-display: swap; }
@@ -43,6 +50,7 @@
 
   --ease-out: cubic-bezier(.22, .8, .12, 1);
   --ease-in: cubic-bezier(.55, 0, .8, .2);
+  --ease-curtain: cubic-bezier(.77, 0, .18, 1);
   --d-fast: 180ms;
   --d-mid: 420ms;
   --d-slow: 1150ms;
@@ -91,26 +99,39 @@ button { font: inherit; color: inherit; }
 .prose p + p { margin-top: 1.1em; }
 .statement { font-family: var(--font-display); font-size: clamp(28px, 3.2vw, 44px); line-height: 1.22; max-width: 26ch; }
 
-.link { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 5px; text-decoration-color: var(--rule-strong); transition: color var(--d-fast), text-decoration-color var(--d-fast); }
-.link:hover { color: var(--oxblood); text-decoration-color: currentColor; }
-.on-dark .link { text-decoration-color: rgba(239, 231, 221, .4); }
+.link {
+  text-decoration: none; padding-bottom: 3px; -webkit-box-decoration-break: clone; box-decoration-break: clone;
+  background-image: linear-gradient(currentColor, currentColor), linear-gradient(var(--rule-strong), var(--rule-strong));
+  background-size: 0% 1px, 100% 1px; background-position: 0 100%, 0 100%; background-repeat: no-repeat;
+  transition: background-size .7s var(--ease-out), color var(--d-fast);
+}
+.link:hover { color: var(--oxblood); background-size: 100% 1px, 100% 1px; }
+.on-dark .link { background-image: linear-gradient(currentColor, currentColor), linear-gradient(rgba(239, 231, 221, .4), rgba(239, 231, 221, .4)); }
 .on-dark .link:hover { color: #fff; }
 
 /* ---------- Buttons ---------- */
 .btn {
+  position: relative; overflow: hidden; isolation: isolate;
   display: inline-flex; align-items: center; justify-content: center; gap: 10px;
   min-height: 50px; padding: 0 24px; border: 0; border-radius: 2px;
   font: 500 16px/1 var(--font-body); letter-spacing: .005em; text-decoration: none; cursor: pointer;
   touch-action: manipulation;
-  transition: background-color var(--d-fast), color var(--d-fast), box-shadow var(--d-fast), transform var(--d-fast) var(--ease-out);
+  transform: translate3d(var(--mx, 0px), var(--my, 0px), 0) scale(var(--press, 1));
+  transition: color .45s var(--ease-out), box-shadow .45s var(--ease-out), transform .6s var(--ease-out);
 }
-.btn:active { transform: scale(.98); }
-.btn-primary { background: var(--oxblood); color: #F7EFE7; }
-.btn-primary:hover { background: var(--oxblood-2); }
-.btn-quiet { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1px var(--rule-strong); }
-.btn-quiet:hover { background: var(--plaster-2); box-shadow: inset 0 0 0 1px var(--ink); }
-.on-dark .btn-quiet { color: var(--on-dark); box-shadow: inset 0 0 0 1px rgba(239, 231, 221, .45); }
-.on-dark .btn-quiet:hover { background: var(--walnut-2); box-shadow: inset 0 0 0 1px var(--on-dark); }
+/* Hover fill rises from below with an arched leading edge */
+.btn::before {
+  content: ""; position: absolute; z-index: -1; left: -2px; right: -2px; bottom: 0; height: calc(100% + 28px);
+  background: var(--fill); border-radius: 50% 50% 0 0 / 28px 28px 0 0;
+  transform: translateY(101%); transition: transform .65s var(--ease-out);
+}
+@media (hover: hover) { .btn:hover::before { transform: none; } }
+.btn:active { --press: .97; }
+.btn-primary { background: var(--oxblood); color: #F7EFE7; --fill: var(--walnut); }
+.btn-quiet { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1px var(--rule-strong); --fill: var(--ink); }
+@media (hover: hover) { .btn-quiet:hover { color: var(--plaster); box-shadow: inset 0 0 0 1px var(--ink); } }
+.on-dark .btn-quiet { color: var(--on-dark); box-shadow: inset 0 0 0 1px rgba(239, 231, 221, .45); --fill: var(--on-dark); }
+@media (hover: hover) { .on-dark .btn-quiet:hover { color: var(--walnut); box-shadow: inset 0 0 0 1px var(--on-dark); } }
 .btn-sm { min-height: 44px; padding: 0 18px; font-size: 15px; }
 .btn[disabled] { opacity: .5; cursor: progress; }
 .actions { display: flex; flex-wrap: wrap; gap: 12px; }
@@ -127,10 +148,11 @@ button { font: inherit; color: inherit; }
   background: rgba(230, 222, 212, .9);
   -webkit-backdrop-filter: saturate(1.2) blur(12px); backdrop-filter: saturate(1.2) blur(12px);
   border-bottom: 1px solid transparent;
-  transition: border-color var(--d-mid);
+  transition: border-color var(--d-mid), transform .6s var(--ease-out);
   padding-top: env(safe-area-inset-top);
 }
 .site-header.is-scrolled { border-bottom-color: var(--rule); }
+.site-header.is-hidden:not(:focus-within) { transform: translateY(-101%); }
 .header-inner { height: var(--header-h); display: flex; align-items: center; justify-content: space-between; gap: 24px; }
 .brand { display: inline-flex; align-items: center; gap: 12px; text-decoration: none; color: var(--ink); min-height: 44px; }
 .brand .logo-b { height: 38px; }
@@ -150,31 +172,30 @@ button { font: inherit; color: inherit; }
   opacity: 0; transition: opacity 260ms var(--ease-out);
 }
 .menu.is-open { opacity: 1; }
+.motion .menu { opacity: 1; clip-path: circle(0% at calc(100% - 44px) 36px); transition: clip-path .75s var(--ease-curtain); }
+.motion .menu.is-open { clip-path: circle(150% at calc(100% - 44px) 36px); }
 .menu[hidden] { display: none; }
 .menu-links { list-style: none; margin: 0; padding: 0; }
 .menu-links a { display: block; padding-block: 10px; font-family: var(--font-display); font-size: clamp(40px, 11vw, 60px); line-height: 1.1; text-decoration: none; }
 .menu-links a[aria-current="page"] { color: var(--oxblood); }
 .motion .menu-links li { transform: translateY(18px); opacity: 0; transition: transform 520ms var(--ease-out), opacity 520ms var(--ease-out); }
-.motion .menu.is-open .menu-links li { transform: none; opacity: 1; }
-.motion .menu.is-open .menu-links li:nth-child(2) { transition-delay: 40ms; }
-.motion .menu.is-open .menu-links li:nth-child(3) { transition-delay: 80ms; }
-.motion .menu.is-open .menu-links li:nth-child(4) { transition-delay: 120ms; }
-.motion .menu.is-open .menu-links li:nth-child(5) { transition-delay: 160ms; }
-.menu-foot { display: grid; gap: 6px; color: var(--ink-2); }
+.motion .menu.is-open .menu-links li { transform: none; opacity: 1; transition-delay: 160ms; }
+.motion .menu.is-open .menu-links li:nth-child(2) { transition-delay: 210ms; }
+.motion .menu.is-open .menu-links li:nth-child(3) { transition-delay: 260ms; }
+.motion .menu.is-open .menu-links li:nth-child(4) { transition-delay: 310ms; }
+.motion .menu.is-open .menu-links li:nth-child(5) { transition-delay: 360ms; }
+.menu-foot { display: grid; justify-items: start; gap: 10px; color: var(--ink-2); }
 body.menu-open { overflow: hidden; }
 body.menu-open .site-header { background: var(--plaster); }
 
-/* ---------- View transitions between pages ---------- */
 #main { min-height: 60vh; }
-.motion #main { transition: opacity var(--d-mid) var(--ease-out), transform var(--d-mid) var(--ease-out); }
-.motion #main.is-leaving { opacity: 0; transition-duration: 170ms; transition-timing-function: var(--ease-in); }
-.motion #main.is-entering { opacity: 0; transform: translateY(14px); transition: none; }
 
 /* ---------- Media (drawings now, photos later) ---------- */
 .media { position: relative; overflow: hidden; background: var(--plaster-2); }
 .media > svg, .media > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .media .art { position: absolute; inset: 0; }
-.media .art > svg, .media .art > img { width: 100%; height: 100%; object-fit: cover; }
+.px { position: absolute; left: 0; right: 0; top: -7%; bottom: -7%; }
+.px > svg, .px > img { width: 100%; height: 100%; object-fit: cover; }
 .ratio-43 { aspect-ratio: 4 / 3; }
 .ratio-34 { aspect-ratio: 3 / 4; }
 .ratio-45 { aspect-ratio: 4 / 5; }
@@ -239,8 +260,10 @@ body.menu-open .site-header { background: var(--plaster); }
 .sec-head .lead { margin-top: 18px; }
 
 /* ---------- Sectors list ---------- */
-.sectors { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--rule); }
-.sectors a { display: grid; gap: 8px; padding-block: clamp(24px, 3vw, 36px); border-bottom: 1px solid var(--rule); text-decoration: none; }
+.sectors { list-style: none; margin: 0; padding: 0; position: relative; z-index: 2; }
+.sectors a { display: grid; gap: 8px; padding-block: clamp(24px, 3vw, 36px); text-decoration: none; }
+.sectors li:last-child::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px; background: var(--rule); transform-origin: 0 50%; transition: transform 1.5s var(--ease-out) .25s; }
+.motion .sectors li:last-child:not(.is-in)::after { transform: scaleX(0); }
 .sector-name { font-family: var(--font-display); font-size: clamp(32px, 3.8vw, 52px); line-height: 1.08; transition: color var(--d-fast); }
 .sector-desc { color: var(--ink-2); max-width: 44ch; }
 .sector-more { font-size: 15px; text-decoration: underline; text-underline-offset: 5px; text-decoration-color: var(--rule-strong); white-space: nowrap; }
@@ -257,8 +280,8 @@ body.menu-open .site-header { background: var(--plaster); }
 .card-sector { font-size: 15px; color: var(--ink-2); white-space: nowrap; }
 .card-sum { margin-top: 6px; color: var(--ink-2); max-width: 44ch; }
 @media (hover: hover) {
-  .card .media .art > * { transition: transform .9s var(--ease-out); }
-  .card a:hover .media .art > * { transform: scale(1.035); }
+  .card .media .px > * { transition: transform 1.2s var(--ease-out); }
+  .card a:hover .media .px > * { transform: scale(1.05); }
   .card a:hover .card-name { color: var(--oxblood); }
 }
 @media (min-width: 820px) {
@@ -277,9 +300,11 @@ body.menu-open .site-header { background: var(--plaster); }
 .step-no { font-family: var(--font-display); font-size: 40px; line-height: 1; color: var(--on-dark-2); grid-row: span 2; }
 .step-title { font-family: var(--font-display); font-size: 25px; line-height: 1.2; }
 .step-text { color: var(--on-dark-2); max-width: 36ch; }
+.steps li[data-line]::before { display: none; }
 @media (min-width: 1000px) {
   .steps { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 28px; }
-  .steps li { grid-template-columns: 1fr; padding-top: 28px; border-top: 1px solid rgba(239, 231, 221, .22); }
+  .steps li { grid-template-columns: 1fr; padding-top: 28px; }
+  .steps li[data-line]::before { display: block; }
   .step-no { grid-row: auto; margin-bottom: 24px; }
 }
 
@@ -299,7 +324,7 @@ body.menu-open .site-header { background: var(--plaster); }
 /* ---------- Page heads ---------- */
 .page-head { padding-block: clamp(40px, 7vw, 104px) clamp(36px, 5vw, 64px); }
 .page-head .lead { margin-top: clamp(20px, 2.4vw, 32px); }
-.back { display: inline-flex; align-items: center; min-height: 44px; margin-bottom: 20px; font-size: 15px; }
+.back { display: inline-block; margin: 12px 0 24px; font-size: 15px; }
 
 /* ---------- Filters ---------- */
 .filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: clamp(40px, 5vw, 64px); }
@@ -309,7 +334,7 @@ body.menu-open .site-header { background: var(--plaster); }
 .chip .count { color: inherit; opacity: .65; margin-left: 4px; font-variant-numeric: tabular-nums; }
 
 /* ---------- Project detail ---------- */
-.facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 20px; margin: clamp(36px, 5vw, 56px) 0 0; padding-top: 28px; border-top: 1px solid var(--rule); }
+.facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 20px; margin: clamp(36px, 5vw, 56px) 0 0; padding-top: 28px; }
 .facts dt { font-size: 15px; color: var(--ink-2); }
 .facts dd { margin: 4px 0 0; font-family: var(--font-display); font-size: 22px; line-height: 1.2; }
 @media (min-width: 820px) { .facts { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
@@ -317,14 +342,14 @@ body.menu-open .site-header { background: var(--plaster); }
 @media (min-width: 900px) { .about { grid-template-columns: minmax(0, 4fr) minmax(0, 7fr); gap: 64px; } }
 .gallery { display: grid; gap: clamp(20px, 3vw, 40px); margin-top: clamp(56px, 7vw, 104px); }
 @media (min-width: 760px) { .gallery { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .gallery > :nth-child(2) { margin-top: clamp(60px, 8vw, 140px); } }
-.next { display: block; text-decoration: none; padding-block: clamp(48px, 7vw, 96px); border-top: 1px solid var(--rule); }
+.next { display: block; text-decoration: none; padding-block: clamp(48px, 7vw, 96px); }
 .next .muted { font-size: 15px; }
 .next .display-2 { margin-top: 8px; transition: color var(--d-fast); }
 .next:hover .display-2 { color: var(--oxblood); }
 
 /* ---------- Services ---------- */
 .sector-blocks { display: grid; gap: 0 clamp(24px, 4vw, 64px); }
-.sector-block { padding-block: 32px 40px; border-top: 1px solid var(--rule); }
+.sector-block { padding-block: 32px 40px; }
 .sector-block p { margin-top: 12px; color: var(--ink-2); max-width: 46ch; }
 .sector-block ul { margin: 18px 0 0; padding-left: 1.1em; color: var(--ink); }
 .sector-block li + li { margin-top: 4px; }
@@ -394,7 +419,7 @@ select.input { padding-right: 40px; background-image: url("data:image/svg+xml,%3
 .foot-col ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .foot-col a { text-decoration: none; display: inline-block; padding-block: 3px; }
 .foot-col a:hover { text-decoration: underline; text-underline-offset: 5px; }
-.foot-base { margin-top: clamp(56px, 7vw, 96px); padding-top: 24px; border-top: 1px solid rgba(239, 231, 221, .18); display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; font-size: 14px; color: var(--on-dark-2); }
+.foot-base { margin-top: clamp(56px, 7vw, 96px); padding-top: 24px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; font-size: 14px; color: var(--on-dark-2); }
 @media (min-width: 700px) { .foot-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (min-width: 1040px) { .foot-grid { grid-template-columns: minmax(0, 1.6fr) repeat(3, minmax(0, 1fr)); } }
 
@@ -403,12 +428,84 @@ select.input { padding-right: 40px; background-image: url("data:image/svg+xml,%3
   position: fixed; z-index: 40; right: max(16px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom));
   width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center;
   background: var(--walnut); color: var(--on-dark); box-shadow: 0 6px 18px rgba(42, 32, 27, .22);
-  transition: transform var(--d-fast) var(--ease-out), background-color var(--d-fast);
+  transform: translate3d(var(--mx, 0px), var(--my, 0px), 0) scale(var(--press, 1));
+  transition: transform .6s var(--ease-out), background-color .35s var(--ease-out);
 }
 .wa:hover { background: var(--oxblood); }
-.wa:active { transform: scale(.94); }
+.wa:active { --press: .94; }
 .wa svg { width: 26px; height: 26px; }
 body.menu-open .wa { display: none; }
+
+/* ---------- Scroll reveals: words rise, rules draw, blocks settle ---------- */
+.w { display: inline-block; overflow: hidden; vertical-align: top; padding-bottom: .12em; margin-bottom: -.12em; }
+.w > span { display: inline-block; }
+.motion [data-split] .w > span { transform: translateY(112%); transition: transform 1.15s var(--ease-out); transition-delay: calc(var(--i, 0) * 55ms + var(--d, 0ms)); }
+.motion [data-split].is-in .w > span { transform: none; }
+.motion [data-rise] { opacity: 0; transform: translateY(22px); transition: opacity 1s var(--ease-out), transform 1.2s var(--ease-out); transition-delay: var(--d, 0ms); }
+.motion [data-rise].is-in { opacity: 1; transform: none; }
+[data-line] { position: relative; }
+[data-line]::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 1px; background: var(--line-c, var(--rule)); transform-origin: 0 50%; transition: transform 1.6s var(--ease-out) var(--d, 0ms); }
+.on-dark [data-line] { --line-c: rgba(239, 231, 221, .2); }
+.motion [data-line]:not(.is-in)::before { transform: scaleX(0); }
+
+/* ---------- Footer wordmark ---------- */
+.foot-word { margin: clamp(56px, 8vw, 104px) 0 0; font-family: var(--font-display); font-size: clamp(50px, 14.6vw, 214px); line-height: .92; letter-spacing: -.02em; white-space: nowrap; color: var(--on-dark); }
+.foot-word + .foot-base { margin-top: clamp(28px, 3vw, 40px); }
+
+/* ---------- Intro: first visit in a session. The B is written, then the panel lifts with an arched edge ---------- */
+.intro, .veil { display: none; }
+.motion.is-intro .intro {
+  display: flex; align-items: center; justify-content: center;
+  position: fixed; left: 0; right: 0; top: 0; height: 116vh; padding-bottom: 16vh; z-index: 200;
+  background: var(--walnut); color: var(--on-dark);
+  border-radius: 0 0 50% 50% / 0 0 16vh 16vh;
+  animation: lift 1s var(--ease-curtain) 1.35s forwards;
+}
+.intro-mark { display: flex; flex-direction: column; align-items: center; gap: 20px; animation: depart .55s var(--ease-in) 1.2s forwards; }
+.intro .logo-b { height: 96px; clip-path: inset(0 100% 0 0); animation: write 1.05s var(--ease-curtain) .15s forwards; }
+.intro-name { font-family: var(--font-display); font-size: 22px; letter-spacing: .04em; opacity: 0; transform: translateY(10px); animation: appear .8s var(--ease-out) .7s forwards; }
+@keyframes write { to { clip-path: inset(0 0 0 0); } }
+@keyframes appear { to { opacity: 1; transform: none; } }
+@keyframes depart { to { opacity: 0; transform: translateY(-24px); } }
+@keyframes lift { to { transform: translateY(-100%); visibility: hidden; } }
+
+/* ---------- Page change: a walnut veil with arched edges sweeps up and away ---------- */
+.motion .veil {
+  display: flex; align-items: center; justify-content: center;
+  position: fixed; left: 0; right: 0; top: -16vh; height: 132vh; z-index: 150; pointer-events: none;
+  background: var(--walnut); color: var(--on-dark); border-radius: 50% / 16vh;
+  transform: translateY(101%); transition: transform .56s var(--ease-curtain);
+}
+.motion .veil.cover { transform: none; pointer-events: auto; }
+.motion .veil.cover.leave { transform: translateY(-101%); transition-duration: .8s; pointer-events: none; }
+.motion .veil.reset { transition: none; }
+.veil .logo-b { height: 58px; opacity: 0; transform: translateY(12px); transition: opacity .3s var(--ease-out), transform .6s var(--ease-out); }
+.veil.cover:not(.leave) .logo-b { opacity: .9; transform: none; transition-delay: .22s; }
+
+/* ---------- Cursor (mouse and trackpad only) ---------- */
+.cursor, .peek { display: none; }
+.has-cursor, .has-cursor * { cursor: none !important; }
+.has-cursor :is(input, textarea, select) { cursor: auto !important; }
+.has-cursor .cursor { display: block; position: fixed; left: 0; top: 0; z-index: 300; pointer-events: none; color: var(--ink); opacity: 0; transition: opacity .3s var(--ease-out), color .3s var(--ease-out); }
+.cursor.is-active { opacity: 1; }
+.cursor.is-active.is-field { opacity: 0; }
+.cursor.is-dark { color: var(--on-dark); }
+.cursor-dot-pos, .cursor-follow { position: absolute; left: 0; top: 0; }
+.cursor-dot { position: absolute; left: -3px; top: -3px; width: 6px; height: 6px; border-radius: 50%; background: currentColor; transition: transform .35s var(--ease-out); }
+.cursor-ring { position: absolute; left: -18px; top: -18px; width: 36px; height: 36px; transition: transform .35s var(--ease-out); }
+.cursor-ring::before { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 1px solid currentColor; opacity: .4; transition: transform .55s var(--ease-out), opacity .3s, background-color .3s, border-color .3s; }
+.cursor-label { position: absolute; left: 0; top: 0; transform: translate(-50%, -50%); font: 500 13px/1 var(--font-body); letter-spacing: .02em; color: #F7EFE7; opacity: 0; white-space: nowrap; transition: opacity .2s; }
+.cursor.is-link .cursor-ring::before { transform: scale(1.55); opacity: .75; }
+.cursor.is-link .cursor-dot, .cursor.is-view .cursor-dot { transform: scale(0); }
+.cursor.is-view .cursor-ring::before { transform: scale(2.6); background: var(--oxblood); border-color: var(--oxblood); opacity: .95; }
+.cursor.is-view .cursor-label { opacity: 1; transition-delay: .12s; }
+.cursor.is-down .cursor-ring { transform: scale(.82); }
+
+/* Arched preview that trails the cursor over the sector list */
+.has-cursor .peek { display: block; position: fixed; left: 0; top: 0; z-index: 1; width: 230px; height: 300px; margin: -150px 0 0 -115px; pointer-events: none; }
+.peek-inner { width: 100%; height: 100%; overflow: hidden; clip-path: inset(0 round 999px 999px 0 0); background: var(--plaster-2); opacity: 0; transform: scale(.7); transition: opacity .35s var(--ease-out), transform .75s var(--ease-out); }
+.peek.is-on .peek-inner { opacity: 1; transform: none; }
+.peek-inner svg, .peek-inner img { width: 100%; height: 100%; object-fit: cover; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; scroll-behavior: auto !important; }
@@ -417,6 +514,10 @@ body.menu-open .wa { display: none; }
 </head>
 <body>
 <a class="skip-link" href="#main">Skip to content</a>
+<div class="intro" aria-hidden="true"><div class="intro-mark"><span class="logo-b"></span><span class="intro-name">Bella Interior</span></div></div>
+<div class="veil" aria-hidden="true"><span class="logo-b"></span></div>
+<div class="cursor" aria-hidden="true"><div class="cursor-dot-pos"><span class="cursor-dot"></span></div><div class="cursor-follow"><span class="cursor-ring"></span><span class="cursor-label"></span></div></div>
+<div class="peek" aria-hidden="true"><div class="peek-inner"></div></div>
 
 <header class="site-header" id="top">
   <div class="wrap header-inner">
@@ -452,7 +553,8 @@ body.menu-open .wa { display: none; }
 <footer class="site-footer on-dark">
   <div class="wrap">
     <div class="foot-grid" data-slot="footer"></div>
-    <div class="foot-base">
+    <p class="foot-word" aria-hidden="true" data-split>Bella Interior</p>
+    <div class="foot-base" data-line>
       <span>© <span data-year></span> Bella Interior LLC. Dubai, United Arab Emirates.</span>
       <a class="link" href="#top">Back to top</a>
     </div>
@@ -701,7 +803,7 @@ function art(p, align, n = 0) {
   const inner = photo
     ? `<img src="${photo}" alt="${label}" loading="${n === 0 && align === 'eager' ? 'eager' : 'lazy'}" decoding="async">`
     : drawing(p.scene, `Drawing of ${label}`, align === 'eager' ? 'center' : align);
-  return `<div class="art">${inner}</div>`;
+  return `<div class="art"><div class="px">${inner}</div></div>`;
 }
 function media(p, ratio, align = 'center', n = 0) {
   return `<div class="media ${ratio} reveal">${art(p, align, n)}<span class="curtain" aria-hidden="true"></span></div>`;
@@ -717,29 +819,29 @@ const waLink = () => `https://wa.me/${tel(CONTACT.whatsapp).replace('+', '')}`;
 const RATIOS = ['ratio-43', 'ratio-34', 'ratio-45', 'ratio-43'];
 
 function card(p, i) {
-  return `<article class="card"><a href="#/projects/${p.slug}">
+  return `<article class="card"><a href="#/projects/${p.slug}" data-cursor="View">
     ${media(p, RATIOS[i % 4])}
-    <div class="card-meta"><h3 class="card-name">${esc(p.name)}</h3><span class="card-sector">${esc(sector(p.sector).name)}</span></div>
-    <p class="card-sum">${esc(p.summary)}</p>
+    <div class="card-meta" data-rise style="--d:120ms"><h3 class="card-name">${esc(p.name)}</h3><span class="card-sector">${esc(sector(p.sector).name)}</span></div>
+    <p class="card-sum" data-rise style="--d:200ms">${esc(p.summary)}</p>
   </a></article>`;
 }
 
 function stepsList() {
-  return `<ol class="steps">${STEPS.map(([t, d], i) => `<li><span class="step-no" aria-hidden="true">${i + 1}</span><h3 class="step-title">${t}</h3><p class="step-text">${d}</p></li>`).join('')}</ol>`;
+  return `<ol class="steps">${STEPS.map(([t, d], i) => `<li data-rise data-line style="--d:${i * 90}ms"><span class="step-no" aria-hidden="true">${i + 1}</span><h3 class="step-title">${t}</h3><p class="step-text">${d}</p></li>`).join('')}</ol>`;
 }
 
 function processBand(title = 'From first drawing to handover') {
   return `<section class="section on-dark" aria-labelledby="process-h"><div class="wrap">
-    <div class="sec-head"><div><h2 class="h2" id="process-h">${title}</h2>
-    <p class="lead">One team designs and builds your space, so you deal with one contract and one point of contact.</p></div></div>
+    <div class="sec-head"><div><h2 class="h2" id="process-h" data-split>${title}</h2>
+    <p class="lead" data-rise style="--d:200ms">One team designs and builds your space, so you deal with one contract and one point of contact.</p></div></div>
     ${stepsList()}
   </div></section>`;
 }
 
 function ctaBand() {
   return `<section class="section" aria-labelledby="cta-h"><div class="wrap cta">
-    <h2 class="h2" id="cta-h">Have a space in mind?</h2>
-    <div class="cta-side">
+    <h2 class="h2" id="cta-h" data-split>Have a space in mind?</h2>
+    <div class="cta-side" data-rise style="--d:250ms">
       <p class="lead">Tell us the size, the location and when you would like to open. We will come back within one working day with next steps.</p>
       <div class="actions"><a class="btn btn-primary" href="#/contact">Start a project</a><a class="btn btn-quiet" href="${waLink()}" target="_blank" rel="noopener">Message on WhatsApp</a></div>
     </div>
@@ -759,21 +861,21 @@ const VIEWS = {
           <div class="actions fade"><a class="btn btn-primary" href="#/contact">Start a project</a><a class="btn btn-quiet" href="#/projects">See our projects</a></div>
         </div>
         <figure class="hero-arch">
-          <a class="arch-frame" href="#/projects/${hero.slug}" style="display:block">${art(hero, 'eager')}<span class="curtain" aria-hidden="true"></span></a>
+          <a class="arch-frame" href="#/projects/${hero.slug}" style="display:block" data-cursor="View">${art(hero, 'eager')}<span class="curtain" aria-hidden="true"></span></a>
           <figcaption>${esc(hero.name)}, ${esc(sector(hero.sector).name.toLowerCase())} boutique</figcaption>
         </figure>
       </section>
 
       <section class="section" style="padding-top:0" aria-labelledby="sectors-h"><div class="wrap">
-        <div class="sec-head"><h2 class="h2" id="sectors-h">What we build</h2></div>
-        <ul class="sectors">${SECTORS.map(s => {
+        <div class="sec-head"><h2 class="h2" id="sectors-h" data-split>What we build</h2></div>
+        <ul class="sectors">${SECTORS.map((s, i) => {
           const n = PROJECTS.filter(p => p.sector === s.id).length;
-          return `<li><a href="#/projects?s=${s.id}"><span class="sector-name">${s.name}</span><span class="sector-desc">${s.desc}</span><span class="sector-more">${n ? `See ${n} project${n > 1 ? 's' : ''}` : 'See projects'}</span></a></li>`;
+          return `<li data-line style="--d:${i * 90}ms"><a href="#/projects?s=${s.id}" data-sector="${s.id}" data-rise style="--d:${i * 90 + 120}ms"><span class="sector-name">${s.name}</span><span class="sector-desc">${s.desc}</span><span class="sector-more">${n ? `See ${n} project${n > 1 ? 's' : ''}` : 'See projects'}</span></a></li>`;
         }).join('')}</ul>
       </div></section>
 
       <section class="section" style="padding-top:0" aria-labelledby="recent-h"><div class="wrap">
-        <div class="sec-head"><h2 class="h2" id="recent-h">Recent projects</h2><a class="link" href="#/projects">All projects</a></div>
+        <div class="sec-head"><h2 class="h2" id="recent-h" data-split>Recent projects</h2><a class="link" href="#/projects" data-rise style="--d:300ms">All projects</a></div>
         <div class="pgrid">${PROJECTS.slice(0, 4).map(card).join('')}</div>
       </div></section>
 
@@ -782,9 +884,9 @@ const VIEWS = {
       <section class="section" aria-labelledby="studio-h"><div class="wrap split">
         <div>
           <h2 class="visually-hidden" id="studio-h">The studio</h2>
-          <p class="statement">Since 2008, the people who draw your space have been the people who build it.</p>
-          <p class="lead">Our designers and site team work under one roof in Dubai. Decisions are made faster, details survive the site, and you always have one number to call.</p>
-          <p style="margin-top:28px"><a class="link" href="#/studio">About the studio</a></p>
+          <p class="statement" data-split>Since 2008, the people who draw your space have been the people who build it.</p>
+          <p class="lead" data-rise style="--d:300ms">Our designers and site team work under one roof in Dubai. Decisions are made faster, details survive the site, and you always have one number to call.</p>
+          <p style="margin-top:28px;--d:400ms" data-rise><a class="link" href="#/studio">About the studio</a></p>
         </div>
         <figure class="hero-arch small-arch" style="margin:0"><div class="arch-frame reveal">${art(PROJECTS[4], 'left')}<span class="curtain" aria-hidden="true"></span></div></figure>
       </div></section>
@@ -801,18 +903,18 @@ const VIEWS = {
       title: 'Projects | Bella Interior',
       html: `
       <section class="wrap page-head">
-        <h1 class="display-2" tabindex="-1">Projects</h1>
-        <p class="lead">Offices, restaurants, homes and shops we have designed and built across Dubai.</p>
+        <h1 class="display-2" tabindex="-1" data-split>Projects</h1>
+        <p class="lead" data-rise style="--d:250ms">Offices, restaurants, homes and shops we have designed and built across Dubai.</p>
       </section>
       <section class="wrap" style="padding-bottom:clamp(80px,10vw,150px)" aria-label="Project list">
-        <div class="filters" role="group" aria-label="Filter by sector">
+        <div class="filters" data-rise style="--d:350ms" role="group" aria-label="Filter by sector">
           ${chip('all', 'All', PROJECTS.length)}
           ${SECTORS.map(s => chip(s.id, s.short, PROJECTS.filter(p => p.sector === s.id).length)).join('')}
         </div>
         <p class="visually-hidden" role="status">${list.length} project${list.length === 1 ? '' : 's'} shown</p>
         ${list.length
           ? `<div class="pgrid">${list.map(card).join('')}</div>`
-          : `<div class="empty"><p class="lead">No ${esc(sector(active).name.toLowerCase())} projects to show yet. Ask us about recent work in this sector.</p><div class="actions"><a class="btn btn-primary" href="#/contact">Start a project</a><button type="button" class="btn btn-quiet" data-filter="all">See all projects</button></div></div>`}
+          : `<div class="empty" data-rise><p class="lead">No ${esc(sector(active).name.toLowerCase())} projects to show yet. Ask us about recent work in this sector.</p><div class="actions"><a class="btn btn-primary" href="#/contact">Start a project</a><button type="button" class="btn btn-quiet" data-filter="all">See all projects</button></div></div>`}
       </section>`
     };
   },
@@ -825,25 +927,25 @@ const VIEWS = {
       title: `${p.name} | Bella Interior`,
       html: `
       <section class="wrap page-head" style="padding-bottom:clamp(28px,4vw,48px)">
-        <a class="back link" href="#/projects">All projects</a>
-        <h1 class="display-2" tabindex="-1">${esc(p.name)}</h1>
-        <p class="lead">${esc(p.summary)}</p>
+        <a class="back link" href="#/projects" data-rise>All projects</a>
+        <h1 class="display-2" tabindex="-1" data-split>${esc(p.name)}</h1>
+        <p class="lead" data-rise style="--d:250ms">${esc(p.summary)}</p>
       </section>
       <div class="wrap">${media(p, 'ratio-169', 'center')}
-        <dl class="facts">
-          <div><dt>Sector</dt><dd>${esc(s.name)}</dd></div>
-          <div><dt>Location</dt><dd>Dubai</dd></div>
-          <div><dt>Scope</dt><dd>${esc(p.scope)}</dd></div>
-          <div><dt>Size</dt><dd>${esc(p.size)}</dd></div>
-          <div><dt>Programme</dt><dd>${esc(p.duration)}</dd></div>
+        <dl class="facts" data-line>
+          <div data-rise style="--d:0ms"><dt>Sector</dt><dd>${esc(s.name)}</dd></div>
+          <div data-rise style="--d:80ms"><dt>Location</dt><dd>Dubai</dd></div>
+          <div data-rise style="--d:160ms"><dt>Scope</dt><dd>${esc(p.scope)}</dd></div>
+          <div data-rise style="--d:240ms"><dt>Size</dt><dd>${esc(p.size)}</dd></div>
+          <div data-rise style="--d:320ms"><dt>Programme</dt><dd>${esc(p.duration)}</dd></div>
         </dl>
       </div>
       <section class="section" aria-labelledby="about-h" style="padding-bottom:0"><div class="wrap">
-        <div class="about"><h2 class="h3" id="about-h">About the project</h2><div class="prose">${p.body.map(t => `<p>${esc(t)}</p>`).join('')}</div></div>
+        <div class="about"><h2 class="h3" id="about-h" data-split>About the project</h2><div class="prose" data-rise style="--d:200ms">${p.body.map(t => `<p>${esc(t)}</p>`).join('')}</div></div>
         <div class="gallery">${media(p, 'ratio-45', 'left', 1)}${media(p, 'ratio-45', 'right', 2)}</div>
       </div></section>
       <div class="wrap" style="margin-top:clamp(80px,10vw,140px)">
-        <a class="next" href="#/projects/${next.slug}"><span class="muted">Next project</span><span class="display-2" style="display:block">${esc(next.name)}</span></a>
+        <a class="next" href="#/projects/${next.slug}" data-line data-cursor="Next"><span class="muted" data-rise>Next project</span><span class="display-2" style="display:block" data-split>${esc(next.name)}</span></a>
       </div>
       ${ctaBand()}`
     };
@@ -862,13 +964,13 @@ const VIEWS = {
       title: 'Services | Bella Interior',
       html: `
       <section class="wrap page-head">
-        <h1 class="display-2" tabindex="-1">Design and build, under one contract</h1>
-        <p class="lead">We design your interior and build it with our own site team. You get one price, one programme and one company responsible for the result.</p>
+        <h1 class="display-2" tabindex="-1" data-split>Design and build, under one contract</h1>
+        <p class="lead" data-rise style="--d:250ms">We design your interior and build it with our own site team. You get one price, one programme and one company responsible for the result.</p>
       </section>
       <section class="wrap" aria-labelledby="sectors-h" style="padding-bottom:clamp(80px,10vw,150px)">
         <h2 class="visually-hidden" id="sectors-h">Sectors</h2>
-        <div class="sector-blocks">${SECTORS.map(s => `
-          <div class="sector-block">
+        <div class="sector-blocks">${SECTORS.map((s, i) => `
+          <div class="sector-block" data-line data-rise style="--d:${(i % 2) * 120}ms">
             <h3 class="h3">${s.name}</h3>
             <p>${s.desc}</p>
             <ul>${s.typical.map(t => `<li>${t}</li>`).join('')}</ul>
@@ -876,8 +978,8 @@ const VIEWS = {
           </div>`).join('')}</div>
       </section>
       <section class="section" style="padding-top:0" aria-labelledby="inc-h"><div class="wrap">
-        <div class="sec-head"><h2 class="h2" id="inc-h">What is included</h2></div>
-        <div class="included">${included.map(([t, d]) => `<div><h3>${t}</h3><p>${d}</p></div>`).join('')}</div>
+        <div class="sec-head"><h2 class="h2" id="inc-h" data-split>What is included</h2></div>
+        <div class="included">${included.map(([t, d], i) => `<div data-rise style="--d:${(i % 3) * 100}ms"><h3>${t}</h3><p>${d}</p></div>`).join('')}</div>
       </div></section>
       ${processBand('How a project runs')}
       ${ctaBand()}`
@@ -889,11 +991,11 @@ const VIEWS = {
       title: 'Studio | Bella Interior',
       html: `
       <section class="wrap page-head">
-        <h1 class="display-2" tabindex="-1">A Dubai fit-out studio, since 2008</h1>
-        <p class="lead">Bella Interior LLC designs and builds boutique offices, restaurants and cafés, homes and shops across Dubai and the UAE.</p>
+        <h1 class="display-2" tabindex="-1" data-split>A Dubai fit-out studio, since 2008</h1>
+        <p class="lead" data-rise style="--d:250ms">Bella Interior LLC designs and builds boutique offices, restaurants and cafés, homes and shops across Dubai and the UAE.</p>
       </section>
       <section class="wrap split" aria-labelledby="story-h" style="padding-bottom:clamp(80px,10vw,150px)">
-        <div class="prose">
+        <div class="prose" data-rise>
           <h2 class="h3" id="story-h" style="margin-bottom:20px">How we work</h2>
           <p>Most fit-outs pass through several hands: a designer, a contractor, a joinery shop and a project manager trying to keep them in step. We keep all of that in one company.</p>
           <p>Our designers draw the space knowing exactly how it will be built, and our site team builds it knowing why each detail matters. When something changes on site, the person who can decide is already in the room.</p>
@@ -906,11 +1008,11 @@ const VIEWS = {
         <figure class="hero-arch small-arch" style="margin:0"><div class="arch-frame reveal">${art(PROJECTS[2], 'center')}<span class="curtain" aria-hidden="true"></span></div></figure>
       </section>
       <section class="section on-dark" aria-labelledby="believe-h"><div class="wrap">
-        <div class="sec-head"><h2 class="h2" id="believe-h">What we care about</h2></div>
+        <div class="sec-head"><h2 class="h2" id="believe-h" data-split>What we care about</h2></div>
         <div class="principles">
-          <div><h3>One contract, one team</h3><p class="muted">Design and construction sit under the same roof, so nothing gets lost between the drawing and the site.</p></div>
-          <div><h3>Materials that age well</h3><p class="muted">Lime plaster, natural stone, solid timber. We choose finishes that look better after five years of use, not just on opening day.</p></div>
-          <div><h3>Built around daily use</h3><p class="muted">A café counter, a fitting room, a meeting table: we plan each space around the people who use it every day.</p></div>
+          <div data-rise style="--d:0ms"><h3>One contract, one team</h3><p class="muted">Design and construction sit under the same roof, so nothing gets lost between the drawing and the site.</p></div>
+          <div data-rise style="--d:120ms"><h3>Materials that age well</h3><p class="muted">Lime plaster, natural stone, solid timber. We choose finishes that look better after five years of use, not just on opening day.</p></div>
+          <div data-rise style="--d:240ms"><h3>Built around daily use</h3><p class="muted">A café counter, a fitting room, a meeting table: we plan each space around the people who use it every day.</p></div>
         </div>
       </div></section>
       ${ctaBand()}`
@@ -923,11 +1025,11 @@ const VIEWS = {
       title: 'Start a project | Bella Interior',
       html: `
       <section class="wrap page-head">
-        <h1 class="display-2" tabindex="-1">Start a project</h1>
-        <p class="lead">Tell us about your space. We reply within one working day, usually with a call to arrange a site visit.</p>
+        <h1 class="display-2" tabindex="-1" data-split>Start a project</h1>
+        <p class="lead" data-rise style="--d:250ms">Tell us about your space. We reply within one working day, usually with a call to arrange a site visit.</p>
       </section>
       <div class="wrap contact-grid">
-        <div data-form-slot>
+        <div data-form-slot data-rise style="--d:350ms">
           <form class="form" novalidate aria-describedby="form-note">
             <div class="error-summary" tabindex="-1" hidden role="alert" aria-labelledby="sum-h"><h2 id="sum-h">Please check these fields</h2><ul></ul></div>
             <div class="form-row">
@@ -954,7 +1056,7 @@ const VIEWS = {
             </div>
           </form>
         </div>
-        <aside class="direct" aria-labelledby="direct-h">
+        <aside class="direct" aria-labelledby="direct-h" data-rise style="--d:500ms">
           <h2 class="h3" id="direct-h">Or talk to us directly</h2>
           <dl>
             <div><dt>Call</dt><dd><a href="tel:${tel(CONTACT.phone)}">${CONTACT.phone}</a></dd></div>
@@ -973,8 +1075,8 @@ const VIEWS = {
     return {
       title: 'Page not found | Bella Interior',
       html: `<section class="wrap page-head" style="padding-bottom:clamp(100px,12vw,180px)">
-        <h1 class="display-2" tabindex="-1">This page does not exist</h1>
-        <p class="lead">The link may be out of date. Go back to the home page or browse our projects.</p>
+        <h1 class="display-2" tabindex="-1" data-split>This page does not exist</h1>
+        <p class="lead" data-rise style="--d:250ms">The link may be out of date. Go back to the home page or browse our projects.</p>
         <div class="actions" style="margin-top:32px"><a class="btn btn-primary" href="#/">Go to home page</a><a class="btn btn-quiet" href="#/projects">See projects</a></div>
       </section>`
     };
@@ -984,9 +1086,14 @@ const VIEWS = {
 /* =====================================================================
    ROUTER + TRANSITIONS
    ===================================================================== */
+const html = document.documentElement;
 const main = document.getElementById('main');
+const veil = document.querySelector('.veil');
+const header = document.querySelector('.site-header');
 const reduce = matchMedia('(prefers-reduced-motion: reduce)');
+const motion = () => html.classList.contains('motion');
 let navToken = 0, firstRender = true;
+let resetPointer = () => {};
 
 function parse() {
   const raw = location.hash.replace(/^#/, '') || '/';
@@ -1008,41 +1115,108 @@ function render() {
   const view = VIEWS[r.name](r.q, r.arg);
   const token = ++navToken;
   const swap = () => {
-    if (token !== navToken) return;
     main.innerHTML = view.html;
     document.title = view.title;
     document.querySelectorAll('[data-nav]').forEach(a => a.dataset.nav === r.nav ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current'));
     window.scrollTo(0, 0);
+    header.classList.remove('is-hidden');
+    resetPointer();
     if (!firstRender) main.querySelector('h1')?.focus({ preventScroll: true });
-    setupView();
   };
   closeMenu(false);
-  if (firstRender || reduce.matches || !document.documentElement.classList.contains('motion')) {
-    swap(); firstRender = false; return;
+  if (firstRender || !motion()) {
+    const intro = firstRender && html.classList.contains('is-intro');
+    swap();
+    setupView(intro ? 1400 : 0);
+    if (intro) setTimeout(() => html.classList.remove('is-intro'), 2600);
+    firstRender = false;
+    return;
   }
-  main.classList.add('is-leaving');
+  // The veil rises over the page, the page changes underneath it, then it lifts away.
+  veil.classList.remove('leave', 'reset');
+  veil.classList.add('cover');
   setTimeout(() => {
     if (token !== navToken) return;
-    main.classList.remove('is-leaving');
-    main.classList.add('is-entering');
     swap();
-    requestAnimationFrame(() => requestAnimationFrame(() => { if (token === navToken) main.classList.remove('is-entering'); }));
-  }, 170);
+    veil.classList.add('leave');
+    setupView(220);
+    setTimeout(() => {
+      if (token !== navToken) return;
+      veil.classList.add('reset');
+      veil.classList.remove('cover', 'leave');
+      void veil.offsetWidth;
+      veil.classList.remove('reset');
+    }, 820);
+  }, 580);
 }
 
-/* Reveals: each image's curtain draws aside once, when it scrolls into view */
+/* Reveals: headings rise word by word, rules draw, image curtains open, once each */
 let io;
-function setupView() {
-  const hero = main.querySelector('[data-hero]');
-  if (hero) requestAnimationFrame(() => requestAnimationFrame(() => hero.classList.add('is-in')));
+function splitWords(root) {
+  root.querySelectorAll('[data-split]:not(.is-split)').forEach(el => {
+    const words = el.textContent.trim().split(/\s+/);
+    el.innerHTML = words.map((w, i) => `<span class="w"><span style="--i:${i}">${esc(w)}</span></span>`).join(' ');
+    el.classList.add('is-split');
+  });
+}
+function observeReveals() {
+  const items = document.querySelectorAll('[data-split], [data-rise], [data-line], .reveal');
+  if (!motion() || !('IntersectionObserver' in window)) { items.forEach(n => n.classList.add('is-in')); return; }
   io?.disconnect();
-  const items = main.querySelectorAll('.reveal');
-  if (!('IntersectionObserver' in window)) { items.forEach(n => n.classList.add('is-in')); return; }
   io = new IntersectionObserver(entries => entries.forEach(e => {
     if (e.isIntersecting) { e.target.classList.add('is-in'); io.unobserve(e.target); }
-  }), { rootMargin: '0px 0px -12% 0px', threshold: 0.08 });
-  items.forEach(n => io.observe(n));
+  }), { rootMargin: '0px 0px -6% 0px' });
+  items.forEach(n => { if (!n.classList.contains('is-in')) io.observe(n); });
 }
+function setupView(delay = 0) {
+  splitWords(document);
+  const token = navToken;
+  const go = () => {
+    if (token !== navToken) return;
+    main.querySelector('[data-hero]')?.classList.add('is-in');
+    observeReveals();
+    setupParallax();
+  };
+  if (delay) setTimeout(go, delay); else requestAnimationFrame(() => requestAnimationFrame(go));
+}
+
+/* Parallax: images drift slightly slower than the page */
+const pxItems = new Map();
+let pxIO;
+function setupParallax() {
+  pxIO?.disconnect(); pxItems.clear();
+  if (!motion() || !('IntersectionObserver' in window)) return;
+  pxIO = new IntersectionObserver(entries => {
+    entries.forEach(e => { if (e.isIntersecting) pxItems.set(e.target, e.target.querySelector('.px')); else pxItems.delete(e.target); });
+    requestTick();
+  }, { rootMargin: '15% 0px' });
+  main.querySelectorAll('.media, .arch-frame').forEach(n => { if (n.querySelector('.px')) pxIO.observe(n); });
+}
+function updateParallax() {
+  const vh = innerHeight;
+  pxItems.forEach((px, box) => {
+    const r = box.getBoundingClientRect();
+    const p = Math.max(-1, Math.min(1, (r.top + r.height / 2 - vh / 2) / (vh / 2 + r.height / 2)));
+    px.style.transform = `translate3d(0, ${(p * r.height * -0.06).toFixed(1)}px, 0)`;
+  });
+}
+
+/* One frame loop for scroll work: header state and parallax */
+let ticking = false, lastY = scrollY;
+function requestTick() { if (!ticking) { ticking = true; requestAnimationFrame(onFrame); } }
+function onFrame() {
+  ticking = false;
+  const y = scrollY;
+  header.classList.toggle('is-scrolled', y > 8);
+  if (y < 200) { header.classList.remove('is-hidden'); lastY = y; }
+  else if (Math.abs(y - lastY) > 12) {
+    if (!document.body.classList.contains('menu-open')) header.classList.toggle('is-hidden', y > lastY);
+    lastY = y;
+  }
+  if (pxItems.size) updateParallax();
+}
+addEventListener('scroll', requestTick, { passive: true });
+addEventListener('resize', requestTick);
 
 /* =====================================================================
    INTERACTIONS
@@ -1059,7 +1233,7 @@ main.addEventListener('click', e => {
     const y = window.scrollY;
     main.innerHTML = view.html;
     window.scrollTo(0, y);
-    setupView();
+    setupView(0);
     main.querySelector(`[data-filter="${id}"]`)?.focus();
   }
 });
@@ -1083,20 +1257,85 @@ function closeMenu(returnFocus = true) {
   document.body.classList.remove('menu-open');
   menuBtn.setAttribute('aria-expanded', 'false');
   menuBtn.textContent = 'Menu';
-  menuTimer = setTimeout(() => { menu.hidden = true; }, 260);
+  menuTimer = setTimeout(() => { menu.hidden = true; }, motion() ? 760 : 260);
   if (returnFocus) menuBtn.focus();
 }
 menuBtn.addEventListener('click', () => (menu.hidden ? openMenu() : closeMenu()));
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !menu.hidden) closeMenu(); });
 matchMedia('(min-width: 920px)').addEventListener?.('change', ev => { if (ev.matches) closeMenu(false); });
 
-// Header border once scrolled
-const header = document.querySelector('.site-header');
-let ticking = false;
-addEventListener('scroll', () => {
-  if (ticking) return; ticking = true;
-  requestAnimationFrame(() => { header.classList.toggle('is-scrolled', scrollY > 8); ticking = false; });
-}, { passive: true });
+/* Cursor: a dot that tracks exactly and a ring that follows with a soft delay.
+   Grows over links, becomes a "View" disc over projects; buttons lean toward it. */
+if (html.classList.contains('has-cursor')) {
+  const cur = document.querySelector('.cursor');
+  const dot = cur.querySelector('.cursor-dot-pos');
+  const follow = cur.querySelector('.cursor-follow');
+  const label = cur.querySelector('.cursor-label');
+  const peek = document.querySelector('.peek');
+  const peekInner = peek.querySelector('.peek-inner');
+  const peekCache = {};
+  let mx = 0, my = 0, fx = 0, fy = 0, qx = 0, qy = 0, rot = 0;
+  let running = false, seen = false, peekOn = false, peekId = '', magnet = null;
+
+  const loop = () => {
+    fx += (mx - fx) * .2; fy += (my - fy) * .2;
+    follow.style.transform = `translate3d(${fx.toFixed(1)}px, ${fy.toFixed(1)}px, 0)`;
+    const vx = mx - qx;
+    qx += vx * .11; qy += (my - qy) * .11;
+    rot += (Math.max(-7, Math.min(7, vx * .05)) - rot) * .12;
+    peek.style.transform = `translate3d(${qx.toFixed(1)}px, ${qy.toFixed(1)}px, 0) rotate(${rot.toFixed(2)}deg)`;
+    const busy = Math.abs(mx - fx) + Math.abs(my - fy) > .2 || (peekOn && (Math.abs(vx) + Math.abs(my - qy) > .2 || Math.abs(rot) > .05));
+    if (busy) requestAnimationFrame(loop); else running = false;
+  };
+  const kick = () => { if (!running) { running = true; requestAnimationFrame(loop); } };
+  const release = el => { if (el) { el.style.removeProperty('--mx'); el.style.removeProperty('--my'); el._mx = el._my = 0; } };
+  const hidePeek = () => { if (peekOn) { peekOn = false; peekId = ''; peek.classList.remove('is-on'); } };
+  resetPointer = () => { cur.classList.remove('is-link', 'is-view', 'is-field'); hidePeek(); release(magnet); magnet = null; };
+
+  addEventListener('mousemove', e => {
+    mx = e.clientX; my = e.clientY;
+    dot.style.transform = `translate3d(${mx}px, ${my}px, 0)`;
+    if (!seen) { seen = true; fx = qx = mx; fy = qy = my; }
+    cur.classList.add('is-active');
+    const m = e.target instanceof Element ? e.target.closest('.btn, .wa') : null;
+    if (m !== magnet) { release(magnet); magnet = m; }
+    if (m) {
+      const r = m.getBoundingClientRect();
+      const cx = r.left + r.width / 2 - (m._mx || 0), cy = r.top + r.height / 2 - (m._my || 0);
+      m._mx = Math.max(-7, Math.min(7, (mx - cx) * .14));
+      m._my = Math.max(-5, Math.min(5, (my - cy) * .28));
+      m.style.setProperty('--mx', m._mx.toFixed(1) + 'px');
+      m.style.setProperty('--my', m._my.toFixed(1) + 'px');
+    }
+    kick();
+  }, { passive: true });
+
+  document.addEventListener('mouseover', e => {
+    const t = e.target instanceof Element ? e.target : null;
+    if (!t) return;
+    const field = t.closest('input, textarea, select');
+    const view = field ? null : t.closest('[data-cursor]');
+    const link = t.closest('a, button, label, [role="button"]');
+    cur.classList.toggle('is-field', !!field);
+    cur.classList.toggle('is-view', !!view);
+    cur.classList.toggle('is-link', !view && !field && !!link);
+    if (view) label.textContent = view.dataset.cursor;
+    cur.classList.toggle('is-dark', !!t.closest('.on-dark'));
+    const row = t.closest('.sectors a[data-sector]');
+    if (row) {
+      if (row.dataset.sector !== peekId) {
+        peekId = row.dataset.sector;
+        const p = PROJECTS.find(x => x.sector === peekId);
+        peekInner.innerHTML = p ? (peekCache[peekId] ||= p.photo ? `<img src="${p.photo}" alt="">` : drawing(p.scene, '', 'center')) : '';
+      }
+      if (!peekOn) { peekOn = true; peek.classList.add('is-on'); }
+    } else hidePeek();
+    kick();
+  });
+  html.addEventListener('mouseleave', () => { cur.classList.remove('is-active'); hidePeek(); });
+  addEventListener('mousedown', () => cur.classList.add('is-down'));
+  addEventListener('mouseup', () => cur.classList.remove('is-down'));
+}
 
 // Contact form: validate on blur, summarise on submit
 const RULES = {
@@ -1165,10 +1404,10 @@ document.querySelector('[data-year]').textContent = new Date().getFullYear();
 document.querySelector('[data-slot="menu-contact"]').innerHTML =
   `<a class="link" href="tel:${tel(CONTACT.phone)}">${CONTACT.phone}</a><a class="link" href="mailto:${CONTACT.email}">${CONTACT.email}</a>`;
 document.querySelector('[data-slot="footer"]').innerHTML = `
-  <div class="foot-brand"><span class="logo-b" aria-hidden="true"></span><p>Bella Interior LLC. Design and build fit-out for offices, F&amp;B, residences and retail in Dubai, since 2008.</p></div>
-  <div class="foot-col"><h2>Visit</h2><ul><li>${CONTACT.address}</li><li>${CONTACT.hours}</li></ul></div>
-  <div class="foot-col"><h2>Contact</h2><ul><li><a href="tel:${tel(CONTACT.phone)}">${CONTACT.phone}</a></li><li><a href="${waLink()}" target="_blank" rel="noopener">WhatsApp</a></li><li><a href="mailto:${CONTACT.email}">${CONTACT.email}</a></li></ul></div>
-  <div class="foot-col"><h2>Explore</h2><ul><li><a href="#/projects">Projects</a></li><li><a href="#/services">Services</a></li><li><a href="#/studio">Studio</a></li><li><a href="https://instagram.com/${CONTACT.instagram}" target="_blank" rel="noopener">Instagram</a></li></ul></div>`;
+  <div class="foot-brand" data-rise><span class="logo-b" aria-hidden="true"></span><p>Bella Interior LLC. Design and build fit-out for offices, F&amp;B, residences and retail in Dubai, since 2008.</p></div>
+  <div class="foot-col" data-rise style="--d:100ms"><h2>Visit</h2><ul><li>${CONTACT.address}</li><li>${CONTACT.hours}</li></ul></div>
+  <div class="foot-col" data-rise style="--d:200ms"><h2>Contact</h2><ul><li><a href="tel:${tel(CONTACT.phone)}">${CONTACT.phone}</a></li><li><a href="${waLink()}" target="_blank" rel="noopener">WhatsApp</a></li><li><a href="mailto:${CONTACT.email}">${CONTACT.email}</a></li></ul></div>
+  <div class="foot-col" data-rise style="--d:300ms"><h2>Explore</h2><ul><li><a href="#/projects">Projects</a></li><li><a href="#/services">Services</a></li><li><a href="#/studio">Studio</a></li><li><a href="https://instagram.com/${CONTACT.instagram}" target="_blank" rel="noopener">Instagram</a></li></ul></div>`;
 
 addEventListener('hashchange', render);
 render();
