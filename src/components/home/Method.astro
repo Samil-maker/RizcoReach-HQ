@@ -1,0 +1,134 @@
+---
+import SectionHead from '../SectionHead.astro';
+import { home } from '../../content/home';
+import type { Lang } from '../../i18n/utils';
+
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const c = home[lang].method;
+---
+
+<section class="mth section" aria-labelledby="mth-title">
+  <div class="container">
+    <SectionHead label={c.label} idx="04" title={c.title} id="mth-title" />
+    <ol class="mth__list" role="list">
+      {
+        c.steps.map((s, i) => (
+          <li class="mth__row" data-reveal>
+            <span class="mth__idx tabular">0{i + 1}</span>
+            <span class="mth__word" aria-hidden="true">
+              {s.word}
+            </span>
+            <div class="mth__copy">
+              <h3 class="h4">{s.t}</h3>
+              <p class="small">{s.d}</p>
+            </div>
+          </li>
+        ))
+      }
+    </ol>
+    <div class="mth__outcome" data-reveal="scale">
+      <p class="label">{c.outcomeLabel}</p>
+      <p class="mth__outcome-text">{c.outcome}</p>
+    </div>
+  </div>
+</section>
+
+<style>
+  .mth__list {
+    border-top: 1px solid var(--line);
+  }
+  .mth__row {
+    position: relative;
+    display: grid;
+    grid-template-columns: 60px minmax(0, 1.6fr) minmax(0, 1fr);
+    align-items: center;
+    gap: clamp(16px, 3vw, 48px);
+    padding-block: clamp(20px, 3vw, 40px);
+    border-bottom: 1px solid var(--line);
+    overflow: hidden;
+  }
+  .mth__row::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--fg);
+    transform: scaleY(0);
+    transform-origin: bottom;
+    transition: transform 700ms var(--ease-out);
+    z-index: -1;
+  }
+  .mth__idx {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--fg-3);
+    transition: color var(--t);
+  }
+  .mth__word {
+    font-family: var(--font-display);
+    font-size: clamp(3.6rem, 11vw, 11rem);
+    line-height: 0.85;
+    letter-spacing: -0.03em;
+    color: transparent;
+    -webkit-text-stroke: 1px rgb(255 255 255 / 0.45);
+    transition:
+      color 600ms var(--ease-out),
+      -webkit-text-stroke-color 600ms,
+      transform 700ms var(--ease-out);
+  }
+  :global([lang='ar']) .mth__word {
+    letter-spacing: 0;
+    line-height: 1.2;
+    font-size: clamp(3rem, 8vw, 7.5rem);
+  }
+  .mth__row:hover .mth__word {
+    color: var(--fg);
+    transform: translateX(12px);
+  }
+  :global([dir='rtl']) .mth__row:hover .mth__word {
+    transform: translateX(-12px);
+  }
+  .mth__copy {
+    display: grid;
+    gap: 8px;
+    max-width: 42ch;
+  }
+  .mth__outcome {
+    margin-top: clamp(32px, 5vw, 64px);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 3fr);
+    gap: 24px;
+    align-items: start;
+    padding: clamp(28px, 4vw, 56px);
+    border-radius: var(--r-lg);
+    background: var(--fg);
+    color: var(--bg);
+  }
+  .mth__outcome .label {
+    color: rgb(0 0 0 / 0.55);
+  }
+  .mth__outcome-text {
+    font-family: var(--font-display);
+    font-size: clamp(1.6rem, 3vw, 2.8rem);
+    line-height: 1.12;
+  }
+  @media (max-width: 760px) {
+    .mth__row {
+      grid-template-columns: 1fr;
+      gap: 10px;
+    }
+    .mth__idx {
+      position: absolute;
+      top: 24px;
+      inset-inline-end: 0;
+    }
+    .mth__word {
+      -webkit-text-stroke: 1px rgb(255 255 255 / 0.6);
+    }
+    .mth__outcome {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

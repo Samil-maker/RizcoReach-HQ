@@ -1,0 +1,94 @@
+---
+import Icon from '../Icon.astro';
+import { brands, home } from '../../content/home';
+import type { Lang } from '../../i18n/utils';
+
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+---
+
+<section class="mq" aria-label={home[lang].marquee} id="intro">
+  <div class="container mq__head">
+    <p class="label label--line">{home[lang].marquee}</p>
+    <div class="mq__rating">
+      <span class="mq__stars" aria-hidden="true">
+        {[0, 1, 2, 3, 4].map(() => <Icon name="star" size={13} />)}
+      </span>
+      <span class="small">4.9 · Google</span>
+    </div>
+  </div>
+  <div class="marquee" style="--duration:60s">
+    {
+      [0, 1].map((n) => (
+        <ul class="marquee__track" role="list" aria-hidden={n === 1 ? 'true' : undefined}>
+          {brands.map((b, i) => (
+            <li class="mq__item">
+              <span class:list={['mq__name', { 'mq__name--italic': i % 3 === 1 }]}>{b.name}</span>
+              <span class="mq__cat">{b[lang]}</span>
+              <Icon name="sparkle" size={12} class="mq__sep" />
+            </li>
+          ))}
+        </ul>
+      ))
+    }
+  </div>
+</section>
+
+<style>
+  .mq {
+    padding-block: clamp(48px, 7vw, 88px);
+    border-bottom: 1px solid var(--line);
+  }
+  .mq__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: clamp(24px, 4vw, 40px);
+  }
+  .mq__rating {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .mq__stars {
+    display: inline-flex;
+    gap: 2px;
+    color: var(--fg);
+  }
+  .mq__item {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 12px;
+    white-space: nowrap;
+  }
+  .mq__name {
+    font-family: 'Instrument Serif', var(--font-display);
+    font-size: clamp(1.6rem, 3.2vw, 2.6rem);
+    line-height: 1;
+    color: var(--fg);
+    direction: ltr;
+  }
+  .mq__name--italic {
+    font-style: italic;
+  }
+  .mq__cat {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--fg-3);
+  }
+  :global([lang='ar']) .mq__cat {
+    letter-spacing: 0;
+    font-size: 12px;
+  }
+  .mq__item :global(.mq__sep) {
+    align-self: center;
+    margin-inline-start: clamp(20px, 3vw, 44px);
+    color: var(--fg-3);
+  }
+</style>

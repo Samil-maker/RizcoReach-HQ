@@ -1,0 +1,163 @@
+---
+import SectionHead from '../SectionHead.astro';
+import ServiceVisual from '../ServiceVisual.astro';
+import Btn from '../Btn.astro';
+import Icon from '../Icon.astro';
+import { home } from '../../content/home';
+import { href, type Lang } from '../../i18n/utils';
+
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const c = home[lang].services;
+---
+
+<section class="svc section" id="services" aria-labelledby="svc-title">
+  <div class="container">
+    <SectionHead label={c.label} idx="02" title={c.title} sub={c.sub} id="svc-title" />
+    <ol class="svc__stack" role="list">
+      {
+        c.items.map((s, i) => (
+          <li class="svc__card" data-stack-card style={`--n:${i}`}>
+            <article class="svc__inner glint" data-reveal>
+              <div class="svc__copy">
+                <div class="svc__top">
+                  <span class="svc__idx tabular">0{i + 1}</span>
+                  <span class="pill">{s.tag}</span>
+                </div>
+                <h3 class="svc__name h1">{s.name}</h3>
+                <p class="body">{s.desc}</p>
+                <ul class="svc__list" role="list">
+                  {s.bullets.map((b) => (
+                    <li>
+                      <Icon name="check" size={15} stroke={2} />
+                      {b}
+                    </li>
+                  ))}
+                </ul>
+                <div class="svc__cta">
+                  <Btn href={href(lang, s.href)} label={s.cta} variant={i === 0 ? 'primary' : 'ghost'} />
+                </div>
+              </div>
+              <div class="svc__visual">
+                <ServiceVisual kind={s.key as 'web' | 'seo' | 'ads'} lang={lang} />
+              </div>
+            </article>
+          </li>
+        ))
+      }
+    </ol>
+  </div>
+</section>
+
+<style>
+  .svc__stack {
+    display: grid;
+    gap: clamp(20px, 3vw, 32px);
+  }
+  .svc__card {
+    position: sticky;
+    top: calc(var(--nav-h) + 12px + var(--n) * 18px);
+  }
+  .svc__inner {
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+    gap: clamp(24px, 4vw, 64px);
+    min-height: min(72vh, 620px);
+    padding: clamp(24px, 3.4vw, 52px);
+    border-radius: var(--r-lg);
+    background: linear-gradient(180deg, #121212, #0b0b0b);
+    border: 1px solid var(--line-2);
+    box-shadow: 0 -20px 60px rgb(0 0 0 / 0.55);
+    transform-origin: 50% 0%;
+    transform: scale(calc(1 - var(--stack-p, 0) * 0.05));
+    filter: brightness(calc(1 - var(--stack-p, 0) * 0.45));
+  }
+  :global(.js) .svc__inner[data-reveal] {
+    transform: translate3d(0, 40px, 0) scale(calc(1 - var(--stack-p, 0) * 0.05));
+  }
+  :global(.js) .svc__inner[data-reveal].is-in {
+    transform: scale(calc(1 - var(--stack-p, 0) * 0.05));
+  }
+  .svc__card:first-child .svc__inner {
+    background:
+      radial-gradient(90% 70% at 100% 0%, rgb(255 255 255 / 0.07), transparent 60%),
+      linear-gradient(180deg, #151515, #0b0b0b);
+  }
+  .svc__copy {
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+  }
+  .svc__top {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .svc__idx {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--fg-3);
+  }
+  .svc__name {
+    font-size: clamp(2.3rem, 4.6vw, 4.6rem);
+  }
+  .svc__list {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px 20px;
+    font-size: var(--fs-sm);
+    color: var(--fg-2);
+  }
+  .svc__list li {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+  }
+  .svc__list :global(svg) {
+    margin-top: 4px;
+    color: var(--fg);
+  }
+  .svc__cta {
+    margin-top: auto;
+    padding-top: 8px;
+  }
+  .svc__visual {
+    min-height: 320px;
+  }
+  @media (max-width: 960px) {
+    .svc__inner {
+      grid-template-columns: 1fr;
+      min-height: 0;
+    }
+    .svc__visual {
+      order: -1;
+      min-height: 0;
+    }
+  }
+  /* On phones, sticky stacking would hide content taller than the screen. */
+  @media (max-width: 760px) {
+    .svc__card {
+      position: relative;
+      top: 0;
+    }
+    .svc__inner {
+      transform: none !important;
+      filter: none;
+      padding: 20px;
+      gap: 22px;
+    }
+    .svc__list {
+      grid-template-columns: 1fr;
+    }
+    .svc__cta :global(.btn) {
+      width: 100%;
+      justify-content: space-between;
+    }
+    .svc__visual :global(.sv) {
+      min-height: 0;
+      padding: 16px;
+    }
+  }
+</style>

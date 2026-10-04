@@ -1,0 +1,38 @@
+---
+import Base from '../../layouts/Base.astro';
+import Hero from '../../components/home/Hero.astro';
+import Marquee from '../../components/home/Marquee.astro';
+import Manifesto from '../../components/home/Manifesto.astro';
+import Services from '../../components/home/Services.astro';
+import Pillars from '../../components/home/Pillars.astro';
+import Method from '../../components/home/Method.astro';
+import Results from '../../components/home/Results.astro';
+import Cases from '../../components/Cases.astro';
+import ToolsTeaser from '../../components/home/ToolsTeaser.astro';
+import Industries from '../../components/home/Industries.astro';
+import About from '../../components/home/About.astro';
+import NotFit from '../../components/home/NotFit.astro';
+import Faq from '../../components/Faq.astro';
+import { localeStaticPaths, type Lang } from '../../i18n/utils';
+import { home } from '../../content/home';
+
+export const getStaticPaths = localeStaticPaths;
+const { lang } = Astro.props as { lang: Lang };
+const c = home[lang];
+---
+
+<Base lang={lang} title={c.meta.title} description={c.meta.description} path="/">
+  <Hero lang={lang} />
+  <Marquee lang={lang} />
+  <Manifesto lang={lang} />
+  <Services lang={lang} />
+  <Pillars lang={lang} />
+  <Method lang={lang} />
+  <Results lang={lang} />
+  <Cases lang={lang} />
+  <ToolsTeaser lang={lang} />
+  <Industries lang={lang} />
+  <About lang={lang} />
+  <NotFit lang={lang} />
+  <Faq lang={lang} label={c.faq.label} title={c.faq.title} items={c.faq.items} idx="12" more={c.faq.more} moreCta={c.faq.moreCta} />
+</Base>

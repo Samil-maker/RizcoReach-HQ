@@ -1,0 +1,147 @@
+---
+import SectionHead from './SectionHead.astro';
+import Icon from './Icon.astro';
+import Btn from './Btn.astro';
+import { href, type Lang } from '../i18n/utils';
+
+interface Props {
+  lang: Lang;
+  label: string;
+  title: string;
+  items: { q: string; a: string }[];
+  idx?: string;
+  more?: string;
+  moreCta?: string;
+  withSchema?: boolean;
+}
+const { lang, label, title, items, idx, more, moreCta, withSchema = true } = Astro.props;
+const schema = {
+  '@context': 'https://schema.org',
+  '@type': 'FAQPage',
+  mainEntity: items.map((i) => ({ '@type': 'Question', name: i.q, acceptedAnswer: { '@type': 'Answer', text: i.a } })),
+};
+---
+
+<section class="faq section" id="faq" aria-labelledby="faq-title">
+  <div class="container faq__grid">
+    <div class="faq__head">
+      <SectionHead label={label} idx={idx} title={title} layout="stack" id="faq-title" />
+      {
+        more && (
+          <div class="faq__more" data-reveal>
+            <p class="small">{more}</p>
+            <Btn href={href(lang, '/contact')} label={moreCta ?? ''} size="sm" />
+          </div>
+        )
+      }
+    </div>
+    <div class="faq__list">
+      {
+        items.map((it, i) => (
+          <details class="faq__item" data-acc data-reveal style={`--d:${Math.min(i, 5) * 50}`}>
+            <summary class="faq__q">
+              <span>{it.q}</span>
+              <span class="faq__icon" aria-hidden="true">
+                <Icon name="plus" size={18} />
+              </span>
+            </summary>
+            <div class="faq__a" data-acc-body>
+              <p class="body">{it.a}</p>
+            </div>
+          </details>
+        ))
+      }
+    </div>
+  </div>
+  {withSchema && <script type="application/ld+json" set:html={JSON.stringify(schema)} />}
+</section>
+
+<style>
+  .faq__grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+    gap: clamp(32px, 6vw, 110px);
+    align-items: start;
+  }
+  .faq__head {
+    position: sticky;
+    top: calc(var(--nav-h) + 24px);
+  }
+  .faq__head :global(.sh) {
+    margin-bottom: 32px;
+  }
+  .faq__more {
+    display: grid;
+    justify-items: start;
+    gap: 14px;
+  }
+  .faq__list {
+    border-top: 1px solid var(--line);
+  }
+  .faq__item {
+    border-bottom: 1px solid var(--line);
+  }
+  .faq__q {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    min-height: 72px;
+    padding-block: 22px;
+    font-size: clamp(1.05rem, 1.4vw, 1.25rem);
+    font-weight: 520;
+    cursor: pointer;
+    list-style: none;
+    transition: color var(--t-fast);
+  }
+  .faq__q::-webkit-details-marker {
+    display: none;
+  }
+  .faq__q:hover {
+    color: var(--fg);
+  }
+  .faq__icon {
+    flex-shrink: 0;
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 1px solid var(--line-2);
+    transition:
+      transform 500ms var(--ease-out),
+      background-color var(--t),
+      color var(--t);
+  }
+  .faq__item[open] .faq__icon {
+    transform: rotate(45deg);
+    background: var(--fg);
+    color: var(--bg);
+  }
+  .faq__a {
+    overflow: hidden;
+  }
+  .faq__a p {
+    padding-bottom: 26px;
+    max-width: 68ch;
+  }
+  @media (max-width: 900px) {
+    .faq__grid {
+      grid-template-columns: 1fr;
+    }
+    .faq__head {
+      position: static;
+    }
+    .faq__head :global(.sh) {
+      margin-bottom: 20px;
+    }
+    .faq__more {
+      grid-auto-flow: column;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 16px;
+      border: 1px solid var(--line);
+      border-radius: var(--r);
+    }
+  }
+</style>

@@ -1,0 +1,142 @@
+---
+import SectionHead from '../SectionHead.astro';
+import Icon from '../Icon.astro';
+import { home } from '../../content/home';
+import { industries } from '../../content/industries';
+import { href, type Lang } from '../../i18n/utils';
+
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const c = home[lang].industries;
+---
+
+<section class="ind section" id="industries" aria-labelledby="ind-title">
+  <div class="container">
+    <SectionHead label={c.label} idx="08" title={c.title} sub={c.sub} id="ind-title" />
+    <ul class="ind__list" role="list">
+      {
+        industries.map((ind, i) => (
+          <li data-reveal style={`--d:${(i % 4) * 60}`}>
+            <a href={href(lang, '/' + ind.slug)} class="ind__row" data-cursor={c.view}>
+              <span class="ind__code">{ind.code}</span>
+              <span class="ind__name">{ind[lang].name}</span>
+              <span class="ind__short">{ind[lang].short}</span>
+              <span class="ind__arrow" aria-hidden="true">
+                <Icon name="arrow-up-right" size={18} class="flip-rtl" />
+              </span>
+            </a>
+          </li>
+        ))
+      }
+    </ul>
+  </div>
+</section>
+
+<style>
+  .ind__list {
+    border-top: 1px solid var(--line);
+  }
+  .ind__row {
+    position: relative;
+    display: grid;
+    grid-template-columns: 90px minmax(0, 1.4fr) minmax(0, 1fr) 52px;
+    align-items: center;
+    gap: 24px;
+    min-height: 96px;
+    padding-block: 22px;
+    border-bottom: 1px solid var(--line);
+    isolation: isolate;
+    transition: color 450ms var(--ease-out);
+  }
+  .ind__row::before {
+    content: '';
+    position: absolute;
+    inset: 0 calc(var(--gutter) * -0.5);
+    z-index: -1;
+    border-radius: var(--r-sm);
+    background: var(--fg);
+    transform: scaleY(0);
+    transform-origin: 50% 100%;
+    transition: transform 520ms var(--ease-out);
+  }
+  .ind__row:hover,
+  .ind__row:focus-visible {
+    color: var(--bg);
+  }
+  .ind__row:hover::before,
+  .ind__row:focus-visible::before {
+    transform: scaleY(1);
+  }
+  .ind__code {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.16em;
+    opacity: 0.6;
+    direction: ltr;
+  }
+  .ind__name {
+    font-family: var(--font-display);
+    font-size: clamp(1.6rem, 3vw, 2.9rem);
+    line-height: 1.05;
+    transition: transform 520ms var(--ease-out);
+  }
+  .ind__row:hover .ind__name {
+    transform: translateX(10px);
+  }
+  :global([dir='rtl']) .ind__row:hover .ind__name {
+    transform: translateX(-10px);
+  }
+  .ind__short {
+    font-size: var(--fs-sm);
+    opacity: 0.75;
+  }
+  .ind__arrow {
+    display: grid;
+    place-items: center;
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    border: 1px solid currentColor;
+    opacity: 0.5;
+    transition:
+      transform 520ms var(--ease-out),
+      opacity var(--t);
+  }
+  .ind__row:hover .ind__arrow {
+    opacity: 1;
+    transform: rotate(45deg);
+  }
+  :global([dir='rtl']) .ind__row:hover .ind__arrow {
+    transform: rotate(-45deg);
+  }
+  @media (max-width: 860px) {
+    .ind__row {
+      grid-template-columns: minmax(0, 1fr) 44px;
+      grid-template-areas:
+        'code arrow'
+        'name arrow'
+        'short arrow';
+      gap: 4px 16px;
+      min-height: 0;
+      padding-block: 20px;
+    }
+    .ind__code {
+      grid-area: code;
+    }
+    .ind__name {
+      grid-area: name;
+      font-size: 1.65rem;
+    }
+    .ind__short {
+      grid-area: short;
+    }
+    .ind__arrow {
+      grid-area: arrow;
+      width: 44px;
+      height: 44px;
+      opacity: 0.8;
+    }
+  }
+</style>

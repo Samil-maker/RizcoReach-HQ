@@ -1,0 +1,118 @@
+---
+import ToolLayout from '../../../components/tools/ToolLayout.astro';
+import LeadGate from '../../../components/tools/LeadGate.astro';
+import RangeField from '../../../components/tools/RangeField.astro';
+import Icon from '../../../components/Icon.astro';
+import Btn from '../../../components/Btn.astro';
+import { tools } from '../../../content/tools';
+import { localeStaticPaths, href, type Lang } from '../../../i18n/utils';
+import { useUI } from '../../../i18n/ui';
+
+export const getStaticPaths = localeStaticPaths;
+const { lang } = Astro.props as { lang: Lang };
+const c = tools[lang].seo;
+const ui = useUI(lang);
+const pos = c.positions;
+const i18n = JSON.stringify({ month: c.month, noUplift: c.noUplift, ar: lang === 'ar', perMonth: c.perMonth });
+---
+
+<ToolLayout
+  live
+  lang={lang}
+  path="/tools/seo-calculator"
+  metaTitle={c.metaTitle}
+  metaDescription={c.metaDescription}
+  kicker={c.kicker}
+  title={c.title}
+  sub={c.sub}
+  current={ui.tools.seo}
+>
+  <section class="tool">
+    <div class="container tool__grid" data-seo data-i18n={i18n}>
+      <form class="tool__panel" onsubmit="return false" aria-label={c.inputs}>
+        <div class="tool__panel-title"><h2 class="h4">{c.inputs}</h2><Icon name="sliders" size={20} /></div>
+        <RangeField lang={lang} id="seo-searches" label={c.searches} hint={c.searchesHint} min={500} max={50000} step={500} value={5000} editable />
+        <fieldset class="field">
+          <legend class="field__label">{c.current}</legend>
+          <div class="seg">
+            {
+              (['none', 'p2', 'p4', 'top3'] as const).map((k, i) => (
+                <label class="choice">
+                  <input type="radio" name="seo-current" value={k} checked={i === 1} />
+                  <span class="choice__box">
+                    <span class="choice__tick" />
+                    {pos[k]}
+                  </span>
+                </label>
+              ))
+            }
+          </div>
+        </fieldset>
+        <fieldset class="field">
+          <legend class="field__label">{c.target}</legend>
+          <div class="seg">
+            {
+              (['p4', 'top3', 'p1'] as const).map((k, i) => (
+                <label class="choice">
+                  <input type="radio" name="seo-target" value={k} checked={i === 1} />
+                  <span class="choice__box">
+                    <span class="choice__tick" />
+                    {pos[k]}
+                  </span>
+                </label>
+              ))
+            }
+          </div>
+        </fieldset>
+        <RangeField lang={lang} id="seo-conv" label={c.conv} hint={c.convHint} min={0.5} max={10} step={0.5} value={3} unit="pct" />
+        <RangeField lang={lang} id="seo-close" label={c.close} min={5} max={80} step={5} value={25} unit="pct" />
+        <RangeField lang={lang} id="seo-value" label={c.value} min={500} max={100000} step={500} value={5000} unit="aed" editable />
+      </form>
+
+      <div class="tool__results">
+        <div class="hero-fig" aria-live="polite">
+          <span class="hero-fig__label">{c.resultLabel}</span>
+          <span class="hero-fig__value" data-out="monthly">—</span>
+          <span class="hero-fig__sub" data-out="sub">{c.perMonth}</span>
+        </div>
+        <div class="kpis">
+          <div class="kpi"><span class="kpi__label">{c.tiles.visitors}</span><span class="kpi__value" data-out="visitors">—</span></div>
+          <div class="kpi"><span class="kpi__label">{c.tiles.leads}</span><span class="kpi__value" data-out="leads">—</span></div>
+          <div class="kpi"><span class="kpi__label">{c.tiles.customers}</span><span class="kpi__value" data-out="customers">—</span></div>
+          <div class="kpi"><span class="kpi__label">{c.tiles.year}</span><span class="kpi__value" data-out="year">—</span></div>
+        </div>
+
+        <LeadGate lang={lang} source="seo-calculator" service="seo" id="seo-gate" />
+
+        <div class="locked" data-locked>
+          <span class="locked__badge"><Icon name="lock" size={12} />{tools[lang].gate.locked}</span>
+          <div class="locked__body" aria-hidden="true" inert data-locked-body>
+            <div class="chart">
+              <p class="chart__title">{c.chartTitle}</p>
+              <p class="note">{c.chartSub}</p>
+              <div data-chart style="position:relative"></div>
+              <div class="sr-only">
+              <table data-table>
+                <caption>{c.chartTitle}</caption>
+                <thead><tr><th scope="col">{c.month}</th><th scope="col">AED</th></tr></thead>
+                <tbody></tbody>
+              </table>
+              </div>
+            </div>
+            <div class="kpis" style="margin-top:10px">
+              <div class="kpi"><span class="kpi__label">{c.year1}</span><span class="kpi__value" data-out="y1">—</span></div>
+              <div class="kpi"><span class="kpi__label">{c.year2}</span><span class="kpi__value" data-out="y2">—</span></div>
+            </div>
+          </div>
+        </div>
+        <p class="note">{c.assumptions}</p>
+        <Btn href={href(lang, '/contact?service=seo')} label={ui.common.bookCall} variant="primary" class="seo-cta" />
+      </div>
+    </div>
+  </section>
+</ToolLayout>
+
+<script>
+  import { initSeoCalc } from '../../../scripts/tools/seo';
+  initSeoCalc();
+</script>

@@ -1,0 +1,441 @@
+---
+import SectionHead from '../SectionHead.astro';
+import Icon from '../Icon.astro';
+import { home, AUDIO_SRC } from '../../content/home';
+import { useUI } from '../../i18n/ui';
+import type { Lang } from '../../i18n/utils';
+
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const c = home[lang].results;
+const ui = useUI(lang);
+const bars = Array.from({ length: 48 }, (_, i) => 18 + Math.round(Math.abs(Math.sin(i * 1.7) * 60 + Math.cos(i * 0.6) * 22)));
+---
+
+<section class="res section" id="results" aria-labelledby="res-title">
+  <div class="container">
+    <SectionHead label={c.label} idx="05" title={c.title} sub={c.sub} id="res-title" />
+
+    <dl class="res__hl">
+      {
+        c.highlights.map((h, i) => (
+          <div class="res__hl-item" data-reveal style={`--d:${i * 90}`}>
+            <dd class="res__hl-v tabular">
+              <span data-count={h.value}>{h.value}</span>
+              <span class="res__hl-s">{h.suffix}</span>
+            </dd>
+            <dt>
+              <span class="res__hl-l">{h.label}</span>
+              <span class="res__hl-w">{h.who}</span>
+            </dt>
+          </div>
+        ))
+      }
+    </dl>
+  </div>
+
+  <div class="res__rail" data-rail>
+    <div class="container res__rail-head">
+      <p class="label">
+        {[0, 1, 2, 3, 4].map(() => <Icon name="star" size={12} />)}
+        <span>{ui.common.rating}</span>
+      </p>
+      <div class="res__rail-btns">
+        <button type="button" class="res__rail-btn" data-rail-prev aria-label={ui.common.prev}>
+          <Icon name="arrow-left" size={18} class="flip-rtl" />
+        </button>
+        <button type="button" class="res__rail-btn" data-rail-next aria-label={ui.common.next}>
+          <Icon name="arrow-right" size={18} class="flip-rtl" />
+        </button>
+      </div>
+    </div>
+    <ul class="res__track" role="list" data-rail-track data-lenis-prevent-wheel tabindex="0" aria-label={c.label}>
+      {
+        c.testimonials.map((t) => (
+          <li class="res__card glint">
+            <p class="label">{t.industry}</p>
+            <Icon name="quote" size={28} class="res__q" />
+            <blockquote class="res__quote">{t.quote}</blockquote>
+            <div class="res__who">
+              <span class="res__avatar" aria-hidden="true">
+                {t.name.replace(/^Dr\.\s*|^د\.\s*/, '').charAt(0)}
+              </span>
+              <span>
+                <strong>{t.name}</strong>
+                <span class="small">{t.company}</span>
+              </span>
+            </div>
+            <p class="res__metric">
+              <Icon name="sparkle" size={12} />
+              {t.metric}
+            </p>
+          </li>
+        ))
+      }
+    </ul>
+  </div>
+
+  <div class="container">
+    <article class="aud" data-audio data-reveal>
+      <div class="aud__left">
+        <p class="label label--line">{c.audio.label}</p>
+        <h3 class="h2">{c.audio.title}</h3>
+        <div class="aud__player">
+          <button type="button" class="aud__play" data-audio-toggle aria-pressed="false" aria-label={c.audio.listen} data-cursor-link>
+            <Icon name="play" size={22} class="aud__i-play" />
+            <Icon name="pause" size={22} class="aud__i-pause" />
+          </button>
+          <div class="aud__wave" data-audio-seek data-audio-progress role="presentation">
+            {bars.map((h) => <span style={`--h:${h}%`} />)}
+          </div>
+          <span class="aud__time tabular ltr">
+            <span data-audio-time>0:00</span> / <span data-audio-total>—</span>
+          </span>
+          <audio src={AUDIO_SRC} preload="none" />
+        </div>
+        <div class="aud__who">
+          <strong>{c.audio.name}</strong>
+          <span class="small">{c.audio.company}</span>
+        </div>
+      </div>
+      <div class="aud__right">
+        <p class="label">{c.audio.deliveredLabel}</p>
+        <ul class="aud__list" role="list">
+          {
+            c.audio.delivered.map((d) => (
+              <li>
+                <Icon name="check" size={15} stroke={2} />
+                {d}
+              </li>
+            ))
+          }
+        </ul>
+        <blockquote class="aud__quote">{lang === 'ar' ? `«${c.audio.quote}»` : `“${c.audio.quote}”`}</blockquote>
+      </div>
+    </article>
+  </div>
+</section>
+
+<style>
+  .res__hl {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0;
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+  }
+  .res__hl-item {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: clamp(24px, 3vw, 40px) clamp(14px, 2vw, 28px);
+  }
+  .res__hl-item + .res__hl-item {
+    border-inline-start: 1px solid var(--line);
+  }
+  .res__hl-v {
+    font-family: var(--font-display);
+    font-size: clamp(3.2rem, 6.4vw, 6.4rem);
+    line-height: 0.9;
+    direction: ltr;
+    text-align: start;
+  }
+  :global([dir='rtl']) .res__hl-v {
+    text-align: end;
+  }
+  .res__hl-s {
+    font-size: 0.55em;
+    color: var(--fg-3);
+    margin-inline-start: 4px;
+  }
+  .res__hl-item dt {
+    display: grid;
+    gap: 4px;
+  }
+  .res__hl-l {
+    font-size: var(--fs-sm);
+    color: var(--fg);
+  }
+  .res__hl-w {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--fg-3);
+  }
+
+  .res__rail {
+    margin-block: clamp(56px, 8vw, 110px);
+  }
+  .res__rail-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+  }
+  .res__rail-head .label {
+    gap: 3px;
+    color: var(--fg);
+  }
+  .res__rail-head .label span {
+    margin-inline-start: 10px;
+    color: var(--fg-3);
+  }
+  .res__rail-btns {
+    display: flex;
+    gap: 10px;
+  }
+  .res__rail-btn {
+    display: grid;
+    place-items: center;
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    border: 1px solid var(--line-2);
+    transition: all var(--t) var(--ease-out);
+  }
+  .res__rail-btn:hover:not(:disabled) {
+    background: var(--fg);
+    color: var(--bg);
+    border-color: var(--fg);
+  }
+  .res__rail-btn:disabled {
+    opacity: 0.3;
+    cursor: default;
+  }
+  .res__track {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: clamp(300px, 31vw, 440px);
+    gap: 20px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scroll-padding-inline: var(--gutter);
+    padding-inline: max(var(--gutter), calc((100vw - var(--max)) / 2));
+    padding-bottom: 8px;
+    scrollbar-width: none;
+    cursor: grab;
+  }
+  .res__track::-webkit-scrollbar {
+    display: none;
+  }
+  .res__track:global(.is-dragging) {
+    cursor: grabbing;
+    scroll-snap-type: none;
+    user-select: none;
+  }
+  .res__card {
+    scroll-snap-align: start;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    padding: clamp(24px, 2.6vw, 36px);
+    border-radius: var(--r);
+    border: 1px solid var(--line);
+    background: var(--surface);
+    transition: border-color var(--t);
+  }
+  .res__card:hover {
+    border-color: var(--line-2);
+  }
+  .res__card :global(.res__q) {
+    color: var(--fg-3);
+  }
+  :global([dir='rtl']) .res__card :global(.res__q) {
+    transform: scaleX(-1);
+  }
+  .res__quote {
+    font-family: var(--font-display);
+    font-size: clamp(1.3rem, 1.7vw, 1.6rem);
+    line-height: 1.3;
+    flex: 1;
+  }
+  :global([lang='ar']) .res__quote {
+    line-height: 1.7;
+  }
+  .res__who {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .res__who > span:last-child {
+    display: grid;
+  }
+  .res__avatar {
+    display: grid;
+    place-items: center;
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: var(--fg);
+    color: var(--bg);
+    font-family: var(--font-display);
+    font-size: 1.3rem;
+  }
+  .res__metric {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-top: 16px;
+    border-top: 1px solid var(--line);
+    font-size: var(--fs-sm);
+    font-weight: 560;
+  }
+
+  .aud {
+    display: grid;
+    grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+    border: 1px solid var(--line-2);
+    border-radius: var(--r-lg);
+    background:
+      radial-gradient(80% 120% at 0% 0%, rgb(255 255 255 / 0.06), transparent 60%),
+      var(--surface);
+    overflow: hidden;
+  }
+  .aud__left,
+  .aud__right {
+    display: grid;
+    align-content: start;
+    gap: 24px;
+    padding: clamp(24px, 3.6vw, 52px);
+  }
+  .aud__right {
+    border-inline-start: 1px solid var(--line);
+  }
+  .aud__player {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 18px;
+    padding: 14px;
+    padding-inline-end: 20px;
+    border-radius: 999px;
+    background: var(--bg);
+    border: 1px solid var(--line);
+  }
+  .aud__play {
+    display: grid;
+    place-items: center;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: var(--fg);
+    color: var(--bg);
+    transition: transform var(--t) var(--ease-back);
+  }
+  .aud__play:hover {
+    transform: scale(1.06);
+  }
+  .aud__play :global(.aud__i-pause),
+  :global(.is-playing) .aud__play :global(.aud__i-play) {
+    display: none;
+  }
+  :global(.is-playing) .aud__play :global(.aud__i-pause) {
+    display: block;
+  }
+  .aud__wave {
+    --p: 0%;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    cursor: pointer;
+    direction: ltr;
+    mask-image: linear-gradient(90deg, #000 var(--p), rgb(0 0 0 / 0.35) var(--p));
+  }
+  :global([dir='rtl']) .aud__wave {
+    transform: scaleX(-1);
+  }
+  .aud__wave span {
+    flex: 1;
+    height: var(--h);
+    min-width: 2px;
+    border-radius: 2px;
+    background: var(--fg);
+  }
+  :global(.is-playing) .aud__wave span {
+    animation: wave 1.2s ease-in-out infinite alternate;
+  }
+  .aud__wave span:nth-child(3n) {
+    animation-delay: -0.4s;
+  }
+  .aud__wave span:nth-child(3n + 1) {
+    animation-delay: -0.8s;
+  }
+  @keyframes wave {
+    to {
+      transform: scaleY(0.7);
+    }
+  }
+  .aud__time {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--fg-3);
+  }
+  .aud__who {
+    display: grid;
+  }
+  .aud__list {
+    display: grid;
+    gap: 12px;
+  }
+  .aud__list li {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    color: var(--fg-2);
+  }
+  .aud__list :global(svg) {
+    margin-top: 4px;
+    color: var(--fg);
+  }
+  .aud__quote {
+    font-family: var(--font-display);
+    font-size: clamp(1.25rem, 1.8vw, 1.6rem);
+    line-height: 1.35;
+    padding-top: 22px;
+    border-top: 1px solid var(--line);
+  }
+  @media (max-width: 960px) {
+    .res__hl {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .res__hl-item:nth-child(3) {
+      border-inline-start: 0;
+    }
+    .res__hl-item:nth-child(n + 3) {
+      border-top: 1px solid var(--line);
+    }
+    .aud {
+      grid-template-columns: 1fr;
+    }
+    .aud__right {
+      border-inline-start: 0;
+      border-top: 1px solid var(--line);
+    }
+  }
+  @media (max-width: 760px) {
+    .res__track {
+      grid-auto-columns: 84vw;
+      gap: 12px;
+    }
+    .res__rail-btn {
+      width: 46px;
+      height: 46px;
+    }
+    .aud__player {
+      gap: 12px;
+      padding: 10px;
+      padding-inline-end: 14px;
+    }
+    .aud__play {
+      width: 48px;
+      height: 48px;
+    }
+    .aud__time {
+      display: none;
+    }
+  }
+</style>

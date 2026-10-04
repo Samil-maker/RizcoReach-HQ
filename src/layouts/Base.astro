@@ -1,0 +1,254 @@
+---
+import '@fontsource/instrument-serif/400.css';
+import '@fontsource/instrument-serif/400-italic.css';
+import '@fontsource-variable/geist';
+import '@fontsource-variable/geist-mono';
+// Arabic subsets only: Latin glyphs on Arabic pages fall back to Geist (already loaded).
+import '@fontsource/ibm-plex-sans-arabic/arabic-400.css';
+import '@fontsource/ibm-plex-sans-arabic/arabic-600.css';
+import '../styles/global.css';
+
+import serifUrl from '@fontsource/instrument-serif/files/instrument-serif-latin-400-normal.woff2?url';
+import geistUrl from '@fontsource-variable/geist/files/geist-latin-wght-normal.woff2?url';
+import naskhUrl from '@fontsource-variable/noto-naskh-arabic/files/noto-naskh-arabic-arabic-wght-normal.woff2?url';
+
+import Nav from '../components/Nav.astro';
+import Footer from '../components/Footer.astro';
+import Icon from '../components/Icon.astro';
+import { SITE, href, dir, type Lang } from '../i18n/utils';
+import { useUI } from '../i18n/ui';
+
+interface Props {
+  lang: Lang;
+  title: string;
+  description: string;
+  /** English-equivalent path, e.g. "/services/seo". Used for canonical + hreflang. */
+  path: string;
+  ogImage?: string;
+  schema?: Record<string, unknown>[];
+  noindex?: boolean;
+  hideFooterCta?: boolean;
+  bodyClass?: string;
+}
+
+const { lang, title, description, path, ogImage = '/og.jpg', schema = [], noindex = false, hideFooterCta = false, bodyClass = '' } = Astro.props;
+const ui = useUI(lang);
+const abs = (p: string) => new URL(p, SITE.url).toString().replace(/\/$/, '') || SITE.url;
+const canonical = path === '/' && lang === 'en' ? `${SITE.url}/` : abs(href(lang, path));
+const enUrl = path === '/' ? `${SITE.url}/` : abs(href('en', path));
+const arUrl = abs(href('ar', path));
+
+const org = {
+  '@context': 'https://schema.org',
+  '@type': 'ProfessionalService',
+  '@id': `${SITE.url}/#organization`,
+  name: 'RizcoReach',
+  url: `${SITE.url}/`,
+  logo: `${SITE.url}/icon-512.png`,
+  image: `${SITE.url}/og.jpg`,
+  description:
+    'Website development and SEO agency in Dubai, also offering Meta and Google Ads management for SMEs across the UAE.',
+  telephone: SITE.phone,
+  email: SITE.email,
+  priceRange: '$$$',
+  address: {
+    '@type': 'PostalAddress',
+    streetAddress: 'Latifa Tower, Sheikh Zayed Road',
+    addressLocality: 'Dubai',
+    addressCountry: 'AE',
+  },
+  areaServed: [
+    { '@type': 'City', name: 'Dubai' },
+    { '@type': 'Country', name: 'United Arab Emirates' },
+  ],
+  knowsAbout: ['Website Development', 'Web Design', 'Search Engine Optimisation', 'Local SEO', 'Meta Ads', 'Google Ads'],
+  sameAs: [SITE.instagram, SITE.facebook],
+};
+const jsonld = [org, ...schema];
+---
+
+<!doctype html>
+<html lang={lang} dir={dir(lang)}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    {noindex && <meta name="robots" content="noindex, follow" />}
+    <link rel="alternate" hreflang="en" href={enUrl} />
+    <link rel="alternate" hreflang="ar" href={arUrl} />
+    <link rel="alternate" hreflang="x-default" href={enUrl} />
+
+    <meta name="theme-color" content="#050505" />
+    <meta name="color-scheme" content="dark" />
+    <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="sitemap" href="/sitemap-index.xml" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="RizcoReach" />
+    <meta property="og:locale" content={lang === 'ar' ? 'ar_AE' : 'en_AE'} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:image" content={abs(ogImage)} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={abs(ogImage)} />
+
+    {
+      lang === 'ar' ? (
+        <>
+          <link rel="preload" href={naskhUrl} as="font" type="font/woff2" crossorigin />
+          {/* Arabic display face, declared for Arabic characters only (Latin falls back to Instrument Serif). */}
+          <style
+            is:inline
+            set:html={`@font-face{font-family:'Noto Naskh Arabic Variable';font-style:normal;font-display:swap;font-weight:400 700;src:url(${naskhUrl}) format('woff2-variations');unicode-range:U+0600-06FF,U+0750-077F,U+0870-088E,U+0890-0891,U+0897-08E1,U+08E3-08FF,U+200C-200E,U+2010-2011,U+204F,U+2E41,U+FB50-FDFF,U+FE70-FE74,U+FE76-FEFC}`}
+          />
+        </>
+      ) : (
+        <>
+          <link rel="preload" href={serifUrl} as="font" type="font/woff2" crossorigin />
+          <link rel="preload" href={geistUrl} as="font" type="font/woff2" crossorigin />
+        </>
+      )
+    }
+
+    <script is:inline>
+      document.documentElement.classList.add('js');
+    </script>
+    {jsonld.map((s) => <script type="application/ld+json" set:html={JSON.stringify(s)} />)}
+    <slot name="head" />
+  </head>
+  <body class={bodyClass} id="top">
+    <a class="skip-link" href="#main">{ui.skip}</a>
+    <Nav lang={lang} />
+    <main id="main">
+      <slot />
+    </main>
+    <Footer lang={lang} hideCta={hideFooterCta} />
+
+    <a href={SITE.whatsapp} class="wa" target="_blank" rel="noopener" aria-label={ui.common.whatsappFloat} data-cursor-link>
+      <Icon name="whatsapp" size={24} stroke={1.5} />
+    </a>
+    <div class="mbar" data-mbar>
+      <a href={href(lang, '/contact')} class="mbar__cta">
+        {ui.nav.cta}
+        <span class="mbar__ico" aria-hidden="true"><Icon name="arrow-up-right" size={15} class="flip-rtl" /></span>
+      </a>
+      <a href={SITE.whatsapp} class="mbar__wa" target="_blank" rel="noopener" aria-label={ui.common.whatsappFloat}>
+        <Icon name="whatsapp" size={22} stroke={1.5} />
+      </a>
+    </div>
+    <div class="cursor" aria-hidden="true"><span class="cursor__dot"></span><span class="cursor__label"></span></div>
+    <div class="grain" aria-hidden="true"></div>
+
+    <script>
+      import '../scripts/site.ts';
+    </script>
+  </body>
+</html>
+
+<style>
+  .wa {
+    position: fixed;
+    inset-inline-end: clamp(16px, 2.4vw, 32px);
+    bottom: clamp(16px, 2.4vw, 32px);
+    z-index: 80;
+    display: grid;
+    place-items: center;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: var(--fg);
+    color: var(--bg);
+    box-shadow: 0 12px 40px rgb(0 0 0 / 0.45);
+    transition:
+      transform 500ms var(--ease-back),
+      opacity 400ms;
+  }
+  .wa:hover {
+    transform: scale(1.08) rotate(-6deg);
+  }
+  .wa::after {
+    content: '';
+    position: absolute;
+    inset: -6px;
+    border-radius: 50%;
+    border: 1px solid rgb(255 255 255 / 0.35);
+    animation: wa-ring 2.8s var(--ease-out) infinite;
+  }
+  .mbar {
+    display: none;
+  }
+  @media (max-width: 760px) {
+    .wa {
+      display: none;
+    }
+    .mbar {
+      position: fixed;
+      z-index: 80;
+      inset-inline: 12px;
+      bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+      display: flex;
+      gap: 8px;
+      padding: 6px;
+      border-radius: 999px;
+      background: rgb(16 16 16 / 0.82);
+      backdrop-filter: blur(16px) saturate(140%);
+      -webkit-backdrop-filter: blur(16px) saturate(140%);
+      border: 1px solid var(--line-2);
+      box-shadow: 0 18px 50px rgb(0 0 0 / 0.55);
+      transform: translateY(calc(100% + 30px));
+      transition: transform 600ms var(--ease-out);
+    }
+    :global(body.bar-on) .mbar {
+      transform: none;
+    }
+    .mbar__cta {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 50px;
+      padding-inline: 22px 6px;
+      border-radius: 999px;
+      background: var(--fg);
+      color: var(--bg);
+      font-weight: 560;
+      font-size: 0.9375rem;
+    }
+    .mbar__ico {
+      display: grid;
+      place-items: center;
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      background: var(--bg);
+      color: var(--fg);
+    }
+    .mbar__wa {
+      display: grid;
+      place-items: center;
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      border: 1px solid var(--line-2);
+      color: var(--fg);
+    }
+  }
+  @keyframes wa-ring {
+    from {
+      transform: scale(0.85);
+      opacity: 1;
+    }
+    to {
+      transform: scale(1.35);
+      opacity: 0;
+    }
+  }
+</style>

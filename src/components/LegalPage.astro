@@ -1,0 +1,61 @@
+---
+import Base from '../layouts/Base.astro';
+import PageHero from './PageHero.astro';
+import { href, type Lang } from '../i18n/utils';
+import { useUI } from '../i18n/ui';
+import { legal } from '../content/legal';
+
+interface Props {
+  lang: Lang;
+  doc: 'privacy' | 'terms';
+}
+const { lang, doc } = Astro.props;
+const d = legal[doc][lang];
+const ui = useUI(lang);
+---
+
+<Base lang={lang} title={d.metaTitle} description={d.metaDescription} path={`/${doc}`}>
+  <PageHero kicker={d.updated} title={d.title} chrome={false} compact crumbs={[{ label: ui.nav.home, href: href(lang, '/') }, { label: d.title, href: href(lang, `/${doc}`) }]} />
+  <section class="section--tight">
+    <div class="container--narrow legal">
+      <p class="lead">{d.intro}</p>
+      {
+        d.sections.map((s) => (
+          <section class="legal__s">
+            <h2 class="h3">{s.h}</h2>
+            {s.p?.map((p) => <p class="body">{p}</p>)}
+            {s.ul && (
+              <ul>
+                {s.ul.map((li) => (
+                  <li class="body">{li}</li>
+                ))}
+              </ul>
+            )}
+          </section>
+        ))
+      }
+    </div>
+  </section>
+</Base>
+
+<style>
+  .legal {
+    display: grid;
+    gap: 40px;
+    padding-block: 24px 80px;
+  }
+  .legal__s {
+    display: grid;
+    gap: 14px;
+    padding-top: 32px;
+    border-top: 1px solid var(--line);
+  }
+  .legal__s ul {
+    display: grid;
+    gap: 8px;
+    padding-inline-start: 1.2em;
+  }
+  .legal__s .body {
+    max-width: none;
+  }
+</style>

@@ -1,0 +1,182 @@
+---
+/**
+ * Email gate shared by all tools. The tool script fills data-details before
+ * submit; on success this dispatches "gate:unlocked" on the gate element.
+ */
+import Icon from '../Icon.astro';
+import { tools } from '../../content/tools';
+import type { Lang } from '../../i18n/utils';
+
+interface Props {
+  lang: Lang;
+  source: string;
+  service?: string;
+  title?: string;
+  sub?: string;
+  button?: string;
+  done?: string;
+  id?: string;
+}
+const { lang, source, service = '', title, sub, button, done, id } = Astro.props;
+const g = tools[lang].gate;
+const i18n = JSON.stringify({ error: g.error, sendError: g.sendError, sending: g.sending });
+---
+
+<div class="gate" data-gate data-source={source} data-service={service} data-i18n={i18n} id={id}>
+  <div class="gate__head">
+    <span class="gate__lock" aria-hidden="true"><Icon name="lock" size={18} /></span>
+    <div>
+      <h3 class="h3">{title ?? g.title}</h3>
+      <p class="small">{sub ?? g.sub}</p>
+    </div>
+  </div>
+  <form class="gate__form" novalidate data-gate-form>
+    <div class="field">
+      <label class="field__label" for={`${source}-name`}>{g.name}</label>
+      <input class="input" id={`${source}-name`} name="first_name" autocomplete="name" required />
+    </div>
+    <div class="field">
+      <label class="field__label" for={`${source}-email`}>{g.email}</label>
+      <input class="input ltr" id={`${source}-email`} name="email" type="email" inputmode="email" autocomplete="email" required />
+    </div>
+    <div class="field">
+      <label class="field__label" for={`${source}-phone`}>{g.phone}</label>
+      <input class="input ltr" id={`${source}-phone`} name="phone" type="tel" inputmode="tel" autocomplete="tel" />
+    </div>
+    <p class="hp" aria-hidden="true"><label>Leave empty <input name="bot-field" tabindex="-1" autocomplete="off" /></label></p>
+    <button type="submit" class="btn btn--primary btn--lg gate__btn" data-gate-btn>
+      <span class="btn__label"><span data-gate-label>{button ?? g.submit}</span><span aria-hidden="true">{button ?? g.submit}</span></span>
+      <span class="btn__icon" aria-hidden="true"><Icon name="arrow-up-right" size={16} class="flip-rtl" /></span>
+    </button>
+  </form>
+  <p class="gate__msg" role="alert" data-gate-msg></p>
+  <p class="field__hint gate__privacy">{g.privacy}</p>
+  <p class="gate__done" data-gate-done hidden>
+    <Icon name="check" size={18} stroke={2} />
+    {done ?? g.unlocked}
+  </p>
+</div>
+
+<script>
+  import { submitLead, isEmail } from '../../scripts/lead';
+
+  document.querySelectorAll<HTMLElement>('[data-gate]').forEach((gate) => {
+    const form = gate.querySelector<HTMLFormElement>('[data-gate-form]')!;
+    const msg = gate.querySelector<HTMLElement>('[data-gate-msg]')!;
+    const btn = gate.querySelector<HTMLButtonElement>('[data-gate-btn]')!;
+    const label = gate.querySelector<HTMLElement>('[data-gate-label]')!;
+    const t = JSON.parse(gate.dataset.i18n!);
+    const original = label.textContent;
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(form);
+      const name = String(fd.get('first_name') || '').trim();
+      const email = String(fd.get('email') || '').trim();
+      if (fd.get('bot-field')) return;
+      if (!name || !isEmail(email)) {
+        msg.textContent = t.error;
+        (form.querySelector(name ? '[name=email]' : '[name=first_name]') as HTMLInputElement)?.focus();
+        return;
+      }
+      msg.textContent = '';
+      btn.disabled = true;
+      label.textContent = t.sending;
+      const [first, ...rest] = name.split(/\s+/);
+      try {
+        await submitLead({
+          first_name: first,
+          last_name: rest.join(' '),
+          email,
+          phone: String(fd.get('phone') || ''),
+          lead_source: gate.dataset.source || 'tool',
+          service_type: gate.dataset.service || '',
+          website: gate.dataset.website || '',
+          tool_details: gate.dataset.details || '',
+        });
+        gate.classList.add('is-unlocked');
+        form.hidden = true;
+        gate.querySelector<HTMLElement>('[data-gate-done]')!.hidden = false;
+        gate.dispatchEvent(new CustomEvent('gate:unlocked', { bubbles: true }));
+      } catch {
+        msg.textContent = t.sendError;
+        btn.disabled = false;
+        label.textContent = original;
+      }
+    });
+  });
+</script>
+
+<style>
+  .gate {
+    container-type: inline-size;
+    position: relative;
+    display: grid;
+    gap: 22px;
+    padding: clamp(22px, 3vw, 36px);
+    border-radius: var(--r-lg);
+    border: 1px solid var(--line-2);
+    background:
+      radial-gradient(90% 120% at 100% 0%, rgb(255 255 255 / 0.08), transparent 60%),
+      var(--surface-2);
+    box-shadow: 0 30px 80px rgb(0 0 0 / 0.45);
+  }
+  .gate__head {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+  }
+  .gate__head > div {
+    display: grid;
+    gap: 6px;
+  }
+  .gate__lock {
+    flex-shrink: 0;
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: var(--fg);
+    color: var(--bg);
+  }
+  .gate__form {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr auto;
+    gap: 12px;
+    align-items: end;
+  }
+  .gate__btn {
+    min-height: 56px;
+  }
+  .gate__msg {
+    color: var(--danger);
+    font-size: var(--fs-sm);
+    min-height: 0;
+  }
+  .gate__msg:empty {
+    display: none;
+  }
+  .gate__done {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 540;
+  }
+  .gate:global(.is-unlocked) .gate__privacy {
+    display: none;
+  }
+  @container (max-width: 820px) {
+    .gate__form {
+      grid-template-columns: 1fr 1fr;
+    }
+    .gate__btn {
+      grid-column: 1 / -1;
+      justify-content: space-between;
+    }
+  }
+  @container (max-width: 420px) {
+    .gate__form {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

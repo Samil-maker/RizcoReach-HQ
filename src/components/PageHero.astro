@@ -1,0 +1,198 @@
+---
+import ChromeCanvas from './ChromeCanvas.astro';
+import Btn from './Btn.astro';
+import Icon from './Icon.astro';
+import { split } from '../lib/split';
+import { SITE } from '../i18n/utils';
+
+interface Crumb {
+  label: string;
+  href: string;
+}
+interface Props {
+  kicker: string;
+  title: string;
+  sub?: string;
+  primary?: { label: string; href: string };
+  secondary?: { label: string; href: string; icon?: string };
+  crumbs?: Crumb[];
+  chrome?: boolean;
+  compact?: boolean;
+}
+const { kicker, title, sub, primary, secondary, crumbs = [], chrome = true, compact = false } = Astro.props;
+const crumbSchema = crumbs.length
+  ? {
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      itemListElement: crumbs.map((c, i) => ({
+        '@type': 'ListItem',
+        position: i + 1,
+        name: c.label,
+        item: new URL(c.href, SITE.url).toString(),
+      })),
+    }
+  : null;
+---
+
+<section class:list={['ph', { 'ph--compact': compact, 'ph--plain': !chrome }]} data-hero>
+  {chrome && <ChromeCanvas center={[0.8, 0.5]} centerMobile={[0.72, 0.92]} spread={0.62} spreadMobile={0.42} />}
+  <div class="container ph__inner">
+    {
+      crumbs.length > 0 && (
+        <nav class="ph__crumbs" aria-label="Breadcrumb">
+          <ol role="list">
+            {crumbs.map((c, i) => (
+              <li>
+                {i < crumbs.length - 1 ? <a href={c.href}>{c.label}</a> : <span aria-current="page">{c.label}</span>}
+                {i < crumbs.length - 1 && <Icon name="chevron-down" size={12} class="ph__sep" />}
+              </li>
+            ))}
+          </ol>
+        </nav>
+      )
+    }
+    <p class="label ph__kicker"><span class="pill__dot" aria-hidden="true"></span>{kicker}</p>
+    <h1 class="h1 ph__title" set:html={split(title)} />
+    {sub && <p class="lead ph__sub">{sub}</p>}
+    {
+      (primary || secondary) && (
+        <div class="ph__ctas" data-hero-ctas>
+          {primary && <Btn href={primary.href} label={primary.label} variant="primary" size="lg" magnetic />}
+          {secondary && <Btn href={secondary.href} label={secondary.label} icon={secondary.icon ?? 'arrow-right'} size="lg" />}
+        </div>
+      )
+    }
+    <slot />
+  </div>
+  {crumbSchema && <script type="application/ld+json" set:html={JSON.stringify(crumbSchema)} />}
+</section>
+
+<style>
+  .ph {
+    position: relative;
+    min-height: min(92svh, 900px);
+    display: flex;
+    align-items: flex-end;
+    padding-top: calc(var(--nav-h) + 60px);
+    padding-bottom: clamp(56px, 7vw, 100px);
+    overflow: hidden;
+    isolation: isolate;
+  }
+  .ph--compact {
+    min-height: 0;
+    padding-top: calc(var(--nav-h) + clamp(56px, 9vw, 120px));
+  }
+  .ph--plain {
+    background:
+      radial-gradient(70% 80% at 85% 0%, rgb(255 255 255 / 0.07), transparent 60%),
+      var(--bg);
+    border-bottom: 1px solid var(--line);
+  }
+  .ph__inner {
+    position: relative;
+    z-index: 2;
+    display: grid;
+    gap: 24px;
+  }
+  .ph__crumbs ol {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--fs-xs);
+    color: var(--fg-3);
+  }
+  .ph__crumbs li {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .ph__crumbs a {
+    color: var(--fg-2);
+    transition: color var(--t-fast);
+  }
+  .ph__crumbs a:hover {
+    color: var(--fg);
+  }
+  .ph__crumbs :global(.ph__sep) {
+    transform: rotate(-90deg);
+    opacity: 0.6;
+  }
+  :global([dir='rtl']) .ph__crumbs :global(.ph__sep) {
+    transform: rotate(90deg);
+  }
+  .ph__kicker {
+    color: var(--fg-2);
+    gap: 12px;
+    animation: ph-fade 0.9s var(--ease-out) 0.1s both;
+  }
+  .ph__title {
+    max-width: 15ch;
+    font-size: clamp(2.9rem, 7.2vw, 7.6rem);
+    line-height: 0.95;
+  }
+  :global([lang='ar']) .ph__title {
+    line-height: 1.25;
+    font-size: clamp(2.5rem, 5.8vw, 6rem);
+  }
+  .ph__title :global(.wi) {
+    animation: ph-rise 1.2s var(--ease-out) both;
+    animation-delay: calc(var(--i) * 50ms + 100ms);
+  }
+  .ph__title :global(em .wi) {
+    background: linear-gradient(172deg, #ffffff 0%, #e4e4e4 30%, #8f8f8f 52%, #f5f5f5 70%, #b9b9b9 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .ph--plain .ph__title {
+    font-size: clamp(2.6rem, 6vw, 6rem);
+  }
+  @keyframes ph-rise {
+    from {
+      transform: translate3d(0, 108%, 0);
+    }
+  }
+  @keyframes ph-fade {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+  }
+  .ph__sub {
+    max-width: 58ch;
+    animation: ph-fade 1s var(--ease-out) 0.5s both;
+  }
+  .ph__ctas {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 8px;
+    animation: ph-fade 1s var(--ease-out) 0.65s both;
+  }
+  @media (max-width: 760px) {
+    .ph {
+      min-height: 0;
+      padding-top: calc(var(--nav-h) + 22svh);
+      padding-bottom: 56px;
+    }
+    .ph--compact,
+    .ph--plain {
+      padding-top: calc(var(--nav-h) + 40px);
+    }
+    .ph__inner {
+      gap: 18px;
+    }
+    .ph__title {
+      font-size: clamp(2.5rem, 11.4vw, 3.4rem);
+    }
+    .ph__ctas {
+      display: grid;
+      grid-template-columns: 1fr;
+    }
+    .ph__ctas :global(.btn) {
+      justify-content: space-between;
+      min-height: 56px;
+    }
+  }
+</style>

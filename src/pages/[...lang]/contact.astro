@@ -1,0 +1,226 @@
+---
+import Base from '../../layouts/Base.astro';
+import ContactForm from '../../components/ContactForm.astro';
+import Icon from '../../components/Icon.astro';
+import { split } from '../../lib/split';
+import { localeStaticPaths, SITE, type Lang } from '../../i18n/utils';
+import { contact } from '../../content/contact';
+
+export const getStaticPaths = localeStaticPaths;
+const { lang } = Astro.props as { lang: Lang };
+const c = contact[lang];
+const schema = [
+  {
+    '@context': 'https://schema.org',
+    '@type': 'ContactPage',
+    name: c.meta.title,
+    url: `${SITE.url}${lang === 'ar' ? '/ar' : ''}/contact`,
+  },
+];
+---
+
+<Base lang={lang} title={c.meta.title} description={c.meta.description} path="/contact" schema={schema} hideFooterCta>
+  <section class="ct" data-hero>
+    <div class="container ct__grid">
+      <div class="ct__intro">
+        <p class="label ct__kicker"><span class="pill__dot" aria-hidden="true"></span>{c.kicker}</p>
+        <h1 class="h1 ct__title" set:html={split(c.title)} />
+        <p class="lead ct__sub">{c.sub}</p>
+
+        <div class="ct__direct">
+          <p class="label label--line">{c.direct}</p>
+          <ul role="list" class="ct__links">
+            <li>
+              <a href={`mailto:${SITE.email}`} class="ct__link" data-cursor-link>
+                <span class="ct__ico"><Icon name="mail" size={18} /></span>
+                <span><span class="label">{c.email}</span><span class="ct__val">{SITE.email}</span></span>
+              </a>
+            </li>
+            <li>
+              <a href={SITE.whatsapp} target="_blank" rel="noopener" class="ct__link" data-cursor-link>
+                <span class="ct__ico"><Icon name="whatsapp" size={18} /></span>
+                <span><span class="label">{c.whatsapp}</span><span class="ct__val ltr">{SITE.phoneDisplay}</span></span>
+              </a>
+            </li>
+            <li>
+              <div class="ct__link">
+                <span class="ct__ico"><Icon name="pin" size={18} /></span>
+                <span><span class="label">{c.visit}</span><span class="ct__val">{c.address}</span></span>
+              </div>
+            </li>
+          </ul>
+          <p class="pill ct__resp"><span class="pill__dot" aria-hidden="true"></span>{c.response}</p>
+        </div>
+      </div>
+
+      <div class="ct__form">
+        <ContactForm lang={lang} />
+        <div class="ct__next">
+          <p class="label label--line">{c.nextTitle}</p>
+          <ol role="list">
+            {
+              c.next.map((n, i) => (
+                <li>
+                  <span class="ct__n tabular">0{i + 1}</span>
+                  <span>
+                    <strong>{n.t}</strong>
+                    <span class="small">{n.d}</span>
+                  </span>
+                </li>
+              ))
+            }
+          </ol>
+        </div>
+      </div>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .ct {
+    position: relative;
+    padding-top: calc(var(--nav-h) + clamp(40px, 6vw, 96px));
+    padding-bottom: var(--section);
+    background:
+      radial-gradient(60% 50% at 0% 0%, rgb(255 255 255 / 0.06), transparent 60%),
+      var(--bg);
+  }
+  .ct__grid {
+    display: grid;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    gap: clamp(32px, 6vw, 110px);
+    align-items: start;
+  }
+  .ct__intro {
+    position: sticky;
+    top: calc(var(--nav-h) + 32px);
+    display: grid;
+    gap: 24px;
+  }
+  .ct__kicker {
+    color: var(--fg-2);
+    gap: 12px;
+  }
+  .ct__title {
+    font-size: clamp(2.7rem, 5.6vw, 5.8rem);
+  }
+  .ct__title :global(.wi) {
+    animation: ct-rise 1.2s var(--ease-out) both;
+    animation-delay: calc(var(--i) * 50ms + 80ms);
+  }
+  .ct__title :global(em .wi) {
+    background: linear-gradient(172deg, #ffffff 0%, #e4e4e4 30%, #8f8f8f 52%, #f5f5f5 70%, #b9b9b9 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  @keyframes ct-rise {
+    from {
+      transform: translate3d(0, 108%, 0);
+    }
+  }
+  .ct__direct {
+    display: grid;
+    gap: 16px;
+    margin-top: 16px;
+  }
+  .ct__links {
+    display: grid;
+    gap: 8px;
+  }
+  .ct__link {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 14px 16px;
+    border: 1px solid var(--line);
+    border-radius: var(--r);
+    transition:
+      border-color var(--t),
+      background-color var(--t);
+  }
+  a.ct__link:hover {
+    border-color: var(--line-2);
+    background: var(--surface);
+  }
+  .ct__link > span:last-child {
+    display: grid;
+    gap: 2px;
+  }
+  .ct__ico {
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: var(--fg);
+    color: var(--bg);
+  }
+  .ct__val {
+    font-weight: 520;
+  }
+  .ct__resp {
+    justify-self: start;
+  }
+  .ct__form {
+    display: grid;
+    gap: 40px;
+  }
+  .ct__next ol {
+    display: grid;
+    gap: 2px;
+    margin-top: 18px;
+  }
+  .ct__next li {
+    display: flex;
+    gap: 18px;
+    padding-block: 16px;
+    border-bottom: 1px solid var(--line);
+  }
+  .ct__next li > span:last-child {
+    display: grid;
+    gap: 2px;
+  }
+  .ct__n {
+    font-family: var(--font-display);
+    font-size: 1.8rem;
+    line-height: 1;
+    width: 40px;
+  }
+  @media (max-width: 960px) {
+    .ct__grid {
+      grid-template-columns: 1fr;
+    }
+    .ct__intro {
+      position: static;
+      display: contents;
+    }
+    .ct__kicker,
+    .ct__title,
+    .ct__sub {
+      order: -1;
+    }
+    .ct__direct {
+      order: 2;
+    }
+  }
+  @media (max-width: 760px) {
+    .ct {
+      padding-top: calc(var(--nav-h) + 28px);
+    }
+    .ct__grid {
+      gap: 18px;
+    }
+    .ct__title {
+      font-size: clamp(2.3rem, 10.4vw, 3rem);
+    }
+    .ct__sub {
+      font-size: 1rem;
+      margin-bottom: 8px;
+    }
+    .ct__direct {
+      margin-top: 24px;
+    }
+  }
+</style>

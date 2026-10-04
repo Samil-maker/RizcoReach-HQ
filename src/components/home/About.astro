@@ -1,0 +1,174 @@
+---
+import SectionHead from '../SectionHead.astro';
+import Icon from '../Icon.astro';
+import { home } from '../../content/home';
+import type { Lang } from '../../i18n/utils';
+
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const a = home[lang].about;
+const p = home[lang].process;
+---
+
+<section class="abt section section--raised" id="about" aria-labelledby="abt-title">
+  <div class="container abt__grid">
+    <div class="abt__intro">
+      <SectionHead label={a.label} idx="09" title={a.title} layout="stack" id="abt-title" />
+      <div class="abt__office" data-reveal>
+        <span class="abt__pin"><Icon name="pin" size={18} /></span>
+        <div>
+          <p class="label">{a.officeLabel}</p>
+          <p>{a.office}</p>
+        </div>
+      </div>
+    </div>
+    <div class="abt__body">
+      {a.paras.map((t, i) => <p class="lead" data-reveal style={`--d:${i * 100}`}>{t}</p>)}
+      <ul class="abt__tags" role="list" data-reveal>
+        {a.tags.map((t) => <li class="pill">{t}</li>)}
+      </ul>
+    </div>
+  </div>
+
+  <div class="container abt__process">
+    <SectionHead label={p.label} idx="10" title={p.title} sub={p.sub} />
+    <ol class="abt__steps" role="list">
+      {
+        p.steps.map((s, i) => (
+          <li class="abt__step" data-reveal style={`--d:${i * 90}`}>
+            <span class="abt__step-n tabular">0{i + 1}</span>
+            <span class="abt__step-line" aria-hidden="true" />
+            <h3 class="h4">{s.t}</h3>
+            <p class="small">{s.d}</p>
+          </li>
+        ))
+      }
+    </ol>
+  </div>
+</section>
+
+<style>
+  .abt__grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+    gap: clamp(32px, 6vw, 120px);
+  }
+  .abt__intro :global(.sh) {
+    margin-bottom: 40px;
+  }
+  .abt__office {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    padding: 20px;
+    border: 1px solid var(--line);
+    border-radius: var(--r);
+    max-width: 380px;
+  }
+  .abt__pin {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: var(--fg);
+    color: var(--bg);
+  }
+  .abt__body {
+    display: grid;
+    align-content: start;
+    gap: 24px;
+    padding-top: 8px;
+  }
+  .abt__body .lead {
+    max-width: none;
+  }
+  .abt__tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .abt__process {
+    margin-top: var(--section);
+  }
+  .abt__steps {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: clamp(16px, 2vw, 28px);
+  }
+  .abt__step {
+    position: relative;
+    display: grid;
+    align-content: start;
+    gap: 14px;
+  }
+  .abt__step-n {
+    font-family: var(--font-display);
+    font-size: clamp(2.6rem, 4vw, 3.8rem);
+    line-height: 1;
+  }
+  .abt__step-line {
+    display: block;
+    height: 1px;
+    background: var(--line-2);
+    position: relative;
+    overflow: hidden;
+  }
+  .abt__step-line::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--fg);
+    transform: scaleX(0);
+    transform-origin: var(--o, left);
+    transition: transform 1.2s var(--ease-out) 0.3s;
+  }
+  :global([dir='rtl']) .abt__step-line::after {
+    --o: right;
+  }
+  :global(.is-in) > .abt__step-line::after {
+    transform: scaleX(1);
+  }
+  @media (max-width: 960px) {
+    .abt__grid {
+      grid-template-columns: 1fr;
+    }
+    .abt__steps {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      row-gap: 40px;
+    }
+  }
+  @media (max-width: 560px) {
+    .abt__steps {
+      grid-template-columns: 1fr;
+      row-gap: 0;
+    }
+    .abt__step {
+      grid-template-columns: 56px 1fr;
+      grid-template-areas:
+        'n title'
+        'n desc';
+      column-gap: 14px;
+      row-gap: 6px;
+      padding-block: 20px;
+      border-top: 1px solid var(--line);
+    }
+    .abt__step-n {
+      grid-area: n;
+      font-size: 2.2rem;
+    }
+    .abt__step-line {
+      display: none;
+    }
+    .abt__step h3 {
+      grid-area: title;
+    }
+    .abt__step p {
+      grid-area: desc;
+    }
+  }
+</style>

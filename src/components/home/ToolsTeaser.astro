@@ -1,0 +1,273 @@
+---
+import SectionHead from '../SectionHead.astro';
+import Icon from '../Icon.astro';
+import { home } from '../../content/home';
+import { useUI } from '../../i18n/ui';
+import { href, type Lang } from '../../i18n/utils';
+
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const c = home[lang].tools;
+const ui = useUI(lang);
+---
+
+<section class="tt section section--paper" id="tools" aria-labelledby="tt-title">
+  <div class="container">
+    <SectionHead label={c.label} idx="07" title={c.title} sub={c.sub} id="tt-title" />
+    <ul class="tt__grid" role="list">
+      {
+        c.items.map((t, i) => (
+          <li data-reveal style={`--d:${i * 90}`}>
+            <a href={href(lang, t.href)} class="tt__card">
+              <div class="tt__top">
+                <span class="tt__ico">
+                  <Icon name={t.icon} size={22} />
+                </span>
+                <span class="tt__free">{ui.common.free}</span>
+              </div>
+              <div class="tt__preview" aria-hidden="true">
+                {t.key === 'audit' && (
+                  <div class="tt__gauge">
+                    <svg viewBox="0 0 120 70">
+                      <path d="M10 64 A50 50 0 0 1 110 64" class="tt__g-track" />
+                      <path d="M10 64 A50 50 0 0 1 110 64" class="tt__g-val" pathLength="100" />
+                    </svg>
+                    <span class="tt__g-n">92</span>
+                  </div>
+                )}
+                {t.key === 'seo' && (
+                  <div class="tt__spark">
+                    <svg viewBox="0 0 120 50" preserveAspectRatio="none">
+                      <path d="M0 46 L20 40 L40 42 L60 30 L80 24 L100 12 L120 4" pathLength="1" />
+                    </svg>
+                  </div>
+                )}
+                {t.key === 'ads' && (
+                  <div class="tt__bars">
+                    {[30, 44, 38, 60, 72, 90].map((h) => (
+                      <span style={`--h:${h}%`} />
+                    ))}
+                  </div>
+                )}
+                {t.key === 'est' && (
+                  <div class="tt__sliders">
+                    {[72, 40, 88].map((p) => (
+                      <span style={`--p:${p}%`} />
+                    ))}
+                  </div>
+                )}
+              </div>
+              <h3 class="h3">{t.t}</h3>
+              <p class="small">{t.d}</p>
+              <span class="tt__cta link">
+                {t.cta}
+                <Icon name="arrow-right" size={15} />
+              </span>
+            </a>
+          </li>
+        ))
+      }
+    </ul>
+  </div>
+</section>
+
+<style>
+  .tt__grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+  }
+  .tt__grid > li {
+    display: flex;
+  }
+  .tt__card {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 24px;
+    border-radius: var(--r);
+    background: #fff;
+    border: 1px solid var(--line);
+    transition:
+      transform 600ms var(--ease-out),
+      box-shadow 600ms var(--ease-out),
+      background-color var(--t);
+  }
+  .tt__card:hover {
+    transform: translateY(-6px);
+    box-shadow: 0 30px 60px rgb(0 0 0 / 0.12);
+  }
+  .tt__top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .tt__ico {
+    display: grid;
+    place-items: center;
+    width: 46px;
+    height: 46px;
+    border-radius: 12px;
+    background: #000;
+    color: #fff;
+  }
+  .tt__free {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding: 5px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--line-2);
+  }
+  .tt__preview {
+    height: 96px;
+    display: grid;
+    place-items: center;
+    margin-block: 8px;
+    border-radius: var(--r-sm);
+    background: var(--paper);
+  }
+  .tt__gauge {
+    position: relative;
+    width: 120px;
+  }
+  .tt__gauge svg {
+    width: 120px;
+    height: 70px;
+    fill: none;
+    stroke-linecap: round;
+  }
+  .tt__g-track {
+    stroke: rgb(0 0 0 / 0.1);
+    stroke-width: 8;
+  }
+  .tt__g-val {
+    stroke: #000;
+    stroke-width: 8;
+    stroke-dasharray: 100;
+    stroke-dashoffset: 100;
+    transition: stroke-dashoffset 1.6s var(--ease-out) 0.3s;
+  }
+  :global(.is-in) .tt__g-val,
+  .tt__card:hover .tt__g-val {
+    stroke-dashoffset: 8;
+  }
+  .tt__g-n {
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: var(--font-display);
+    font-size: 1.8rem;
+    line-height: 1;
+  }
+  .tt__spark {
+    width: 80%;
+    height: 56px;
+  }
+  .tt__spark svg {
+    width: 100%;
+    height: 100%;
+    fill: none;
+    stroke: #000;
+    stroke-width: 2;
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    transition: stroke-dashoffset 1.6s var(--ease-out) 0.3s;
+  }
+  :global(.is-in) .tt__spark svg {
+    stroke-dashoffset: 0;
+  }
+  :global([dir='rtl']) .tt__spark svg {
+    transform: scaleX(-1);
+  }
+  .tt__bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 6px;
+    height: 60px;
+  }
+  .tt__bars span {
+    width: 14px;
+    height: var(--h);
+    border-radius: 3px 3px 0 0;
+    background: #000;
+    transform-origin: bottom;
+    transition: transform 500ms var(--ease-out);
+  }
+  .tt__card:hover .tt__bars span:nth-child(odd) {
+    transform: scaleY(1.12);
+  }
+  .tt__sliders {
+    display: grid;
+    gap: 12px;
+    width: 76%;
+  }
+  .tt__sliders span {
+    position: relative;
+    height: 2px;
+    background: linear-gradient(to right, #000 var(--p), rgb(0 0 0 / 0.15) var(--p));
+  }
+  .tt__sliders span::after {
+    content: '';
+    position: absolute;
+    top: -5px;
+    left: calc(var(--p) - 6px);
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #000;
+    transition: left 600ms var(--ease-out);
+  }
+  .tt__card:hover .tt__sliders span:nth-child(2)::after {
+    left: calc(70% - 6px);
+  }
+  .tt__cta {
+    margin-top: auto;
+    padding-top: 8px;
+  }
+  @media (max-width: 1100px) {
+    .tt__grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @media (max-width: 560px) {
+    .tt__grid {
+      grid-template-columns: 1fr;
+    }
+    .tt__card {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      grid-template-areas:
+        'ico title'
+        'ico desc'
+        'ico cta';
+      column-gap: 16px;
+      row-gap: 6px;
+      padding: 20px;
+    }
+    .tt__top {
+      grid-area: ico;
+      align-self: start;
+    }
+    .tt__free,
+    .tt__preview {
+      display: none;
+    }
+    .tt__card h3 {
+      grid-area: title;
+      font-size: 1.35rem;
+    }
+    .tt__card p {
+      grid-area: desc;
+    }
+    .tt__cta {
+      grid-area: cta;
+      padding-top: 6px;
+    }
+  }
+</style>
