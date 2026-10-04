@@ -1,0 +1,438 @@
+---
+import Icon from './Icon.astro';
+import Btn from './Btn.astro';
+import { href, basePath, SITE, type Lang } from '../i18n/utils';
+import { useUI } from '../i18n/ui';
+
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const ui = useUI(lang);
+const other: Lang = lang === 'en' ? 'ar' : 'en';
+const current = basePath(Astro.url.pathname);
+const switchHref = href(other, current === '/404' ? '/' : current);
+const h = (p: string) => href(lang, p);
+
+const services = [
+  { label: ui.services.web, path: '/services/website-development', icon: 'monitor', idx: '01' },
+  { label: ui.services.seo, path: '/services/seo', icon: 'search', idx: '02' },
+  { label: ui.services.ads, path: '/services/meta-ads', icon: 'megaphone', idx: '03' },
+];
+const tools = [
+  { label: ui.tools.audit, path: '/tools/website-audit', icon: 'gauge' },
+  { label: ui.tools.seo, path: '/tools/seo-calculator', icon: 'trending' },
+  { label: ui.tools.ads, path: '/tools/meta-ads-calculator', icon: 'target' },
+  { label: ui.tools.estimator, path: '/tools/website-estimator', icon: 'sliders' },
+];
+const isActive = (p: string) => current === p || current.startsWith(p + '/');
+---
+
+<header class="nav" data-nav>
+  <div class="nav__inner">
+    <a href={h('/')} class="nav__logo" aria-label="RIZCOREACH.AE home" data-cursor-link>
+      <img src="/brand/mark-80.webp" srcset="/brand/mark-80.webp 1x, /brand/mark-160.webp 2x" alt="" width="40" height="40" class="nav__mark" fetchpriority="high" />
+      <span class="nav__word">RIZCOREACH<span>.AE</span></span>
+    </a>
+
+    <nav class="nav__links" aria-label="Primary">
+      <div class="nav__item nav__item--menu">
+        <a href={h('/#services')} class:list={['nav__link', { 'is-active': current.startsWith('/services') }]} aria-haspopup="true">
+          {ui.nav.services}<Icon name="chevron-down" size={14} />
+        </a>
+        <div class="nav__panel" role="group" aria-label={ui.nav.services}>
+          {
+            services.map((s) => (
+              <a href={h(s.path)} class="nav__panel-link" data-cursor-link>
+                <span class="nav__panel-idx">{s.idx}</span>
+                <span class="nav__panel-label">{s.label}</span>
+                <Icon name="arrow-up-right" size={16} class="nav__panel-arrow flip-rtl" />
+              </a>
+            ))
+          }
+        </div>
+      </div>
+      <div class="nav__item nav__item--menu">
+        <a href={h('/tools')} class:list={['nav__link', { 'is-active': isActive('/tools') }]} aria-haspopup="true">
+          {ui.nav.tools}<Icon name="chevron-down" size={14} />
+        </a>
+        <div class="nav__panel" role="group" aria-label={ui.nav.tools}>
+          {
+            tools.map((s) => (
+              <a href={h(s.path)} class="nav__panel-link" data-cursor-link>
+                <span class="nav__panel-ico"><Icon name={s.icon} size={16} /></span>
+                <span class="nav__panel-label">{s.label}</span>
+                <span class="nav__panel-free">{ui.common.free}</span>
+              </a>
+            ))
+          }
+        </div>
+      </div>
+      <a href={h('/#results')} class="nav__link">{ui.nav.work}</a>
+      <a href={h('/#industries')} class="nav__link">{ui.nav.industries}</a>
+      <a href={h('/contact')} class:list={['nav__link', { 'is-active': isActive('/contact') }]}>{ui.nav.contact}</a>
+    </nav>
+
+    <div class="nav__actions">
+      <a href={switchHref} class="nav__lang" hreflang={other} lang={other} aria-label={ui.switchAria} data-cursor-link>
+        <Icon name="globe" size={15} />{ui.switchLabel}
+      </a>
+      <Btn href={h('/contact')} label={ui.nav.cta} variant="primary" size="sm" class="nav__cta hide-sm" magnetic />
+      <button class="nav__burger" type="button" aria-expanded="false" aria-controls="mobile-menu" data-menu-toggle>
+        <span class="sr-only" data-menu-label data-open={ui.nav.menu} data-close={ui.nav.close}>{ui.nav.menu}</span>
+        <span class="nav__burger-lines" aria-hidden="true"><span></span><span></span></span>
+      </button>
+    </div>
+  </div>
+</header>
+
+<div class="mmenu" id="mobile-menu" data-menu hidden>
+  <div class="mmenu__inner container">
+    <nav aria-label="Mobile">
+      <ul role="list" class="mmenu__list">
+        <li><a href={h('/')} class="mmenu__link"><span>00</span>{ui.nav.home}</a></li>
+        {
+          services.map((s) => (
+            <li>
+              <a href={h(s.path)} class="mmenu__link">
+                <span>{s.idx}</span>
+                {s.label}
+              </a>
+            </li>
+          ))
+        }
+        <li><a href={h('/tools')} class="mmenu__link"><span>04</span>{ui.nav.tools}</a></li>
+        <li><a href={h('/#results')} class="mmenu__link"><span>05</span>{ui.nav.work}</a></li>
+        <li><a href={h('/#industries')} class="mmenu__link"><span>06</span>{ui.nav.industries}</a></li>
+        <li><a href={h('/contact')} class="mmenu__link"><span>07</span>{ui.nav.contact}</a></li>
+      </ul>
+    </nav>
+    <div class="mmenu__foot">
+      <a href={`mailto:${SITE.email}`} class="link"><Icon name="mail" size={16} />{SITE.email}</a>
+      <a href={SITE.whatsapp} class="link ltr" target="_blank" rel="noopener"><Icon name="whatsapp" size={16} />{SITE.phoneDisplay}</a>
+      <Btn href={h('/contact')} label={ui.nav.cta} variant="primary" />
+    </div>
+  </div>
+</div>
+
+<style>
+  .nav {
+    position: fixed;
+    inset-inline: 0;
+    top: 0;
+    z-index: 100;
+    height: var(--nav-h);
+    transition:
+      transform 600ms var(--ease-out),
+      background-color 400ms var(--ease-out),
+      border-color 400ms;
+    border-bottom: 1px solid transparent;
+  }
+  .nav.is-scrolled {
+    background: rgb(5 5 5 / 0.86);
+    backdrop-filter: blur(18px) saturate(140%);
+    -webkit-backdrop-filter: blur(18px) saturate(140%);
+    border-bottom-color: var(--line);
+  }
+  .nav.is-hidden {
+    transform: translateY(-100%);
+  }
+  .nav__inner {
+    height: 100%;
+    width: min(100% - 2 * var(--gutter), var(--max));
+    margin-inline: auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+  }
+  .nav__logo {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+  .nav__mark {
+    width: 40px;
+    height: 40px;
+    transition: transform 700ms var(--ease-out);
+  }
+  .nav__logo:hover .nav__mark {
+    transform: rotate(-8deg) scale(1.06);
+  }
+  .nav__word {
+    font-family: 'Geist Variable', var(--font-sans);
+    font-weight: 700;
+    font-size: 15px;
+    letter-spacing: 0.2em;
+    direction: ltr;
+  }
+  .nav__word span {
+    font-weight: 300;
+    opacity: 0.5;
+    letter-spacing: 0.08em;
+  }
+  .nav__links {
+    display: flex;
+    align-items: center;
+    gap: clamp(18px, 2.4vw, 38px);
+  }
+  .nav__item {
+    position: relative;
+  }
+  .nav__link {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-height: 44px;
+    font-size: 0.9rem;
+    color: var(--fg-2);
+    transition: color var(--t-fast);
+  }
+  .nav__link:hover,
+  .nav__link.is-active,
+  .nav__item--menu:focus-within > .nav__link {
+    color: var(--fg);
+  }
+  .nav__link.is-active::after {
+    content: '';
+    position: absolute;
+    bottom: 6px;
+    inset-inline-start: 0;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--fg);
+  }
+  .nav__link :global(svg) {
+    opacity: 0.6;
+    transition: transform var(--t) var(--ease-out);
+  }
+  .nav__item--menu:hover .nav__link :global(svg),
+  .nav__item--menu:focus-within .nav__link :global(svg) {
+    transform: rotate(180deg);
+  }
+  .nav__panel {
+    position: absolute;
+    top: calc(100% + 6px);
+    inset-inline-start: -18px;
+    min-width: 320px;
+    padding: 8px;
+    background: rgb(14 14 14 / 0.94);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--line-2);
+    border-radius: var(--r);
+    box-shadow: 0 30px 80px rgb(0 0 0 / 0.6);
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-6px);
+    transition:
+      opacity 260ms var(--ease-out),
+      transform 360ms var(--ease-out),
+      visibility 0s 360ms;
+  }
+  .nav__panel::before {
+    content: '';
+    position: absolute;
+    inset-inline: 0;
+    top: -12px;
+    height: 12px;
+  }
+  .nav__item--menu:hover .nav__panel,
+  .nav__item--menu:focus-within .nav__panel {
+    opacity: 1;
+    visibility: visible;
+    transform: none;
+    transition-delay: 0s;
+  }
+  .nav__panel-link {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-height: 52px;
+    padding: 10px 14px;
+    border-radius: var(--r-sm);
+    font-size: 0.9375rem;
+    color: var(--fg-2);
+    transition:
+      background-color var(--t-fast),
+      color var(--t-fast);
+  }
+  .nav__panel-link:hover,
+  .nav__panel-link:focus-visible {
+    background: var(--surface-3);
+    color: var(--fg);
+  }
+  .nav__panel-idx {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--fg-3);
+  }
+  .nav__panel-ico {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border: 1px solid var(--line-2);
+    border-radius: 8px;
+  }
+  .nav__panel-label {
+    flex: 1;
+  }
+  .nav__panel-free {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--line-2);
+    color: var(--fg-3);
+  }
+  .nav__panel-link :global(.nav__panel-arrow) {
+    opacity: 0;
+    transition: opacity var(--t-fast);
+  }
+  .nav__panel-link:hover :global(.nav__panel-arrow) {
+    opacity: 1;
+  }
+  .nav__actions {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .nav__lang {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 44px;
+    padding-inline: 14px;
+    border: 1px solid var(--line-2);
+    border-radius: 999px;
+    font-size: 0.875rem;
+    color: var(--fg-2);
+    transition:
+      color var(--t-fast),
+      border-color var(--t-fast);
+  }
+  .nav__lang[lang='ar'] {
+    font-family: 'IBM Plex Sans Arabic', var(--font-sans);
+  }
+  .nav__lang:hover {
+    color: var(--fg);
+    border-color: var(--fg);
+  }
+  .nav__burger {
+    display: none;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    border: 1px solid var(--line-2);
+    place-items: center;
+  }
+  .nav__burger-lines {
+    position: relative;
+    display: block;
+    width: 18px;
+    height: 8px;
+  }
+  .nav__burger-lines span {
+    position: absolute;
+    inset-inline: 0;
+    height: 1.5px;
+    background: var(--fg);
+    border-radius: 2px;
+    transition: transform 500ms var(--ease-out);
+  }
+  .nav__burger-lines span:first-child {
+    top: 0;
+  }
+  .nav__burger-lines span:last-child {
+    bottom: 0;
+  }
+  .nav__burger[aria-expanded='true'] .nav__burger-lines span:first-child {
+    transform: translateY(3.25px) rotate(45deg);
+  }
+  .nav__burger[aria-expanded='true'] .nav__burger-lines span:last-child {
+    transform: translateY(-3.25px) rotate(-45deg);
+  }
+
+  @media (max-width: 1080px) {
+    .nav__links {
+      display: none;
+    }
+    .nav__burger {
+      display: grid;
+    }
+  }
+  @media (max-width: 420px) {
+    .nav__word {
+      font-size: 13px;
+      letter-spacing: 0.14em;
+    }
+    .nav__lang {
+      padding-inline: 12px;
+    }
+  }
+
+  /* Mobile menu */
+  .mmenu {
+    position: fixed;
+    inset: 0;
+    z-index: 99;
+    background: var(--bg);
+    padding-top: calc(var(--nav-h) + 24px);
+    padding-bottom: 32px;
+    overflow-y: auto;
+    clip-path: inset(0 0 100% 0);
+    transition: clip-path 700ms var(--ease-io);
+  }
+  .mmenu.is-open {
+    clip-path: inset(0 0 0 0);
+  }
+  .mmenu__inner {
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 40px;
+  }
+  .mmenu__list li {
+    border-bottom: 1px solid var(--line);
+    overflow: hidden;
+  }
+  .mmenu__link {
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    padding-block: 14px;
+    font-family: var(--font-display);
+    font-size: clamp(1.9rem, 8vw, 3rem);
+    line-height: 1.1;
+    transform: translateY(100%);
+    transition: transform 800ms var(--ease-out);
+  }
+  .mmenu.is-open .mmenu__link {
+    transform: none;
+  }
+  .mmenu__list li:nth-child(2) .mmenu__link { transition-delay: 40ms; }
+  .mmenu__list li:nth-child(3) .mmenu__link { transition-delay: 80ms; }
+  .mmenu__list li:nth-child(4) .mmenu__link { transition-delay: 120ms; }
+  .mmenu__list li:nth-child(5) .mmenu__link { transition-delay: 160ms; }
+  .mmenu__list li:nth-child(6) .mmenu__link { transition-delay: 200ms; }
+  .mmenu__list li:nth-child(7) .mmenu__link { transition-delay: 240ms; }
+  .mmenu__list li:nth-child(8) .mmenu__link { transition-delay: 280ms; }
+  .mmenu__link span {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--fg-3);
+  }
+  .mmenu__foot {
+    display: grid;
+    gap: 18px;
+    justify-items: start;
+    color: var(--fg-2);
+  }
+</style>

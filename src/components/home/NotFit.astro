@@ -1,0 +1,84 @@
+---
+import SectionHead from '../SectionHead.astro';
+import Icon from '../Icon.astro';
+import { home } from '../../content/home';
+import type { Lang } from '../../i18n/utils';
+
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const c = home[lang].notfit;
+---
+
+<section class="nf section" aria-labelledby="nf-title">
+  <div class="container">
+    <SectionHead label={c.label} idx="11" title={c.title} sub={c.sub} id="nf-title" />
+    <ul class="nf__grid" role="list">
+      {
+        c.items.map((it, i) => (
+          <li class="nf__item glint" data-reveal style={`--d:${(i % 3) * 90}`}>
+            <span class="nf__x">
+              <Icon name="x" size={16} stroke={2} />
+            </span>
+            <h3 class="h4">{it.t}</h3>
+            <p class="small">{it.d}</p>
+          </li>
+        ))
+      }
+    </ul>
+  </div>
+</section>
+
+<style>
+  .nf__grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    overflow: hidden;
+  }
+  .nf__item {
+    display: grid;
+    align-content: start;
+    gap: 12px;
+    padding: clamp(24px, 3vw, 40px);
+    background: var(--bg);
+    transition: background-color var(--t);
+  }
+  .nf__item:hover {
+    background: var(--surface);
+  }
+  .nf__x {
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    margin-bottom: 10px;
+    border-radius: 50%;
+    border: 1px solid var(--line-2);
+    color: var(--fg-2);
+  }
+  @media (max-width: 960px) {
+    .nf__grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @media (max-width: 560px) {
+    .nf__grid {
+      grid-template-columns: 1fr;
+    }
+    .nf__item {
+      grid-template-columns: 40px 1fr;
+      column-gap: 14px;
+      row-gap: 4px;
+      padding: 20px;
+    }
+    .nf__x {
+      grid-row: span 2;
+      margin: 0;
+    }
+  }
+</style>

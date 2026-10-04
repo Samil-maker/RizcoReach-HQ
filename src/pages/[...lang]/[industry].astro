@@ -1,0 +1,473 @@
+---
+import Base from '../../layouts/Base.astro';
+import PageHero from '../../components/PageHero.astro';
+import SectionHead from '../../components/SectionHead.astro';
+import Icon from '../../components/Icon.astro';
+import { industries, type Industry } from '../../content/industries';
+import { industryUi } from '../../content/industryUi';
+import { localeStaticPaths, href, SITE, type Lang } from '../../i18n/utils';
+import { useUI } from '../../i18n/ui';
+
+export function getStaticPaths() {
+  return localeStaticPaths().flatMap(({ params, props }) =>
+    industries.map((industry) => ({ params: { ...params, industry: industry.slug }, props: { ...props, industry } })),
+  );
+}
+const { lang, industry } = Astro.props as { lang: Lang; industry: Industry };
+const c = industry[lang];
+const u = industryUi[lang];
+const ui = useUI(lang);
+const h = (p: string) => href(lang, p);
+const path = `/${industry.slug}`;
+const schema = [
+  {
+    '@context': 'https://schema.org',
+    '@type': 'Service',
+    name: `${c.name} — Website, SEO & Meta Ads`,
+    description: c.metaDescription,
+    provider: { '@id': `${SITE.url}/#organization` },
+    areaServed: { '@type': 'Country', name: 'United Arab Emirates' },
+    audience: { '@type': 'BusinessAudience', name: c.name },
+  },
+];
+---
+
+<Base lang={lang} title={c.metaTitle} description={c.metaDescription} path={path} schema={schema}>
+  <PageHero
+    kicker={c.kicker}
+    title={c.title}
+    sub={c.sub}
+    primary={{ label: u.primary, href: h(`/contact?industry=${industry.slug}`) }}
+    secondary={{ label: u.secondary, href: h('/tools/website-audit'), icon: 'gauge' }}
+    crumbs={[
+      { label: ui.nav.home, href: h('/') },
+      { label: ui.nav.industries, href: h('/#industries') },
+      { label: c.name, href: h(path) },
+    ]}
+  />
+
+  <section class="iq section" aria-label={u.resultsTitle}>
+    <div class="container iq__grid" data-reveal>
+      <div class="iq__meta">
+        <p class="label label--line">{u.resultsLabel}</p>
+        <p class="iq__stars" aria-label={ui.common.rating}>
+          {[0, 1, 2, 3, 4].map(() => <Icon name="star" size={16} />)}
+          <span class="small">4.9 · Google</span>
+        </p>
+      </div>
+      <figure class="iq__fig">
+        <blockquote class="iq__quote">{lang === 'ar' ? `«${c.quote}»` : `“${c.quote}”`}</blockquote>
+        <figcaption class="iq__cap">
+          <span class="iq__avatar" aria-hidden="true">{industry.code.charAt(0)}</span>
+          <span>
+            <strong>{c.author}</strong>
+            <span class="small">{c.role}</span>
+          </span>
+          <span class="iq__result">
+            <Icon name="sparkle" size={12} />
+            {c.result}
+          </span>
+        </figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section class="iw section section--raised" aria-labelledby="iw-title">
+    <div class="container">
+      <SectionHead label={u.whoLabel} idx="01" title={u.whoTitle} sub={u.whoSub} id="iw-title" />
+      <ul class="iw__grid" role="list">
+        {
+          c.niches.map((n, i) => (
+            <li class="iw__item" data-reveal style={`--d:${(i % 4) * 50}`}>
+              <span class="iw__n tabular">{String(i + 1).padStart(2, '0')}</span>
+              {n}
+            </li>
+          ))
+        }
+      </ul>
+    </div>
+  </section>
+
+  <section class="im section" aria-labelledby="im-title">
+    <div class="container">
+      <SectionHead label={u.mistakesLabel} idx="02" title={u.mistakesTitle} sub={u.mistakesSub} id="im-title" />
+      <ol class="im__grid" role="list">
+        {
+          c.mistakes.map((m, i) => (
+            <li class="im__item glint" data-reveal style={`--d:${i * 100}`}>
+              <span class="im__n">0{i + 1}</span>
+              <h3 class="h3">{m.t}</h3>
+              <p class="small">{m.d}</p>
+            </li>
+          ))
+        }
+      </ol>
+    </div>
+  </section>
+
+  <section class="isys section section--paper" aria-labelledby="isys-title">
+    <div class="container">
+      <SectionHead label={u.systemLabel} idx="03" title={u.systemTitle} id="isys-title" />
+      <ul class="isys__grid" role="list">
+        {
+          u.system(c.audience).map((s, i) => (
+            <li data-reveal style={`--d:${i * 100}`}>
+              <a href={h(s.href)} class="isys__card">
+                <span class="isys__ico">
+                  <Icon name={s.icon} size={22} />
+                </span>
+                <h3 class="h3">{s.t}</h3>
+                <p class="small">{s.d}</p>
+                <span class="link">
+                  {u.learn}
+                  <Icon name="arrow-right" size={15} />
+                </span>
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+    </div>
+  </section>
+
+  <section class="ie section" aria-labelledby="ie-title">
+    <div class="container ie__grid">
+      <div>
+        <SectionHead label={u.expectLabel} idx="04" title={u.expectTitle} layout="stack" id="ie-title" />
+        <ul class="ie__list" role="list">
+          {
+            c.expect.map((e, i) => (
+              <li data-reveal style={`--d:${i * 80}`}>
+                <span class="ie__tick">
+                  <Icon name="check" size={15} stroke={2} />
+                </span>
+                {e}
+              </li>
+            ))
+          }
+        </ul>
+      </div>
+      <div class="ie__why">
+        <p class="label label--line" data-reveal>{u.whyLabel}</p>
+        {
+          u.why.map((w, i) => (
+            <div class="ie__why-item" data-reveal style={`--d:${i * 100}`}>
+              <span class="ie__why-k">{w.k}</span>
+              <div>
+                <h3 class="h4">{w.t}</h3>
+                <p class="small">{w.d}</p>
+              </div>
+            </div>
+          ))
+        }
+      </div>
+    </div>
+  </section>
+
+  <section class="is section section--raised" aria-labelledby="is-title">
+    <div class="container">
+      <SectionHead label={u.stepsLabel} idx="05" title={u.stepsTitle} id="is-title" />
+      <ol class="is__grid" role="list">
+        {
+          u.steps.map((s, i) => (
+            <li class="is__item" data-reveal style={`--d:${i * 100}`}>
+              <span class="is__n">0{i + 1}</span>
+              <h3 class="h4">{s.t}</h3>
+              <p class="small">{s.d}</p>
+            </li>
+          ))
+        }
+      </ol>
+    </div>
+  </section>
+
+  <section class="io section--tight" aria-label={u.otherLabel}>
+    <div class="container">
+      <p class="label label--line">{u.otherLabel}</p>
+      <ul class="io__list" role="list">
+        {
+          industries
+            .filter((i) => i.slug !== industry.slug)
+            .map((i) => (
+              <li>
+                <a class="pill io__pill" href={h('/' + i.slug)}>
+                  {i[lang].name}
+                  <Icon name="arrow-up-right" size={13} class="flip-rtl" />
+                </a>
+              </li>
+            ))
+        }
+      </ul>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .iq__grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 3fr);
+    gap: 32px;
+  }
+  .iq__meta {
+    display: grid;
+    align-content: start;
+    gap: 16px;
+  }
+  .iq__stars {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+  }
+  .iq__stars span {
+    margin-inline-start: 10px;
+  }
+  .iq__fig {
+    display: grid;
+    gap: 36px;
+  }
+  .iq__quote {
+    font-family: var(--font-display);
+    font-size: clamp(1.8rem, 3.6vw, 3.4rem);
+    line-height: 1.12;
+  }
+  :global([lang='ar']) .iq__quote {
+    line-height: 1.55;
+  }
+  .iq__cap {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 14px 24px;
+    padding-top: 28px;
+    border-top: 1px solid var(--line);
+  }
+  .iq__cap > span:nth-child(2) {
+    display: grid;
+  }
+  .iq__avatar {
+    display: grid;
+    place-items: center;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: var(--fg);
+    color: var(--bg);
+    font-family: var(--font-display);
+    font-size: 1.4rem;
+  }
+  .iq__result {
+    margin-inline-start: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    border-radius: 999px;
+    border: 1px solid var(--line-2);
+    font-size: var(--fs-sm);
+    font-weight: 540;
+  }
+  .iw__grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    border-top: 1px solid var(--line);
+    border-inline-start: 1px solid var(--line);
+  }
+  .iw__item {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    padding: 22px 20px;
+    border-bottom: 1px solid var(--line);
+    border-inline-end: 1px solid var(--line);
+    font-size: var(--fs-sm);
+    transition: background-color var(--t);
+  }
+  .iw__item:hover {
+    background: var(--surface);
+  }
+  .iw__n {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--fg-3);
+  }
+  .im__grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+  }
+  .im__item {
+    display: grid;
+    align-content: start;
+    gap: 16px;
+    padding: clamp(24px, 3vw, 40px);
+    border-radius: var(--r);
+    border: 1px solid var(--line);
+    background: var(--surface);
+  }
+  .im__n {
+    font-family: var(--font-display);
+    font-size: 4.2rem;
+    line-height: 0.9;
+    color: transparent;
+    -webkit-text-stroke: 1px rgb(255 255 255 / 0.5);
+    margin-bottom: 20px;
+  }
+  .isys__grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+  }
+  .isys__grid > li {
+    display: flex;
+  }
+  .isys__card {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: clamp(24px, 3vw, 40px);
+    border-radius: var(--r);
+    background: #fff;
+    border: 1px solid var(--line);
+    transition:
+      transform 600ms var(--ease-out),
+      box-shadow 600ms var(--ease-out);
+  }
+  .isys__card:hover {
+    transform: translateY(-6px);
+    box-shadow: 0 30px 60px rgb(0 0 0 / 0.12);
+  }
+  .isys__ico {
+    display: grid;
+    place-items: center;
+    width: 50px;
+    height: 50px;
+    margin-bottom: 18px;
+    border-radius: 14px;
+    background: #000;
+    color: #fff;
+  }
+  .isys__card .link {
+    margin-top: auto;
+    padding-top: 10px;
+    align-self: flex-start;
+  }
+  .ie__grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+    gap: clamp(32px, 6vw, 110px);
+  }
+  .ie__list {
+    display: grid;
+    gap: 2px;
+  }
+  .ie__list li {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding-block: 20px;
+    border-bottom: 1px solid var(--line);
+    font-size: 1.0625rem;
+  }
+  .ie__tick {
+    flex-shrink: 0;
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--fg);
+    color: var(--bg);
+  }
+  .ie__why {
+    display: grid;
+    align-content: start;
+    gap: 14px;
+  }
+  .ie__why-item {
+    display: grid;
+    grid-template-columns: minmax(110px, auto) 1fr;
+    gap: 22px;
+    align-items: start;
+    padding: 24px;
+    border-radius: var(--r);
+    border: 1px solid var(--line);
+    background: var(--surface);
+  }
+  .ie__why-k {
+    font-family: var(--font-display);
+    font-size: 2.2rem;
+    line-height: 1;
+  }
+  .ie__why-item div {
+    display: grid;
+    gap: 6px;
+  }
+  .is__grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+  }
+  .is__item {
+    display: grid;
+    align-content: start;
+    gap: 12px;
+    padding: clamp(24px, 3vw, 36px);
+    border-top: 1px solid var(--fg);
+  }
+  .is__n {
+    font-family: var(--font-display);
+    font-size: 3.2rem;
+    line-height: 1;
+    margin-bottom: 12px;
+  }
+  .io {
+    border-top: 1px solid var(--line);
+  }
+  .io__list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 20px;
+  }
+  .io__pill {
+    min-height: 44px;
+    transition: all var(--t);
+  }
+  .io__pill:hover {
+    background: var(--fg);
+    color: var(--bg);
+    border-color: var(--fg);
+  }
+  @media (max-width: 1000px) {
+    .iw__grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .im__grid,
+    .isys__grid,
+    .is__grid,
+    .ie__grid,
+    .iq__grid {
+      grid-template-columns: 1fr;
+    }
+    .iq__result {
+      margin-inline-start: 0;
+    }
+  }
+  @media (max-width: 560px) {
+    .iw__item {
+      padding: 16px 14px;
+      font-size: var(--fs-xs);
+      gap: 10px;
+    }
+    .ie__why-item {
+      grid-template-columns: 1fr;
+      gap: 10px;
+      padding: 20px;
+    }
+    .im__n {
+      font-size: 3rem;
+      margin-bottom: 4px;
+    }
+  }
+</style>

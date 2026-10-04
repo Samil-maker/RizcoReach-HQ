@@ -1,0 +1,220 @@
+---
+import Base from '../../layouts/Base.astro';
+import PageHero from '../PageHero.astro';
+import Icon from '../Icon.astro';
+import { href, SITE, type Lang } from '../../i18n/utils';
+import { useUI } from '../../i18n/ui';
+import { home } from '../../content/home';
+import '../../styles/tools.css';
+
+interface Props {
+  lang: Lang;
+  path: string;
+  metaTitle: string;
+  metaDescription: string;
+  kicker: string;
+  title: string;
+  sub: string;
+  current: string;
+  live?: boolean;
+}
+const { lang, path, metaTitle, metaDescription, kicker, title, sub, current, live = false } = Astro.props;
+const ui = useUI(lang);
+const h = (p: string) => href(lang, p);
+const others = home[lang].tools.items.filter((t) => t.href !== path);
+const schema = [
+  {
+    '@context': 'https://schema.org',
+    '@type': 'WebApplication',
+    name: current,
+    url: new URL(h(path), SITE.url).toString(),
+    applicationCategory: 'BusinessApplication',
+    operatingSystem: 'Any',
+    offers: { '@type': 'Offer', price: '0', priceCurrency: 'AED' },
+    provider: { '@id': `${SITE.url}/#organization` },
+  },
+];
+---
+
+<Base lang={lang} title={metaTitle} description={metaDescription} path={path} schema={schema} bodyClass={live ? 'has-livebar' : ''}>
+  <PageHero
+    kicker={kicker}
+    title={title}
+    sub={sub}
+    chrome={false}
+    compact
+    crumbs={[
+      { label: ui.nav.home, href: h('/') },
+      { label: ui.nav.tools, href: h('/tools') },
+      { label: current, href: h(path) },
+    ]}
+  >
+    <slot name="hero" />
+  </PageHero>
+
+  <slot />
+
+  {
+    live && (
+      <div class="livebar" data-livebar aria-hidden="true">
+        <span class="livebar__text">
+          <span class="livebar__label" data-live-label />
+          <strong class="livebar__value" data-live-value />
+        </span>
+        <button type="button" class="livebar__btn" data-live-go tabindex="-1">
+          <Icon name="arrow-down" size={18} />
+        </button>
+      </div>
+    )
+  }
+
+  <section class="tools-more section--tight" aria-label={ui.nav.tools}>
+    <div class="container">
+      <p class="label label--line">{ui.nav.tools}</p>
+      <ul class="tools-more__grid" role="list">
+        {
+          others.map((t) => (
+            <li>
+              <a href={h(t.href)} class="tools-more__card">
+                <span class="tools-more__ico">
+                  <Icon name={t.icon} size={20} />
+                </span>
+                <span>
+                  <strong>{t.t}</strong>
+                  <span class="small">{t.d}</span>
+                </span>
+                <Icon name="arrow-up-right" size={16} class="flip-rtl" />
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+    </div>
+  </section>
+</Base>
+
+<script>
+  // Mobile: keep the live result visible while the visitor adjusts inputs.
+  const bar = document.querySelector<HTMLElement>('[data-livebar]');
+  const panel = document.querySelector('.tool__panel');
+  const results = document.querySelector('.tool__results');
+  if (bar && panel && results) {
+    let inPanel = false;
+    let inResults = false;
+    const sync = () => bar.classList.toggle('is-on', inPanel && !inResults);
+    new IntersectionObserver(([e]) => ((inPanel = e.isIntersecting), sync()), { rootMargin: '-20% 0px -20% 0px' }).observe(panel);
+    new IntersectionObserver(([e]) => ((inResults = e.isIntersecting), sync())).observe(results.firstElementChild ?? results);
+    bar.querySelector('[data-live-go]')?.addEventListener('click', () => {
+      const top = results.getBoundingClientRect().top + window.scrollY - 80;
+      if (window.__lenis) window.__lenis.scrollTo(top);
+      else window.scrollTo({ top, behavior: 'smooth' });
+    });
+  }
+</script>
+
+<style>
+  .livebar {
+    display: none;
+  }
+  @media (max-width: 980px) {
+    :global(body.has-livebar .mbar) {
+      display: none !important;
+    }
+    .livebar {
+      position: fixed;
+      z-index: 81;
+      inset-inline: 12px;
+      bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 8px 8px 8px 20px;
+      padding-inline: 20px 8px;
+      border-radius: 999px;
+      background: var(--fg);
+      color: var(--bg);
+      box-shadow: 0 18px 50px rgb(0 0 0 / 0.55);
+      transform: translateY(calc(100% + 30px));
+      transition: transform 500ms var(--ease-out);
+    }
+    .livebar:global(.is-on) {
+      transform: none;
+    }
+    .livebar__text {
+      display: grid;
+      min-width: 0;
+    }
+    .livebar__label {
+      font-size: 11px;
+      opacity: 0.65;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .livebar__value {
+      font-size: 1.15rem;
+      font-weight: 650;
+      letter-spacing: -0.02em;
+      direction: ltr;
+      unicode-bidi: isolate;
+      text-align: start;
+    }
+    :global([dir='rtl']) .livebar__value {
+      text-align: end;
+    }
+    .livebar__btn {
+      display: grid;
+      place-items: center;
+      flex-shrink: 0;
+      width: 46px;
+      height: 46px;
+      border-radius: 50%;
+      background: var(--bg);
+      color: var(--fg);
+    }
+  }
+  .tools-more {
+    border-top: 1px solid var(--line);
+  }
+  .tools-more__grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 20px;
+  }
+  .tools-more__card {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 16px;
+    align-items: center;
+    padding: 18px;
+    border-radius: var(--r);
+    border: 1px solid var(--line);
+    transition:
+      border-color var(--t),
+      background-color var(--t);
+  }
+  .tools-more__card:hover {
+    border-color: var(--line-2);
+    background: var(--surface);
+  }
+  .tools-more__card > span:nth-child(2) {
+    display: grid;
+    gap: 2px;
+  }
+  .tools-more__ico {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: var(--fg);
+    color: var(--bg);
+  }
+  @media (max-width: 900px) {
+    .tools-more__grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

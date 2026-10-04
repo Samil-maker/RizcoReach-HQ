@@ -1,0 +1,482 @@
+---
+import ToolLayout from '../../../components/tools/ToolLayout.astro';
+import LeadGate from '../../../components/tools/LeadGate.astro';
+import Icon from '../../../components/Icon.astro';
+import Btn from '../../../components/Btn.astro';
+import { tools } from '../../../content/tools';
+import { localeStaticPaths, href, type Lang } from '../../../i18n/utils';
+import { useUI } from '../../../i18n/ui';
+
+export const getStaticPaths = localeStaticPaths;
+const { lang } = Astro.props as { lang: Lang };
+const a = tools[lang].audit;
+const ui = useUI(lang);
+const i18n = JSON.stringify({
+  invalid: a.invalid,
+  errors: a.errors,
+  steps: a.steps,
+  grade: a.grade,
+  gradeSub: a.gradeSub,
+  cats: a.cats,
+  passed: a.passed,
+  status: a.status,
+  howTo: a.howTo,
+  noIssues: a.noIssues,
+  checks: a.checks,
+  lh: a.lh,
+  vitals: a.vitals,
+  lighthouseNA: a.lighthouseNA,
+  checksLabel: a.checksLabel,
+});
+const sample = ['title', 'h1', 'ttfb', 'renderBlocking', 'viewport', 'contactLinks', 'https', 'social'];
+---
+
+<ToolLayout
+  lang={lang}
+  path="/tools/website-audit"
+  metaTitle={a.metaTitle}
+  metaDescription={a.metaDescription}
+  kicker={a.kicker}
+  title={a.title}
+  sub={a.sub}
+  current={ui.tools.audit}
+>
+  <form slot="hero" class="au-form" data-audit-form novalidate data-i18n={i18n}>
+    <label class="sr-only" for="au-url">{a.label}</label>
+    <div class="au-input">
+      <Icon name="globe" size={20} class="au-input__ico" />
+      <input id="au-url" name="url" class="ltr" type="text" inputmode="url" autocomplete="url" autocapitalize="off" spellcheck="false" placeholder={a.placeholder} required />
+      <button type="submit" class="btn btn--primary btn--lg au-run" data-audit-run>
+        <span class="btn__label"><span>{a.run}</span><span aria-hidden="true">{a.run}</span></span>
+        <span class="btn__icon" aria-hidden="true"><Icon name="arrow-right" size={16} class="flip-rtl" /></span>
+      </button>
+    </div>
+    <p class="au-err" role="alert" data-audit-error></p>
+  </form>
+
+  <section class="tool au" aria-live="polite">
+    <div class="container">
+      <!-- Before running: what we check -->
+      <div class="au-intro" data-audit-intro>
+        {
+          (['seo', 'speed', 'mobile', 'trust'] as const).map((cat, i) => (
+            <div class="au-intro__card" data-reveal style={`--d:${i * 80}`}>
+              <span class="au-intro__n">0{i + 1}</span>
+              <h2 class="h4">{a.cats[cat]}</h2>
+              <ul role="list">
+                {sample
+                  .filter((_, k) => Math.floor(k / 2) === i)
+                  .map((id) => (
+                    <li>
+                      <Icon name="check" size={14} stroke={2} />
+                      {a.checks[id].name}
+                    </li>
+                  ))}
+              </ul>
+            </div>
+          ))
+        }
+      </div>
+
+      <!-- Loading -->
+      <div class="au-loading" data-audit-loading hidden>
+        <div class="au-loading__ring" aria-hidden="true"><span></span></div>
+        <ol class="au-loading__steps" role="list">
+          {a.steps.map((s) => <li data-audit-step><span class="au-loading__dot" aria-hidden="true"></span>{s}</li>)}
+        </ol>
+      </div>
+
+      <!-- Results -->
+      <div class="au-results" data-audit-results hidden>
+        <div class="au-head">
+          <p class="small">{a.analysed} <strong class="ltr" data-audit-url></strong></p>
+          <div class="cluster">
+            <button type="button" class="btn btn--sm btn--noicon" data-audit-again>
+              <span class="btn__label"><span>{a.again}</span><span aria-hidden="true">{a.again}</span></span>
+            </button>
+            <button type="button" class="btn btn--sm" data-audit-print hidden>
+              <span class="btn__label"><span>{a.print}</span><span aria-hidden="true">{a.print}</span></span>
+              <span class="btn__icon" aria-hidden="true"><Icon name="download" size={14} /></span>
+            </button>
+          </div>
+        </div>
+
+        <div class="au-top">
+          <div class="au-overall">
+            <div class="au-ring" role="img" data-audit-ring-label>
+              <svg viewBox="0 0 120 120" aria-hidden="true">
+                <circle cx="60" cy="60" r="52" class="au-ring__track"></circle>
+                <circle cx="60" cy="60" r="52" class="au-ring__val" data-audit-ring></circle>
+              </svg>
+              <span class="au-ring__num" data-audit-score>0</span>
+            </div>
+            <div class="au-overall__copy">
+              <p class="label">{a.overall}</p>
+              <p class="h3" data-audit-grade></p>
+              <p class="small" data-audit-grade-sub></p>
+            </div>
+          </div>
+          <ul class="au-cats" role="list" data-audit-cats></ul>
+        </div>
+
+        <div class="au-block">
+          <h2 class="h3">{a.topIssues}</h2>
+          <ul class="au-issues" role="list" data-audit-top></ul>
+        </div>
+
+        <div class="au-block au-lh" data-audit-lh hidden>
+          <h2 class="h4">{a.lighthouse}</h2>
+          <p class="small" data-audit-lh-status>{a.lighthouseLoading}</p>
+          <div class="au-lh__grid" data-audit-lh-grid></div>
+        </div>
+
+        <LeadGate lang={lang} source="website-audit" service="website-development" id="audit-gate" />
+
+        <div class="locked au-block" data-audit-locked>
+          <span class="locked__badge"><Icon name="lock" size={12} />{tools[lang].gate.locked}</span>
+          <div class="locked__body" data-audit-full aria-hidden="true" inert>
+            <h2 class="h3">{a.fullReport}</h2>
+            <div class="au-full" data-audit-full-list></div>
+          </div>
+        </div>
+
+        <div class="au-cta">
+          <div>
+            <h2 class="h2">{a.cta}</h2>
+            <p class="lead">{a.ctaSub}</p>
+          </div>
+          <Btn href={href(lang, '/contact?service=website-development')} label={a.ctaBtn} variant="primary" size="lg" />
+        </div>
+        <p class="note">{a.disclaimer}</p>
+      </div>
+    </div>
+  </section>
+</ToolLayout>
+
+<script>
+  import { initAudit } from '../../../scripts/tools/audit';
+  initAudit();
+</script>
+
+<style>
+  .au-form {
+    display: grid;
+    gap: 10px;
+    margin-top: 12px;
+    max-width: 780px;
+  }
+  .au-input {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px;
+    padding-inline-start: 22px;
+    border-radius: 999px;
+    border: 1px solid var(--line-2);
+    background: var(--surface);
+    transition:
+      border-color var(--t),
+      box-shadow var(--t);
+  }
+  .au-input:focus-within {
+    border-color: var(--fg);
+    box-shadow: 0 0 0 5px rgb(255 255 255 / 0.08);
+  }
+  .au-input :global(.au-input__ico) {
+    color: var(--fg-3);
+    flex-shrink: 0;
+  }
+  .au-input input {
+    flex: 1;
+    min-width: 0;
+    min-height: 52px;
+    background: transparent;
+    border: 0;
+    outline: none;
+    font-size: 1.125rem;
+  }
+  .au-input input::placeholder {
+    color: var(--fg-3);
+  }
+  .au-err {
+    color: var(--danger);
+    font-size: var(--fs-sm);
+    padding-inline-start: 22px;
+  }
+  .au-err:empty {
+    display: none;
+  }
+  .au-intro {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .au-intro__card {
+    display: grid;
+    align-content: start;
+    gap: 12px;
+    padding: 24px;
+    border-radius: var(--r);
+    border: 1px solid var(--line);
+  }
+  .au-intro__n {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--fg-3);
+  }
+  .au-intro__card ul {
+    display: grid;
+    gap: 8px;
+    font-size: var(--fs-sm);
+    color: var(--fg-2);
+  }
+  .au-intro__card li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .au-loading {
+    display: grid;
+    justify-items: center;
+    gap: 32px;
+    padding-block: 40px;
+  }
+  .au-loading__ring {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    border: 2px solid var(--line-2);
+    border-top-color: var(--fg);
+    animation: spin 900ms linear infinite;
+  }
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  .au-loading__steps {
+    display: grid;
+    gap: 12px;
+    font-size: var(--fs-sm);
+  }
+  .au-loading__steps li {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: var(--fg-3);
+    transition: color var(--t);
+  }
+  .au-loading__steps li:global(.is-active),
+  .au-loading__steps li:global(.is-done) {
+    color: var(--fg);
+  }
+  .au-loading__dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: 1px solid currentColor;
+  }
+  .au-loading__steps li:global(.is-done) .au-loading__dot {
+    background: var(--fg);
+  }
+  .au-loading__steps li:global(.is-active) .au-loading__dot {
+    animation: pulse 900ms ease-in-out infinite alternate;
+  }
+  @keyframes pulse {
+    to {
+      background: var(--fg);
+    }
+  }
+  .au-results {
+    display: grid;
+    gap: clamp(20px, 3vw, 32px);
+  }
+  .au-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--line);
+  }
+  .au-head strong {
+    color: var(--fg);
+    word-break: break-all;
+  }
+  .au-top {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+    gap: 16px;
+  }
+  .au-overall {
+    display: flex;
+    align-items: center;
+    gap: clamp(20px, 3vw, 36px);
+    padding: clamp(22px, 3vw, 36px);
+    border-radius: var(--r-lg);
+    border: 1px solid var(--line-2);
+    background:
+      radial-gradient(90% 100% at 0% 0%, rgb(255 255 255 / 0.08), transparent 60%),
+      var(--surface);
+  }
+  .au-overall__copy {
+    display: grid;
+    gap: 8px;
+  }
+  .au-ring {
+    position: relative;
+    flex-shrink: 0;
+    width: clamp(120px, 14vw, 168px);
+    aspect-ratio: 1;
+  }
+  .au-ring svg {
+    width: 100%;
+    height: 100%;
+    transform: rotate(-90deg);
+  }
+  .au-ring__track {
+    fill: none;
+    stroke: rgb(255 255 255 / 0.1);
+    stroke-width: 8;
+  }
+  .au-ring__val {
+    fill: none;
+    stroke: var(--fg);
+    stroke-width: 8;
+    stroke-linecap: round;
+    stroke-dasharray: 326.73;
+    stroke-dashoffset: 326.73;
+    transition: stroke-dashoffset 1.4s var(--ease-out);
+  }
+  .au-ring__num {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    font-family: var(--font-sans);
+    font-weight: 650;
+    font-size: clamp(2.6rem, 4.4vw, 3.6rem);
+    letter-spacing: -0.04em;
+  }
+  .au-cats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .au-block {
+    display: grid;
+    gap: 18px;
+  }
+  .au-issues {
+    display: grid;
+    gap: 10px;
+  }
+  .au-lh {
+    padding: clamp(20px, 3vw, 32px);
+    border-radius: var(--r-lg);
+    border: 1px solid var(--line);
+  }
+  .au-lh__grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .au-full {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .au-cta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    justify-content: space-between;
+    gap: 24px;
+    padding: clamp(24px, 4vw, 56px);
+    border-radius: var(--r-lg);
+    background: var(--fg);
+    color: var(--bg);
+  }
+  .au-cta > div {
+    display: grid;
+    gap: 12px;
+    max-width: 640px;
+  }
+  .au-cta .lead {
+    color: rgb(0 0 0 / 0.65);
+  }
+  .au-cta :global(.btn--primary) {
+    --btn-bg: #000;
+    --btn-fg: #fff;
+    --btn-bd: #000;
+  }
+  .au-cta :global(.btn--primary .btn__icon) {
+    background: #fff;
+    color: #000;
+  }
+  @media (max-width: 980px) {
+    .au-intro {
+      grid-template-columns: 1fr 1fr;
+    }
+    .au-top {
+      grid-template-columns: 1fr;
+    }
+    .au-lh__grid {
+      grid-template-columns: 1fr 1fr;
+    }
+    .au-full {
+      grid-template-columns: 1fr;
+    }
+  }
+  @media (max-width: 600px) {
+    .au-input {
+      flex-wrap: wrap;
+      border-radius: var(--r);
+      padding: 8px;
+      padding-inline-start: 16px;
+    }
+    .au-input input {
+      flex-basis: calc(100% - 40px);
+      min-height: 48px;
+    }
+    .au-run {
+      width: 100%;
+      justify-content: space-between;
+    }
+    .au-intro {
+      grid-template-columns: 1fr;
+    }
+    .au-overall {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+    .au-cats {
+      grid-template-columns: 1fr;
+    }
+    .au-cta :global(.btn) {
+      width: 100%;
+      justify-content: space-between;
+    }
+  }
+  @media print {
+    :global(.nav),
+    :global(.footer),
+    :global(.mbar),
+    :global(.wa),
+    :global(.grain),
+    :global(.cursor),
+    :global(.tools-more),
+    .au-form,
+    .au-head .cluster,
+    .au-cta,
+    :global(.gate) {
+      display: none !important;
+    }
+    :global(body),
+    :global(html) {
+      background: #fff !important;
+      color: #000 !important;
+    }
+  }
+</style>

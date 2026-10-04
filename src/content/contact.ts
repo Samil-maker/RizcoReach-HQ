@@ -1,0 +1,175 @@
+// Option VALUES stay in English (consistent data in Netlify); labels are localized.
+export const businessTypes = [
+  { v: 'Construction & Home Improvement', slug: 'construction-home-improvement', ar: 'المقاولات وتحسين المنازل' },
+  { v: 'IT & Software', slug: 'it-software', ar: 'تقنية المعلومات والبرمجيات' },
+  { v: 'Landscaping & Agriculture', slug: 'landscaping-agriculture', ar: 'تنسيق الحدائق والزراعة' },
+  { v: 'Permanent Makeup & Aesthetics', slug: 'permanent-makeup-aesthetics', ar: 'المكياج الدائم والتجميل' },
+  { v: 'Healthcare & Clinics', slug: 'healthcare-clinics', ar: 'الرعاية الصحية والعيادات' },
+  { v: 'Corporate Services & Accounting', slug: 'corporate-services-accounting', ar: 'خدمات الشركات والمحاسبة' },
+  { v: 'Fitness, Sports & Pilates', slug: 'fitness-sports-pilates', ar: 'اللياقة والرياضة والبيلاتس' },
+  { v: 'Professional & B2B Services', slug: 'professional-b2b-services', ar: 'الخدمات المهنية وخدمات الشركات' },
+  { v: 'Other / Not Listed', slug: 'other', ar: 'أخرى / غير مدرجة' },
+];
+
+export const businessAges = [
+  { v: 'Less than 1 year', ar: 'أقل من سنة' },
+  { v: '1–2 years', ar: '1–2 سنة' },
+  { v: '3–5 years', ar: '3–5 سنوات' },
+  { v: '5–10 years', ar: '5–10 سنوات' },
+  { v: '10+ years', ar: 'أكثر من 10 سنوات' },
+];
+
+/** Budget ranges are the client's own budget (qualification), carried over from the original form. */
+export const budgets: Record<string, string[]> = {
+  'website-development': ['AED 2,000 - 5,000', 'AED 5,000 - 10,000', 'AED 10,000 - 20,000', 'AED 20,000 - 40,000', 'AED 40,000+'],
+  seo: ['AED 1,500 - 3,000', 'AED 3,000 - 6,000', 'AED 6,000 - 10,000', 'AED 10,000 - 20,000', 'AED 20,000+'],
+  'meta-google-ads': ['AED 1,000 - 3,000', 'AED 3,000 - 7,000', 'AED 7,000 - 15,000', 'AED 15,000 - 30,000', 'AED 30,000+'],
+};
+
+const en = {
+  meta: {
+    title: 'Contact RizcoReach | Book a Free Strategy Call',
+    description:
+      "Book a free strategy call with RizcoReach, Dubai's website development and SEO agency. Tell us about your business and we'll be in touch within 24 hours.",
+  },
+  kicker: 'Start your project',
+  title: 'Let’s build something <em>that ranks.</em>',
+  sub: 'A few quick questions so we can come prepared. It takes about 3 minutes, and we read every submission before we call.',
+  direct: 'Prefer to talk directly?',
+  email: 'Email',
+  whatsapp: 'WhatsApp',
+  call: 'Call',
+  visit: 'Studio',
+  address: 'Latifa Tower, Sheikh Zayed Road, Dubai',
+  response: 'We reply within 24 hours',
+  nextTitle: 'What happens next',
+  next: [
+    { t: 'We review your answers', d: 'Every submission is read by a strategist, not a bot.' },
+    { t: 'A 30-minute discovery call', d: 'No pitch, no pressure. Just an honest look at where you are.' },
+    { t: 'Your plan and a clear quote', d: 'Pages, design direction, SEO plan and pricing for your scope.' },
+  ],
+  form: {
+    stepOf: (a: number, b: number) => `Step ${a} of ${b}`,
+    steps: ['Service', 'Business', 'Goals', 'Details'],
+    s1: { title: 'What can we help you with?', hint: 'Pick the one that matters most right now. We can cover the rest on the call.' },
+    services: [
+      { v: 'website-development', t: 'Website Development', d: 'A new website or a full redesign' },
+      { v: 'seo', t: 'SEO', d: 'Rank higher on Google and Maps' },
+      { v: 'meta-google-ads', t: 'Meta & Google Ads', d: 'Qualified leads from paid campaigns' },
+    ],
+    s2: { title: 'Tell us about your business' },
+    industry: 'Type of business',
+    age: 'How long have you been in business?',
+    agePlaceholder: 'Select',
+    website: 'Current website',
+    websiteHint: 'Optional. Leave blank if you don’t have one yet.',
+    s3: { title: 'Budget & goals' },
+    budgetLabels: {
+      'website-development': 'Website development budget',
+      seo: 'Monthly SEO budget',
+      'meta-google-ads': 'Monthly ad budget',
+    } as Record<string, string>,
+    budgetHint: 'A rough range helps us recommend the right plan.',
+    notSure: 'Not sure yet',
+    challenge: 'What’s your biggest challenge right now?',
+    placeholders: {
+      'website-development': 'Do you have a website today? What’s not working about it, or what do you need built?',
+      seo: 'Where do you show up on Google today? Which services and areas do you want to rank for?',
+      'meta-google-ads': 'What does your lead situation look like? Too few leads, the wrong leads, or an inconsistent flow?',
+    } as Record<string, string>,
+    s4: { title: 'Where should we reach you?' },
+    first: 'First name',
+    last: 'Last name',
+    emailLabel: 'Business email',
+    phone: 'Phone / WhatsApp',
+    phoneHint: 'We usually reach out on WhatsApp first.',
+    back: 'Back',
+    next: 'Continue',
+    submit: 'Send my application',
+    sending: 'Sending…',
+    consent: 'By submitting this form you agree to be contacted by the RizcoReach team about your enquiry.',
+    errors: {
+      required: 'Please fill this in.',
+      choose: 'Please choose an option.',
+      email: 'Please enter a valid email address.',
+      url: 'Please enter a valid website address.',
+      send: 'Something went wrong sending your application. Please try again, or email us at support@rizcoreach.ae.',
+    },
+    optional: 'Optional',
+  },
+};
+
+const ar: typeof en = {
+  meta: {
+    title: 'تواصل مع RizcoReach | احجز استشارة مجانية',
+    description:
+      'احجز استشارة استراتيجية مجانية مع RizcoReach، وكالة تطوير المواقع وتحسين محركات البحث في دبي. حدّثنا عن عملك وسنتواصل معك خلال 24 ساعة.',
+  },
+  kicker: 'ابدأ مشروعك',
+  title: 'لنَبنِ معاً موقعاً <em>يتصدّر النتائج.</em>',
+  sub: 'بضعة أسئلة سريعة لنأتي مستعدّين. تستغرق نحو 3 دقائق، ونقرأ كل طلب قبل أن نتصل.',
+  direct: 'تفضّل التواصل مباشرة؟',
+  email: 'البريد',
+  whatsapp: 'واتساب',
+  call: 'اتصال',
+  visit: 'الاستوديو',
+  address: 'برج لطيفة، شارع الشيخ زايد، دبي',
+  response: 'نردّ خلال 24 ساعة',
+  nextTitle: 'ماذا يحدث بعد ذلك',
+  next: [
+    { t: 'نراجع إجاباتك', d: 'يقرأ كل طلب خبير استراتيجي، لا روبوت.' },
+    { t: 'مكالمة استكشافية لمدة 30 دقيقة', d: 'بلا عروض بيع ولا ضغط. نظرة صادقة على وضعك الحالي.' },
+    { t: 'خطتك وعرض سعر واضح', d: 'الصفحات واتجاه التصميم وخطة السيو والتسعير لنطاق مشروعك.' },
+  ],
+  form: {
+    stepOf: (a: number, b: number) => `الخطوة ${a} من ${b}`,
+    steps: ['الخدمة', 'العمل', 'الأهداف', 'التفاصيل'],
+    s1: { title: 'كيف يمكننا مساعدتك؟', hint: 'اختر الأهم لك الآن، ويمكننا مناقشة الباقي في المكالمة.' },
+    services: [
+      { v: 'website-development', t: 'تطوير المواقع', d: 'موقع جديد أو إعادة تصميم كاملة' },
+      { v: 'seo', t: 'تحسين محركات البحث', d: 'ترتيب أعلى في جوجل والخرائط' },
+      { v: 'meta-google-ads', t: 'إعلانات ميتا وجوجل', d: 'عملاء مؤهَّلون من الحملات المدفوعة' },
+    ],
+    s2: { title: 'حدّثنا عن عملك' },
+    industry: 'نوع النشاط',
+    age: 'منذ متى وأنت في السوق؟',
+    agePlaceholder: 'اختر',
+    website: 'موقعك الحالي',
+    websiteHint: 'اختياري. اتركه فارغاً إن لم يكن لديك موقع بعد.',
+    s3: { title: 'الميزانية والأهداف' },
+    budgetLabels: {
+      'website-development': 'ميزانية تطوير الموقع',
+      seo: 'ميزانية السيو الشهرية',
+      'meta-google-ads': 'الميزانية الإعلانية الشهرية',
+    },
+    budgetHint: 'نطاق تقريبي يساعدنا على اقتراح الخطة المناسبة.',
+    notSure: 'لست متأكداً بعد',
+    challenge: 'ما أكبر تحدٍّ تواجهه الآن؟',
+    placeholders: {
+      'website-development': 'هل لديك موقع اليوم؟ ما الذي لا يعمل فيه، أو ما الذي تحتاج بناءه؟',
+      seo: 'أين تظهر على جوجل اليوم؟ ما الخدمات والمناطق التي تريد التصدّر فيها؟',
+      'meta-google-ads': 'كيف يبدو وضع العملاء لديك؟ قلة الطلبات، أم طلبات غير مناسبة، أم تدفّق غير منتظم؟',
+    },
+    s4: { title: 'كيف نتواصل معك؟' },
+    first: 'الاسم الأول',
+    last: 'اسم العائلة',
+    emailLabel: 'البريد الإلكتروني للعمل',
+    phone: 'الهاتف / واتساب',
+    phoneHint: 'عادةً نتواصل عبر واتساب أولاً.',
+    back: 'رجوع',
+    next: 'متابعة',
+    submit: 'أرسل طلبي',
+    sending: 'جارٍ الإرسال…',
+    consent: 'بإرسال هذا النموذج، توافق على أن يتواصل معك فريق RizcoReach بخصوص طلبك.',
+    errors: {
+      required: 'يرجى تعبئة هذا الحقل.',
+      choose: 'يرجى اختيار أحد الخيارات.',
+      email: 'يرجى إدخال بريد إلكتروني صحيح.',
+      url: 'يرجى إدخال عنوان موقع صحيح.',
+      send: 'حدث خطأ أثناء إرسال طلبك. يرجى المحاولة مجدداً، أو راسلنا على support@rizcoreach.ae.',
+    },
+    optional: 'اختياري',
+  },
+};
+
+export const contact = { en, ar };

@@ -1,0 +1,242 @@
+---
+import Icon from './Icon.astro';
+import Btn from './Btn.astro';
+import { href, SITE, type Lang } from '../i18n/utils';
+import { useUI } from '../i18n/ui';
+import { industries } from '../content/industries';
+import { split } from '../lib/split';
+
+interface Props {
+  lang: Lang;
+  hideCta?: boolean;
+}
+const { lang, hideCta = false } = Astro.props;
+const ui = useUI(lang);
+const h = (p: string) => href(lang, p);
+const year = new Date().getFullYear();
+const address = lang === 'ar' ? 'برج لطيفة، شارع الشيخ زايد، دبي، الإمارات العربية المتحدة' : 'Latifa Tower, Sheikh Zayed Road, Dubai, United Arab Emirates';
+---
+
+<footer class="footer">
+  {
+    !hideCta && (
+      <section class="fcta container" aria-labelledby="fcta-title">
+        <p class="label label--line" data-reveal>{ui.footer.ctaLabel}</p>
+        <h2 id="fcta-title" class="fcta__title display" data-split>
+          <span class="fcta__line" set:html={split(ui.footer.ctaTitle[0])} />
+          <span class="fcta__line chrome-words" set:html={split(ui.footer.ctaTitle[1], 6)} />
+        </h2>
+        <div class="fcta__row">
+          <p class="lead" data-reveal>{ui.footer.ctaSub}</p>
+          <div class="cluster" data-reveal style="--d:120">
+            <Btn href={h('/contact')} label={ui.footer.ctaButton} variant="primary" size="lg" magnetic />
+            <Btn href={SITE.whatsapp} label={ui.footer.whatsapp} icon="whatsapp" size="lg" target="_blank" rel="noopener" />
+          </div>
+        </div>
+      </section>
+    )
+  }
+
+  <div class="fmain container">
+    <div class="fmain__brand">
+      <a href={h('/')} class="fmain__logo" aria-label="RizcoReach">
+        <img src="/brand/mark-112.webp" srcset="/brand/mark-112.webp 1x, /brand/mark-160.webp 2x" alt="" width="56" height="56" loading="lazy" />
+      </a>
+      <p class="small">{ui.footer.tagline}</p>
+      <div class="fmain__contact">
+        <p class="label">{ui.footer.visit}</p>
+        <address class="small">{address}</address>
+        <p class="label" style="margin-top:18px">{ui.footer.talk}</p>
+        <a href={`mailto:${SITE.email}`} class="link">{SITE.email}</a>
+        <a href={`tel:${SITE.phone}`} class="link ltr">{SITE.phoneDisplay}</a>
+      </div>
+    </div>
+
+    <nav class="fmain__cols" aria-label="Footer">
+      <div>
+        <p class="label">{ui.footer.servicesTitle}</p>
+        <ul role="list">
+          <li><a href={h('/services/website-development')}>{ui.services.web}</a></li>
+          <li><a href={h('/services/seo')}>{ui.services.seo}</a></li>
+          <li><a href={h('/services/meta-ads')}>{ui.services.ads}</a></li>
+        </ul>
+        <p class="label" style="margin-top:32px">{ui.footer.toolsTitle}</p>
+        <ul role="list">
+          <li><a href={h('/tools/website-audit')}>{ui.tools.audit}</a></li>
+          <li><a href={h('/tools/seo-calculator')}>{ui.tools.seo}</a></li>
+          <li><a href={h('/tools/meta-ads-calculator')}>{ui.tools.ads}</a></li>
+          <li><a href={h('/tools/website-estimator')}>{ui.tools.estimator}</a></li>
+        </ul>
+      </div>
+      <div>
+        <p class="label">{ui.footer.industriesTitle}</p>
+        <ul role="list">
+          {industries.map((i) => <li><a href={h('/' + i.slug)}>{i[lang].name}</a></li>)}
+        </ul>
+      </div>
+      <div>
+        <p class="label">{ui.footer.companyTitle}</p>
+        <ul role="list">
+          <li><a href={h('/#results')}>{ui.nav.work}</a></li>
+          <li><a href={h('/#faq')}>{ui.nav.faq}</a></li>
+          <li><a href={h('/contact')}>{ui.nav.contact}</a></li>
+          <li><a href={h('/privacy')}>{ui.footer.privacy}</a></li>
+          <li><a href={h('/terms')}>{ui.footer.terms}</a></li>
+        </ul>
+        <div class="fmain__social">
+          <a href={SITE.instagram} target="_blank" rel="noopener" aria-label={`Instagram ${SITE.instagramHandle}`} data-cursor-link><Icon name="instagram" size={18} /></a>
+          <a href={SITE.facebook} target="_blank" rel="noopener" aria-label="Facebook" data-cursor-link><Icon name="facebook" size={18} /></a>
+          <a href={SITE.whatsapp} target="_blank" rel="noopener" aria-label="WhatsApp" data-cursor-link><Icon name="whatsapp" size={18} /></a>
+          <a href={`mailto:${SITE.email}`} aria-label="Email" data-cursor-link><Icon name="mail" size={18} /></a>
+        </div>
+      </div>
+    </nav>
+  </div>
+
+  <div class="fword" aria-hidden="true">
+    <span>RIZCOREACH</span>
+  </div>
+
+  <div class="fbottom container">
+    <p class="small">© {year} RizcoReach. {ui.footer.rights}</p>
+    <a href="#top" class="link small" data-back-top>{ui.footer.backToTop}<Icon name="arrow-up-right" size={14} class="flip-rtl" /></a>
+  </div>
+</footer>
+
+<style>
+  .footer {
+    position: relative;
+    border-top: 1px solid var(--line);
+    background:
+      radial-gradient(80% 60% at 50% 0%, rgb(255 255 255 / 0.05), transparent 70%),
+      var(--bg);
+    overflow: hidden;
+  }
+  .fcta {
+    padding-block: var(--section) calc(var(--section) * 0.7);
+    display: grid;
+    gap: 28px;
+  }
+  .fcta__title {
+    display: grid;
+  }
+  .fcta__line {
+    display: block;
+  }
+  .fcta__row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    justify-content: space-between;
+    gap: 32px;
+    margin-top: 20px;
+  }
+  .fmain {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
+    gap: 48px;
+    padding-block: 72px;
+    border-top: 1px solid var(--line);
+  }
+  .fmain__brand {
+    display: grid;
+    align-content: start;
+    gap: 18px;
+    max-width: 360px;
+  }
+  .fmain__logo img {
+    width: 56px;
+    height: 56px;
+  }
+  .fmain__contact {
+    display: grid;
+    gap: 8px;
+    justify-items: start;
+    margin-top: 10px;
+  }
+  .fmain__contact address {
+    font-style: normal;
+  }
+  .fmain__cols {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 32px;
+  }
+  .fmain__cols ul {
+    display: grid;
+    gap: 2px;
+    margin-top: 16px;
+  }
+  .fmain__cols a {
+    display: inline-block;
+    padding-block: 6px;
+    font-size: var(--fs-sm);
+    color: var(--fg-2);
+    transition: color var(--t-fast);
+  }
+  .fmain__cols a:hover {
+    color: var(--fg);
+  }
+  .fmain__social {
+    display: flex;
+    gap: 10px;
+    margin-top: 28px;
+  }
+  .fmain__social a {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: 1px solid var(--line-2);
+    border-radius: 50%;
+    color: var(--fg-2);
+    transition: all var(--t) var(--ease-out);
+  }
+  .fmain__social a:hover {
+    background: var(--fg);
+    color: var(--bg);
+    border-color: var(--fg);
+  }
+  .fword {
+    display: flex;
+    justify-content: center;
+    padding-inline: 1vw;
+    line-height: 0.78;
+    user-select: none;
+    direction: ltr;
+  }
+  .fword span {
+    font-family: 'Geist Variable', var(--font-sans);
+    font-weight: 800;
+    font-size: 15.2vw;
+    letter-spacing: -0.06em;
+    background: linear-gradient(180deg, rgb(255 255 255 / 0.14), rgb(255 255 255 / 0.01) 85%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    white-space: nowrap;
+  }
+  .fbottom {
+    padding-inline-end: 84px;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 16px;
+    padding-block: 28px 36px;
+    border-top: 1px solid var(--line);
+  }
+  @media (max-width: 960px) {
+    .fmain {
+      grid-template-columns: 1fr;
+    }
+  }
+  @media (max-width: 640px) {
+    .fmain__cols {
+      grid-template-columns: 1fr 1fr;
+    }
+    .fmain__cols > div:last-child {
+      grid-column: 1 / -1;
+    }
+  }
+</style>

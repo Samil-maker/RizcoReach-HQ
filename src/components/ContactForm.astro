@@ -1,0 +1,564 @@
+---
+import Icon from './Icon.astro';
+import { contact, businessTypes, businessAges, budgets } from '../content/contact';
+import { href, type Lang } from '../i18n/utils';
+
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const f = contact[lang].form;
+const ar = lang === 'ar';
+const label = (o: { v: string; ar: string }) => (ar ? o.ar : o.v);
+const budgetLabel = (v: string) => (ar ? v.replace('AED ', '') + ' درهم' : v);
+const check = '<path d="M20 6 9 17l-5-5"/>';
+const thanks = href(lang, '/thankyou');
+const i18n = JSON.stringify({
+  stepOf: [1, 2, 3, 4].map((a) => f.stepOf(a, 4)),
+  budgetLabels: f.budgetLabels,
+  placeholders: f.placeholders,
+  budgets,
+  ar,
+  notSure: f.notSure,
+  errors: f.errors,
+  sending: f.sending,
+  submit: f.submit,
+  thanks,
+});
+---
+
+<div class="cf" data-hide-bar>
+  <div class="cf__progress" aria-hidden="true">
+    <div class="cf__bar"><span data-cf-bar></span></div>
+    <ol class="cf__steps" role="list">
+      {f.steps.map((s, i) => <li data-cf-dot={i}><span>{String(i + 1).padStart(2, '0')}</span>{s}</li>)}
+    </ol>
+  </div>
+
+  <form
+    class="cf__form"
+    name="contact"
+    method="POST"
+    action={thanks}
+    data-netlify={lang === 'en' ? 'true' : undefined}
+    netlify-honeypot="bot-field"
+    data-cf
+    data-i18n={i18n}
+    novalidate
+  >
+    <input type="hidden" name="form-name" value="contact" />
+    <input type="hidden" name="lead_source" value="contact-form" data-cf-source />
+    <input type="hidden" name="tool_details" value="" />
+    <input type="hidden" name="language" value={lang} />
+    <input type="hidden" name="page" value="" />
+    <p class="hp" aria-hidden="true">
+      <label>Leave empty <input name="bot-field" tabindex="-1" autocomplete="off" /></label>
+    </p>
+
+    <p class="cf__status label" aria-live="polite" data-cf-status>{f.stepOf(1, 4)}</p>
+
+    <!-- Step 1 -->
+    <fieldset class="cf__step is-active" data-step="0">
+      <legend class="cf__title h3">{f.s1.title}</legend>
+      <p class="field__hint">{f.s1.hint}</p>
+      <div class="cf__services">
+        {
+          f.services.map((s, i) => (
+            <label class="choice">
+              <input type="radio" name="service_type" value={s.v} checked={i === 0} required />
+              <span class="choice__box cf__svc">
+                <span class="choice__tick">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" set:html={check} />
+                </span>
+                <span>
+                  <span class="choice__title">{s.t}</span>
+                  <span class="choice__desc">{s.d}</span>
+                </span>
+              </span>
+            </label>
+          ))
+        }
+      </div>
+      <p class="field__error" data-err="service_type"></p>
+    </fieldset>
+
+    <!-- Step 2 -->
+    <fieldset class="cf__step" data-step="1">
+      <legend class="cf__title h3">{f.s2.title}</legend>
+      <div class="field">
+        <span class="field__label" id="lbl-industry">{f.industry} *</span>
+        <div class="choices cf__chips" role="radiogroup" aria-labelledby="lbl-industry">
+          {
+            businessTypes.map((b) => (
+              <label class="choice">
+                <input type="radio" name="business_type" value={b.v} data-slug={b.slug} required />
+                <span class="choice__box">
+                  <span class="choice__tick">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" set:html={check} />
+                  </span>
+                  {label(b)}
+                </span>
+              </label>
+            ))
+          }
+        </div>
+        <p class="field__error" data-err="business_type"></p>
+      </div>
+      <div class="cf__row">
+        <div class="field">
+          <label class="field__label" for="cf-age">{f.age}</label>
+          <select class="select" id="cf-age" name="business_age">
+            <option value="">{f.agePlaceholder}</option>
+            {businessAges.map((a) => <option value={a.v}>{label(a)}</option>)}
+          </select>
+        </div>
+        <div class="field">
+          <label class="field__label" for="cf-web">{f.website}</label>
+          <input class="input ltr" id="cf-web" name="website" type="text" inputmode="url" autocomplete="url" placeholder="yourbusiness.ae" />
+          <p class="field__hint">{f.websiteHint}</p>
+          <p class="field__error" data-err="website"></p>
+        </div>
+      </div>
+    </fieldset>
+
+    <!-- Step 3 -->
+    <fieldset class="cf__step" data-step="2">
+      <legend class="cf__title h3">{f.s3.title}</legend>
+      <div class="field">
+        <span class="field__label" id="lbl-budget" data-cf-budget-label>{f.budgetLabels['website-development']}</span>
+        <div class="choices cf__chips" role="radiogroup" aria-labelledby="lbl-budget" data-cf-budgets>
+          {
+            [...budgets['website-development'], f.notSure].map((b) => (
+              <label class="choice">
+                <input type="radio" name="ad_budget" value={b === f.notSure ? 'Not sure yet' : b} />
+                <span class="choice__box">
+                  <span class="choice__tick">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" set:html={check} />
+                  </span>
+                  <span class="ltr-num">{b === f.notSure ? b : budgetLabel(b)}</span>
+                </span>
+              </label>
+            ))
+          }
+        </div>
+        <p class="field__hint">{f.budgetHint}</p>
+      </div>
+      <div class="field">
+        <label class="field__label" for="cf-challenge">{f.challenge}</label>
+        <textarea class="textarea" id="cf-challenge" name="challenge" rows="5" placeholder={f.placeholders['website-development']}></textarea>
+      </div>
+    </fieldset>
+
+    <!-- Step 4 -->
+    <fieldset class="cf__step" data-step="3">
+      <legend class="cf__title h3">{f.s4.title}</legend>
+      <div class="cf__row">
+        <div class="field">
+          <label class="field__label" for="cf-first">{f.first} *</label>
+          <input class="input" id="cf-first" name="first_name" type="text" autocomplete="given-name" required />
+          <p class="field__error" data-err="first_name"></p>
+        </div>
+        <div class="field">
+          <label class="field__label" for="cf-last">{f.last} *</label>
+          <input class="input" id="cf-last" name="last_name" type="text" autocomplete="family-name" required />
+          <p class="field__error" data-err="last_name"></p>
+        </div>
+      </div>
+      <div class="field">
+        <label class="field__label" for="cf-email">{f.emailLabel} *</label>
+        <input class="input ltr" id="cf-email" name="email" type="email" autocomplete="email" inputmode="email" placeholder="you@yourbusiness.ae" required />
+        <p class="field__error" data-err="email"></p>
+      </div>
+      <div class="field">
+        <label class="field__label" for="cf-phone">{f.phone}</label>
+        <input class="input ltr" id="cf-phone" name="phone" type="tel" autocomplete="tel" inputmode="tel" placeholder="+971 5X XXX XXXX" />
+        <p class="field__hint">{f.phoneHint}</p>
+      </div>
+      <p class="field__hint cf__consent">{f.consent}</p>
+    </fieldset>
+
+    <p class="cf__send-error" role="alert" data-cf-send-error hidden></p>
+
+    <div class="cf__nav">
+      <button type="button" class="btn btn--noicon cf__back" data-cf-back hidden aria-label={f.back}>
+        <Icon name="arrow-left" size={18} class="flip-rtl cf__back-ico" />
+        <span class="btn__label"><span>{f.back}</span><span aria-hidden="true">{f.back}</span></span>
+      </button>
+      <button type="button" class="btn btn--primary btn--lg cf__next" data-cf-next>
+        <span class="btn__label"><span>{f.next}</span><span aria-hidden="true">{f.next}</span></span>
+        <span class="btn__icon" aria-hidden="true"><Icon name="arrow-right" size={16} class="flip-rtl" /></span>
+      </button>
+      <button type="submit" class="btn btn--primary btn--lg cf__submit" data-cf-submit hidden>
+        <span class="btn__label"><span data-cf-submit-label>{f.submit}</span><span aria-hidden="true">{f.submit}</span></span>
+        <span class="btn__icon" aria-hidden="true"><Icon name="arrow-up-right" size={16} class="flip-rtl" /></span>
+      </button>
+    </div>
+  </form>
+</div>
+
+<script>
+  import { submitLead, isEmail, normalizeUrl } from '../scripts/lead';
+
+  const form = document.querySelector<HTMLFormElement>('[data-cf]');
+  if (form) {
+    const t = JSON.parse(form.dataset.i18n!);
+    const steps = Array.from(form.querySelectorAll<HTMLFieldSetElement>('.cf__step'));
+    const dots = Array.from(document.querySelectorAll<HTMLElement>('[data-cf-dot]'));
+    const bar = document.querySelector<HTMLElement>('[data-cf-bar]');
+    const status = form.querySelector<HTMLElement>('[data-cf-status]')!;
+    const back = form.querySelector<HTMLButtonElement>('[data-cf-back]')!;
+    const next = form.querySelector<HTMLButtonElement>('[data-cf-next]')!;
+    const submit = form.querySelector<HTMLButtonElement>('[data-cf-submit]')!;
+    const sendError = form.querySelector<HTMLElement>('[data-cf-send-error]')!;
+    let current = 0;
+
+    const err = (name: string, msg: string) => {
+      const el = form.querySelector<HTMLElement>(`[data-err="${name}"]`);
+      if (el) el.textContent = msg;
+      form.querySelectorAll<HTMLElement>(`[name="${name}"]`).forEach((i) => i.setAttribute('aria-invalid', msg ? 'true' : 'false'));
+    };
+    const val = (name: string) => {
+      const els = form.querySelectorAll<HTMLInputElement>(`[name="${name}"]`);
+      if (els[0]?.type === 'radio') return Array.from(els).find((e) => e.checked)?.value ?? '';
+      return els[0]?.value.trim() ?? '';
+    };
+
+    const validate = (i: number) => {
+      let ok = true;
+      const need = (name: string, msg = t.errors.required) => {
+        if (!val(name)) {
+          err(name, msg);
+          ok = false;
+        } else err(name, '');
+      };
+      if (i === 0) need('service_type', t.errors.choose);
+      if (i === 1) {
+        need('business_type', t.errors.choose);
+        const w = val('website');
+        if (w && !normalizeUrl(w)) {
+          err('website', t.errors.url);
+          ok = false;
+        } else err('website', '');
+      }
+      if (i === 3) {
+        need('first_name');
+        need('last_name');
+        if (!isEmail(val('email'))) {
+          err('email', t.errors.email);
+          ok = false;
+        } else err('email', '');
+      }
+      if (!ok) {
+        const first = steps[i].querySelector<HTMLElement>('[aria-invalid="true"]');
+        first?.focus({ preventScroll: false });
+      }
+      return ok;
+    };
+
+    const show = (i: number, focus = true) => {
+      current = i;
+      steps.forEach((s, k) => s.classList.toggle('is-active', k === i));
+      dots.forEach((d, k) => {
+        d.classList.toggle('is-done', k < i);
+        d.classList.toggle('is-current', k === i);
+      });
+      if (bar) bar.style.transform = `scaleX(${(i + 1) / steps.length})`;
+      status.textContent = t.stepOf[i];
+      back.hidden = i === 0;
+      next.hidden = i === steps.length - 1;
+      submit.hidden = i !== steps.length - 1;
+      if (focus) {
+        const top = form.getBoundingClientRect().top + window.scrollY - 120;
+        if (window.scrollY > top) {
+          if (window.__lenis) window.__lenis.scrollTo(top, { duration: 0.8 });
+          else window.scrollTo({ top, behavior: 'smooth' });
+        }
+        steps[i].querySelector<HTMLElement>('legend')?.setAttribute('tabindex', '-1');
+        steps[i].querySelector<HTMLElement>('legend')?.focus({ preventScroll: true });
+      }
+    };
+
+    // Budget options follow the chosen service.
+    const renderBudgets = () => {
+      const svc = val('service_type') || 'website-development';
+      const wrap = form.querySelector<HTMLElement>('[data-cf-budgets]')!;
+      const tpl = wrap.querySelector('label')!;
+      const chosen = val('ad_budget');
+      const opts = [...t.budgets[svc], 'Not sure yet'];
+      wrap.innerHTML = '';
+      opts.forEach((v: string) => {
+        const node = tpl.cloneNode(true) as HTMLLabelElement;
+        const input = node.querySelector('input')!;
+        input.value = v;
+        input.checked = v === chosen;
+        const text = v === 'Not sure yet' ? t.notSure : t.ar ? v.replace('AED ', '') + ' درهم' : v;
+        node.querySelector('.ltr-num')!.textContent = text;
+        wrap.appendChild(node);
+      });
+      form.querySelector('[data-cf-budget-label]')!.textContent = t.budgetLabels[svc];
+      (form.querySelector('#cf-challenge') as HTMLTextAreaElement).placeholder = t.placeholders[svc];
+    };
+
+    // Prefill from the URL (?service=seo, ?industry=healthcare-clinics).
+    const params = new URLSearchParams(location.search);
+    const svc = params.get('service');
+    if (svc) form.querySelectorAll<HTMLInputElement>('[name="service_type"]').forEach((i) => (i.checked = i.value === svc));
+    const ind = params.get('industry');
+    if (ind) {
+      form.querySelectorAll<HTMLInputElement>('[name="business_type"]').forEach((i) => (i.checked = i.dataset.slug === ind));
+      form.querySelector<HTMLInputElement>('[data-cf-source]')!.value = `industry-page:${ind}`;
+    }
+    renderBudgets();
+    form.addEventListener('change', (e) => {
+      const el = e.target as HTMLInputElement;
+      if (el.name === 'service_type') renderBudgets();
+      if (el.name) err(el.name, '');
+    });
+
+    next.addEventListener('click', () => {
+      if (validate(current)) show(Math.min(current + 1, steps.length - 1));
+    });
+    back.addEventListener('click', () => show(Math.max(current - 1, 0)));
+    form.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && (e.target as HTMLElement).tagName === 'INPUT' && current < steps.length - 1) {
+        e.preventDefault();
+        next.click();
+      }
+    });
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      for (let i = 0; i < steps.length; i++) {
+        if (!validate(i)) {
+          show(i);
+          return;
+        }
+      }
+      const data = new FormData(form);
+      const fields: Record<string, string> = {};
+      data.forEach((v, k) => {
+        if (k !== 'form-name') fields[k] = String(v);
+      });
+      const w = normalizeUrl(fields.website || '');
+      if (w) fields.website = w;
+      submit.disabled = true;
+      const lbl = form.querySelectorAll<HTMLElement>('.cf__submit .btn__label > span');
+      lbl.forEach((l) => (l.textContent = t.sending));
+      sendError.hidden = true;
+      try {
+        await submitLead(fields);
+        location.href = t.thanks;
+      } catch {
+        sendError.textContent = t.errors.send;
+        sendError.hidden = false;
+        submit.disabled = false;
+        lbl.forEach((l) => (l.textContent = t.submit));
+      }
+    });
+
+    form.classList.add('is-enhanced');
+    show(0, false);
+  }
+</script>
+
+<style>
+  .cf {
+    position: relative;
+    padding: clamp(22px, 3.2vw, 44px);
+    border-radius: var(--r-lg);
+    border: 1px solid var(--line-2);
+    background:
+      radial-gradient(80% 60% at 100% 0%, rgb(255 255 255 / 0.06), transparent 60%),
+      var(--surface);
+    box-shadow: 0 40px 100px rgb(0 0 0 / 0.5);
+  }
+  .cf__progress {
+    display: grid;
+    gap: 14px;
+    margin-bottom: 30px;
+  }
+  .cf__bar {
+    height: 2px;
+    background: var(--line-2);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .cf__bar span {
+    display: block;
+    height: 100%;
+    background: var(--fg);
+    transform: scaleX(0.25);
+    transform-origin: var(--o, left);
+    transition: transform 700ms var(--ease-out);
+  }
+  :global([dir='rtl']) .cf__bar span {
+    --o: right;
+  }
+  .cf__steps {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    font-size: var(--fs-xs);
+    color: var(--fg-3);
+  }
+  .cf__steps li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: color var(--t);
+  }
+  .cf__steps li span {
+    font-family: var(--font-mono);
+    font-size: 11px;
+  }
+  .cf__steps li:global(.is-current),
+  .cf__steps li:global(.is-done) {
+    color: var(--fg);
+  }
+  .cf__status {
+    margin-bottom: 8px;
+  }
+  .cf__step {
+    border: 0;
+    padding: 0;
+    margin: 0;
+    min-width: 0;
+    display: grid;
+    gap: 22px;
+  }
+  .cf__step + .cf__step {
+    margin-top: 40px;
+  }
+  .cf__form:global(.is-enhanced) .cf__step {
+    margin-top: 0;
+  }
+  .cf__form:global(.is-enhanced) .cf__step:not(:global(.is-active)) {
+    display: none;
+  }
+  .cf__form:global(.is-enhanced) .cf__step:global(.is-active) {
+    animation: step-in 600ms var(--ease-out);
+  }
+  @keyframes step-in {
+    from {
+      opacity: 0;
+      transform: translateY(14px);
+    }
+  }
+  .cf__title {
+    padding: 0;
+    outline: none;
+  }
+  .cf__services {
+    display: grid;
+    gap: 10px;
+  }
+  .cf__svc {
+    min-height: 76px;
+    padding: 16px 20px;
+  }
+  .cf__svc .choice__title {
+    font-size: 1.0625rem;
+  }
+  .cf__chips {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr));
+  }
+  .cf__row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .cf__consent {
+    margin-top: -4px;
+  }
+  .cf__send-error {
+    margin-top: 20px;
+    padding: 14px 16px;
+    border-radius: var(--r-sm);
+    border: 1px solid var(--danger);
+    color: var(--danger);
+    font-size: var(--fs-sm);
+  }
+  .cf__nav {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 32px;
+    padding-top: 24px;
+    border-top: 1px solid var(--line);
+  }
+  .cf__next,
+  .cf__submit {
+    margin-inline-start: auto;
+  }
+  .cf__form:not(:global(.is-enhanced)) .cf__next,
+  .cf__form:not(:global(.is-enhanced)) .cf__back {
+    display: none;
+  }
+  .cf__form:not(:global(.is-enhanced)) .cf__submit {
+    display: inline-flex !important;
+  }
+  .cf__back :global(.cf__back-ico) {
+    display: none;
+  }
+  @media (max-width: 640px) {
+    .cf__back :global(.cf__back-ico) {
+      display: block;
+    }
+  }
+  .ltr-num {
+    unicode-bidi: plaintext;
+  }
+  @media (max-width: 640px) {
+    .cf {
+      padding: 20px 16px;
+      border-radius: var(--r);
+    }
+    .cf__steps li {
+      font-size: 0;
+    }
+    .cf__steps li span {
+      font-size: 11px;
+    }
+    .cf__row {
+      grid-template-columns: 1fr;
+    }
+    .cf__chips {
+      grid-template-columns: 1fr 1fr;
+    }
+    .cf__chips :global(.choice__box) {
+      padding: 12px;
+      font-size: var(--fs-xs);
+      gap: 10px;
+    }
+    .cf__nav {
+      position: sticky;
+      bottom: 0;
+      margin-inline: -16px;
+      margin-bottom: -20px;
+      padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0px));
+      background: var(--surface);
+      border-radius: 0 0 var(--r) var(--r);
+    }
+    .cf__nav .btn {
+      min-height: 54px;
+    }
+    .cf__back {
+      width: 54px;
+      padding: 0 !important;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .cf__back .btn__label {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+    }
+    .cf__next,
+    .cf__submit {
+      flex: 1;
+      justify-content: space-between;
+    }
+  }
+</style>

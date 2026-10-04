@@ -1,0 +1,405 @@
+---
+import Base from '../layouts/Base.astro';
+import PageHero from './PageHero.astro';
+import SectionHead from './SectionHead.astro';
+import ServiceVisual from './ServiceVisual.astro';
+import Icon from './Icon.astro';
+import Btn from './Btn.astro';
+import Cases from './Cases.astro';
+import Faq from './Faq.astro';
+import { words } from '../lib/split';
+import { href, SITE, type Lang } from '../i18n/utils';
+import { useUI } from '../i18n/ui';
+import type { Service } from '../content/services';
+import { industries } from '../content/industries';
+
+interface Props {
+  lang: Lang;
+  service: Service;
+}
+const { lang, service } = Astro.props;
+const c = service[lang];
+const ui = useUI(lang);
+const h = (p: string) => href(lang, p);
+const path = `/services/${service.slug}`;
+const name = ui.services[service.key];
+const schema = [
+  {
+    '@context': 'https://schema.org',
+    '@type': 'Service',
+    name,
+    serviceType: name,
+    description: c.metaDescription,
+    provider: { '@id': `${SITE.url}/#organization` },
+    areaServed: { '@type': 'Country', name: 'United Arab Emirates' },
+    url: new URL(h(path), SITE.url).toString(),
+  },
+];
+const toolIcon = { web: 'sliders', seo: 'trending', ads: 'target' }[service.key];
+---
+
+<Base lang={lang} title={c.metaTitle} description={c.metaDescription} path={path} schema={schema}>
+  <PageHero
+    kicker={c.kicker}
+    title={c.title}
+    sub={c.sub}
+    primary={{ label: c.primary, href: h(`/contact?service=${service.param}`) }}
+    secondary={{ label: c.secondary, href: h(service.tool), icon: toolIcon }}
+    crumbs={[
+      { label: ui.nav.home, href: h('/') },
+      { label: ui.nav.services, href: h('/#services') },
+      { label: name, href: h(path) },
+    ]}
+  />
+
+  <section class="si section" aria-label={c.intro.label}>
+    <div class="container si__grid">
+      <div class="si__text">
+        <p class="label label--line" data-reveal><span class="label__idx">(01)</span>{c.intro.label}</p>
+        <p class="si__big" data-scrub set:html={words(c.intro.text)} />
+      </div>
+      <div class="si__visual" data-reveal="scale">
+        <ServiceVisual kind={service.key} lang={lang} />
+      </div>
+    </div>
+  </section>
+
+  <section class="inc section section--raised" aria-labelledby="inc-title">
+    <div class="container">
+      <SectionHead label={c.included.label} idx="02" title={c.included.title} sub={c.included.sub} id="inc-title" />
+      <ul class="inc__grid" role="list" data-count-items={c.included.items.length}>
+        {
+          c.included.items.map((it, i) => (
+            <li class="inc__card glint" data-reveal style={`--d:${(i % 4) * 80}`}>
+              <span class="inc__ico">
+                <Icon name={it.icon} size={20} />
+              </span>
+              <h3 class="h4">{it.t}</h3>
+              <p class="small">{it.d}</p>
+            </li>
+          ))
+        }
+      </ul>
+    </div>
+  </section>
+
+  <section class="sp section" aria-labelledby="sp-title">
+    <div class="container">
+      <SectionHead label={c.process.label} idx="03" title={c.process.title} id="sp-title" />
+      <ol class="sp__steps" role="list">
+        {
+          c.process.steps.map((s, i) => (
+            <li class="sp__step" data-reveal style={`--d:${i * 90}`}>
+              <span class="sp__n tabular">0{i + 1}</span>
+              <span class="sp__dot" aria-hidden="true" />
+              <h3 class="h4">{s.t}</h3>
+              <p class="small">{s.d}</p>
+            </li>
+          ))
+        }
+      </ol>
+    </div>
+  </section>
+
+  <section class="why section section--paper" aria-labelledby="why-title">
+    <div class="container">
+      <SectionHead label={c.why.label} idx="04" title={c.why.title} id="why-title" />
+      <ul class="why__grid" role="list">
+        {
+          c.why.items.map((w, i) => (
+            <li class="why__item" data-reveal style={`--d:${i * 100}`}>
+              <span class="why__k">{w.k}</span>
+              <h3 class="h3">{w.t}</h3>
+              <p class="body">{w.d}</p>
+            </li>
+          ))
+        }
+      </ul>
+    </div>
+  </section>
+
+  {service.key === 'ads' && <Cases lang={lang} idx="05" />}
+
+  <section class="tl section" aria-labelledby="tl-title">
+    <div class="container">
+      <div class="tl__card glint" data-reveal="scale">
+        <div class="tl__copy">
+          <p class="label label--line">{c.tool.label}</p>
+          <h2 class="h2" id="tl-title">{c.tool.title}</h2>
+          <p class="lead">{c.tool.d}</p>
+        </div>
+        <div class="tl__cta">
+          <span class="tl__ico" aria-hidden="true"><Icon name={toolIcon} size={34} stroke={1.2} /></span>
+          <Btn href={h(service.tool)} label={c.tool.cta} variant="primary" size="lg" />
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <Faq lang={lang} label={c.faq.label} title={c.faq.title} items={c.faq.items} />
+
+  <section class="rel section--tight" aria-label={ui.footer.industriesTitle}>
+    <div class="container">
+      <p class="label label--line">{ui.footer.industriesTitle}</p>
+      <ul class="rel__list" role="list">
+        {
+          industries.map((i) => (
+            <li>
+              <a class="pill rel__pill" href={h('/' + i.slug)}>
+                {i[lang].name}
+                <Icon name="arrow-up-right" size={13} class="flip-rtl" />
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .si__grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+    gap: clamp(32px, 5vw, 96px);
+    align-items: center;
+  }
+  .si__text {
+    display: grid;
+    gap: 28px;
+  }
+  .si__big {
+    font-family: var(--font-display);
+    font-size: clamp(1.9rem, 3.4vw, 3.4rem);
+    line-height: 1.12;
+    letter-spacing: -0.01em;
+  }
+  :global([lang='ar']) .si__big {
+    line-height: 1.55;
+    letter-spacing: 0;
+    font-size: clamp(1.6rem, 2.8vw, 2.8rem);
+  }
+  .si__big :global(.sw) {
+    color: color-mix(in srgb, var(--fg) calc(var(--o, 0) * 100%), #6b6b67);
+    transition: color 120ms linear;
+  }
+  .si__visual {
+    min-height: 420px;
+  }
+  .inc__grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+  }
+  .inc__grid[data-count-items='6'] {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .inc__card {
+    display: grid;
+    align-content: start;
+    gap: 12px;
+    padding: clamp(22px, 2.4vw, 32px);
+    border-radius: var(--r);
+    border: 1px solid var(--line);
+    background: var(--bg);
+    transition:
+      border-color var(--t),
+      transform 600ms var(--ease-out);
+  }
+  .inc__card:hover {
+    border-color: var(--line-2);
+    transform: translateY(-4px);
+  }
+  .inc__ico {
+    display: grid;
+    place-items: center;
+    width: 46px;
+    height: 46px;
+    margin-bottom: 12px;
+    border-radius: 12px;
+    border: 1px solid var(--line-2);
+    background: var(--surface-2);
+  }
+  .sp__steps {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: clamp(16px, 2vw, 28px);
+    position: relative;
+  }
+  .sp__steps::before {
+    content: '';
+    position: absolute;
+    top: 78px;
+    inset-inline: 0;
+    height: 1px;
+    background: var(--line-2);
+  }
+  .sp__step {
+    position: relative;
+    display: grid;
+    align-content: start;
+    gap: 12px;
+  }
+  .sp__n {
+    font-family: var(--font-display);
+    font-size: clamp(2.8rem, 4vw, 4rem);
+    line-height: 1;
+  }
+  .sp__dot {
+    width: 11px;
+    height: 11px;
+    margin-block: 6px 10px;
+    border-radius: 50%;
+    background: var(--fg);
+    box-shadow: 0 0 0 6px var(--bg);
+  }
+  .why__grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+  }
+  .why__item {
+    display: grid;
+    align-content: start;
+    gap: 14px;
+    padding: clamp(24px, 3vw, 40px);
+    border-radius: var(--r);
+    background: #fff;
+    border: 1px solid var(--line);
+  }
+  .why__k {
+    font-family: var(--font-display);
+    font-size: clamp(2.8rem, 4.6vw, 4.4rem);
+    line-height: 1;
+    margin-bottom: 18px;
+    direction: ltr;
+    text-align: start;
+  }
+  :global([dir='rtl']) .why__k {
+    direction: rtl;
+  }
+  .tl__card {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) auto;
+    gap: 32px;
+    align-items: end;
+    padding: clamp(28px, 5vw, 72px);
+    border-radius: var(--r-lg);
+    border: 1px solid var(--line-2);
+    background:
+      radial-gradient(70% 120% at 100% 0%, rgb(255 255 255 / 0.1), transparent 60%),
+      var(--surface);
+  }
+  .tl__copy {
+    display: grid;
+    gap: 18px;
+  }
+  .tl__cta {
+    display: grid;
+    justify-items: end;
+    gap: 24px;
+  }
+  .tl__ico {
+    display: grid;
+    place-items: center;
+    width: 84px;
+    height: 84px;
+    border-radius: 50%;
+    border: 1px solid var(--line-2);
+  }
+  .rel {
+    border-top: 1px solid var(--line);
+  }
+  .rel__list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 20px;
+  }
+  .rel__pill {
+    min-height: 44px;
+    transition: all var(--t);
+  }
+  .rel__pill:hover {
+    background: var(--fg);
+    color: var(--bg);
+    border-color: var(--fg);
+  }
+  @media (max-width: 1100px) {
+    .inc__grid,
+    .inc__grid[data-count-items='6'] {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .sp__steps {
+      grid-template-columns: 1fr;
+      gap: 0;
+    }
+    .sp__steps::before {
+      top: 0;
+      bottom: 0;
+      inset-inline-start: 5px;
+      inset-inline-end: auto;
+      width: 1px;
+      height: auto;
+    }
+    .sp__step {
+      grid-template-columns: 11px 60px 1fr;
+      grid-template-areas:
+        'dot n title'
+        'dot n desc';
+      column-gap: 18px;
+      row-gap: 4px;
+      padding-block: 18px;
+    }
+    .sp__dot {
+      grid-area: dot;
+      margin: 10px 0 0;
+    }
+    .sp__n {
+      grid-area: n;
+      font-size: 2.4rem;
+    }
+    .sp__step h3 {
+      grid-area: title;
+    }
+    .sp__step p {
+      grid-area: desc;
+    }
+  }
+  @media (max-width: 900px) {
+    .si__grid,
+    .why__grid,
+    .tl__card {
+      grid-template-columns: 1fr;
+    }
+    .si__visual {
+      min-height: 0;
+    }
+    .tl__cta {
+      justify-items: start;
+    }
+    .tl__ico {
+      display: none;
+    }
+  }
+  @media (max-width: 560px) {
+    .inc__grid,
+    .inc__grid[data-count-items='6'] {
+      grid-template-columns: 1fr;
+    }
+    .inc__card {
+      grid-template-columns: 46px 1fr;
+      column-gap: 16px;
+      row-gap: 4px;
+      padding: 20px;
+    }
+    .inc__ico {
+      grid-row: span 2;
+      margin: 0;
+    }
+    .tl__cta :global(.btn) {
+      width: 100%;
+      justify-content: space-between;
+    }
+  }
+</style>

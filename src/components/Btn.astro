@@ -1,0 +1,56 @@
+---
+import Icon from './Icon.astro';
+
+interface Props {
+  href?: string;
+  label: string;
+  variant?: 'primary' | 'ghost';
+  size?: 'sm' | 'md' | 'lg';
+  icon?: string | false;
+  magnetic?: boolean;
+  type?: 'button' | 'submit';
+  class?: string;
+  [key: string]: unknown;
+}
+const {
+  href,
+  label,
+  variant = 'ghost',
+  size = 'md',
+  icon = 'arrow-up-right',
+  magnetic = false,
+  type = 'button',
+  class: cls = '',
+  ...rest
+} = Astro.props;
+
+const classes = [
+  'btn',
+  variant === 'primary' && 'btn--primary',
+  size === 'lg' && 'btn--lg',
+  size === 'sm' && 'btn--sm',
+  !icon && 'btn--noicon',
+  cls,
+]
+  .filter(Boolean)
+  .join(' ');
+const Tag = href ? 'a' : 'button';
+---
+
+<Tag
+  class={classes}
+  href={href}
+  type={href ? undefined : type}
+  data-magnetic={magnetic ? '' : undefined}
+  data-cursor-link
+  {...rest}
+>
+  <span class="btn__label"><span>{label}</span><span aria-hidden="true">{label}</span></span>
+  {
+    icon && (
+      <span class="btn__icon" aria-hidden="true">
+        <Icon name={icon} size={16} class={icon.startsWith('arrow') ? 'flip-rtl' : ''} />
+      </span>
+    )
+  }
+</Tag>

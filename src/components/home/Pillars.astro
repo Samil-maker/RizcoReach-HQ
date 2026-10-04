@@ -1,0 +1,90 @@
+---
+import SectionHead from '../SectionHead.astro';
+import Icon from '../Icon.astro';
+import { home } from '../../content/home';
+import type { Lang } from '../../i18n/utils';
+
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const c = home[lang].pillars;
+const icons = ['search', 'zap', 'target'];
+---
+
+<section class="pil section section--paper" aria-labelledby="pil-title">
+  <div class="container">
+    <SectionHead label={c.label} idx="03" title={c.title} sub={c.sub} id="pil-title" />
+    <ol class="pil__grid" role="list">
+      {
+        c.items.map((p, i) => (
+          <li class="pil__item" data-reveal style={`--d:${i * 110}`}>
+            <div class="pil__head">
+              <span class="pil__num">0{i + 1}</span>
+              <span class="pil__ico">
+                <Icon name={icons[i]} size={22} />
+              </span>
+            </div>
+            <h3 class="h3">{p.t}</h3>
+            <p class="body">{p.d}</p>
+          </li>
+        ))
+      }
+    </ol>
+  </div>
+</section>
+
+<style>
+  .pil__grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    border-top: 1px solid var(--line-2);
+  }
+  .pil__item {
+    display: grid;
+    align-content: start;
+    gap: 18px;
+    padding: clamp(28px, 3.4vw, 48px) clamp(20px, 2.4vw, 36px);
+    padding-inline-start: 0;
+  }
+  .pil__item + .pil__item {
+    padding-inline-start: clamp(20px, 2.4vw, 36px);
+    border-inline-start: 1px solid var(--line-2);
+  }
+  .pil__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: clamp(20px, 4vw, 56px);
+  }
+  .pil__num {
+    font-family: var(--font-display);
+    font-size: clamp(4rem, 7vw, 7rem);
+    line-height: 0.8;
+  }
+  .pil__ico {
+    display: grid;
+    place-items: center;
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    border: 1px solid var(--line-2);
+  }
+  @media (max-width: 860px) {
+    .pil__grid {
+      grid-template-columns: 1fr;
+    }
+    .pil__item,
+    .pil__item + .pil__item {
+      padding-inline: 0;
+      border-inline-start: 0;
+      border-bottom: 1px solid var(--line-2);
+    }
+    .pil__head {
+      margin-bottom: 8px;
+    }
+    .pil__num {
+      font-size: 3.4rem;
+    }
+  }
+</style>

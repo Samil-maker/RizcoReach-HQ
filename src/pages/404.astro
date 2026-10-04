@@ -1,0 +1,39 @@
+---
+import Base from '../layouts/Base.astro';
+import Btn from '../components/Btn.astro';
+---
+
+<Base lang="en" title="Page not found | RizcoReach" description="This page doesn’t exist. Head back to RizcoReach." path="/404" noindex hideFooterCta>
+  <section class="nf404" data-hero>
+    <div class="container nf404__inner">
+      <p class="label">Error 404 · الصفحة غير موجودة</p>
+      <h1 class="nf404__code chrome-text" aria-label="404">404</h1>
+      <p class="lead">This page has moved or never existed. Let’s get you somewhere useful.</p>
+      <div class="cluster">
+        <Btn href="/" label="Back to home" variant="primary" />
+        <Btn href="/contact" label="Start a project" />
+        <Btn href="/ar" label="العربية" icon="globe" />
+      </div>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .nf404 {
+    min-height: 90svh;
+    display: grid;
+    align-items: center;
+    padding-top: var(--nav-h);
+  }
+  .nf404__inner {
+    display: grid;
+    gap: 24px;
+    justify-items: start;
+  }
+  .nf404__code {
+    font-family: var(--font-display);
+    font-size: clamp(8rem, 30vw, 26rem);
+    line-height: 0.8;
+    letter-spacing: -0.04em;
+  }
+</style>

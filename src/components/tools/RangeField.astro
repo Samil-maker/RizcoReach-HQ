@@ -1,0 +1,41 @@
+---
+/** Labelled slider with a live (optionally editable) value. */
+interface Props {
+  id: string;
+  label: string;
+  hint?: string;
+  min: number;
+  max: number;
+  step: number;
+  value: number;
+  unit?: 'aed' | 'pct' | 'num';
+  editable?: boolean;
+  lang: 'en' | 'ar';
+}
+const { id, label, hint, min, max, step, value, unit = 'num', editable = false, lang } = Astro.props;
+const fmt = (n: number) => n.toLocaleString('en-US');
+const show = (n: number) => (unit === 'pct' ? `${n}%` : unit === 'aed' ? (lang === 'ar' ? `${fmt(n)} درهم` : `AED ${fmt(n)}`) : fmt(n));
+const p = ((value - min) / (max - min)) * 100;
+---
+
+<div class="rf" data-rf data-unit={unit}>
+  <div class="rf__top">
+    <label class="field__label" for={id}>{label}</label>
+    {
+      editable ? (
+        <span class="rf__value">
+          {unit === 'aed' && lang === 'en' && <span aria-hidden="true">AED </span>}
+          <input type="text" inputmode="numeric" data-rf-num aria-label={label} value={fmt(value)} />
+          {unit === 'aed' && lang === 'ar' && <span aria-hidden="true"> درهم</span>}
+        </span>
+      ) : (
+        <output class="rf__value" for={id} data-rf-out>
+          {show(value)}
+        </output>
+      )
+    }
+  </div>
+  <input class="range" type="range" id={id} name={id} min={min} max={max} step={step} value={value} style={`--p:${p}%`} />
+  <div class="rf__scale" aria-hidden="true"><span>{show(min)}</span><span>{show(max)}+</span></div>
+  {hint && <p class="field__hint">{hint}</p>}
+</div>

@@ -1,0 +1,124 @@
+---
+import ToolLayout from '../../../components/tools/ToolLayout.astro';
+import LeadGate from '../../../components/tools/LeadGate.astro';
+import RangeField from '../../../components/tools/RangeField.astro';
+import Icon from '../../../components/Icon.astro';
+import Btn from '../../../components/Btn.astro';
+import { tools } from '../../../content/tools';
+import { localeStaticPaths, href, type Lang } from '../../../i18n/utils';
+import { useUI } from '../../../i18n/ui';
+
+export const getStaticPaths = localeStaticPaths;
+const { lang } = Astro.props as { lang: Lang };
+const c = tools[lang].ads;
+const ui = useUI(lang);
+const i18n = JSON.stringify({ ar: lang === 'ar', industries: c.industries, cols: c.scenarioCols });
+const first = c.industries[0];
+---
+
+<ToolLayout
+  live
+  lang={lang}
+  path="/tools/meta-ads-calculator"
+  metaTitle={c.metaTitle}
+  metaDescription={c.metaDescription}
+  kicker={c.kicker}
+  title={c.title}
+  sub={c.sub}
+  current={ui.tools.ads}
+>
+  <section class="tool">
+    <div class="container tool__grid" data-ads data-i18n={i18n}>
+      <form class="tool__panel" onsubmit="return false" aria-label={c.inputs}>
+        <div class="tool__panel-title"><h2 class="h4">{c.inputs}</h2><Icon name="target" size={20} /></div>
+        <fieldset class="field">
+          <legend class="field__label">{c.industry}</legend>
+          <div class="seg">
+            {
+              c.industries.map((ind, i) => (
+                <label class="choice">
+                  <input type="radio" name="ads-industry" value={ind.k} checked={i === 0} />
+                  <span class="choice__box">
+                    <span class="choice__tick" />
+                    {ind.t}
+                  </span>
+                </label>
+              ))
+            }
+          </div>
+        </fieldset>
+        <RangeField lang={lang} id="ads-budget" label={c.budget} min={1000} max={100000} step={500} value={5000} unit="aed" editable />
+        <RangeField lang={lang} id="ads-cpl" label={c.cplLabel} hint={c.cplHint} min={10} max={400} step={5} value={Math.round((first.cpl[0] + first.cpl[1]) / 2)} unit="aed" />
+        <RangeField lang={lang} id="ads-close" label={c.close} min={2} max={60} step={1} value={15} unit="pct" />
+        <RangeField lang={lang} id="ads-value" label={c.value} min={500} max={200000} step={500} value={5000} unit="aed" editable />
+      </form>
+
+      <div class="tool__results">
+        <div class="hero-fig" aria-live="polite">
+          <span class="hero-fig__label">{c.resultLabel}</span>
+          <span class="hero-fig__value" data-out="leads">—</span>
+          <span class="hero-fig__sub" data-out="range"></span>
+        </div>
+        <div class="kpis">
+          <div class="kpi"><span class="kpi__label">{c.tiles.cpl}</span><span class="kpi__value" data-out="cpl">—</span></div>
+          <div class="kpi"><span class="kpi__label">{c.tiles.customers}</span><span class="kpi__value" data-out="customers">—</span></div>
+          <div class="kpi"><span class="kpi__label">{c.tiles.revenue}</span><span class="kpi__value" data-out="revenue">—</span></div>
+          <div class="kpi"><span class="kpi__label">{c.tiles.roas} <span class="note">({c.roasNote})</span></span><span class="kpi__value" data-out="roas">—</span></div>
+        </div>
+
+        <LeadGate lang={lang} source="meta-ads-calculator" service="meta-google-ads" id="ads-gate" />
+
+        <div class="locked" data-locked>
+          <span class="locked__badge"><Icon name="lock" size={12} />{tools[lang].gate.locked}</span>
+          <div class="locked__body" aria-hidden="true" inert data-locked-body>
+            <div class="chart">
+              <p class="chart__title">{c.scenariosTitle}</p>
+              <p class="note">{c.scenariosSub}</p>
+              <div style="overflow-x:auto">
+                <table class="dtable" data-scenarios>
+                  <thead><tr>{c.scenarioCols.map((h) => <th scope="col">{h}</th>)}</tr></thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="kpis" style="margin-top:10px">
+              <div class="kpi"><span class="kpi__label">{c.breakeven}</span><span class="kpi__value" data-out="breakeven">—</span><span class="note">{c.breakevenSub}</span></div>
+              <div class="kpi"><span class="kpi__label">{c.costPerCustomer}</span><span class="kpi__value" data-out="cpc">—</span></div>
+            </div>
+            <div class="chart" style="margin-top:10px">
+              <p class="chart__title">{c.tipsTitle}</p>
+              <ul class="ads-tips" role="list">
+                {c.tips.map((tip) => <li><Icon name="check" size={14} stroke={2} />{tip}</li>)}
+              </ul>
+            </div>
+          </div>
+        </div>
+        <p class="note">{c.disclaimer}</p>
+        <Btn href={href(lang, '/contact?service=meta-google-ads')} label={ui.common.bookCall} variant="primary" />
+      </div>
+    </div>
+  </section>
+</ToolLayout>
+
+<script>
+  import { initAdsCalc } from '../../../scripts/tools/ads';
+  initAdsCalc();
+</script>
+
+<style>
+  .ads-tips {
+    display: grid;
+    gap: 10px;
+    font-size: var(--fs-sm);
+    color: var(--fg-2);
+  }
+  .ads-tips li {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+  }
+  .ads-tips :global(svg) {
+    margin-top: 4px;
+    color: var(--fg);
+  }
+</style>

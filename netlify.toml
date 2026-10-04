@@ -1,0 +1,105 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+[functions]
+  node_bundler = "esbuild"
+
+# The blog was retired in the 2026 rebuild.
+[[redirects]]
+  from = "/blog"
+  to = "/"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/blog.html"
+  to = "/"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/success"
+  to = "/thankyou"
+  status = 301
+
+[[redirects]]
+  from = "/aim-high-dubai-market-premium-clients*"
+  to = "/"
+  status = 301
+
+[[redirects]]
+  from = "/meta-ads-audience-targeting-dubai-creative-strategy*"
+  to = "/"
+  status = 301
+
+[[redirects]]
+  from = "/why-dubai-businesses-dont-get-customers-from-social-media*"
+  to = "/"
+  status = 301
+
+[[redirects]]
+  from = "/why-switching-agencies-never-moves-the-number-dubai*"
+  to = "/"
+  status = 301
+
+[[redirects]]
+  from = "/patient-leads-clinic-dubai*"
+  to = "/healthcare-clinics"
+  status = 301
+
+[[redirects]]
+  from = "/student-enrolment-leads-dubai*"
+  to = "/"
+  status = 301
+
+[[redirects]]
+  from = "/qualified-b2b-leads-uae*"
+  to = "/professional-b2b-services"
+  status = 301
+
+[[redirects]]
+  from = "/meta-ads-vs-google-ads-dubai*"
+  to = "/services/meta-ads"
+  status = 301
+
+[[redirects]]
+  from = "/blog1*"
+  to = "/"
+  status = 301
+
+[[redirects]]
+  from = "/cheap-leads-vs-qualified-leads-dubai*"
+  to = "/services/meta-ads"
+  status = 301
+
+[[redirects]]
+  from = "/how-to-choose-marketing-agency-dubai*"
+  to = "/"
+  status = 301
+
+[[redirects]]
+  from = "/marketing-agency-cost-dubai*"
+  to = "/contact"
+  status = 301
+
+[[headers]]
+  for = "/_astro/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/brand/*"
+  [headers.values]
+    Cache-Control = "public, max-age=2592000"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    X-Frame-Options = "SAMEORIGIN"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=()"

@@ -1,0 +1,271 @@
+---
+import ToolLayout from '../../../components/tools/ToolLayout.astro';
+import LeadGate from '../../../components/tools/LeadGate.astro';
+import RangeField from '../../../components/tools/RangeField.astro';
+import Icon from '../../../components/Icon.astro';
+import { tools } from '../../../content/tools';
+import { localeStaticPaths, type Lang } from '../../../i18n/utils';
+import { useUI } from '../../../i18n/ui';
+
+export const getStaticPaths = localeStaticPaths;
+const { lang } = Astro.props as { lang: Lang };
+const c = tools[lang].est;
+const ui = useUI(lang);
+const check = '<path d="M20 6 9 17l-5-5"/>';
+const i18n = JSON.stringify({
+  ar: lang === 'ar',
+  tiers: c.tiers,
+  weeks: c.weeks,
+  pagesUnit: c.pagesUnit,
+  types: c.types,
+  features: c.featureList,
+  designs: c.designs,
+  timings: c.timings,
+});
+---
+
+<ToolLayout
+  live
+  lang={lang}
+  path="/tools/website-estimator"
+  metaTitle={c.metaTitle}
+  metaDescription={c.metaDescription}
+  kicker={c.kicker}
+  title={c.title}
+  sub={c.sub}
+  current={ui.tools.estimator}
+>
+  <section class="tool">
+    <div class="container tool__grid" data-est data-i18n={i18n}>
+      <form class="tool__panel" onsubmit="return false">
+        <fieldset class="field">
+          <legend class="h4 est__q"><span>01</span>{c.type}</legend>
+          <div class="est__types">
+            {
+              c.types.map((ty, i) => (
+                <label class="choice">
+                  <input type="radio" name="est-type" value={ty.k} checked={i === 1} />
+                  <span class="choice__box">
+                    <span class="choice__tick">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" set:html={check} />
+                    </span>
+                    <span>
+                      <span class="choice__title">{ty.t}</span>
+                      <span class="choice__desc">{ty.d}</span>
+                    </span>
+                  </span>
+                </label>
+              ))
+            }
+          </div>
+        </fieldset>
+        <div class="est__pages">
+          <p class="h4 est__q"><span>02</span>{c.pages}</p>
+          <RangeField lang={lang} id="est-pages" label={c.pages} min={1} max={40} step={1} value={8} />
+        </div>
+        <fieldset class="field">
+          <legend class="h4 est__q"><span>03</span>{c.features}</legend>
+          <div class="choices est__features">
+            {
+              c.featureList.map((f) => (
+                <label class="choice">
+                  <input type="checkbox" name="est-feature" value={f.k} />
+                  <span class="choice__box">
+                    <span class="choice__tick">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" set:html={check} />
+                    </span>
+                    {f.t}
+                  </span>
+                </label>
+              ))
+            }
+          </div>
+        </fieldset>
+        <fieldset class="field">
+          <legend class="h4 est__q"><span>04</span>{c.design}</legend>
+          <div class="seg">
+            {
+              c.designs.map((d, i) => (
+                <label class="choice">
+                  <input type="radio" name="est-design" value={d.k} checked={i === 1} />
+                  <span class="choice__box"><span class="choice__tick" />{d.t}</span>
+                </label>
+              ))
+            }
+          </div>
+        </fieldset>
+        <fieldset class="field">
+          <legend class="h4 est__q"><span>05</span>{c.timing}</legend>
+          <div class="seg">
+            {
+              c.timings.map((d, i) => (
+                <label class="choice">
+                  <input type="radio" name="est-timing" value={d.k} checked={i === 1} />
+                  <span class="choice__box"><span class="choice__tick" />{d.t}</span>
+                </label>
+              ))
+            }
+          </div>
+        </fieldset>
+      </form>
+
+      <div class="tool__results">
+        <div class="est-sum" aria-live="polite">
+          <p class="label">{c.summary}</p>
+          <div class="est-sum__row">
+            <div>
+              <span class="kpi__label">{c.tier}</span>
+              <span class="est-sum__tier" data-out="tier">—</span>
+            </div>
+            <div>
+              <span class="kpi__label">{c.timeline}</span>
+              <span class="est-sum__weeks" data-out="weeks">—</span>
+            </div>
+          </div>
+          <div class="est-sum__cx">
+            <div class="meter__top"><span>{c.complexity}</span><strong data-out="cx">—</strong></div>
+            <div class="meter__track" role="img" data-out="cx-label"><span class="is-in" data-out="cx-bar" style="--w:40%"></span></div>
+          </div>
+          <div class="est-sum__lists">
+            <div>
+              <p class="kpi__label">{c.yourScope}</p>
+              <ul role="list" class="est-list" data-out="scope"></ul>
+            </div>
+            <div>
+              <p class="kpi__label">{c.includes}</p>
+              <ul role="list" class="est-list">
+                {c.included.map((x) => <li><Icon name="check" size={13} stroke={2} />{x}</li>)}
+              </ul>
+            </div>
+          </div>
+        </div>
+        <LeadGate lang={lang} source="website-estimator" service="website-development" id="est-gate" title={c.quoteTitle} sub={c.quoteSub} button={c.quoteBtn} done={c.sent} />
+        <p class="note">{c.note}</p>
+      </div>
+    </div>
+  </section>
+</ToolLayout>
+
+<script>
+  import { initEstimator } from '../../../scripts/tools/estimator';
+  initEstimator();
+</script>
+
+<style>
+  .est__q {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 14px;
+    padding: 0;
+  }
+  .est__q span {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--fg-3);
+  }
+  .est__pages :global(.rf__top label) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+  .est__pages :global(.rf__top) {
+    justify-content: flex-start;
+  }
+  .est__types {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .est__types :global(.choice__box) {
+    align-items: flex-start;
+    min-height: 84px;
+  }
+  .est__features {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 190px), 1fr));
+  }
+  .est-sum {
+    display: grid;
+    gap: 22px;
+    padding: clamp(22px, 3vw, 36px);
+    border-radius: var(--r-lg);
+    background: var(--fg);
+    color: var(--bg);
+    --fg-2: #3d3d3a;
+    --fg-3: #5c5c58;
+    --line: rgb(0 0 0 / 0.12);
+  }
+  .est-sum__row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .est-sum__row > div {
+    display: grid;
+    gap: 4px;
+  }
+  .est-sum__tier,
+  .est-sum__weeks {
+    font-family: var(--font-sans);
+    font-weight: 650;
+    font-size: clamp(1.8rem, 3.4vw, 2.6rem);
+    line-height: 1.05;
+    letter-spacing: -0.03em;
+  }
+  .est-sum__weeks {
+    direction: ltr;
+    unicode-bidi: isolate;
+    text-align: start;
+  }
+  :global([dir='rtl']) .est-sum__weeks {
+    text-align: end;
+  }
+  .est-sum__cx {
+    display: grid;
+    gap: 10px;
+  }
+  .est-sum__cx :global(.meter__track) {
+    background: rgb(0 0 0 / 0.1);
+  }
+  .est-sum__cx :global(.meter__track span) {
+    background: #000;
+  }
+  .est-sum__lists {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    padding-top: 18px;
+    border-top: 1px solid var(--line);
+  }
+  .est-list {
+    display: grid;
+    gap: 6px;
+    margin-top: 10px;
+    font-size: var(--fs-sm);
+  }
+  .est-list :global(li) {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+  }
+  .est-list :global(svg) {
+    margin-top: 4px;
+    flex-shrink: 0;
+  }
+  @media (max-width: 560px) {
+    .est__types,
+    .est-sum__lists {
+      grid-template-columns: 1fr;
+    }
+    .est__features {
+      grid-template-columns: 1fr 1fr;
+    }
+    .est__features :global(.choice__box) {
+      font-size: var(--fs-xs);
+      padding: 12px;
+      gap: 10px;
+    }
+  }
+</style>

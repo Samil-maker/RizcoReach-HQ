@@ -1,0 +1,185 @@
+---
+import SectionHead from './SectionHead.astro';
+import Icon from './Icon.astro';
+import Btn from './Btn.astro';
+import { home, videos } from '../content/home';
+import { href, type Lang } from '../i18n/utils';
+
+interface Props {
+  lang: Lang;
+  idx?: string;
+}
+const { lang, idx = '06' } = Astro.props;
+const c = home[lang].cases;
+---
+
+<section class="cs section section--raised" id="case-studies" aria-labelledby="cs-title">
+  <div class="container">
+    <SectionHead label={c.label} idx={idx} title={c.title} sub={c.sub} id="cs-title" />
+    <div class="cs__grid">
+      {
+        c.items.map((item, i) => (
+          <article class="cs__item" data-reveal style={`--d:${(i % 2) * 120}`}>
+            <div class="cs__media" style={`aspect-ratio:${Number(videos[i].aspect).toFixed(3)}`}>
+              <button
+                type="button"
+                class="cs__facade"
+                data-wistia={videos[i].id}
+                data-aspect={videos[i].aspect}
+                data-cursor={c.play}
+                style={`background-image:url(https://fast.wistia.com/embed/medias/${videos[i].id}/swatch)`}
+              >
+                <span class="sr-only">
+                  {c.play}: {item.t}
+                </span>
+                <span class="cs__play" aria-hidden="true">
+                  <Icon name="play" size={22} />
+                </span>
+              </button>
+            </div>
+            <div class="cs__body">
+              <p class="label">{item.tag}</p>
+              <h3 class="h3">{item.t}</h3>
+              <p class="small">{item.d}</p>
+              <dl class="cs__stats">
+                {item.stats.map((s) => (
+                  <div>
+                    <dd class="ltr">{s.v}</dd>
+                    <dt>{s.l}</dt>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          </article>
+        ))
+      }
+    </div>
+    <div class="cs__cta" data-reveal>
+      <Btn href={href(lang, '/contact?service=meta-google-ads')} label={c.cta} variant="primary" size="lg" />
+    </div>
+  </div>
+</section>
+
+<style>
+  .cs__grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: clamp(20px, 3vw, 40px);
+  }
+  .cs__item {
+    display: grid;
+    align-content: start;
+    gap: 22px;
+  }
+  .cs__media {
+    position: relative;
+    border-radius: var(--r);
+    overflow: hidden;
+    border: 1px solid var(--line-2);
+    background:
+      radial-gradient(70% 90% at 75% 20%, rgb(255 255 255 / 0.12), transparent 60%),
+      linear-gradient(160deg, #1a1a1a, #0b0b0b);
+  }
+  .cs__media :global(wistia-player) {
+    position: absolute;
+    inset: 0;
+  }
+  .cs__facade {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    background-size: cover;
+    background-position: center;
+    filter: grayscale(1) contrast(1.05);
+    transition:
+      filter 600ms var(--ease-out),
+      transform 900ms var(--ease-out);
+  }
+  .cs__facade::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to top, rgb(0 0 0 / 0.55), transparent 60%);
+  }
+  .cs__item:hover .cs__facade {
+    filter: grayscale(0.2);
+    transform: scale(1.03);
+  }
+  .cs__play {
+    position: absolute;
+    z-index: 1;
+    inset-inline-start: 18px;
+    bottom: 18px;
+    display: grid;
+    place-items: center;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: var(--fg);
+    color: var(--bg);
+    transition: transform 500ms var(--ease-back);
+  }
+  .cs__item:hover .cs__play {
+    transform: scale(1.1);
+  }
+  .cs__body {
+    display: grid;
+    gap: 12px;
+  }
+  .cs__stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 8px;
+  }
+  .cs__stats > div {
+    display: flex;
+    flex-direction: column-reverse;
+    padding: 12px 16px;
+    min-width: 110px;
+    border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+    background: var(--surface);
+  }
+  .cs__stats dd {
+    font-family: var(--font-display);
+    font-size: 1.8rem;
+    line-height: 1.05;
+  }
+  .cs__stats dt {
+    font-size: 11px;
+    color: var(--fg-3);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  :global([lang='ar']) .cs__stats dt {
+    letter-spacing: 0;
+    font-size: 12px;
+  }
+  .cs__cta {
+    margin-top: clamp(40px, 5vw, 64px);
+    display: flex;
+    justify-content: center;
+  }
+  @media (max-width: 860px) {
+    .cs__grid {
+      grid-template-columns: 1fr;
+    }
+  }
+  @media (max-width: 760px) {
+    .cs__stats > div {
+      flex: 1;
+      min-width: 0;
+      padding: 10px 12px;
+    }
+    .cs__stats dd {
+      font-size: 1.5rem;
+    }
+    .cs__cta :global(.btn) {
+      width: 100%;
+      justify-content: space-between;
+      white-space: normal;
+      text-align: start;
+    }
+  }
+</style>

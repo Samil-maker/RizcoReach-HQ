@@ -1,0 +1,120 @@
+---
+import Base from '../../../layouts/Base.astro';
+import PageHero from '../../../components/PageHero.astro';
+import Icon from '../../../components/Icon.astro';
+import { tools } from '../../../content/tools';
+import { home } from '../../../content/home';
+import { localeStaticPaths, href, type Lang } from '../../../i18n/utils';
+import { useUI } from '../../../i18n/ui';
+
+export const getStaticPaths = localeStaticPaths;
+const { lang } = Astro.props as { lang: Lang };
+const c = tools[lang].hub;
+const items = home[lang].tools.items;
+const ui = useUI(lang);
+const h = (p: string) => href(lang, p);
+---
+
+<Base lang={lang} title={c.metaTitle} description={c.metaDescription} path="/tools">
+  <PageHero
+    kicker={c.kicker}
+    title={c.title}
+    sub={c.sub}
+    chrome={false}
+    compact
+    crumbs={[
+      { label: ui.nav.home, href: h('/') },
+      { label: ui.nav.tools, href: h('/tools') },
+    ]}
+  />
+  <section class="section--tight">
+    <div class="container">
+      <ul class="hub" role="list">
+        {
+          items.map((t, i) => (
+            <li data-reveal style={`--d:${i * 80}`}>
+              <a href={h(t.href)} class="hub__card glint" data-cursor={ui.common.view}>
+                <span class="hub__n">0{i + 1}</span>
+                <span class="hub__ico">
+                  <Icon name={t.icon} size={26} />
+                </span>
+                <h2 class="h2 hub__t">{t.t}</h2>
+                <p class="lead">{t.d}</p>
+                <span class="link hub__cta">
+                  {t.cta}
+                  <Icon name="arrow-right" size={15} />
+                </span>
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .hub {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    padding-bottom: var(--section);
+  }
+  .hub > li {
+    display: flex;
+  }
+  .hub__card {
+    flex: 1;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    min-height: 360px;
+    padding: clamp(24px, 3.4vw, 48px);
+    border-radius: var(--r-lg);
+    border: 1px solid var(--line);
+    background:
+      radial-gradient(80% 90% at 100% 0%, rgb(255 255 255 / 0.06), transparent 60%),
+      var(--surface);
+    transition:
+      border-color var(--t),
+      transform 600ms var(--ease-out);
+  }
+  .hub__card:hover {
+    border-color: var(--line-2);
+    transform: translateY(-4px);
+  }
+  .hub__n {
+    position: absolute;
+    top: clamp(24px, 3.4vw, 48px);
+    inset-inline-end: clamp(24px, 3.4vw, 48px);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--fg-3);
+  }
+  .hub__ico {
+    display: grid;
+    place-items: center;
+    width: 60px;
+    height: 60px;
+    margin-bottom: auto;
+    border-radius: 16px;
+    background: var(--fg);
+    color: var(--bg);
+  }
+  .hub__t {
+    font-size: clamp(2rem, 3.4vw, 3.2rem);
+    margin-top: 32px;
+  }
+  .hub__cta {
+    align-self: flex-start;
+  }
+  @media (max-width: 760px) {
+    .hub {
+      grid-template-columns: 1fr;
+    }
+    .hub__card {
+      min-height: 0;
+    }
+  }
+</style>

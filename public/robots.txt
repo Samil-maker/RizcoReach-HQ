@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /thankyou
+Disallow: /ar/thankyou
+
+Sitemap: https://www.rizcoreach.ae/sitemap-index.xml

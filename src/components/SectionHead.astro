@@ -1,0 +1,28 @@
+---
+import { split } from '../lib/split';
+
+interface Props {
+  label?: string;
+  idx?: string;
+  title: string;
+  sub?: string;
+  layout?: 'split' | 'center' | 'stack';
+  size?: 'h1' | 'h2';
+  id?: string;
+}
+const { label, idx, title, sub, layout = 'split', size = 'h2', id } = Astro.props;
+---
+
+<div class:list={['sh', { 'sh--split': layout === 'split', 'sh--center': layout === 'center' }]}>
+  {
+    label && (
+      <p class="label label--line" data-reveal>
+        {idx && <span class="label__idx">({idx})</span>}
+        {label}
+      </p>
+    )
+  }
+  <h2 class={size} id={id} data-split set:html={split(title)} />
+  {sub && <p class="lead" data-reveal style="--d:150">{sub}</p>}
+  <slot />
+</div>

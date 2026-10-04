@@ -1,0 +1,14 @@
+---
+import ServicePage from '../../../components/ServicePage.astro';
+import { services, type Service } from '../../../content/services';
+import { localeStaticPaths, type Lang } from '../../../i18n/utils';
+
+export function getStaticPaths() {
+  return localeStaticPaths().flatMap(({ params, props }) =>
+    services.map((service) => ({ params: { ...params, service: service.slug }, props: { ...props, service } })),
+  );
+}
+const { lang, service } = Astro.props as { lang: Lang; service: Service };
+---
+
+<ServicePage lang={lang} service={service} />

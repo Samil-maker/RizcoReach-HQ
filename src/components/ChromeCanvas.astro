@@ -1,0 +1,73 @@
+---
+/** Full-bleed liquid chrome background. One per page (single WebGL context). */
+interface Props {
+  center?: [number, number];
+  centerMobile?: [number, number];
+  spread?: number;
+  spreadMobile?: number;
+  class?: string;
+}
+const { center, centerMobile, spread, spreadMobile, class: cls = '' } = Astro.props;
+const opts = JSON.stringify({ center, centerMobile, spread, spreadMobile });
+---
+
+<div class={`chrome ${cls}`} aria-hidden="true">
+  <canvas class="chrome__canvas" data-chrome data-opts={opts}></canvas>
+  <div class="chrome__scrim"></div>
+</div>
+
+<script>
+  import { mountChrome } from '../scripts/liquid-chrome';
+  const canvas = document.querySelector<HTMLCanvasElement>('[data-chrome]');
+  if (canvas) {
+    const opts = JSON.parse(canvas.dataset.opts || '{}');
+    const go = () => mountChrome(canvas, opts);
+    // Let the first paint (headline) win, then start the GPU work.
+    if ('requestIdleCallback' in window) (window as any).requestIdleCallback(go, { timeout: 400 });
+    else setTimeout(go, 60);
+  }
+</script>
+
+<style>
+  .chrome {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    background:
+      radial-gradient(60% 55% at 72% 52%, rgb(255 255 255 / 0.1), transparent 65%),
+      radial-gradient(30% 28% at 78% 40%, rgb(255 255 255 / 0.08), transparent 70%),
+      var(--bg);
+  }
+  :global([dir='rtl']) .chrome {
+    background:
+      radial-gradient(60% 55% at 28% 52%, rgb(255 255 255 / 0.1), transparent 65%),
+      radial-gradient(30% 28% at 22% 40%, rgb(255 255 255 / 0.08), transparent 70%),
+      var(--bg);
+  }
+  .chrome__canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    transition: opacity 1.6s var(--ease-out);
+  }
+  .chrome__canvas[data-state='ready'] {
+    opacity: 1;
+  }
+  @media (max-width: 760px) {
+    .chrome__scrim {
+      background:
+        linear-gradient(to top, var(--bg) 0%, rgb(5 5 5 / 0.92) 45%, rgb(5 5 5 / 0.35) 72%, transparent 88%),
+        linear-gradient(to bottom, rgb(5 5 5 / 0.6) 0%, transparent 14%) !important;
+    }
+  }
+  .chrome__scrim {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      linear-gradient(to top, var(--bg) 0%, rgb(5 5 5 / 0.6) 22%, transparent 48%),
+      linear-gradient(to bottom, rgb(5 5 5 / 0.65) 0%, transparent 18%);
+  }
+</style>
