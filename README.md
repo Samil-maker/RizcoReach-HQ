@@ -42,6 +42,13 @@ working. The `lead_source` field says where it came from
 `meta-ads-calculator`, `website-estimator`) and `tool_details` carries the
 result summary (e.g. the audit score and issues).
 
+## Lead Engine (outbound leads)
+
+`lead-engine/` is a separate Google Sheets + Apps Script tool. It finds
+businesses with no website on Google Maps (and HERE), keeps their mobile
+numbers, copies them to Google Contacts and has a WhatsApp outreach panel. It
+isn't part of the website build. Setup guide: [`lead-engine/README.md`](lead-engine/README.md).
+
 ## Optional: Google Lighthouse scores in the website audit
 
 The audit works without any key. To also show Google Lighthouse scores:
