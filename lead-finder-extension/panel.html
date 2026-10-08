@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Lead Finder</title>
+    <link rel="stylesheet" href="panel.css" />
+  </head>
+  <body>
+    <header class="top">
+      <img src="icons/icon48.png" alt="" width="28" height="28" />
+      <div>
+        <h1>Lead Finder</h1>
+        <p>Businesses with no website, mobile numbers only</p>
+      </div>
+    </header>
+
+    <section class="block" aria-labelledby="collect-title">
+      <h2 id="collect-title" class="eyebrow">1 · Find leads</h2>
+
+      <div id="noMaps">
+        <p class="hint">Open Google Maps and search for a type of business in an area, for example <b>ladies salon in Al Barsha</b>.</p>
+        <a class="btn primary" id="openMaps" href="https://www.google.com/maps" target="_blank" rel="noopener">Open Google Maps</a>
+      </div>
+
+      <div id="ready" hidden>
+        <p class="query"><span class="small">Current search</span><span id="query"></span></p>
+        <button type="button" class="btn primary" id="collectBtn">Collect leads from this search</button>
+        <p class="small">It goes through every result, so keep the Google Maps tab open. About a minute per search.</p>
+      </div>
+
+      <div id="running" hidden>
+        <p id="phase" class="phase"></p>
+        <div class="meter" aria-hidden="true"><span id="meterBar"></span></div>
+        <button type="button" class="btn" id="stopBtn">Stop</button>
+      </div>
+
+      <p id="summary" class="summary" hidden></p>
+      <p id="error" class="error" role="alert" hidden></p>
+    </section>
+
+    <section class="block" aria-labelledby="leads-title">
+      <div class="row-head">
+        <h2 id="leads-title" class="eyebrow">2 · Message them</h2>
+        <span id="today" class="small"></span>
+      </div>
+      <div class="tabs" role="tablist" aria-label="Show leads">
+        <button type="button" role="tab" data-filter="New" aria-selected="true">New <span></span></button>
+        <button type="button" role="tab" data-filter="Messaged" aria-selected="false">Messaged <span></span></button>
+        <button type="button" role="tab" data-filter="Replied" aria-selected="false">Replied <span></span></button>
+        <button type="button" role="tab" data-filter="All" aria-selected="false">All <span></span></button>
+      </div>
+      <ul id="list" class="leads"></ul>
+      <p id="empty" class="hint" hidden></p>
+      <button type="button" class="btn ghost" id="more" hidden>Show more</button>
+    </section>
+
+    <section class="block" aria-labelledby="save-title">
+      <h2 id="save-title" class="eyebrow">3 · Save them</h2>
+      <div class="save">
+        <button type="button" class="btn" id="contactsBtn">Download for Google Contacts</button>
+        <button type="button" class="btn" id="sheetsBtn">Copy for Google Sheets</button>
+        <button type="button" class="btn ghost" id="csvBtn">Download spreadsheet (CSV)</button>
+      </div>
+      <p id="saveHint" class="hint" hidden></p>
+    </section>
+
+    <details class="block settings" id="settingsBox">
+      <summary>Settings</summary>
+      <div class="fields">
+        <label class="field">
+          <span>WhatsApp message</span>
+          <textarea id="set-message" rows="6"></textarea>
+          <small>{name} becomes the business name, {category} its type, e.g. "beauty salon".</small>
+        </label>
+        <label class="field">
+          <span>Open chats in</span>
+          <select id="set-openIn">
+            <option value="web">WhatsApp Web (in Chrome)</option>
+            <option value="app">WhatsApp app on this computer</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Chats per day before a warning</span>
+          <input id="set-dailyLimit" type="number" min="0" max="500" step="1" />
+        </label>
+        <label class="field">
+          <span>Country for numbers without a +code</span>
+          <select id="set-country"></select>
+        </label>
+        <label class="check"><input id="set-mobileOnly" type="checkbox" /> Keep mobile numbers only (landlines can't get WhatsApp)</label>
+        <label class="check"><input id="set-socialIsNoWebsite" type="checkbox" /> Count an Instagram, Facebook or booking page as "no website"</label>
+        <label class="field">
+          <span>Contact name starts with</span>
+          <input id="set-contactPrefix" type="text" />
+        </label>
+        <label class="field">
+          <span>Google Contacts label</span>
+          <input id="set-contactLabel" type="text" />
+        </label>
+        <label class="field">
+          <span>Most results to check per search</span>
+          <input id="set-maxResults" type="number" min="10" max="500" step="10" />
+        </label>
+        <button type="button" class="btn danger" id="deleteAll">Delete all leads</button>
+      </div>
+    </details>
+
+    <script src="leads.js"></script>
+    <script src="panel.js"></script>
+  </body>
+</html>

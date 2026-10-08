@@ -1,0 +1,119 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Fake Google Maps</title>
+    <style>
+      body { margin: 0; font: 14px sans-serif; display: flex; height: 100vh; }
+      #side { width: 360px; height: 100vh; overflow-y: auto; border-right: 1px solid #ccc; }
+      #detail { flex: 1; padding: 16px; }
+      [role='article'] { height: 200px; border-bottom: 1px solid #eee; padding: 8px; }
+    </style>
+  </head>
+  <body>
+    <!--
+      A stand-in for the Google Maps search results page, built from the markers the
+      content script relies on: a role="feed" list that loads more results as you
+      scroll, result links to /maps/place/, and a role="main" details panel with
+      data-item-id="phone:tel:…", "authority" (website) and "address".
+    -->
+    <div id="side">
+      <input id="searchboxinput" name="q" value="ladies salon in al barsha" />
+      <div role="feed" aria-label="Results for ladies salon"></div>
+    </div>
+    <div id="detail"></div>
+    <script>
+      const PLACES = [
+        { name: 'Noor Ladies Salon', phone: '+971501111111', category: 'Beauty salon' },
+        { name: 'Has Website Salon', phone: '+971502222222', website: 'https://hassite.ae/', cardWebsite: true },
+        { name: 'Insta Only Salon', phone: '+971553333333', website: 'https://www.instagram.com/insta/' },
+        { name: 'Landline Salon', phone: '+97144444444' },
+        { name: 'Closed Salon', phone: '+971505555555', closed: true },
+        { name: 'No Phone Salon' },
+        { name: 'Hidden Website Salon', phone: '+971506666666', website: 'https://hidden.ae/' },
+        { name: 'Glow Beauty Lounge', phone: '+971567777777', category: 'Beauty salon' },
+        { name: 'Noor Salon Branch', phone: '+971501111111' },
+        { name: 'Fresha Booking Salon', phone: '+971508888888', website: 'https://www.fresha.com/a/x' },
+        { name: 'Al Reem Salon', phone: '+971509999999', category: 'Hair salon' },
+        { name: 'Last Salon', phone: '+971500000001', category: 'Nail salon' },
+      ];
+      const feed = document.querySelector('[role=feed]');
+      const side = document.getElementById('side');
+      const slug = (n) => n.replace(/\s+/g, '+');
+      let loaded = 0;
+
+      function loadMore(n) {
+        PLACES.slice(loaded, loaded + n).forEach((p) => {
+          const card = document.createElement('div');
+          card.setAttribute('role', 'article');
+          card.setAttribute('aria-label', p.name);
+          card.innerHTML =
+            '<a aria-label="" href=""></a><div class="name"></div><div class="info"></div>' +
+            (p.cardWebsite ? '<a data-value="Website" aria-label="Visit website" href="">Website</a>' : '');
+          const a = card.querySelector('a');
+          a.setAttribute('aria-label', p.name);
+          a.href = 'https://www.google.com/maps/place/' + slug(p.name) + '/data=!4m7!3m6!1s0x' + loaded + ':0x1';
+          card.querySelector('.name').textContent = p.name;
+          card.querySelector('.info').textContent = (p.category || 'Salon') + ' · Al Barsha 1';
+          if (p.cardWebsite) card.querySelector('[data-value=Website]').href = p.website;
+          a.addEventListener('click', (e) => {
+            e.preventDefault();
+            history.pushState({}, '', a.href);
+            const detail = document.getElementById('detail');
+            detail.innerHTML = '<p>Loading…</p>';
+            setTimeout(() => showPlace(p), 250 + Math.random() * 300);
+          });
+          feed.appendChild(card);
+          loaded++;
+        });
+        if (loaded >= PLACES.length && !document.getElementById('end')) {
+          const end = document.createElement('div');
+          end.id = 'end';
+          end.textContent = "You've reached the end of the list.";
+          feed.appendChild(end);
+        }
+      }
+
+      function showPlace(p) {
+        const detail = document.getElementById('detail');
+        detail.innerHTML = '';
+        const main = document.createElement('div');
+        main.setAttribute('role', 'main');
+        main.setAttribute('aria-label', p.name);
+        const h1 = document.createElement('h1');
+        h1.textContent = p.name;
+        main.appendChild(h1);
+        if (p.closed) main.appendChild(Object.assign(document.createElement('p'), { textContent: 'Permanently closed' }));
+        const cat = document.createElement('button');
+        cat.setAttribute('jsaction', 'pane.rating.category');
+        cat.textContent = p.category || 'Salon';
+        main.appendChild(cat);
+        const addr = document.createElement('button');
+        addr.setAttribute('data-item-id', 'address');
+        addr.setAttribute('aria-label', 'Address: Al Barsha 1 - Dubai');
+        addr.textContent = 'Al Barsha 1 - Dubai';
+        main.appendChild(addr);
+        if (p.website) {
+          const w = document.createElement('a');
+          w.setAttribute('data-item-id', 'authority');
+          w.href = p.website;
+          w.textContent = p.website;
+          main.appendChild(w);
+        }
+        if (p.phone) {
+          const ph = document.createElement('button');
+          ph.setAttribute('data-item-id', 'phone:tel:' + p.phone);
+          ph.setAttribute('aria-label', 'Phone: ' + p.phone);
+          ph.textContent = p.phone;
+          main.appendChild(ph);
+        }
+        detail.appendChild(main);
+      }
+
+      loadMore(5);
+      side.addEventListener('scroll', () => {
+        if (side.scrollTop + side.clientHeight >= side.scrollHeight - 20) setTimeout(() => loadMore(4), 300);
+      });
+    </script>
+  </body>
+</html>
