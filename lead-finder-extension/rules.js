@@ -60,17 +60,32 @@
    */
   function siteInstagram(lead) {
     const site = lead.checks && lead.checks.site;
-    const list = (site && site.signals && site.signals.instagram) || [];
+    const signals = (site && site.signals) || {};
+    if (signals.forwardsTo) return instagramHandle(signals.url);
+    const list = (signals.instagram || []).filter((h) => h.length >= 3);
     if (list.length < 2) return list[0] || '';
     const compact = (x) => String(x || '').toLowerCase().replace(/[^a-z0-9]/g, '');
     const name = compact(lead.name);
-    const words = String(lead.name || '').toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 4);
+    // Words that say what the business is or where, not who: they'd match a web designer's account too.
+    const words = String(lead.name || '')
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((w) => w.length >= 4 && GENERIC_WORDS.indexOf(w) < 0);
     const match = list.find((h) => {
       const handle = compact(h);
-      return (name && (name.indexOf(handle) >= 0 || handle.indexOf(name) >= 0)) || words.some((w) => handle.indexOf(w) >= 0);
+      return (name && handle.length >= 4 && (name.indexOf(handle) >= 0 || handle.indexOf(name) >= 0)) || words.some((w) => handle.indexOf(w) >= 0);
     });
     return match || list[0];
   }
+
+  const GENERIC_WORDS = [
+    'dubai', 'abudhabi', 'sharjah', 'ajman', 'barsha', 'jumeirah', 'marina', 'deira', 'karama', 'uae', 'emirates',
+    'salon', 'ladies', 'gents', 'beauty', 'spa', 'nails', 'nail', 'hair', 'lounge', 'studio', 'center', 'centre',
+    'clinic', 'restaurant', 'cafe', 'coffee', 'kitchen', 'grill', 'shop', 'store', 'trading', 'services', 'service',
+    'group', 'company', 'official', 'best', 'cleaning', 'contracting', 'technical', 'auto', 'garage', 'fitness', 'gym',
+    'dental', 'medical', 'boutique', 'fashion', 'tailoring', 'barber', 'barbershop', 'academy', 'institute', 'real',
+    'estate', 'properties', 'design', 'interiors', 'events', 'travel', 'tourism', 'web', 'digital', 'media', 'agency',
+  ];
 
   // ─── Website ───────────────────────────────────────────────────────────────
 
@@ -92,9 +107,12 @@
       id: 'down',
       label: 'Website not loading (dead domain, error page, parked or unfinished)',
       critical: true,
-      test: (sig) => (sig.reachable === false ? { why: sig.failure || '' } : null),
+      test: (sig) => (sig.reachable === false ? { why: sig.failure || '', pitch: sig.pitch || '' } : null),
       chip: (d) => downChip(d.why),
-      pitch: (d) => d.why || "your website isn't loading at the moment",
+      pitch: (d) =>
+        d.pitch ||
+        (/HTTP \d+/.test(d.why) ? 'the website link on your Google listing opens an error page' : d.why) ||
+        "your website isn't loading at the moment",
     },
     {
       id: 'freeDomain',
@@ -167,8 +185,8 @@
         if (year && year <= new Date().getFullYear() - 2) return { chip: '© ' + year, pitch: 'the footer still says © ' + year };
         if (sig.flash) return { chip: 'uses Flash', pitch: 'it still uses Flash, which browsers stopped supporting in 2021' };
         const major = parseInt(String(sig.jquery || '').split('.')[0], 10);
-        if (major && major < 3) return { chip: 'jQuery ' + sig.jquery, pitch: 'it runs on code from around 2016' };
-        if (sig.tableLayout) return { chip: 'old table layout', pitch: 'it is built the way sites were in the early 2000s' };
+        if (major && major < 3) return { chip: 'outdated code (2016 or older)', pitch: 'it runs on code from around 2016' };
+        if (sig.tableLayout) return { chip: 'old-fashioned layout', pitch: 'it is built the way sites were in the early 2000s' };
         return null;
       },
       chip: (d) => d.chip,
@@ -214,6 +232,7 @@
     if (/WordPress sample/.test(w)) return 'WordPress demo content';
     if (/blank server page/.test(w)) return 'blank server page';
     if (/HTTP (\d+)/.test(w)) return 'error page (HTTP ' + w.match(/HTTP (\d+)/)[1] + ')';
+    if (/file download/.test(w)) return 'opens a file, not a site';
     if (/security warning/.test(w)) return 'security warning';
     if (/expired|domain/.test(w)) return 'domain not loading';
     return 'not loading';
@@ -333,13 +352,23 @@
       reasons.push({ text: 'Only ' + (/^[AEIOU]/.test(where) ? 'an ' : 'a ') + where + ' page, no website', tone: 'good' });
     } else {
       const site = checks.site;
+      const signals = (site && site.signals) || {};
       if (!site) {
         opportunity = s.checkWebsites ? 'pending' : 'unchecked';
         pending = !!s.checkWebsites;
-        reasons.push({ text: s.checkWebsites ? 'Checking website…' : 'Website not checked', tone: 'neutral' });
+        reasons.push({ text: s.checkWebsites ? 'Website not checked yet' : 'Website not checked', tone: 'neutral' });
       } else if (site.state === 'error') {
         opportunity = 'unchecked';
         reasons.push({ text: "Couldn't check website", tone: 'neutral' });
+      } else if (signals.forwardsTo) {
+        // Their domain only forwards to Instagram, WhatsApp, a booking page…
+        opportunity = 'social';
+        const where = socialName(signals.url);
+        reasons.push({ text: 'Website just opens ' + (/^[AEIOU]/.test(where) ? 'an ' : 'a ') + where + ' page', tone: 'good' });
+      } else if (signals.reachable === false && !criterionOn(s, 'down')) {
+        opportunity = 'ok';
+        reasons.push({ text: 'Website not working: ' + downChip(signals.failure) + " (not counted, see What makes a good lead)", tone: 'bad' });
+        blockers.push('website');
       } else {
         issues = websiteIssues(site.signals, s, checks.pagespeed && checks.pagespeed.state === 'done' ? checks.pagespeed : null);
         const weak = issues.some((i) => i.critical) || issues.length >= Math.max(1, s.weakAt || 1);
@@ -366,7 +395,10 @@
     }
 
     // How big the business is: Instagram.
-    const ig = instagramOf(lead);
+    const found = instagramOf(lead);
+    // "None linked" was saved, but an account has turned up since (e.g. on their website): it's waiting to be looked up.
+    const stale = found.check && found.check.state === 'not_found' && !found.check.handle && found.handle;
+    const ig = stale ? { handle: found.handle, check: null } : found;
     let followers = null;
     if (ig.check && ig.check.state === 'done' && typeof ig.check.followers === 'number') {
       followers = ig.check.followers;
@@ -374,13 +406,14 @@
       reasons.push({ text: 'Instagram @' + ig.check.handle + ' · ' + formatCount(followers) + ' followers', tone: under ? 'bad' : 'good' });
       if (under) blockers.push('followers');
     } else if (ig.check && ig.check.state === 'not_found') {
-      reasons.push({ text: 'No Instagram found', tone: s.requireInstagram ? 'bad' : 'neutral' });
+      const text = ig.check.handle ? 'Instagram @' + ig.check.handle + " doesn't exist" : 'No Instagram linked on Maps or their website';
+      reasons.push({ text: text + (s.minFollowers && !s.requireInstagram ? ', so followers unknown' : ''), tone: s.requireInstagram ? 'bad' : 'neutral' });
       if (s.requireInstagram) blockers.push('instagram');
     } else if (ig.check && ig.check.state === 'error') {
       reasons.push({ text: "Couldn't read Instagram" + (ig.handle ? ' @' + ig.handle : ''), tone: 'neutral' });
     } else if (s.checkInstagram) {
       pending = true;
-      reasons.push({ text: 'Checking Instagram…', tone: 'neutral' });
+      reasons.push({ text: 'Instagram not checked yet', tone: 'neutral' });
     }
 
     // An unclaimed Google listing means nobody looks after their online presence.
@@ -393,9 +426,12 @@
       const under = s.minReviews && reviews < s.minReviews;
       reasons.push({ text: (rating ? rating.toFixed(1) + '★ · ' : '') + reviews.toLocaleString('en') + ' Google reviews', tone: under ? 'bad' : 'neutral' });
       if (under) blockers.push('reviews');
-    } else {
+    } else if (reviews === 0) {
       reasons.push({ text: 'No Google reviews', tone: s.minReviews ? 'bad' : 'neutral' });
       if (s.minReviews) blockers.push('reviews');
+    } else {
+      // Not the same as none: the rating couldn't be read (e.g. Maps in another language).
+      reasons.push({ text: "Google reviews couldn't be read", tone: 'neutral' });
     }
 
     const opportunityPts = {
@@ -418,8 +454,9 @@
     if (blockers.length) verdict = 'low';
     else if (pending) verdict = 'checking';
     else verdict = score >= 70 ? 'hot' : score >= 50 ? 'good' : 'low';
-    // Without knowing what their website is like, a lead can be Good but never Hot.
+    // Without knowing what their website is like, or their followers when there's a minimum, a lead can be Good but never Hot.
     if (verdict === 'hot' && opportunity === 'unchecked') verdict = 'good';
+    if (verdict === 'hot' && s.checkInstagram && s.minFollowers && followers == null) verdict = 'good';
 
     return {
       verdict: verdict,
@@ -432,6 +469,16 @@
       handle: ig.handle,
       pending: pending,
     };
+  }
+
+  function criterionOn(s, id) {
+    return !!Object.assign({}, DEFAULT_CRITERIA, s.criteria || {})[id];
+  }
+
+  /** Hot first, then Good, Checking and Low; best score first within each. */
+  const VERDICT_RANK = { hot: 0, good: 1, checking: 2, low: 3 };
+  function byVerdict(a, b) {
+    return VERDICT_RANK[a.verdict] - VERDICT_RANK[b.verdict] || b.score - a.score;
   }
 
   function socialName(url) {
@@ -467,11 +514,17 @@
     return pitched.join(' and ');
   }
 
-  /** The WhatsApp message for a lead: the no-website one or the weak-website one. */
+  // For a website we couldn't (or didn't) check: makes no claim about what's wrong with it.
+  const DEFAULT_SITE_MESSAGE =
+    "Hi 👋 We came across {name} on Google Maps. We're RizcoReach, a Dubai web design studio, and we'd be happy to show you " +
+    'a free idea for a fresh, faster website, no strings attached. Interested? (Reply STOP and we won\'t message again.)';
+
+  /** The WhatsApp message for a lead: no website, a weak website (naming its problems), or a neutral one. */
   function messageFor(lead, s, evaluation) {
     const ev = evaluation || evaluate(lead, s);
     const noSite = ev.opportunity === 'noSite' || ev.opportunity === 'social';
-    const template = noSite ? s.messageNoSite || LF.DEFAULT_MESSAGE : s.messageWeakSite || DEFAULT_WEAK_MESSAGE;
+    const checked = ev.opportunity === 'weak' || ev.opportunity === 'broken';
+    const template = noSite ? s.messageNoSite || LF.DEFAULT_MESSAGE : checked ? s.messageWeakSite || DEFAULT_WEAK_MESSAGE : DEFAULT_SITE_MESSAGE;
     return LF.fillMessage(template, lead, {
       issues: issueSentence(ev.issues),
       followers: ev.followers != null ? formatCount(ev.followers) : '',
@@ -497,7 +550,7 @@
         l.mapsUrl,
       ].filter(Boolean).join('\n');
       const groups = s.contactLabel ? s.contactLabel + ' ::: * myContacts' : '* myContacts';
-      rows.push([display, display, LF.cleanName(l.name), 'Mobile', l.e164, notes, groups]);
+      rows.push([cell(display), cell(display), cell(LF.cleanName(l.name)), 'Mobile', l.e164, cell(notes), cell(groups)]);
     });
     return rows;
   }
@@ -545,6 +598,8 @@
     ISSUES,
     DEFAULT_CRITERIA,
     DEFAULT_WEAK_MESSAGE,
+    DEFAULT_SITE_MESSAGE,
+    byVerdict,
     parseFollowers,
     formatCount,
     instagramOf,

@@ -26,8 +26,11 @@
       <div id="ready" hidden>
         <p class="query"><span class="small">Current search</span><span id="query"></span></p>
         <button type="button" class="btn primary" id="collectBtn">Collect leads from this search</button>
-        <p class="small">It opens every result, so keep the Google Maps tab open. About a minute per search.</p>
-        <p id="langNote" class="warn" hidden>Google Maps is showing in another language, so ratings and reviews may not be read. Add <b>?hl=en</b> to the end of the Maps address, or open Maps from the button above.</p>
+        <p class="small">It opens every result, so keep the Google Maps tab open. About 3 seconds per business (5–8 minutes for 120).</p>
+        <div id="langNote" class="warn" hidden>
+          <p>Google Maps is showing in another language, so ratings and reviews may not be read.</p>
+          <button type="button" class="btn" id="englishBtn">Open Maps in English</button>
+        </div>
       </div>
 
       <div id="running" hidden>
@@ -48,13 +51,18 @@
       </div>
       <div id="checkRunning" hidden>
         <p id="checkPhase" class="phase"></p>
-        <p class="small">Websites open one at a time in a muted background tab. Leave that tab alone; it closes when the checks finish.</p>
+        <p class="small">Websites open one at a time in a muted background tab. Leave that tab alone, and keep this panel open: closing it pauses the checks until you open it again.</p>
         <button type="button" class="btn" id="checkStop">Pause checks</button>
       </div>
       <div id="permNote" class="warn" hidden>
         <p>Chrome isn't letting Lead Finder open websites, so it can't check them.</p>
         <button type="button" class="btn" id="permBtn">Allow website checks</button>
       </div>
+      <div id="failedNote" class="hint" hidden>
+        <p id="failedText"></p>
+        <button type="button" class="btn" id="retryBtn">Try these again</button>
+      </div>
+      <p id="checkNote" class="warn" hidden></p>
       <p id="igNote" class="warn" hidden></p>
     </section>
 
@@ -66,7 +74,7 @@
       <div class="tabs" role="tablist" aria-label="Show leads">
         <button type="button" role="tab" data-filter="hot" aria-selected="true">Hot <span></span></button>
         <button type="button" role="tab" data-filter="good" aria-selected="false">Good <span></span></button>
-        <button type="button" role="tab" data-filter="checking" aria-selected="false">Checking <span></span></button>
+        <button type="button" role="tab" data-filter="checking" aria-selected="false">To check <span></span></button>
         <button type="button" role="tab" data-filter="low" aria-selected="false">Low <span></span></button>
         <button type="button" role="tab" data-filter="contacted" aria-selected="false">Contacted <span></span></button>
         <button type="button" role="tab" data-filter="all" aria-selected="false">All <span></span></button>
@@ -121,7 +129,8 @@
             </select>
           </label>
         </div>
-        <label class="check"><input id="set-requireInstagram" type="checkbox" /> Skip businesses with no Instagram</label>
+        <label class="check"><input id="set-requireInstagram" type="checkbox" /> Mark leads Low when no Instagram is linked</label>
+        <small class="note">Without a follower count a lead can be Good but not Hot. Use <b>Add Instagram</b> on a lead to fill it in.</small>
 
         <fieldset class="field">
           <legend>A website counts as weak when it has</legend>
@@ -134,7 +143,7 @@
             <span class="small">of these problems:</span>
           </div>
           <div id="criteriaList" class="criteria"></div>
-          <small>Not loading, no HTTPS and not set up for phones always count as weak.</small>
+          <small>When ticked, any one of these makes a website weak on its own: not loading, a free website address, no HTTPS, not set up for phones.</small>
         </fieldset>
         <label class="field">
           <span>Slow means it takes longer than (seconds) to load</span>
@@ -179,6 +188,7 @@
         <label class="field">
           <span>Chats per day before a warning</span>
           <input id="set-dailyLimit" type="number" min="0" max="500" step="1" />
+          <small>0 = no warning.</small>
         </label>
         <label class="field">
           <span>Country for numbers without a +code</span>

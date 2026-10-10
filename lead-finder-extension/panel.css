@@ -88,6 +88,11 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .summary b { color: var(--fg); }
 .error { color: var(--error); font-size: 13px; }
 .warn { background: var(--warn-bg); color: var(--warn-fg); border-radius: 8px; padding: 8px 10px; font-size: 13px; }
+div.warn, #failedNote { display: grid; gap: 8px; }
+div.warn[hidden], #failedNote[hidden] { display: none; }
+.note { font-size: 11px; color: var(--fg-2); margin-top: -6px; }
+.sent { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 12px; color: var(--fg-2); }
+.wa[disabled] { background: var(--muted-bg); color: var(--fg-2); cursor: default; filter: none; }
 
 .tabs { display: flex; flex-wrap: wrap; gap: 4px; }
 .tabs button {

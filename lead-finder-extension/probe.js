@@ -64,6 +64,9 @@ function rrProbeWebsite(options, staticDoc) {
     if (textarea && (email || tel)) return 'contact';
     if (fields.length === 1 && email) return 'newsletter';
     const words = textOf(form) + ' ' + all('button, input[type="submit"]', form).map((b) => b.value || b.textContent).join(' ');
+    // Only a name and an email, and it says subscribe/join: a mailing-list sign-up.
+    const nameOrEmail = fields.every((i) => i.type === 'email' || /e-?mail|name|بريد|اسم/i.test(fieldWords(i)));
+    if (!textarea && !tel && nameOrEmail && /subscribe|sign ?up|join|newsletter|mailing list|اشترك/i.test(words)) return 'newsletter';
     if (fields.length >= 2 && (email || tel) && SEND_WORDS.test(words)) return 'contact';
     if (/subscribe|sign ?up|join|newsletter|اشترك/i.test(words)) return 'newsletter';
     return 'other';
@@ -82,11 +85,17 @@ function rrProbeWebsite(options, staticDoc) {
   function findForm() {
     const forms = all('form').map(formKind);
     if (forms.indexOf('contact') >= 0) return { found: true, kind: 'form' };
-    const plugin = all(FORM_PLUGINS).find((el) => !el.closest('.sqs-block-newsletter, .newsletter-form, .mc4wp-form'));
+    // A form plugin counts unless the form inside it is a newsletter, search, login or comment form.
+    const plugin = all(FORM_PLUGINS).find((el) => {
+      if (el.closest('.sqs-block-newsletter, .newsletter-form, .mc4wp-form')) return false;
+      const inner = el.matches('form') ? el : el.querySelector('form');
+      return !inner || ['contact', 'other'].indexOf(formKind(inner)) >= 0;
+    });
     if (plugin) return { found: true, kind: 'plugin' };
-    const embedded = all('iframe[src], iframe[data-src], iframe[data-tally-src], script[src]').map((el) =>
-      el.getAttribute('src') || el.getAttribute('data-src') || el.getAttribute('data-tally-src') || ''
-    );
+    // Lazy-loaders park the real address in data-* attributes (and don't run in a background tab).
+    const LAZY = ['src', 'data-src', 'data-lazy-src', 'data-rocket-src', 'data-litespeed-src', 'data-tally-src'];
+    const embedded = [];
+    all('iframe, script[src]').forEach((el) => LAZY.forEach((a) => el.getAttribute(a) && embedded.push(el.getAttribute(a))));
     if (embedded.some((src) => FORM_HOSTS.test(src))) return { found: true, kind: 'embedded form' };
     if (all('a[href]').some((a) => /forms\.gle\/|typeform\.com\/to\/|tally\.so\/r\/|form\.jotform\.com\//i.test(a.href || a.getAttribute('href') || ''))) {
       return { found: true, kind: 'form link' };
@@ -104,7 +113,7 @@ function rrProbeWebsite(options, staticDoc) {
     return loose ? { found: true, kind: 'form' } : { found: false, kind: '' };
   }
 
-  if (opts.formOnly) return { form: findForm(), url: pageUrl, challenge: challenge };
+  if (opts.formOnly) return { form: findForm(), url: pageUrl.slice(0, 500), challenge: challenge };
   if (opts.timingOnly) return { loadMs: nav.loadEventEnd ? Math.round(nav.loadEventEnd) : null, status: nav.responseStatus || 0 };
 
   // ── Links ──────────────────────────────────────────────────────────────────
@@ -126,7 +135,9 @@ function rrProbeWebsite(options, staticDoc) {
     if (/^(mailto|tel|javascript|whatsapp|#)/i.test(hrefs[i])) continue;
     try {
       const u = new URL(absolute[i]);
-      if (u.hostname.replace(/^www\./, '') === host && u.href.split('#')[0] !== pageUrl.split('#')[0]) contactUrl = u.href.split('#')[0];
+      if (/^https?:$/.test(u.protocol) && u.hostname.replace(/^www\./, '') === host && u.href.split('#')[0] !== pageUrl.split('#')[0]) {
+        contactUrl = u.href.split('#')[0].slice(0, 500);
+      }
     } catch (e) {
       /* ignore bad links */
     }
@@ -142,13 +153,14 @@ function rrProbeWebsite(options, staticDoc) {
   // Instagram accounts the site links to (links and JSON-LD "sameAs" only, not scripts like
   // instagram.com/embed.js). Skips "website by @designer" credits and platform accounts.
   const instagram = [];
-  const igRe = /(?:instagram\.com|instagr\.am)\/(?:_u\/)?@?([a-z0-9._]{1,30})(?=[/?#"'\s]|$)/gi;
-  const reserved = /^(p|reel|reels|tv|stories|explore|accounts|about|legal|developer|direct|web|challenge|graphql|api|ajax|static|emails|oauth|oembed|embed|privacy|terms|press|help|s|share|invites|ar|session|nametag|qr|directory|lite|create|locations|popular)$/;
+  // The host must start at a boundary, so CDN addresses like scontent.cdninstagram.com/v/… don't count.
+  const igRe = /(?:^|\/\/|[\s"'(]|\bwww\.|\bm\.)(?:instagram\.com|instagr\.am)\/(?:_u\/)?@?([a-z0-9._]{1,30})(?=[/?#"'\s]|$)/gi;
+  const reserved = /^(p|reel|reels|tv|stories|explore|accounts|about|legal|developer|direct|web|challenge|graphql|api|ajax|static|emails|oauth|oembed|embed|privacy|terms|press|help|s|share|invites|ar|session|nametag|qr|directory|lite|create|locations|popular|v|_u|_n|rsrc\.php|favicon\.ico)$/;
   const PLATFORM = /^(instagram|meta|facebook|envato|themeforest|elementor|wordpress|wix|squarespace|shopify|godaddy|hostinger|webflow|canva)$/;
   const CREDIT = /designed|developed|powered|made by|website by|site by|theme by|crafted by|built by|created by|تصميم|تطوير/i;
   const addHandle = (raw) => {
     const h = String(raw).toLowerCase().replace(/\.+$/, '');
-    if (reserved.test(h) || PLATFORM.test(h) || /\.(js|css|png|jpe?g|svg|gif|webp|php|html?)$/.test(h) || /^\.|\.\./.test(h)) return;
+    if (h.length < 2 || reserved.test(h) || PLATFORM.test(h) || /\.(js|css|png|jpe?g|svg|gif|webp|php|html?|ico)$/.test(h) || /^\.|\.\./.test(h)) return;
     if (instagram.indexOf(h) < 0 && instagram.length < 3) instagram.push(h);
   };
   anchors.forEach((a, i) => {
@@ -179,7 +191,7 @@ function rrProbeWebsite(options, staticDoc) {
     .slice(0, 5000)
     .filter((el) => LOADER_NAME.test(el.id || '') || LOADER_NAME.test(className(el)))
     .filter((el) => !/^(link|script|style|img|source|meta|svg|path|use)$/i.test(el.tagName))
-    .filter((el) => !el.closest(NOT_A_PAGE_LOADER) && !/wpcf7-spinner/.test(className(el)));
+    .filter((el) => !el.closest(NOT_A_PAGE_LOADER) && !/wpcf7-spinner|lazy-?preloader|img-?preload|image-?preload/i.test(className(el) + ' ' + (el.id || '')));
   // Short names like #loader are only a page loader when they cover the screen.
   const covering = live
     ? all('#loader, #loading, #preloader, .preloader, #status, .loader, .loading').some((el) => {
@@ -194,12 +206,14 @@ function rrProbeWebsite(options, staticDoc) {
     .toLowerCase();
   const preloaderLib =
     !!doc.querySelector('e-preloader, e-page-transition, div.pace, #nprogress, #loftloader-wrapper, body.pace-done, body.pace-running') ||
-    /pace(\.min)?\.js|nprogress(\.min)?\.js|\/wp-content\/plugins\/[^/"']*(pre-?loader|loader|page-?transition)[^/"']*\//.test(resourceNames + '\n' + assetUrls);
+    /pace(\.min)?\.js|nprogress(\.min)?\.js|\/wp-content\/plugins\/[^/"'\n]{0,60}(pre-?loader|loader|page-?transition)[^/"'\n]{0,60}\//.test(resourceNames + '\n' + assetUrls);
   const preloader = named.length > 0 || covering || preloaderLib;
 
   // ── Footer copyright year ──────────────────────────────────────────────────
-  const footer = doc.querySelector('footer, [role="contentinfo"], #footer, .footer, .site-footer, [class*="footer"], [id*="footer"]');
-  const footerText = (textOf(footer) || bodyText.slice(-3000)) + '';
+  // The page's own footer: the last one that isn't part of a post, quote or sidebar.
+  const footers = all('footer, [role="contentinfo"], #footer, .footer, .site-footer').filter((el) => !el.closest('article, blockquote, aside, figure'));
+  const footer = footers[footers.length - 1];
+  const footerText = textOf(footer) + '\n' + bodyText.slice(-3000);
   let copyrightYear = null;
   const yearRe = /(?:©|&copy;|\(c\)|copyright)[^0-9\n]{0,40}((?:19|20)\d{2})(?:\s*[-–—]\s*((?:19|20)\d{2}))?/gi;
   let ym;
@@ -239,26 +253,41 @@ function rrProbeWebsite(options, staticDoc) {
     /\.(wixsite\.com|wixstudio\.io|godaddysites\.com|webflow\.io|weebly\.com|square\.site|site123\.me|mystrikingly\.com|strikingly\.com|zyrosite\.com|hostingersite\.com|wordpress\.com|blogspot\.com|business\.site|negocio\.site|carrd\.co|jimdosite\.com|yolasite\.com|webnode\.[a-z]+|framer\.website|myshopify\.com|odoo\.com|ueniweb\.com)$/
   );
   const freeDomain = freeDomainMatch ? host : '';
-  const metaPixel = /connect\.facebook\.[a-z]+\/[^"'\s]*\/fbevents\.js|fbq\(\s*['"]init|facebook\.com\/tr\?id=|connect\.facebook\.net\/signals\/config/.test(sig);
+  const metaPixel = /connect\.facebook\.[a-z]+\/[^"'\s]{0,200}\/fbevents\.js|fbq\(\s*['"]init|facebook\.com\/tr\?id=|connect\.facebook\.net\/signals\/config/.test(sig);
   const ga4 = /googletagmanager\.com\/(gtag\/js|gtm\.js)|google-analytics\.com\/g\/collect|gtag\(\s*['"]config['"]\s*,\s*['"](g|aw)-|\bgtm-[a-z0-9]{4,9}\b/.test(sig);
   const uaOnly = !ga4 && /google-analytics\.com\/(analytics|ga|urchin)\.js|\bua-\d{4,10}-\d{1,4}\b/.test(sig);
   const analytics = ga4;
 
   // ── Placeholder / parked / suspended / unfinished pages ────────────────────
+  // Only whole-page signs count (the title, the main heading, or a nearly empty page), so a
+  // working site that mentions "our new branch is coming soon" is never called unfinished.
   const top = (title + ' ' + bodyText.slice(0, 1500)).toLowerCase();
+  const lowTitle = title.toLowerCase();
+  const heading = textOf(doc.querySelector('h1')).replace(/\s+/g, ' ').trim().toLowerCase().slice(0, 200);
+  const shortText = bodyText.replace(/\s+/g, ' ').trim();
+  const tiny = shortText.length < 300;
+  const SOON = /coming soon|under construction|launching soon|under maintenance/;
+  // "Coming soon", "We're launching soon", "Site under construction"… as the whole message, not "our new branch is coming soon".
+  const SOON_START = /^(?:(?:we(?:'re| are)|this (?:site|website) is|(?:site|website|page)(?: is)?)\s+)?(?:coming soon|launching soon|under construction|under maintenance)/;
+  const headings = all('h1, h2, h3').slice(0, 6).map((h) => textOf(h).replace(/\s+/g, ' ').trim().toLowerCase());
   let placeholder = '';
   if (/domain (is|may be) for sale|buy this domain|this domain is for sale|parked free|this web page is parked|sedoparking|hugedomains|domain has expired|this domain has expired|parkingcrew|bodis\.com|wsimg\.com\/parking-lander/.test(top + ' ' + lowerHtml.slice(0, 20000))) {
     placeholder = 'parked';
-  } else if (/account (has been )?suspended|suspendedpage|this account has been suspended|website is suspended/.test(top)) {
+  } else if (/account (has been )?suspended|suspendedpage|this account has been suspended|website is suspended/.test(lowTitle + ' ' + heading) || (tiny && /(account|website|site|hosting)( has been| is)? suspended/.test(top))) {
     placeholder = 'suspended';
   } else if (
-    /coming soon|under construction|launching soon|under maintenance/.test(title.toLowerCase()) ||
-    (/coming soon|under construction|launching soon|site is under maintenance|website under maintenance/.test(top) && bodyText.length < 600)
+    (SOON.test(lowTitle) && lowTitle.length < 80) ||
+    (shortText.length < 1500 && headings.some((h) => SOON_START.test(h))) ||
+    (tiny && SOON_START.test(shortText.toLowerCase()))
   ) {
     placeholder = 'coming soon';
-  } else if (/apache2 (ubuntu|debian) default page|welcome to nginx|^it works!|default web site page|index of \//.test(top)) {
+  } else if (
+    /^(apache2 (ubuntu|debian) default page|welcome to nginx!?|it works!?|iis windows server|index of \/)/.test(lowTitle) ||
+    /^(it works!?|welcome to nginx!?)$/.test(heading) ||
+    (tiny && /^(it works!|welcome to nginx)/i.test(shortText))
+  ) {
     placeholder = 'default server page';
-  } else if (/just another wordpress site|hello world!.{0,400}sample page|sample page.{0,400}hello world!/.test(top.replace(/\s+/g, ' '))) {
+  } else if (/hello world!.{0,400}sample page|sample page.{0,400}hello world!/.test(top.replace(/\s+/g, ' ')) || (/just another wordpress site/.test(top) && shortText.length < 800)) {
     placeholder = 'wordpress demo';
   }
 
@@ -269,7 +298,7 @@ function rrProbeWebsite(options, staticDoc) {
   resources.forEach((r) => (bytes += r.transferSize || 0));
 
   return {
-    url: pageUrl,
+    url: pageUrl.slice(0, 500),
     https: /^https:/i.test(pageUrl),
     status: nav.responseStatus || 0,
     ttfbMs: nav.responseStart ? Math.round(nav.responseStart) : null,
@@ -278,7 +307,7 @@ function rrProbeWebsite(options, staticDoc) {
     bytes: bytes,
     requests: live ? resources.length + 1 : null,
     viewport: /width\s*=\s*device-width/.test(viewportContent),
-    title: title,
+    title: title.slice(0, 200),
     metaDescription: description.length > 0,
     h1: doc.querySelectorAll('h1').length,
     words: bodyText.split(/\s+/).filter(Boolean).length,

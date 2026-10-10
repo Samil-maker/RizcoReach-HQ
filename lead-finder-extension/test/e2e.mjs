@@ -72,10 +72,39 @@ const SITES = {
       '<script type="application/ld+json">{"@type":"LocalBusiness","sameAs":["https://www.instagram.com/realsalon_ae"]}</script>'
   ),
   '/probe/godaddy/': page('', { head: '<meta name="generator" content="Starfield Technologies; Go Daddy Website Builder 8.0.0000">' }),
+  // Working sites that only mention "coming soon" / "how it works" are not placeholders.
+  '/probe/branch/': page('<p>Our new JLT branch is coming soon! Book at Al Barsha meanwhile.</p>', { title: 'Noor Salon' }),
+  '/probe/howitworks/': page("<h2>Here's how it works!</h2><p>Pick a service and book.</p>", { title: 'Noor Salon' }),
+  '/probe/soon/': page('<p>We are launching soon.</p>', { title: 'Coming Soon' }),
+  '/probe/cdn-ig/': page(
+    '<a href="https://scontent.cdninstagram.com/v/t51.2885-15/abc.jpg">photo</a><a href="https://www.instagram.com/realone/">Instagram</a>'
+  ),
+  '/probe/quote-footer/': page(
+    '<blockquote><p>Lovely salon!</p><footer class="blockquote-footer">Sara</footer></blockquote><footer>Copyright © 2019 Noor Salon</footer>'
+  ),
+  '/probe/newsletter/': page(
+    '<div class="elementor-widget-form"><form class="elementor-form"><input type="email" name="form_fields[email]" placeholder="Email"><button>Subscribe</button></form></div>' +
+      '<form><input name="first_name" placeholder="First name"><input type="email" name="email"><button>Submit</button><p>Join our mailing list</p></form>'
+  ),
+  '/probe/lazy-form/': page('<iframe src="about:blank" data-lazy-src="https://form.jotform.com/123456"></iframe>'),
   '/ig-missing/': "<html><head><title>Page not found • Instagram</title></head><body><h2>Sorry, this page isn't available.</h2></body></html>",
 };
 const server = http.createServer((req, res) => {
   const path = req.url.split('?')[0];
+  if (path === '/hang/') return; // a dead host that accepts the connection and never answers
+  if (path === '/file/') {
+    res.writeHead(200, { 'content-type': 'application/pdf', 'content-disposition': 'attachment; filename="menu.pdf"' });
+    return res.end('%PDF-1.4');
+  }
+  if (path === '/to-links/') {
+    // A domain that only forwards to a link-in-bio page (linktr.ee resolves to this server in the test).
+    res.writeHead(302, { location: `http://linktr.ee:${server.address().port}/noorsalon` });
+    return res.end();
+  }
+  if (path === '/noorsalon') {
+    res.writeHead(200, { 'content-type': 'text/html' });
+    return res.end(page('<a href="https://www.instagram.com/noorsalon/">Instagram</a>', { title: 'Noor | Linktree' }));
+  }
   const send = () => {
     if (SITES[path]) {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
@@ -91,6 +120,7 @@ const server = http.createServer((req, res) => {
 await new Promise((r) => server.listen(0, '127.0.0.1', r));
 // Hostnames like good.test all resolve to this server (see --host-resolver-rules below).
 const SITE = `http://test:${server.address().port}`;
+const site = (name, path) => SITE.replace('://', '://' + name + '.') + path;
 
 // ─── Fake Instagram profiles ─────────────────────────────────────────────────
 const INSTAGRAM = { noorsalon: '5,200', goodsalon: '12K', instaonly: '800', glowlounge: '2,100', lastsalon: '3,400' };
@@ -101,7 +131,7 @@ const ctx = await playwright.chromium.launchPersistentContext(mkdtempSync(join(t
   headless: true,
   acceptDownloads: true,
   viewport: { width: 1200, height: 800 },
-  args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, '--host-resolver-rules=MAP *.test 127.0.0.1, MAP test 127.0.0.1'],
+  args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, '--host-resolver-rules=MAP *.test 127.0.0.1, MAP test 127.0.0.1, MAP linktr.ee 127.0.0.1'],
 });
 
 try {
@@ -310,6 +340,13 @@ try {
   assert.equal((await readSite('/probe/godaddy-wp/')).builder, 'WordPress', 'WordPress hosted at GoDaddy is WordPress');
   assert.equal((await readSite('/probe/godaddy/')).builder, 'GoDaddy');
   assert.deepEqual([...(await readSite('/probe/instagram-links/')).instagram], ['realsalon', 'realsalon_ae'], 'no embed.js, no designer credit');
+  assert.equal((await readSite('/probe/branch/')).placeholder, '', '"our new branch is coming soon" is a working site');
+  assert.equal((await readSite('/probe/howitworks/')).placeholder, '', '"how it works!" is not a server page');
+  assert.equal((await readSite('/probe/soon/')).placeholder, 'coming soon');
+  assert.deepEqual([...(await readSite('/probe/cdn-ig/')).instagram], ['realone'], 'Instagram image CDN links are not accounts');
+  assert.equal((await readSite('/probe/quote-footer/')).copyrightYear, 2019, 'the page footer, not a testimonial footer');
+  assert.equal((await readSite('/probe/newsletter/')).form.found, false, 'newsletter sign-ups (plugin or plain) are not contact forms');
+  assert.deepEqual({ ...(await readSite('/probe/lazy-form/')).form }, { found: true, kind: 'embedded form' }, 'lazy-loaded form embed');
   await reader.close();
 
   // Adding an Instagram account by hand checks it straight away.
@@ -333,6 +370,29 @@ try {
   assert.equal(igLookups.length, before + 1);
   assert.equal(igLookups[igLookups.length - 1], 'instaonly');
 
+  // The checker on sites that hang, download a file, forward to Instagram, or while offline.
+  const check = (url) =>
+    panel.evaluate(async (u) => {
+      LeadChecker._tune({ page: 3000, fetch: 2000, retry: 300 });
+      return LeadChecker._checkWebsite(u, LF.withDefaults({}));
+    }, url);
+  const fine = await check(site('good', '/good/'));
+  assert.equal(fine.signals.reachable, true);
+  // The tab still shows the good site: a hanging site must never be read as that page.
+  const hang = await check(site('hang', '/hang/'));
+  assert.equal(hang.state, 'done');
+  assert.equal(hang.signals.reachable, false, 'a site that never answers is down…');
+  assert.equal(hang.signals.failure, 'the server is not responding');
+  assert.ok(!hang.signals.form, '…and gets nothing from the page shown before');
+  const file = await check(site('file', '/file/'));
+  assert.equal(file.signals.failure, 'the link opens a file download instead of a website');
+  const forwards = await check(site('redirect', '/to-links/'));
+  assert.equal(forwards.signals.forwardsTo, 'linktr.ee', 'a domain that forwards to Linktree is not a website');
+  await ctx.setOffline(true);
+  assert.equal(await check(site('good', '/good/')), null, 'offline: nothing is saved, the lead stays in the queue');
+  await ctx.setOffline(false);
+  await panel.evaluate(() => LeadChecker._tune({ page: 20000, fetch: 15000, retry: 4000 }));
+
   if (SHOTS) {
     await panel.click('#criteriaBox summary');
     await panel.emulateMedia({ colorScheme: 'dark' });
@@ -343,5 +403,6 @@ try {
   console.log('e2e: all checks passed');
 } finally {
   await ctx.close();
+  server.closeAllConnections();
   server.close();
 }

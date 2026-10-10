@@ -370,6 +370,7 @@
       if (out.rating == null) out.rating = parseFloat(m[1].replace(',', '.'));
       if (out.reviews == null) out.reviews = countOf(m[2]);
     }
+    if (out.reviews == null && /\bno reviews\b/i.test(text)) out.reviews = 0;
     return out;
   }
 

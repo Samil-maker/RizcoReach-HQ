@@ -13,15 +13,21 @@
   'use strict';
 
   const LF = root.LF;
-  const PAGE_TIMEOUT = 20000; // counted as "very slow" after this
+  let PAGE_TIMEOUT = 20000; // counted as "very slow" after this
   const SETTLE_MS = 1500; // let JavaScript-built pages (Wix, React…) finish drawing
+  let RETRY_MS = 4000; // a site that didn't answer gets one more try after this
+  let FETCH_TIMEOUT = 15000;
+  const MAX_HTML = 1500000; // bytes of a page's code read by the quick request
   const IG_GAP_MS = [8000, 15000]; // random gap between Instagram lookups, like a person browsing
   const IG_BACKOFF_MIN = [15, 30, 60, 360]; // pause after Instagram pushes back: 15 min, then 30, 60, 6 h
+  const IG_LOGIN_PAUSE_MIN = 30; // Instagram wants a login: wait for the user rather than retrying
   const IG_CACHE_DAYS = 7;
 
   let running = false;
   let stopRequested = false;
+  let userPaused = false; // the user pressed Pause: nothing restarts by itself until they press Check
   let listener = () => {};
+  const tried = new Set(); // leads already tried in this run (never loop on one whose result couldn't be saved)
   let tabId = null;
   let tabUses = 0; // the checker tab is replaced every so often (Chrome may freeze long-hidden tabs)
   let lastInstagramAt = 0;
@@ -35,29 +41,63 @@
   /**
    * What still needs checking for this lead. The website goes first because the
    * Instagram handle is often only linked from the website.
-   * igPaused: Instagram asked us to slow down, so skip it for now.
+   * igPaused: Instagram checks are paused, so only leads with no account to look up are settled.
    */
   function needs(lead, s, igPaused) {
     const c = lead.checks || {};
     const out = [];
     const hasSite = LF.websiteKind(lead, s) === 'site';
     if (s.checkWebsites && hasSite && !c.site) out.push('site');
-    if (s.checkWebsites && hasSite && s.pagespeedKey && !c.pagespeed) out.push('pagespeed');
-    if (s.checkInstagram && !c.instagram && !igPaused) out.push('instagram');
+    if (s.checkWebsites && hasSite && s.pagespeedKey && pagespeedDue(c.pagespeed, s)) out.push('pagespeed');
+    if (s.checkInstagram && instagramDue(lead) && (!igPaused || !LF.instagramOf(lead).handle)) out.push('instagram');
     return out;
   }
 
-  /** When Instagram checks may resume: after a push-back pause, or tomorrow once today's limit is used. */
-  async function instagramPausedUntil(s) {
-    const got = await chrome.storage.local.get(['igCooldownUntil', 'igDay']);
-    let until = got.igCooldownUntil > Date.now() ? got.igCooldownUntil : 0;
+  /** A PageSpeed check that failed runs again once the key is changed. */
+  function pagespeedDue(ps, s) {
+    return !ps || (ps.state === 'error' && ps.key !== keyTag(s.pagespeedKey));
+  }
+
+  /** Not looked up yet, or saved as "none linked" but an account has turned up since (e.g. on their website). */
+  function instagramDue(lead) {
+    const ig = lead.checks && lead.checks.instagram;
+    if (!ig) return true;
+    return ig.state === 'not_found' && !ig.handle && !!LF.instagramOf(lead).handle;
+  }
+
+  /** A short fingerprint of the PageSpeed key, so results remember which key they came from. */
+  function keyTag(key) {
+    let h = 0;
+    for (const ch of String(key || '')) h = (h * 31 + ch.charCodeAt(0)) | 0;
+    return (h >>> 0).toString(36);
+  }
+
+  /**
+   * When Instagram checks may resume, and why they're paused:
+   * 'slowDown' (Instagram pushed back), 'login' (Instagram wants a login) or 'dailyLimit' (the user's own limit).
+   */
+  async function instagramPause(s) {
+    const got = await chrome.storage.local.get(['igCooldownUntil', 'igDay', 'igLoginWall']);
+    let until = 0;
+    let reason = '';
+    if (got.igCooldownUntil > Date.now()) {
+      until = got.igCooldownUntil;
+      reason = got.igLoginWall ? 'login' : 'slowDown';
+    }
     const day = got.igDay || {};
     if (s && s.instagramPerDay && day.date === dayKey() && day.count >= s.instagramPerDay) {
       const tomorrow = new Date();
       tomorrow.setHours(24, 0, 0, 0);
-      until = Math.max(until, tomorrow.getTime());
+      if (tomorrow.getTime() > until) {
+        until = tomorrow.getTime();
+        reason = 'dailyLimit';
+      }
     }
-    return until;
+    return { until: until, reason: reason };
+  }
+
+  async function instagramPausedUntil(s) {
+    return (await instagramPause(s)).until;
   }
 
   function dayKey() {
@@ -65,13 +105,31 @@
     return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
   }
 
+  /** Checks that ended in "couldn't check" (bot protection, a page that couldn't be read…). */
+  function failedChecks(lead) {
+    const c = lead.checks || {};
+    return ['site', 'instagram'].filter((n) => c[n] && c[n].state === 'error');
+  }
+
   async function pending() {
     const s = await LF.loadSettings();
-    const igPausedUntil = await instagramPausedUntil(s);
+    const ig = await instagramPause(s);
     const leads = (await LF.loadLeads()).filter((l) => l.status !== 'Do not contact');
-    const todo = leads.filter((l) => needs(l, s, igPausedUntil).length).sort((a, b) => String(b.added).localeCompare(String(a.added)));
-    const waitingForInstagram = igPausedUntil ? leads.filter((l) => needs(l, s, false).indexOf('instagram') >= 0).length : 0;
-    return { s: s, todo: todo, igPausedUntil: igPausedUntil, waitingForInstagram: waitingForInstagram };
+    const todo = leads.filter((l) => needs(l, s, ig.until).length).sort((a, b) => String(b.added).localeCompare(String(a.added)));
+    // Only leads with an account to look up wait for Instagram; the rest are settled straight away.
+    const waitingForInstagram = ig.until ? leads.filter((l) => needs(l, s, 0).indexOf('instagram') >= 0 && LF.instagramOf(l).handle).length : 0;
+    const failed = leads.filter((l) => failedChecks(l).length).map((l) => l.e164);
+    const tag = keyTag(s.pagespeedKey);
+    const psError = s.pagespeedKey && s.checkWebsites ? leads.map((l) => l.checks && l.checks.pagespeed).find((p) => p && p.state === 'error' && p.key === tag) : null;
+    return {
+      s: s,
+      todo: todo,
+      igPausedUntil: ig.until,
+      igReason: ig.reason,
+      waitingForInstagram: waitingForInstagram,
+      failed: failed,
+      pagespeedError: psError ? psError.error : '',
+    };
   }
 
   /** The user can restrict the extension's site access in chrome://extensions. */
@@ -79,57 +137,131 @@
     return chrome.permissions.contains({ origins: ['http://*/*', 'https://*/*'] });
   }
 
-  async function start() {
-    if (running) return;
-    if (!(await canOpenSites())) {
-      listener({ running: false, done: 0, left: (await pending()).todo.length, current: '', needsPermission: true });
-      return;
-    }
+  /**
+   * Starts working through the queue. opts.auto: started by the panel itself (on opening,
+   * after collecting, when an Instagram pause ends), which never overrides the user's Pause.
+   */
+  async function start(opts) {
+    const auto = !!(opts && opts.auto);
+    if (running || (auto && userPaused)) return;
     running = true;
+    userPaused = false;
     stopRequested = false;
+    try {
+      if (!(await canOpenSites())) {
+        running = false;
+        listener(Object.assign(summary(await pending()), { running: false, done: 0, needsPermission: true }));
+        return;
+      }
+      // One checker at a time, even with the panel open in several windows (Instagram pacing and limits are shared).
+      if (navigator.locks) {
+        await navigator.locks.request('rr-lead-checker', { ifAvailable: true }, (lock) => (lock ? runQueue() : busyElsewhere()));
+      } else {
+        await runQueue();
+      }
+    } finally {
+      running = false;
+    }
+  }
+
+  async function busyElsewhere() {
+    running = false;
+    listener(Object.assign(summary(await pending()), { running: false, done: 0, elsewhere: true }));
+  }
+
+  function summary(p) {
+    return {
+      left: p.todo.length,
+      current: '',
+      igPausedUntil: p.igPausedUntil,
+      igReason: p.igReason,
+      waitingForInstagram: p.waitingForInstagram,
+      failed: p.failed,
+      pagespeedError: p.pagespeedError,
+    };
+  }
+
+  async function runQueue() {
     let done = 0;
-    const tried = new Set(); // never loop on a lead whose result couldn't be saved
+    let offline = false;
+    tried.clear();
+    await closeLeftoverTab();
     try {
       for (;;) {
         if (stopRequested) break;
-        const { s, todo, igPausedUntil } = await pending();
+        if (navigator.onLine === false) {
+          offline = true;
+          break;
+        }
+        const { s, todo, igPausedUntil, igReason } = await pending();
         const lead = todo.find((l) => !tried.has(l.e164));
         if (!lead) break;
         tried.add(lead.e164);
-        listener({ running: true, done: done, left: todo.length, current: lead.name || LF.formatPhone(lead.e164), igPausedUntil: igPausedUntil });
-        await checkLead(lead, s, igPausedUntil);
+        listener({
+          running: true,
+          done: done,
+          left: todo.filter((l) => !tried.has(l.e164)).length, // still to go after this one
+          current: lead.name || LF.formatPhone(lead.e164),
+          igPausedUntil: igPausedUntil,
+          igReason: igReason,
+        });
+        if ((await checkLead(lead, s, igPausedUntil)) === 'offline') {
+          offline = true;
+          break;
+        }
         done++;
       }
     } finally {
       running = false;
       await closeTab();
-      const p = await pending();
-      listener({ running: false, done: done, left: p.todo.length, current: '', igPausedUntil: p.igPausedUntil, waitingForInstagram: p.waitingForInstagram });
+      listener(Object.assign(summary(await pending()), { running: false, done: done, offline: offline }));
     }
   }
 
+  /** Stops after the current lead (e.g. before deleting leads). */
   function stop() {
     stopRequested = true;
   }
 
+  /** The user's Pause: stops after the current lead and stays paused until they press Check. */
+  function pause() {
+    userPaused = true;
+    stopRequested = true;
+  }
+
+  /** Returns 'offline' when this computer lost its connection (nothing is saved for the lead). */
   async function checkLead(lead, s, igPaused) {
     const steps = needs(lead, s, igPaused);
     const tasks = [];
     if (steps.indexOf('pagespeed') >= 0) {
       // PageSpeed runs on Google's side while we load the site ourselves.
-      tasks.push(checkPagespeed(lead.website, s.pagespeedKey).then((r) => saveCheck(lead.e164, 'pagespeed', r)));
+      tasks.push(
+        checkPagespeed(lead.website, s.pagespeedKey).then((r) => (r ? saveCheck(lead.e164, 'pagespeed', Object.assign(r, { key: keyTag(s.pagespeedKey) })) : null))
+      );
     }
-    if (steps.indexOf('site') >= 0) {
-      const site = await checkWebsite(lead.website, s);
-      await saveCheck(lead.e164, 'site', site);
+    try {
+      if (steps.indexOf('site') >= 0) {
+        const site = await checkWebsite(lead.website, s);
+        // A problem on this computer (offline, a tab error): save nothing, try again later.
+        if (!site) return navigator.onLine === false ? 'offline' : 'retry';
+        await saveCheck(lead.e164, 'site', site);
+      }
+      if (steps.indexOf('instagram') >= 0 && !stopRequested) {
+        const fresh = await getLead(lead.e164);
+        if (!fresh) return 'gone';
+        const handle = LF.instagramOf(fresh).handle;
+        if (!handle) {
+          // Nothing to look up. If their website later shows an account, it is checked then (see instagramDue).
+          await saveCheck(lead.e164, 'instagram', { state: 'not_found', at: now() });
+        } else if (!(await instagramPausedUntil(s))) {
+          const ig = await checkInstagram(handle, s);
+          if (ig) await saveCheck(lead.e164, 'instagram', ig);
+        }
+      }
+      return 'done';
+    } finally {
+      await Promise.all(tasks);
     }
-    if (steps.indexOf('instagram') >= 0 && !stopRequested && !(await instagramPausedUntil(s))) {
-      const fresh = await getLead(lead.e164);
-      const handle = fresh ? LF.instagramOf(fresh).handle : '';
-      const ig = handle ? await checkInstagram(handle, s) : { state: 'not_found', at: now() };
-      if (ig) await saveCheck(lead.e164, 'instagram', ig);
-    }
-    await Promise.all(tasks);
   }
 
   async function getLead(e164) {
@@ -160,6 +292,23 @@
     });
     if (forget.length) await chrome.storage.local.remove(forget);
     await chrome.storage.local.set(patch);
+    e164s.forEach((e) => tried.delete(e)); // a run in progress picks them up again
+  }
+
+  /** Runs the checks that ended in "couldn't check" again. */
+  async function retryFailed() {
+    const leads = await LF.loadLeads();
+    const patch = {};
+    leads.forEach((l) => {
+      const names = failedChecks(l);
+      if (!names.length) return;
+      const checks = Object.assign({}, l.checks);
+      names.forEach((n) => delete checks[n]);
+      patch['lead:' + l.e164] = Object.assign({}, l, { checks: checks });
+      tried.delete(l.e164);
+    });
+    await chrome.storage.local.set(patch);
+    return Object.keys(patch).length;
   }
 
   // ─── Website ───────────────────────────────────────────────────────────────
@@ -170,6 +319,10 @@
     [/TOO_MANY_REDIRECTS/, 'it is stuck in a redirect loop'],
     [/CONNECTION_REFUSED|CONNECTION_RESET|CONNECTION_CLOSED|CONNECTION_TIMED_OUT|TIMED_OUT|ADDRESS_UNREACHABLE|EMPTY_RESPONSE|CONNECTION_FAILED/, 'the server is not responding'],
   ];
+  // Problems on this computer, not the website: nothing is saved and the lead is tried again later.
+  const LOCAL_ERRORS = /^TAB_|INTERNET_DISCONNECTED|NETWORK_CHANGED|NETWORK_IO_SUSPENDED|PROXY|NETWORK_ACCESS_DENIED/;
+  // Blocked by Chrome or another extension (e.g. an ad blocker): saved as "couldn't check".
+  const BLOCKED_ERRORS = /BLOCKED_BY_CLIENT|BLOCKED_BY_ADMINISTRATOR|BLOCKED_BY_RESPONSE/;
 
   const PLACEHOLDER_WHY = {
     parked: 'the domain only shows a "for sale"/parking page',
@@ -180,20 +333,45 @@
   };
 
   /**
-   * Checks one website in two ways:
+   * Checks one website. Returns the result to save, or null when this computer had a
+   * problem (offline, a tab error) so the lead stays in the queue.
+   * A site that doesn't answer at all is tried once more before it counts as down,
+   * so a short Wi-Fi drop doesn't mark working sites as dead.
+   */
+  async function checkWebsite(url, s) {
+    let result = await visitWebsite(url, s);
+    if (result && result.retry) {
+      await sleep(RETRY_MS);
+      if (navigator.onLine === false || stopRequested) return null;
+      const second = await visitWebsite(url, s);
+      result = second && second.retry ? second.retry : second;
+    }
+    return result;
+  }
+
+  /**
+   * One look at a website, two ways:
    *   1. a quick request: status, final address (HTTPS or not), server headers and
    *      the page's original code (which still has a preloader that scripts remove later);
    *   2. a real visit in the background tab: load time and the finished page.
    * If the visit is blocked (e.g. Chrome's "not secure" warning for http-only sites),
    * the quick request's findings are used on their own.
+   * Returns { retry: result } when the site didn't answer at all.
    */
-  async function checkWebsite(url, s) {
+  async function visitWebsite(url, s) {
     const target = /^https?:\/\//i.test(url) ? url : 'https://' + url;
     try {
       let fetched = await fetchPage(target);
       if (!fetched.ok && /^https:/i.test(target)) {
         const plain = await fetchPage(target.replace(/^https:/i, 'http:'));
         if (plain.ok) fetched = plain;
+      }
+
+      // The domain just forwards to Instagram, WhatsApp, Linktree, a booking page…: they have no website.
+      if (fetched.ok && !LF.hasRealWebsite([fetched.finalUrl], true)) return forwards(fetched.finalUrl);
+      // A file download instead of a page: never open it in the tab (Chrome would save it).
+      if (fetched.ok && fetched.download) {
+        return done({ reachable: false, failure: 'the link opens a file download instead of a website', url: fetched.finalUrl, https: /^https:/i.test(fetched.finalUrl) });
       }
       const raw = fetched.ok ? staticSignals(fetched) : null;
 
@@ -207,13 +385,22 @@
         live = p.result;
         if (!live) liveError = p.error || "couldn't read the page";
       }
+      if (live && live.challenge) {
+        // "Checking your browser…" pages usually reload into the real site after a few seconds.
+        await sleep(6000);
+        const again = await probe(id, {}, false);
+        if (again.result && !again.result.challenge) live = again.result;
+      }
+      if (live && !LF.hasRealWebsite([live.url], true)) return forwards(live.url);
 
       if (!live && !raw) {
-        if (/BLOCKED_BY_CLIENT|INTERNET_DISCONNECTED|NETWORK_CHANGED|PROXY|NETWORK_ACCESS_DENIED/.test(liveError + ' ' + (fetched.error || ''))) {
-          return { state: 'error', at: now(), error: 'Could not load from this computer (' + liveError + ')' };
-        }
+        const errors = liveError + ' ' + (fetched.error || '');
+        if (LOCAL_ERRORS.test(liveError) || navigator.onLine === false) return null;
+        if (BLOCKED_ERRORS.test(errors)) return { state: 'error', at: now(), error: 'Could not load from this computer (' + liveError + ')' };
+        // It loaded, but the page couldn't be read (e.g. it never finished drawing).
+        if (!load.error) return { state: 'error', at: now(), error: 'The page loaded but could not be read (' + liveError + ')' };
         const known = NET_ERRORS.find((e) => e[0].test(liveError));
-        return done({ reachable: false, failure: known ? known[1] : "it doesn't load", error: liveError || fetched.error, url: target });
+        return { retry: done({ reachable: false, failure: known ? known[1] : "it doesn't load", error: liveError || fetched.error, url: target }) };
       }
       if ((live && live.challenge) || (!live && raw.challenge)) {
         return { state: 'error', at: now(), error: 'The website has bot protection (e.g. Cloudflare), so it could not be checked' };
@@ -222,7 +409,12 @@
       let signals;
       if (live) {
         signals = live;
-        signals.timedOut = !!load.timedOut;
+        if (load.timedOut && signals.domMs && !signals.loadMs) {
+          // The page itself was ready; something on it (a chat widget, a tracker) never finished.
+          signals.loadMs = signals.domMs;
+          signals.neverFinished = true;
+        }
+        signals.timedOut = !!load.timedOut && !signals.loadMs;
         if (!signals.loadMs) signals.loadMs = load.timedOut ? PAGE_TIMEOUT : load.wallMs;
         if (raw) {
           // Things the finished page may no longer show.
@@ -241,14 +433,20 @@
       }
       if (fetched.ok && fetched.status >= 400) signals.status = signals.status || fetched.status;
       if (signals.status >= 400) {
-        return done({ reachable: false, failure: 'it shows an error page (HTTP ' + signals.status + ')', url: signals.url, https: signals.https });
+        return done({
+          reachable: false,
+          failure: 'it shows an error page (HTTP ' + signals.status + ')',
+          pitch: 'the website link on your Google listing opens an error page',
+          url: signals.url,
+          https: signals.https,
+        });
       }
       if (signals.placeholder) return done(Object.assign(signals, { reachable: false, failure: PLACEHOLDER_WHY[signals.placeholder] }));
       signals.reachable = true;
 
       // Slow? Load it once more before saying so (the first visit can hit a cold server or DNS).
       const slowMs = ((s && s.slowSeconds) || 5) * 1000;
-      if (live && !signals.timedOut && signals.loadMs > slowMs) {
+      if (live && !signals.timedOut && !signals.neverFinished && signals.loadMs > slowMs && !stopRequested) {
         const again = await loadInTab(id, signals.url, PAGE_TIMEOUT);
         if (!again.error && !again.timedOut) {
           await sleep(500);
@@ -258,7 +456,7 @@
       }
 
       // No form on the home page? Look on the contact page.
-      if (signals.form && !signals.form.found) {
+      if (signals.form && !signals.form.found && !stopRequested) {
         const contact = await findContactForm(id, signals);
         if (contact) signals.form = contact;
       }
@@ -270,11 +468,15 @@
     function done(signals) {
       return { state: 'done', at: now(), signals: signals };
     }
+
+    function forwards(to) {
+      return done({ reachable: true, url: String(to).slice(0, 500), forwardsTo: LF.hostOf(to) });
+    }
   }
 
   /** Looks for a contact form on the contact page: the linked one, else /contact-us and /contact. */
   async function findContactForm(id, signals) {
-    if (signals.contactUrl) {
+    if (signals.contactUrl && /^https?:\/\//i.test(signals.contactUrl)) {
       const load = await loadInTab(id, signals.contactUrl, 15000);
       if (!load.error) {
         await sleep(SETTLE_MS);
@@ -306,16 +508,51 @@
         credentials: 'omit',
         redirect: 'follow',
         headers: { 'Accept-Language': 'en-US,en;q=0.9' },
-        signal: AbortSignal.timeout(15000),
+        signal: AbortSignal.timeout(FETCH_TIMEOUT),
       });
       const type = res.headers.get('content-type') || '';
-      const html = /html|xml|text\/plain/i.test(type) || !type ? (await res.text()).slice(0, 1500000) : '';
+      const isPage = /html|xml|text\/plain/i.test(type) || !type;
+      const download = /attachment/i.test(res.headers.get('content-disposition') || '') || !isPage;
+      const html = download ? '' : await readText(res, MAX_HTML);
+      if (download && res.body) res.body.cancel().catch(() => {});
       const headers = ['server', 'x-powered-by', 'x-wix-request-id', 'x-shopify-stage', 'x-generator', 'link']
-        .map((h) => (res.headers.get(h) ? h + ': ' + res.headers.get(h) : ''))
+        .map((h) => (res.headers.get(h) ? h + ': ' + res.headers.get(h).slice(0, 300) : ''))
         .join('\n');
-      return { ok: true, status: res.status, finalUrl: res.url || url, html: html, headers: headers, ms: Date.now() - started };
+      return { ok: true, status: res.status, finalUrl: res.url || url, html: html, headers: headers, download: download && res.status < 400, ms: Date.now() - started };
     } catch (err) {
       return { ok: false, error: err && err.name === 'TimeoutError' ? 'TIMED_OUT' : (err && err.message) || 'failed' };
+    }
+  }
+
+  /** Reads at most maxBytes of a response, so a huge page can't fill the panel's memory. */
+  async function readText(res, maxBytes) {
+    if (!res.body || !res.body.getReader) return (await res.text()).slice(0, maxBytes);
+    const reader = res.body.getReader();
+    const chunks = [];
+    let size = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      size += value.length;
+      if (size >= maxBytes) {
+        reader.cancel().catch(() => {});
+        break;
+      }
+    }
+    const bytes = new Uint8Array(Math.min(size, maxBytes));
+    let at = 0;
+    for (const chunk of chunks) {
+      const part = chunk.subarray(0, Math.min(chunk.length, bytes.length - at));
+      bytes.set(part, at);
+      at += part.length;
+      if (at >= bytes.length) break;
+    }
+    const charset = ((res.headers.get('content-type') || '').match(/charset=([\w-]+)/i) || [])[1];
+    try {
+      return new TextDecoder(charset || 'utf-8').decode(bytes);
+    } catch (e) {
+      return new TextDecoder('utf-8').decode(bytes);
     }
   }
 
@@ -337,10 +574,13 @@
           args: [options],
           injectImmediately: !!pageStillLoading,
         });
-        const timeout = new Promise((resolve) => setTimeout(() => resolve('timeout'), 10000));
+        let timer;
+        const timeout = new Promise((resolve) => (timer = setTimeout(() => resolve('timeout'), 10000)));
         const results = await Promise.race([run, timeout]);
+        clearTimeout(timer);
         if (results === 'timeout') {
           lastError = 'the page did not respond';
+          pageStillLoading = true; // don't wait for the page to finish next time
         } else if (results && results[0] && results[0].result) {
           return { result: results[0].result };
         }
@@ -369,6 +609,8 @@
     }
     const tab = await chrome.tabs.create({ url: 'about:blank', active: false });
     tabId = tab.id;
+    // Remembered so a tab left behind when the panel was closed mid-check is closed next time.
+    await chrome.storage.session.set({ checkerTabId: tabId }).catch(() => {});
     try {
       // Muted, and never put to sleep by Chrome's memory saver mid-check.
       await chrome.tabs.update(tabId, { muted: true, autoDiscardable: false });
@@ -382,6 +624,7 @@
     if (tabId == null) return;
     const id = tabId;
     tabId = null;
+    await chrome.storage.session.remove('checkerTabId').catch(() => {});
     try {
       await chrome.tabs.remove(id);
     } catch (e) {
@@ -389,30 +632,59 @@
     }
   }
 
-  /** Navigates the checker tab and resolves when the page has loaded, failed, or timed out. */
+  /** Closes a checker tab left open by a panel that was closed mid-check. */
+  async function closeLeftoverTab() {
+    const left = ((await chrome.storage.session.get('checkerTabId').catch(() => ({}))) || {}).checkerTabId;
+    if (left == null || left === tabId) return;
+    await chrome.storage.session.remove('checkerTabId').catch(() => {});
+    try {
+      await chrome.tabs.remove(left);
+    } catch (e) {
+      /* already closed */
+    }
+  }
+
+  /**
+   * Navigates the checker tab and resolves when the new page has loaded, failed, or timed out.
+   * Only events after the new page has started (committed) count, so a slow or dead site
+   * can never be read as the page the tab showed before.
+   */
   function loadInTab(id, url, timeout) {
     return new Promise((resolve) => {
       const started = Date.now();
       let finished = false;
+      let committed = null; // the new page's documentId once it has started
       const finish = (result) => {
         if (finished) return;
         finished = true;
         clearTimeout(timer);
+        chrome.webNavigation.onCommitted.removeListener(onCommitted);
         chrome.webNavigation.onCompleted.removeListener(onCompleted);
         chrome.webNavigation.onErrorOccurred.removeListener(onError);
         resolve(Object.assign({ wallMs: Date.now() - started }, result));
       };
+      const onCommitted = (d) => {
+        if (d.tabId === id && d.frameId === 0 && d.url !== 'about:blank') committed = d.documentId || true;
+      };
       const onCompleted = (d) => {
-        if (d.tabId === id && d.frameId === 0 && d.url !== 'about:blank') finish({ url: d.url });
+        if (d.tabId !== id || d.frameId !== 0 || d.url === 'about:blank' || !committed) return;
+        if (committed !== true && d.documentId && d.documentId !== committed) return; // an older page finishing
+        finish({ url: d.url });
       };
       const onError = (d) => {
         if (d.tabId !== id || d.frameId !== 0) return;
         if (/ERR_ABORTED/.test(d.error)) return; // replaced by a redirect; wait for the next event
         finish({ error: d.error, url: d.url });
       };
+      chrome.webNavigation.onCommitted.addListener(onCommitted);
       chrome.webNavigation.onCompleted.addListener(onCompleted);
       chrome.webNavigation.onErrorOccurred.addListener(onError);
-      const timer = setTimeout(() => finish({ timedOut: true }), timeout);
+      const timer = setTimeout(() => {
+        if (committed) return finish({ timedOut: true });
+        // No answer at all: clear the tab so nothing reads the previous page.
+        chrome.tabs.update(id, { url: 'about:blank' }).catch(() => {});
+        finish({ error: 'TIMED_OUT' });
+      }, timeout);
       chrome.tabs.update(id, { url: url }).catch((err) => finish({ error: 'TAB_' + ((err && err.message) || 'ERROR') }));
     });
   }
@@ -429,13 +701,13 @@
     try {
       const res = await fetch(api.toString(), { credentials: 'omit' });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) return { state: 'error', at: now(), error: (data.error && data.error.message) || 'HTTP ' + res.status };
+      if (!res.ok) return { state: 'error', at: now(), error: String((data.error && data.error.message) || 'HTTP ' + res.status).slice(0, 300) };
       const lh = data.lighthouseResult || {};
       const score = lh.categories && lh.categories.performance && lh.categories.performance.score;
       const lcp = lh.audits && lh.audits['largest-contentful-paint'] && lh.audits['largest-contentful-paint'].numericValue;
       return { state: 'done', at: now(), performance: typeof score === 'number' ? Math.round(score * 100) : null, lcpMs: typeof lcp === 'number' ? Math.round(lcp) : null };
     } catch (err) {
-      return { state: 'error', at: now(), error: (err && err.message) || String(err) };
+      return null; // no connection: try again on the next run
     }
   }
 
@@ -475,9 +747,15 @@
     }
     if (result) {
       emptyPages = 0;
-      await chrome.storage.local.set({ [cacheKey]: result, igStrikes: 0 });
+      await chrome.storage.local.set({ [cacheKey]: result, igStrikes: 0, igLoginWall: 0 });
       return result;
     }
+    if (r.loginWall) {
+      // Not rate limiting: Instagram only shows profiles to logged-in visitors here. Wait for the user to log in.
+      await chrome.storage.local.set({ igLoginWall: Date.now(), igCooldownUntil: Date.now() + IG_LOGIN_PAUSE_MIN * 60000 });
+      return null;
+    }
+    if (r.tabError) return null; // the visit itself failed (no connection, a tab problem): try again later
     if (r.empty) emptyPages++;
     if (r.limited || emptyPages >= 2) {
       emptyPages = 0;
@@ -505,7 +783,7 @@
   async function pauseInstagram() {
     const strikes = ((await chrome.storage.local.get('igStrikes')).igStrikes || 0) + 1;
     const minutes = IG_BACKOFF_MIN[Math.min(strikes, IG_BACKOFF_MIN.length) - 1];
-    await chrome.storage.local.set({ igStrikes: strikes, igCooldownUntil: Date.now() + minutes * 60000 });
+    await chrome.storage.local.set({ igStrikes: strikes, igCooldownUntil: Date.now() + minutes * 60000, igLoginWall: 0 });
   }
 
   /** The exact count from embedded JSON, only when it sits next to this handle's username. */
@@ -548,7 +826,7 @@
     try {
       const id = await checkerTab();
       const load = await loadInTab(id, 'https://www.instagram.com/' + encodeURIComponent(handle) + '/?hl=en', PAGE_TIMEOUT);
-      if (load.error) return { error: load.error };
+      if (load.error) return { error: load.error, tabError: true };
       await sleep(SETTLE_MS + 500);
       let page = null;
       for (let attempt = 0; attempt < 2 && !page; attempt++) {
@@ -560,7 +838,8 @@
         }
       }
       if (!page) return { error: "Couldn't read the Instagram page" };
-      if (/^\/(accounts\/login|challenge)/.test(page.path) || page.path === '/') return { limited: true };
+      if (/^\/accounts\/login/.test(page.path)) return { loginWall: true };
+      if (/^\/challenge/.test(page.path) || page.path === '/') return { limited: true };
       if (page.notFound) return { missing: true };
       if (page.followers != null) return { followers: page.followers, exact: true, source: 'profile' };
       const followers = [page.og, page.description, page.header].map(LF.parseFollowers).find((n) => n != null);
@@ -584,10 +863,20 @@
     return new Date().toISOString();
   }
 
+  // Closing the panel stops the checker; don't leave its background tab behind.
+  if (root.addEventListener) {
+    root.addEventListener('pagehide', () => {
+      if (tabId != null) chrome.tabs.remove(tabId).catch(() => {});
+    });
+  }
+
   root.LeadChecker = {
     start: start,
     stop: stop,
+    pause: pause,
+    isPaused: () => userPaused,
     recheck: recheck,
+    retryFailed: retryFailed,
     needs: needs,
     pending: pending,
     isRunning: () => running,
@@ -598,5 +887,10 @@
     _checkWebsite: checkWebsite,
     _probe: probe,
     _checkInstagram: checkInstagram,
+    _tune: (t) => {
+      PAGE_TIMEOUT = t.page || PAGE_TIMEOUT;
+      RETRY_MS = t.retry || RETRY_MS;
+      FETCH_TIMEOUT = t.fetch || FETCH_TIMEOUT;
+    },
   };
 })(globalThis);

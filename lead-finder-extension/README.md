@@ -35,7 +35,8 @@ shows an **Allow website checks** button.
    Barsha*. Click the RizcoReach icon, then **Collect leads from this search**.
    It opens every result (you'll see Maps moving) and saves each business with
    a mobile number, plus its website, Google rating, review count, and whether
-   the owner has claimed the Google listing.
+   the owner has claimed the Google listing. It takes about 3 seconds per
+   business, so 5–8 minutes for 120 results.
 
    If Maps shows only a landline but the business has a website, the extension
    looks there for a WhatsApp or mobile number before giving up.
@@ -55,17 +56,24 @@ shows an **Allow website checks** button.
      - SEO basics, and Meta Pixel / Google Analytics
    - spots dead sites: a domain that doesn't load, error pages, "for sale" or
      parked domains, suspended hosting, "coming soon" pages, and WordPress
-     sites still showing the sample content.
+     sites still showing the sample content. A site that doesn't answer is
+     tried a second time before it counts as dead.
+   - treats a domain that only forwards to Instagram, WhatsApp, Linktree or a
+     booking page as **no website**.
    - sites behind bot protection (e.g. Cloudflare's "Just a moment…") are
-     marked **couldn't check**, never "bad".
+     marked **couldn't check**, never "bad". The panel counts these, and
+     **Try these again** re-runs them.
+   - if your internet drops, nothing is saved for the leads it was checking,
+     and checking carries on when the connection is back.
 
    It also finds the business's Instagram and reads the follower count. The
    account can come from Maps, from links on their website, or from their
    "website" being an Instagram page. Links like "Website by @someagency" are
    ignored. If no account is found, click **Add Instagram** on the lead,
    use **Search for it** to look it up, and paste the handle.
-   The background tab closes when it's done. If you close the panel, checking
-   pauses and carries on next time you open it.
+   **Keep the panel open while it checks.** Closing it pauses checking, and
+   it carries on next time you open it. The background tab closes when it's
+   done. **Pause checks** stays paused until you press **Check** again.
 3. **Message the best ones.** The **Hot** tab shows your best leads first,
    each with the reasons:
    > **Hot 75** Glow Beauty Lounge
@@ -75,10 +83,16 @@ shows an **Allow website checks** button.
 
    Click **WhatsApp**. WhatsApp Web opens with the right message typed in
    (one message for "no website", another for "weak website" that names the
-   two biggest problems). Press send.
+   two biggest problems). Press send. If you didn't send it, click **Undo**
+   on the card to put the lead back.
+
+   A website that couldn't be checked gets a neutral message that makes no
+   claims about it. **Do not contact** leads have no WhatsApp button.
 4. **Save them.** **Download for Google Contacts** saves your Hot and Good
-   leads, which you then import at contacts.google.com. **Copy for Google
-   Sheets** copies every lead, best first, with all the details.
+   leads that aren't in a Contacts file yet, which you then import at
+   contacts.google.com. Importing the same people twice duplicates them on
+   your phone, so it only offers **Download all again** when you ask. **Copy
+   for Google Sheets** copies every lead, best first, with all the details.
 
 ## What makes a good lead
 
@@ -88,10 +102,10 @@ defaults:
 | Rule | Default |
 | --- | --- |
 | Businesses to collect | All with a mobile number (or only without / only with a website) |
-| Instagram followers | At least 1,000, when we can find their Instagram |
-| No Instagram found | Allowed (tick "Skip businesses with no Instagram" to require one) |
+| Instagram followers | At least 1,000 |
+| No Instagram linked | Allowed, but the lead can be Good, not Hot, because its followers are unknown. Tick "Mark leads Low when no Instagram is linked" to require one, or use **Add Instagram** on the lead. |
 | Google reviews | Any number |
-| Weak website | 2 or more of: slow (over 5 seconds), no contact form, no preloader, looks outdated, Google PageSpeed under 50. Or any one of: not loading, no HTTPS, not set up for phones, a free address like name.wixsite.com. |
+| Weak website | 2 or more of: slow (over 5 seconds), no contact form (newsletter, search and login forms don't count), no preloader, looks outdated, Google PageSpeed under 50. Or any one of: not loading, no HTTPS, not set up for phones, a free address like name.wixsite.com. |
 | Chains | The same website on 3 or more of your leads counts as a chain and goes to Low |
 | Also available | No WhatsApp button, no tap-to-call, weak SEO, no Meta Pixel/Analytics, built on Wix/GoDaddy/other DIY builders |
 
@@ -103,12 +117,18 @@ defaults:
 - 10 for a mobile number, and 4 more if the Google listing isn't claimed.
 
 **Hot** is 70 or more, **Good** is 50 or more. A lead is **Low** if it's under
-your follower or review minimum, or its website looks fine.
+your follower or review minimum, or its website looks fine. Those Low leads
+show no score, because a rule put them there, not the points. Lists and
+exports go Hot, Good, To check, then Low.
+
+A lead can't be Hot while something important is unknown: a website that
+couldn't be checked, or followers when you've set a minimum.
 
 ## Good to know
 
 - **Speed is measured on your connection.** The load time is how long the site
-  takes in your Chrome, in a background tab. Messages therefore say "it took
+  takes in your Chrome, in a background tab. If a chat widget or tracker
+  never finishes, the time the page itself was ready is used instead. Messages therefore say "it took
   about 7 seconds to load **when we checked**". Add a free **Google PageSpeed key** under *What makes
   a good lead* to also get Google's official mobile speed score. That's a
   strong number to quote to a prospect. To get a key, go to Google Cloud,
@@ -120,14 +140,18 @@ your follower or review minimum, or its website looks fine.
   - Lookups are spaced 8–15 seconds apart, with a daily limit (150 by default).
   - If Instagram pushes back, Instagram checks pause for 15 minutes to 6 hours
     while websites keep being checked.
+  - If Instagram only shows profiles to logged-in visitors, the panel asks you
+    to log in to Instagram in this Chrome (a spare account is safest).
+  - Leads with no Instagram to look up aren't held up while Instagram is
+    paused.
   - A follower count is only used if it belongs to that exact account. Unknown
     is never treated as 0.
   - The safest set-up is a Chrome profile that isn't logged in to your main
     Instagram account.
   - Instagram's rules don't allow automated collection, so keep it modest.
 - **Google Maps.**
-  - Use Maps in English (the panel warns you if it isn't), so ratings and
-    reviews can be read.
+  - Use Maps in English, so ratings and reviews can be read. If it isn't, the
+    panel shows an **Open Maps in English** button.
   - Google's terms don't allow automated collection. Run a few searches at a
     time. If Google shows a "not a robot" check, the collection stops, your
     leads so far are kept, and you can continue after solving it.
@@ -168,7 +192,11 @@ Tests:
   collects from `test/fake-maps.html` (a stand-in Google Maps page), checks
   stand-in websites served locally (fast, slow, contact-page form, not
   mobile-friendly, parked, 404) and fake Instagram profiles, then checks every
-  verdict, the WhatsApp text and the exports.
+  verdict, the WhatsApp text and the exports. It also runs the checker on a
+  site that never answers, a file download, a domain that forwards to
+  Linktree, and with the connection offline, and runs the website reader on
+  tricky pages (newsletter forms, "coming soon" in normal text, image CDN
+  links, lazy-loaded form embeds).
 
 The stand-in pages copy the Maps and Instagram markers that current scrapers
 rely on (researched October 2026). They have not been run against live Google

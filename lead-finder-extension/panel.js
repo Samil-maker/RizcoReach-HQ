@@ -5,7 +5,9 @@
   const $ = (id) => document.getElementById(id);
   const MAPS_PATTERNS = chrome.runtime.getManifest().content_scripts[0].matches;
   const PAGE = 40;
-  const VERDICT = { hot: 'Hot', good: 'Good', low: 'Low', checking: 'Checking' };
+  const VERDICT = { hot: 'Hot', good: 'Good', low: 'Low', checking: 'To check' };
+  // e.g. "https://www.google.com/maps*" → "www.google.com"
+  const MAPS_HOSTS = MAPS_PATTERNS.map((p) => new URL(p.replace(/\*$/, '')).host);
 
   let settings = LF.withDefaults({});
   const leads = new Map(); // e164 → lead
@@ -18,6 +20,10 @@
   let deleteArmed = null;
   let checkState = { running: false, done: 0, left: 0, current: '' };
   let igTimer = null;
+  const confirmed = new Set(); // leads whose "Send anyway" warning was shown (kept across re-renders)
+  const justSent = new Map(); // e164 → status/contacted before the chat was opened, for Undo
+  let listDirty = false; // the list needs redrawing once the user stops interacting with it
+  let pointerInList = false;
 
   // ─── Start-up ──────────────────────────────────────────────────────────────
 
@@ -45,10 +51,24 @@
     $('stopBtn').addEventListener('click', stopCollect);
     $('checkBtn').addEventListener('click', () => LeadChecker.start());
     $('checkStop').addEventListener('click', () => {
-      LeadChecker.stop();
+      LeadChecker.pause();
       $('checkStop').disabled = true;
       $('checkStop').textContent = 'Pausing after this lead…';
     });
+    $('retryBtn').addEventListener('click', async () => {
+      await LeadChecker.retryFailed();
+      LeadChecker.start();
+    });
+    $('englishBtn').addEventListener('click', openMapsInEnglish);
+    window.addEventListener('online', () => LeadChecker.start({ auto: true }));
+    // Don't redraw the list under the user's mouse or while they pick a status (cards would jump).
+    const list = $('list');
+    list.addEventListener('mouseenter', () => (pointerInList = true));
+    list.addEventListener('mouseleave', () => {
+      pointerInList = false;
+      if (listDirty) renderLeads();
+    });
+    list.addEventListener('focusout', () => setTimeout(() => listDirty && !listBusy() && renderLeads(), 0));
     $('more').addEventListener('click', () => {
       shown += PAGE;
       renderLeads();
@@ -60,7 +80,7 @@
         renderLeads();
       })
     );
-    $('contactsBtn').addEventListener('click', exportContacts);
+    $('contactsBtn').addEventListener('click', () => exportContacts());
     $('sheetsBtn').addEventListener('click', copyForSheets);
     $('csvBtn').addEventListener('click', downloadCsv);
     $('deleteAll').addEventListener('click', deleteAll);
@@ -76,7 +96,7 @@
     });
     LeadChecker.onProgress(onCheckProgress);
     await renderCheckIdle();
-    if (settings.autoCheck) LeadChecker.start(); // carries on where it left off
+    if (settings.autoCheck) LeadChecker.start({ auto: true }); // carries on where it left off
   }
 
   function onStorageChange(changes, area) {
@@ -94,7 +114,7 @@
         // A collection just finished: check the new leads.
         if (run && !run.active && run.finishedAt && run.finishedAt !== lastFinishedRun) {
           lastFinishedRun = run.finishedAt;
-          if (settings.autoCheck && run.stats && run.stats.added) LeadChecker.start();
+          if (settings.autoCheck && run.stats && run.stats.added) LeadChecker.start({ auto: true });
           else renderCheckIdle();
         }
       } else if (key === 'settings') {
@@ -109,15 +129,37 @@
   function scheduleRender() {
     clearTimeout(renderTimer);
     renderTimer = setTimeout(() => {
-      renderLeads();
+      renderLeads({ soft: true });
       if (!checkState.running) renderCheckIdle();
     }, 200);
+  }
+
+  /** The user is choosing a status, typing an Instagram handle, or has the mouse over the list. */
+  function listBusy() {
+    const a = document.activeElement;
+    return pointerInList || !!(a && $('list').contains(a) && /^(SELECT|INPUT)$/.test(a.tagName));
   }
 
   // ─── 1 · Finding leads ─────────────────────────────────────────────────────
 
   function isMapsUrl(url) {
-    return /^https:\/\/(www\.google\.[a-z.]+\/maps|maps\.google\.com\/)/.test(url || '');
+    try {
+      const u = new URL(url);
+      return u.protocol === 'https:' && MAPS_HOSTS.indexOf(u.host) >= 0 && (u.host === 'maps.google.com' || /^\/maps(\/|$)/.test(u.pathname));
+    } catch (e) {
+      return false;
+    }
+  }
+
+  async function openMapsInEnglish() {
+    if (!mapsTab) return;
+    try {
+      const u = new URL(mapsTab.url);
+      u.searchParams.set('hl', 'en');
+      await chrome.tabs.update(mapsTab.id, { url: u.href, active: true });
+    } catch (e) {
+      showError("Couldn't switch the Maps tab to English. Change the language in Google Maps' menu instead.");
+    }
   }
 
   async function findMapsTab() {
@@ -182,6 +224,7 @@
       return showError("Couldn't connect to the Google Maps tab. Reload that tab and try again.");
     }
     collectingTabId = tab.id;
+    chrome.storage.session.set({ collectingTabId: tab.id }).catch(() => {});
     $('collectBtn').disabled = true;
     chrome.tabs
       .sendMessage(tab.id, { type: 'rr-collect' })
@@ -195,7 +238,9 @@
   }
 
   async function stopCollect() {
-    const tabId = collectingTabId || (mapsTab && mapsTab.id);
+    // The tab that is collecting, even if the panel was closed and reopened since.
+    const saved = ((await chrome.storage.session.get('collectingTabId').catch(() => ({}))) || {}).collectingTabId;
+    const tabId = collectingTabId || saved || (mapsTab && mapsTab.id);
     if (tabId == null) return;
     $('stopBtn').disabled = true;
     try {
@@ -207,6 +252,12 @@
 
   function renderRun() {
     const active = !!(run && run.active && Date.now() - (run.updatedAt || 0) < 30000);
+    // The Maps tab was closed or reloaded mid-collection: treat it as stopped, and check what it found.
+    const died = !!(run && run.active && !active);
+    if (died && run.startedAt !== lastFinishedRun) {
+      lastFinishedRun = run.startedAt;
+      if (settings.autoCheck && run.stats && run.stats.added) LeadChecker.start({ auto: true });
+    }
     $('running').hidden = !active;
     $('ready').hidden = active || !mapsTab;
     $('noMaps').hidden = active || !!mapsTab;
@@ -235,7 +286,14 @@
         (s.withSite ? ' (' + s.withSite + ' with a website' : '') +
         (s.fromWebsite ? (s.withSite ? ', ' : ' (') + s.fromWebsite + ' mobile' + (s.fromWebsite === 1 ? '' : 's') + ' found on their website' : '') +
         (s.withSite || s.fromWebsite ? ')' : '');
-      summary.append((run.phase === 'stopped' ? 'Stopped. ' : 'Done. ') + (run.query ? '"' + run.query + '": ' : ''), strong, withSite + ' · ' + parts.join(' · '));
+      const early = run.error || died;
+      const head =
+        run.phase === 'stopped'
+          ? 'Stopped. '
+          : early
+            ? 'Stopped early' + (run.total ? ' (after ' + run.done + ' of ' + run.total + ')' : '') + '. '
+            : 'Done. ';
+      summary.append(head + (run.query ? '"' + run.query + '": ' : ''), strong, withSite + ' · ' + parts.join(' · '));
       summary.hidden = false;
       if (run.error) showError(run.error);
       else if (s.unreadable >= 3 && s.unreadable > s.checked / 2) {
@@ -261,41 +319,72 @@
     if (state.running) {
       $('checkStop').disabled = false;
       $('checkStop').textContent = 'Pause checks';
-      $('checkPhase').textContent = 'Checking ' + state.current + ' · ' + state.left + ' to go';
+      $('checkPhase').textContent = 'Checking ' + state.current + (state.left ? ' · ' + state.left + ' more after this' : '');
+      renderInstagramNote(state.igPausedUntil, state.waitingForInstagram, state.igReason);
     } else {
       renderCheckIdle();
     }
-    renderInstagramNote(state.igPausedUntil, state.waitingForInstagram);
   }
 
   async function renderCheckIdle() {
     if (checkState.running) return;
+    const last = checkState; // how the last run ended (offline, running in another window…)
     const p = await LeadChecker.pending();
     const left = p.todo.length;
+    const failed = p.failed.length;
     $('checkBtn').hidden = !left;
     $('checkBtn').textContent = 'Check ' + left + ' lead' + (left === 1 ? '' : 's') + ' now';
-    if (!leads.size) $('checkText').textContent = 'Collected leads get their website and Instagram checked here.';
-    else if (!settings.checkWebsites && !settings.checkInstagram) $('checkText').textContent = 'Checks are switched off in "What makes a good lead".';
-    else if (left) $('checkText').textContent = left + ' lead' + (left === 1 ? ' is' : 's are') + ' waiting to be checked.';
-    else if (p.waitingForInstagram) $('checkText').textContent = 'Everything else is checked.';
-    else $('checkText').textContent = 'All ' + leads.size + ' leads are checked.';
-    renderInstagramNote(p.igPausedUntil, p.waitingForInstagram);
+    const plural = (n, one, many) => n + ' lead' + (n === 1 ? one : many);
+    let text;
+    if (!leads.size) text = 'Collected leads get their website and Instagram checked here.';
+    else if (!settings.checkWebsites && !settings.checkInstagram) text = 'Checks are switched off in "What makes a good lead".';
+    else if (left) text = plural(left, ' is', 's are') + ' waiting to be checked.' + (LeadChecker.isPaused() ? ' Checks are paused.' : '');
+    else if (p.waitingForInstagram) text = 'Everything else is checked.';
+    else if (failed) text = 'The other leads are checked.';
+    else text = 'All ' + leads.size + ' leads are checked.';
+    $('checkText').textContent = text;
+
+    $('failedNote').hidden = !failed;
+    $('failedText').textContent = failed
+      ? plural(failed, '', 's') + " couldn't be fully checked (e.g. bot protection or a page that wouldn't open). They're marked on each card."
+      : '';
+
+    const notes = [];
+    if (last && last.offline) notes.push("This computer seems to be offline. Checks carry on when it's back.");
+    if (last && last.elsewhere) notes.push('Checks are already running in the Lead Finder panel of another Chrome window.');
+    if (p.pagespeedError) notes.push('Google PageSpeed refused the key: "' + p.pagespeedError + '" Check the key under What makes a good lead.');
+    $('checkNote').textContent = notes.join(' ');
+    $('checkNote').hidden = !notes.length;
+    renderInstagramNote(p.igPausedUntil, p.waitingForInstagram, p.igReason);
   }
 
-  function renderInstagramNote(until, waiting) {
+  function renderInstagramNote(until, waiting, reason) {
     const note = $('igNote');
     clearTimeout(igTimer);
     if (!until) {
       note.hidden = true;
       return;
     }
-    const at = new Date(until).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-    note.textContent =
-      'Instagram asked us to slow down, so Instagram checks are paused until ' + at + '.' +
-      (waiting ? ' ' + waiting + ' lead' + (waiting === 1 ? ' is' : 's are') + ' waiting for them.' : '') +
-      ' They restart by themselves while this panel is open.';
+    const when = new Date(until);
+    const tomorrow = when.toDateString() !== new Date().toDateString();
+    const at = (tomorrow ? 'tomorrow ' : '') + when.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    const restarts = settings.autoCheck && !LeadChecker.isPaused();
+    const waitingText = waiting ? ' ' + waiting + ' lead' + (waiting === 1 ? ' is' : 's are') + ' waiting for it.' : '';
+    if (reason === 'dailyLimit') {
+      note.textContent =
+        "You've looked at " + settings.instagramPerDay + ' Instagram profiles today (your daily limit), so Instagram checks continue tomorrow.' +
+        waitingText + ' To do more today, raise "Instagram profiles to look at per day" under What makes a good lead.';
+    } else if (reason === 'login') {
+      note.textContent =
+        'Instagram only shows profiles to logged-in visitors right now. Open instagram.com in this Chrome and log in ' +
+        '(a spare account is safest), then press Check.' + waitingText;
+    } else {
+      note.textContent =
+        'Instagram asked us to slow down, so Instagram checks are paused until ' + at + '.' + waitingText +
+        (restarts ? ' They restart by themselves while this panel is open.' : ' Press Check after that time.');
+    }
     note.hidden = false;
-    igTimer = setTimeout(() => LeadChecker.start(), Math.max(1000, until - Date.now() + 2000));
+    if (restarts) igTimer = setTimeout(() => LeadChecker.start({ auto: true }), Math.max(1000, Math.min(until - Date.now() + 2000, 2147483000)));
   }
 
   // ─── 3 · Leads ─────────────────────────────────────────────────────────────
@@ -332,7 +421,8 @@
     return n;
   }
 
-  function renderLeads() {
+  /** soft: a background update, which waits while the user is using the list. */
+  function renderLeads(opts) {
     const all = evaluated();
     document.querySelectorAll('.tabs button').forEach((b) => {
       b.setAttribute('aria-selected', String(b.dataset.filter === filter));
@@ -343,7 +433,12 @@
 
     const list = all
       .filter((item) => inTab(item, filter))
-      .sort((a, b) => b.ev.score - a.ev.score || String(b.lead.added).localeCompare(String(a.lead.added)));
+      .sort((a, b) => LF.byVerdict(a.ev, b.ev) || String(b.lead.added).localeCompare(String(a.lead.added)));
+    if (opts && opts.soft && listBusy()) {
+      listDirty = true;
+      return;
+    }
+    listDirty = false;
     const ul = $('list');
     ul.textContent = '';
     list.slice(0, shown).forEach((item) => ul.appendChild(leadCard(item.lead, item.ev)));
@@ -376,7 +471,9 @@
     const li = el('li', 'lead');
 
     const head = el('div', 'lead-head');
-    const pill = el('span', 'pill pill-' + ev.verdict, VERDICT[ev.verdict] + (ev.verdict === 'checking' ? '' : ' ' + ev.score));
+    // A lead that's Low because of a rule (e.g. under your follower minimum) shows no score: its reasons say why.
+    const showScore = ev.verdict !== 'checking' && !ev.blockers.length;
+    const pill = el('span', 'pill pill-' + ev.verdict, VERDICT[ev.verdict] + (showScore ? ' ' + ev.score : ''));
     pill.title = 'Lead score ' + ev.score + '/100';
     const name = el('p', 'lead-name', lead.name || LF.formatPhone(lead.e164));
     head.append(pill, name);
@@ -391,9 +488,13 @@
     const reasons = el('ul', 'reasons');
     ev.reasons.forEach((r) => reasons.appendChild(el('li', 'reason reason-' + r.tone, r.text)));
 
-    const wa = el('button', 'wa', 'WhatsApp');
+    const wa = el('button', 'wa', confirmed.has(lead.e164) ? 'Send anyway' : 'WhatsApp');
     wa.type = 'button';
     wa.title = 'Open the chat with your message typed in';
+    if (lead.status === 'Do not contact') {
+      wa.disabled = true;
+      wa.title = 'Marked "Do not contact"';
+    }
     wa.addEventListener('click', () => message(lead, wa, li));
 
     const foot = el('div', 'lead-foot');
@@ -406,6 +507,7 @@
       select.appendChild(o);
     });
     select.addEventListener('change', () => {
+      justSent.delete(lead.e164);
       const patch = { status: select.value };
       if (select.value === 'Messaged' && !lead.contacted) patch.contacted = new Date().toISOString();
       updateLead(lead.e164, patch);
@@ -468,12 +570,25 @@
     const main = el('div', 'lead-main');
     main.append(head, meta, reasons);
     li.append(main, wa, foot);
+    if (confirmed.has(lead.e164)) sendWarnings().forEach((w) => li.appendChild(el('p', 'warn', w)));
+    if (justSent.has(lead.e164)) {
+      const sent = el('p', 'sent', 'Chat opened. Didn\'t send it?');
+      const undo = el('button', 'linkish', 'Undo');
+      undo.type = 'button';
+      undo.addEventListener('click', async () => {
+        const before = justSent.get(lead.e164);
+        justSent.delete(lead.e164);
+        await updateLead(lead.e164, before);
+      });
+      sent.append(' ', undo);
+      li.appendChild(sent);
+    }
     return li;
   }
 
   function link(href, text) {
     const a = el('a', null, text);
-    a.href = href;
+    a.href = /^https?:\/\//i.test(href) ? href : 'about:blank';
     a.target = '_blank';
     a.rel = 'noopener';
     return a;
@@ -488,42 +603,54 @@
 
   // ─── WhatsApp ──────────────────────────────────────────────────────────────
 
+  /** Reasons to think twice before opening another chat now. */
+  function sendWarnings() {
+    const warnings = [];
+    if (settings.dailyLimit && sentToday() >= settings.dailyLimit) {
+      warnings.push(
+        "You've opened " + sentToday() + ' chats today. Messaging many new people from one number in a day ' +
+          'is the quickest way to get it blocked by WhatsApp. Best to continue tomorrow.'
+      );
+    }
+    const hour = new Date().getHours();
+    if (settings.country === 'AE' && (hour < 9 || hour >= 18)) {
+      warnings.push("It's outside 9am–6pm. UAE telemarketing rules limit marketing messages to those hours.");
+    }
+    return warnings;
+  }
+
   async function message(rendered, button, row) {
     const lead = leads.get(rendered.e164) || rendered;
-    if (!button.dataset.confirmed) {
-      const warnings = [];
-      if (settings.dailyLimit && sentToday() >= settings.dailyLimit) {
-        warnings.push(
-          "You've opened " + sentToday() + ' chats today. Messaging many new people from one number in a day ' +
-            'is the quickest way to get it blocked by WhatsApp. Best to continue tomorrow.'
-        );
-      }
-      const hour = new Date().getHours();
-      if (settings.country === 'AE' && (hour < 9 || hour >= 18)) {
-        warnings.push("It's outside 9am–6pm. UAE telemarketing rules limit marketing messages to those hours.");
-      }
+    if (lead.status === 'Do not contact') return;
+    if (!confirmed.has(lead.e164)) {
+      const warnings = sendWarnings();
       if (warnings.length) {
-        button.dataset.confirmed = '1';
+        confirmed.add(lead.e164);
         button.textContent = 'Send anyway';
         warnings.forEach((w) => row.appendChild(el('p', 'warn', w)));
         return;
       }
     }
+    confirmed.delete(lead.e164);
     const text = LF.messageFor(lead, settings, LF.evaluate(lead, settings, context()));
     await openWhatsApp(LF.whatsAppUrl(lead.e164, text, settings.openIn));
+    justSent.set(lead.e164, { status: lead.status, contacted: lead.contacted || '' });
     const patch = { contacted: new Date().toISOString() };
     if (lead.status === 'New') patch.status = 'Messaged';
     await updateLead(lead.e164, patch);
   }
 
-  /** Reuses one WhatsApp tab instead of opening a new one per chat. */
+  /** Reuses one WhatsApp tab instead of opening a new one per chat (only while it still shows WhatsApp). */
   async function openWhatsApp(url) {
     const saved = (await chrome.storage.session.get('waTabId')).waTabId;
     if (saved != null) {
       try {
-        const tab = await chrome.tabs.update(saved, { url: url, active: true });
-        await chrome.windows.update(tab.windowId, { focused: true });
-        return;
+        const current = await chrome.tabs.get(saved);
+        if (/^https:\/\/([a-z]+\.)?(whatsapp\.com|wa\.me)\//.test(current.url || current.pendingUrl || '')) {
+          const tab = await chrome.tabs.update(saved, { url: url, active: true });
+          await chrome.windows.update(tab.windowId, { focused: true });
+          return;
+        }
       } catch (e) {
         // The tab was closed.
       }
@@ -564,22 +691,28 @@
     const c = context();
     return list
       .map((lead) => ({ lead: lead, ev: LF.evaluate(lead, settings, c) }))
-      .sort((a, b) => b.ev.score - a.ev.score)
+      .sort((a, b) => LF.byVerdict(a.ev, b.ev))
       .map((x) => x.lead);
   }
 
-  async function exportContacts() {
-    // Hot and good leads by default; everything if there are none.
+  /** Hot and good leads that haven't been saved for Google Contacts yet (again: all of them). */
+  async function exportContacts(again) {
     const c = context();
-    const usable = ranked(Array.from(leads.values()).filter((l) => l.status !== 'Do not contact'));
-    const best = usable.filter((l) => {
+    const best = ranked(Array.from(leads.values()).filter((l) => l.status !== 'Do not contact')).filter((l) => {
       const v = LF.evaluate(l, settings, c).verdict;
       return v === 'hot' || v === 'good';
     });
-    const pool = best.length ? best : usable;
-    const fresh = pool.filter((l) => !l.exported);
-    const batch = fresh.length ? fresh : pool;
-    if (!batch.length) return showHint(['No leads to save yet.']);
+    if (!best.length) {
+      return showHint(['No hot or good leads yet. Wait for the checks to finish, or use Download spreadsheet (CSV) for every lead.']);
+    }
+    const batch = again === true ? best : best.filter((l) => !l.exported);
+    if (!batch.length) {
+      // Importing the same people twice creates duplicate contacts on the phone.
+      const all = el('button', 'linkish', 'Download all ' + best.length + ' again');
+      all.type = 'button';
+      all.addEventListener('click', () => exportContacts(true));
+      return showHint(['All your hot and good leads are already in a Contacts file you downloaded. ', all]);
+    }
     const filename = 'rizcoreach-leads-contacts-' + stamp() + '.csv';
     download(filename, LF.toCsv(LF.contactsRows(batch, settings, c)), false);
     await chrome.storage.local.set(
@@ -588,12 +721,12 @@
         return acc;
       }, {})
     );
-    const which = best.length ? 'hot and good' : '';
     showHint([
-      (fresh.length ? 'Saved ' + batch.length + ' new ' + which + ' lead(s)' : 'No new leads since last time, so all ' + batch.length + ' ' + which + ' leads were saved') +
+      (again === true ? 'Saved all ' + batch.length + ' hot and good leads' : 'Saved ' + batch.length + ' new hot and good lead(s)') +
         ' to ' + filename + '. Now open ',
       link('https://contacts.google.com/', 'Google Contacts'),
-      ', click Import on the left, and choose that file. They appear under the label "' + (settings.contactLabel || 'Imported') + '" and sync to your phone.',
+      ', click Import on the left, and choose that file. They appear under the label "' + (settings.contactLabel || 'Imported') + '" and sync to your phone.' +
+        (again === true ? ' Contacts you imported before will be duplicated.' : ''),
     ]);
   }
 
@@ -673,6 +806,14 @@
       const input = $('set-' + key);
       input.value = settings[key] == null ? '' : settings[key];
       input.addEventListener(input.tagName === 'SELECT' ? 'change' : 'input', saveSettings);
+      if (NUMBER_FIELDS[key] && input.tagName === 'INPUT') {
+        // When the user leaves the field, show the value actually used (e.g. 1000 → the 500 maximum).
+        input.addEventListener('change', () => {
+          const [min, max] = NUMBER_FIELDS[key];
+          const value = parseFloat(input.value);
+          input.value = isNaN(value) ? LF.DEFAULT_SETTINGS[key] : Math.min(max, Math.max(min, value));
+        });
+      }
     });
     CHECK_FIELDS.forEach((key) => {
       const input = $('set-' + key);
@@ -707,7 +848,7 @@
         (next.checkWebsites && !before.checkWebsites) ||
         (next.checkInstagram && !before.checkInstagram) ||
         (next.pagespeedKey && next.pagespeedKey !== before.pagespeedKey);
-      if (turnedOn && next.autoCheck) LeadChecker.start();
+      if (turnedOn && next.autoCheck) LeadChecker.start({ auto: true });
       else renderCheckIdle();
     }, 400);
   }

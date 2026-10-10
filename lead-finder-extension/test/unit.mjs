@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
 const ctx = vm.createContext({});
-for (const f of ['../leads.js', '../rules.js']) vm.runInContext(readFileSync(new URL(f, import.meta.url), 'utf8'), ctx, { filename: f });
+for (const f of ['../leads.js', '../rules.js', '../qualify.js']) vm.runInContext(readFileSync(new URL(f, import.meta.url), 'utf8'), ctx, { filename: f });
 const LF = ctx.LF;
 const S = (over = {}) => LF.withDefaults(over);
 
@@ -81,7 +81,7 @@ test('Google Contacts and spreadsheet exports', () => {
   const csv = LF.toCsv(LF.contactsRows([lead], s));
   const [header, row] = csv.split('\r\n');
   assert.equal(header, 'Name,Given Name,Organization 1 - Name,Phone 1 - Type,Phone 1 - Value,Notes,Group Membership');
-  assert.ok(row.startsWith('"Lead - Noor, ""The"" Salon","Lead - Noor, ""The"" Salon","Noor, ""The"" Salon",Mobile,+971501234567,"Good lead (65/100): No website; No Google reviews'), row);
+  assert.ok(row.startsWith('"Lead - Noor, ""The"" Salon","Lead - Noor, ""The"" Salon","Noor, ""The"" Salon",Mobile,+971501234567,"Good lead (65/100): No website; Google reviews couldn\'t be read'), row);
   assert.ok(csv.includes('Google Maps search: salon\nBeauty salon\nAl Barsha 1\nhttps://maps/x",RizcoReach Leads ::: * myContacts\r\n'));
   const tsv = LF.toTsv(LF.sheetRows([lead], s)).split('\n');
   assert.equal(tsv.length, 2);
@@ -190,9 +190,9 @@ test('free addresses, old technology and dead-site labels', () => {
   const ids = (sig) => [...LF.websiteIssues({ ...GOOD_SITE, ...sig }, s)].map((i) => i.chip);
   assert.deepEqual(ids({ freeDomain: 'noorsalon.wixsite.com' }), ['free address noorsalon.wixsite.com']);
   assert.deepEqual(ids({ flash: true }), ['uses Flash']);
-  assert.deepEqual(ids({ jquery: '1.11.3' }), ['jQuery 1.11.3']);
+  assert.deepEqual(ids({ jquery: '1.11.3' }), ['outdated code (2016 or older)']);
   assert.deepEqual(ids({ jquery: '3.7.1' }), []);
-  assert.deepEqual(ids({ tableLayout: true }), ['old table layout']);
+  assert.deepEqual(ids({ tableLayout: true }), ['old-fashioned layout']);
   assert.deepEqual(ids({ copyrightYear: 2018, flash: true }), ['© 2018']);
   const chip = (failure) => LF.websiteIssues({ reachable: false, failure }, s)[0].chip;
   assert.equal(chip('it shows an error page (HTTP 404)'), 'error page (HTTP 404)');
@@ -263,6 +263,96 @@ test('messages pick the right template and mention real issues', () => {
   assert.match(msg, /^Hi 👋 We had a look at Noor Salon's website and noticed it took about 7 seconds to load when we checked and there's no contact form for enquiries\./);
   const onlyPreloader = LF.messageFor({ ...base, website: 'https://noor.ae', ...site({ ...GOOD_SITE, preloader: false, whatsapp: false }) }, S({ criteria: { noWhatsApp: true } }));
   assert.match(onlyPreloader, /noticed there's no WhatsApp button\./);
+});
+
+test('dead sites: friendly pitch, and switching the rule off never calls them fine', () => {
+  const base = { e164: '+971501111111', phoneType: 'mobile', name: 'Noor Salon', website: 'https://noor.ae', reviews: 40, rating: 4.5 };
+  const err = site({ reachable: false, failure: 'it shows an error page (HTTP 503)' });
+  assert.match(LF.messageFor({ ...base, ...err }, S()), /noticed the website link on your Google listing opens an error page\./);
+  assert.doesNotMatch(LF.messageFor({ ...base, ...err }, S()), /HTTP/);
+  const off = LF.evaluate({ ...base, ...err }, S({ criteria: { down: false } }));
+  assert.equal(off.verdict, 'low');
+  assert.match(off.reasons[0].text, /^Website not working: error page \(HTTP 503\) \(not counted/);
+  assert.ok(!off.reasons.some((r) => /looks fine/.test(r.text)));
+  const file = LF.websiteIssues({ reachable: false, failure: 'the link opens a file download instead of a website' }, S())[0];
+  assert.equal(file.chip, 'opens a file, not a site');
+});
+
+test('a domain that only forwards to Instagram counts as no website', () => {
+  const lead = { e164: '+971501111111', phoneType: 'mobile', name: 'Noor Salon', website: 'https://noorsalon.ae', reviews: 40, rating: 4.5,
+    ...site({ reachable: true, url: 'https://www.instagram.com/noor.salon/', forwardsTo: 'instagram.com' }) };
+  const ev = LF.evaluate(lead, S({ checkInstagram: false }));
+  assert.equal(ev.opportunity, 'social');
+  assert.equal(ev.reasons[0].text, 'Website just opens an Instagram page');
+  assert.equal(LF.instagramOf(lead).handle, 'noor.salon');
+  assert.match(LF.messageFor(lead, S({ checkInstagram: false }), ev), /noticed there's no website/);
+});
+
+test('Instagram from the website: generic name words and short handles are not matches', () => {
+  const lead = (list, name = 'Glam Beauty Lounge Dubai') => ({ name, checks: { site: { state: 'done', signals: { instagram: list } } } });
+  assert.equal(LF.instagramOf(lead(['gbl.official', 'dubaiwebstudio'])).handle, 'gbl.official');
+  assert.equal(LF.instagramOf(lead(['dubaiwebstudio', 'glam.lounge'])).handle, 'glam.lounge');
+  assert.equal(LF.instagramOf(lead(['v'])).handle, '');
+});
+
+test('no Instagram, unread reviews, and sorting by verdict', () => {
+  const base = { e164: '+971501111111', phoneType: 'mobile', name: 'Noor', website: '', rating: 4.8, reviews: 400 };
+  const none = LF.evaluate({ ...base, checks: { instagram: { state: 'not_found' } } }, S());
+  assert.equal(none.score, 45 + 6 + 20 + 10);
+  assert.equal(none.verdict, 'good', 'followers unknown: Good, not Hot, while there is a follower minimum');
+  assert.equal(none.reasons[1].text, 'No Instagram linked on Maps or their website, so followers unknown');
+  assert.equal(LF.evaluate({ ...base, checks: { instagram: { state: 'not_found' } } }, S({ minFollowers: 0 })).verdict, 'hot');
+  assert.equal(LF.evaluate({ ...base, checks: { instagram: { state: 'not_found', handle: 'ghost' } } }, S()).reasons[1].text, "Instagram @ghost doesn't exist, so followers unknown");
+
+  const unread = LF.evaluate({ ...base, reviews: null, rating: null, checks: { instagram: { state: 'not_found' } } }, S({ minReviews: 20 }));
+  assert.ok(unread.reasons.some((r) => r.text === "Google reviews couldn't be read" && r.tone === 'neutral'));
+  assert.ok(!unread.blockers.includes('reviews'));
+  assert.ok(LF.evaluate({ ...base, reviews: 0, checks: { instagram: { state: 'not_found' } } }, S({ minReviews: 20 })).blockers.includes('reviews'));
+
+  const evs = [
+    { verdict: 'low', score: 80 },
+    { verdict: 'hot', score: 72 },
+    { verdict: 'checking', score: 60 },
+    { verdict: 'good', score: 55 },
+    { verdict: 'hot', score: 90 },
+  ].sort(LF.byVerdict);
+  assert.deepEqual(evs.map((e) => e.verdict + e.score), ['hot90', 'hot72', 'good55', 'checking60', 'low80']);
+});
+
+test('unchecked websites get a message that claims nothing about them', () => {
+  const base = { e164: '+971501111111', phoneType: 'mobile', name: 'Noor Salon', website: 'https://noor.ae', reviews: 40, rating: 4.5 };
+  for (const checks of [{}, { site: { state: 'error', error: 'bot protection' } }]) {
+    const msg = LF.messageFor({ ...base, checks }, S());
+    assert.match(msg, /^Hi 👋 We came across Noor Salon on Google Maps\./);
+    assert.doesNotMatch(msg, /had a look|noticed/);
+  }
+});
+
+test('Google Contacts export neutralises formula-like text too', () => {
+  const lead = LF.newLead({ e164: '+971501234567', type: 'mobile' }, { name: '=cmd|x', category: 'Salon' }, 'q');
+  const row = LF.contactsRows([lead], S({ checkInstagram: false, contactPrefix: '' }))[1];
+  assert.match(row[0], /^'=cmd/);
+  assert.match(row[2], /^'=cmd/);
+  assert.equal(row[4], '+971501234567', 'the phone number stays as it is');
+});
+
+test('checker queue: Instagram pauses, new handles and PageSpeed key changes', () => {
+  const needs = (lead, s, paused = 0) => [...ctx.LeadChecker.needs(lead, S(s), paused)];
+  const noSite = { e164: '+971501111111', website: '', checks: {} };
+  // While Instagram is paused, a lead with no account to look up is settled anyway.
+  assert.deepEqual(needs(noSite, {}, Date.now() + 60000), ['instagram']);
+  assert.deepEqual(needs({ ...noSite, socials: { instagram: 'noor' } }, {}, Date.now() + 60000), []);
+  // Saved as "none linked", then the website check finds one: look it up.
+  const later = { ...noSite, website: 'https://noor.ae', checks: { instagram: { state: 'not_found' }, site: { state: 'done', signals: { instagram: ['noor.salon'] } } } };
+  assert.deepEqual(needs(later, {}), ['instagram']);
+  assert.deepEqual(needs({ ...later, checks: { ...later.checks, instagram: { state: 'not_found', handle: 'noor.salon' } } }, {}), []);
+  const ev = LF.evaluate(later, S());
+  assert.equal(ev.handle, 'noor.salon');
+  assert.ok(ev.reasons.some((r) => r.text === 'Instagram not checked yet'));
+  // A PageSpeed error is retried only with a different key.
+  const ps = (key) => ({ ...noSite, website: 'https://noor.ae', checks: { site: { state: 'done', signals: {} }, instagram: { state: 'not_found' }, pagespeed: { state: 'error', key } } });
+  const tagged = needs(ps('x'), { pagespeedKey: 'abc' });
+  assert.deepEqual(tagged, ['pagespeed']);
 });
 
 console.log(`\n${passed} passed${process.exitCode ? ', some FAILED' : ''}`);
