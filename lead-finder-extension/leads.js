@@ -28,7 +28,7 @@
     minFollowers: 1000,
     requireInstagram: false,
     minReviews: 0,
-    slowSeconds: 4,
+    slowSeconds: 5, // in-browser load times run a little long in a background tab
     weakAt: 2,
     criteria: null, // filled from rules.js DEFAULT_CRITERIA
     // Outreach
@@ -224,6 +224,7 @@
     return {
       e164: phone.e164,
       phoneType: phone.type,
+      phoneSource: raw.phoneSource || '', // '' = Google Maps, else where on their website it was found
       name: String(raw.name || '').trim(),
       category: String(raw.category || '').trim(),
       address: String(raw.address || '').trim(),

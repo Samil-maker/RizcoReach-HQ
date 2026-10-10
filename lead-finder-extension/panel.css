@@ -120,10 +120,14 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .reason-bad::before { content: '–'; }
 .lead-foot { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 12px; color: var(--fg-2); }
 .lead-foot select { padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); font-size: 12px; }
-.links { display: inline-flex; gap: 10px; }
+.links { display: inline-flex; gap: 10px; margin-right: auto; }
 .lead-foot a { color: var(--fg-2); }
-.linkish { margin-left: auto; padding: 0; border: 0; background: none; color: var(--fg-2); font-size: 12px; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.linkish { padding: 0; border: 0; background: none; color: var(--fg-2); font-size: 12px; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 .lead .warn { grid-column: 1 / -1; }
+.ig-form { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.ig-form input { flex: 1 1 160px; min-width: 0; padding: 6px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); }
+.ig-form .btn { width: auto; padding: 6px 12px; }
+.ig-form a { font-size: 12px; color: var(--fg-2); }
 .wa {
   align-self: start; padding: 7px 12px; border: 0; border-radius: 999px; background: var(--wa); color: var(--wa-fg);
   font-weight: 650; font-size: 13px; cursor: pointer; white-space: nowrap;

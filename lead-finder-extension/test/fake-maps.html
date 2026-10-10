@@ -25,19 +25,22 @@
     <div id="detail"></div>
     <script>
       const SITE = '__SITE__';
+      // Each business gets its own hostname (all resolve to the test server).
+      const site = (name, path) => SITE.replace('://', '://' + name + '.') + path;
       const PLACES = [
         { name: 'Noor Ladies Salon', phone: '+971501111111', category: 'Beauty salon', rating: 4.7, reviews: 230, instagram: 'noorsalon' },
-        { name: 'Has Website Salon', phone: '+971502222222', website: SITE + '/good/', cardWebsite: true, rating: 4.5, reviews: 80 },
+        { name: 'Has Website Salon', phone: '+971502222222', website: site('good', '/good/'), cardWebsite: true, rating: 4.5, reviews: 80 },
         { name: 'Insta Only Salon', phone: '+971553333333', website: 'https://www.instagram.com/instaonly/', rating: 4.1, reviews: 9 },
         { name: 'Landline Salon', phone: '+97144444444' },
         { name: 'Closed Salon', phone: '+971505555555', closed: true },
         { name: 'No Phone Salon' },
-        { name: 'Slow Salon', phone: '+971506666666', website: SITE + '/slow/', rating: 4.2, reviews: 45 },
-        { name: 'Glow Beauty Lounge', phone: '+971567777777', category: 'Beauty salon', website: SITE + '/glow/', rating: 4.9, reviews: 310 },
+        { name: 'Slow Salon', phone: '+971506666666', website: site('slow', '/slow/'), rating: 4.2, reviews: 45 },
+        { name: 'Glow Beauty Lounge', phone: '+971567777777', category: 'Beauty salon', website: site('glow', '/glow/'), rating: 4.9, reviews: 310 },
         { name: 'Noor Salon Branch', phone: '+971501111111' },
-        { name: 'Parked Salon', phone: '+971508888888', website: SITE + '/parked/', rating: 3.0, reviews: 3 },
-        { name: 'Error Salon', phone: '+971509999999', category: 'Hair salon', website: SITE + '/missing/', rating: 4.0, reviews: 12 },
+        { name: 'Parked Salon', phone: '+971508888888', website: site('parked', '/parked/'), rating: 3.0, reviews: 3 },
+        { name: 'Error Salon', phone: '+971509999999', category: 'Hair salon', website: site('missing', '/missing/'), rating: 4.0, reviews: 12 },
         { name: 'Last Salon', phone: '+971500000001', category: 'Nail salon', unclaimed: true },
+        { name: 'Landline Spa', phone: '+97143333333', category: 'Spa', website: site('landline', '/landline/'), rating: 4.3, reviews: 25 },
       ];
       const feed = document.querySelector('[role=feed]');
       const side = document.getElementById('side');
@@ -96,7 +99,8 @@
           add(row, 'span', { role: 'img', 'aria-label': p.rating + ' stars' });
           add(row, 'span', { 'aria-label': p.reviews + ' reviews' }, '(' + p.reviews + ')');
           // Review-topic chips also say "N reviews"; the real count is the largest.
-          add(main, 'button', { 'aria-label': 'price, mentioned in 14 reviews' }, 'price 14');
+          const topic = Math.max(1, Math.floor(p.reviews / 3)); // a topic chip counts a subset of the reviews
+          add(main, 'button', { 'aria-label': 'price, mentioned in ' + topic + ' reviews' }, 'price ' + topic);
         }
         if (p.unclaimed) add(main, 'a', { href: 'https://business.google.com/create?claimthisbusiness=1' }, 'Own this business?');
         if (p.closed) add(main, 'p', {}, 'Permanently closed');

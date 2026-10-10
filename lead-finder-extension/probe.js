@@ -1,188 +1,286 @@
 /*
- * Runs inside a business's website (injected with chrome.scripting into the
- * checker tab) and reports what it finds. Must stay self-contained: no
- * outside variables, only plain data in the return value.
+ * Reads a business website. Runs two ways:
+ *   - injected with chrome.scripting into the checker tab (the finished page), or
+ *   - from the side panel on the page's original code (staticDoc, parsed with
+ *     DOMParser from a quick request), which still contains things like a
+ *     preloader that the page's own scripts remove once it has loaded.
+ * Must stay self-contained: no outside variables, only plain data returned.
  */
 // eslint-disable-next-line no-unused-vars
-function rrProbeWebsite(options) {
+function rrProbeWebsite(options, staticDoc) {
   const opts = options || {};
-  const MAX_HTML = 2000000;
-  const all = (sel) => Array.from(document.querySelectorAll(sel));
-  const html = (document.documentElement ? document.documentElement.outerHTML : '').slice(0, MAX_HTML);
+  const doc = staticDoc || document;
+  const live = !staticDoc;
+  const pageUrl = live ? location.href : opts.url || '';
+  let host = '';
+  try {
+    host = new URL(pageUrl).hostname.toLowerCase().replace(/^www\./, '');
+  } catch (e) {
+    host = '';
+  }
+  const all = (sel, root) => Array.from((root || doc).querySelectorAll(sel));
+  const textOf = (el) => (el ? el.innerText || el.textContent || '' : '');
+  const html = (opts.rawHtml || (doc.documentElement ? doc.documentElement.outerHTML : '')).slice(0, 2000000);
   const lowerHtml = html.toLowerCase();
-  const nav = (performance.getEntriesByType('navigation') || [])[0] || {};
-  const resources = performance.getEntriesByType('resource') || [];
+  const nav = live ? (performance.getEntriesByType('navigation') || [])[0] || {} : {};
+  const resources = live ? performance.getEntriesByType('resource') || [] : [];
   const resourceNames = resources.map((r) => r.name).join('\n').toLowerCase();
-  const bodyText = (document.body && (document.body.innerText || document.body.textContent)) || '';
+  const bodyText = textOf(doc.body);
+  const title = (doc.title || '').trim();
+  const headers = String(opts.headers || '').toLowerCase();
+
+  // ── Bot protection walls (can't judge the site behind them) ────────────────
+  const challenge =
+    /^(just a moment|attention required|access denied|ddos-guard|please wait while we verify)/i.test(title) ||
+    !!doc.querySelector('#challenge-form, #cf-challenge-running, .cf-browser-verification, #challenge-stage') ||
+    /cdn-cgi\/challenge-platform|cf-chl-/.test(lowerHtml.slice(0, 40000));
 
   // ── Contact forms ──────────────────────────────────────────────────────────
+  const FIELDS =
+    'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="image"]):not([type="checkbox"])' +
+    ':not([type="radio"]):not([type="search"]):not([type="reset"]), textarea, select';
+  const fieldWords = (i) => [i.name, i.id, i.placeholder, i.getAttribute('aria-label'), i.getAttribute('autocomplete')].join(' ');
+  const SEND_WORDS = /send|submit|contact|message|enquir|inquir|quote|book|appointment|call ?back|get in touch|أرسل|إرسال|تواصل|اتصل|استفسار|احجز/i;
+
+  /** contact | newsletter | search | account | comment | other */
+  function formKind(form) {
+    const marker = [form.id, form.className, form.getAttribute('action'), form.getAttribute('name')].join(' ').toLowerCase();
+    if (
+      form.getAttribute('role') === 'search' ||
+      form.querySelector('input[type="search"], input[name="s"], input[name="q"], input[name="query"], input[name="search"], input[name="keyword"]') ||
+      /search|[?&]s=/.test(marker)
+    ) return 'search';
+    if (form.querySelector('input[type="password"]') || /login|signin|sign-in|register|woocommerce-(form-login|cart-form)|\bcart\b|checkout|coupon/.test(marker)) return 'account';
+    if (form.id === 'commentform' || /comment-form|wp-comments-post/.test(marker)) return 'comment';
+    if (form.querySelector('input[name="form_type"][value="contact"]')) return 'contact';
+    if (
+      /mc4wp|mailchimp|list-manage\.com|mailpoet|tnp-subscription|sib-form|klaviyo|newsletter|subscribe/.test(marker) ||
+      form.querySelector('input[name="form_type"][value="customer"]')
+    ) return 'newsletter';
+    const fields = all(FIELDS, form);
+    const email = fields.some((i) => i.type === 'email' || /e-?mail|بريد/i.test(fieldWords(i)));
+    const tel = fields.some((i) => i.type === 'tel' || /phone|mobile|\btel\b|whatsapp|رقم|هاتف|جوال/i.test(fieldWords(i)));
+    const textarea = !!form.querySelector('textarea');
+    if (textarea && (email || tel)) return 'contact';
+    if (fields.length === 1 && email) return 'newsletter';
+    const words = textOf(form) + ' ' + all('button, input[type="submit"]', form).map((b) => b.value || b.textContent).join(' ');
+    if (fields.length >= 2 && (email || tel) && SEND_WORDS.test(words)) return 'contact';
+    if (/subscribe|sign ?up|join|newsletter|اشترك/i.test(words)) return 'newsletter';
+    return 'other';
+  }
+
   const FORM_PLUGINS =
-    '.wpcf7, .wpcf7-form, .wpforms-container, .wpforms-form, .elementor-form, .gform_wrapper, .nf-form-cont, ' +
-    '.fluentform, .frm_forms, .hs-form, [data-hs-forms-root], .hbspt-form, .w-form, .sqs-block-form, .form-block, ' +
-    '[data-testid="form-block"], .wixui-form, [data-hook="form"], .forminator-custom-form, .caldera-grid, .everest-form, ' +
-    '.happyforms-form, .ff-el-group, .kb-form, .wsb-contact-form, [data-aid*="CONTACT_FORM"], [data-ux="Form"]';
-  const FORM_EMBEDS = /typeform\.com|jotform|forms\.gle|docs\.google\.com\/forms|hsforms|hubspot|tally\.so|formstack|cognitoforms|wufoo|zoho\.(com|eu|in)\/forms|forms\.zohopublic|123formbuilder|paperform|fillout\.com|formsite|formspree|getform|basin|airtable\.com\/embed/i;
-
-  function isSearchOrNewsletter(form) {
-    const marker = [form.id, form.className, form.getAttribute('action'), form.getAttribute('role'), form.getAttribute('name')]
-      .join(' ')
-      .toLowerCase();
-    if (form.getAttribute('role') === 'search' || /search|newsletter|subscribe|mailchimp|klaviyo|mc4wp|login|signin|sign-in|register|cart|checkout|coupon/.test(marker)) return true;
-    const fields = Array.from(form.querySelectorAll('input, textarea, select')).filter(
-      (el) => !/^(hidden|submit|button|reset|image|checkbox|radio)$/i.test(el.type || '')
-    );
-    if (!fields.length) return true;
-    if (fields.every((el) => el.type === 'search' || /^(q|s|search|query)$/i.test(el.name || ''))) return true;
-    if (fields.length === 1 && (fields[0].type === 'email' || /email/i.test(fields[0].name || ''))) return true; // newsletter
-    return false;
-  }
-
-  function hasContactFields(form) {
-    if (form.querySelector('textarea')) return true;
-    const named = (re) => form.querySelector('input[name], input[id], input[placeholder]') && Array.from(form.querySelectorAll('input')).some((i) => re.test([i.name, i.id, i.placeholder, i.getAttribute('aria-label')].join(' ')));
-    const email = form.querySelector('input[type="email"]') || named(/e-?mail/i);
-    const phone = form.querySelector('input[type="tel"]') || named(/phone|mobile|tel\b|whatsapp|رقم|هاتف/i);
-    const name = named(/name|اسم/i);
-    const message = named(/message|enquir|inquir|comment|details|رسالة/i);
-    return !!((email || phone) && (name || message || (email && phone)));
-  }
+    '.wpcf7, .wpforms-container, .gform_wrapper, .nf-form-cont, .fluentform, .frm_forms, .elementor-widget-form, ' +
+    'form.elementor-form, .et_pb_contact_form, form.fusion-form, .wp-block-jetpack-contact-form, .forminator-custom-form, ' +
+    '.everest-form, .kb-form, .uagb-forms__form, .brxe-form, .w-form, .sqs-block-form, .wsite-form-container, .dmform, ' +
+    '.hbspt-form, .hs-form-frame, form.hs-form, [data-tf-widget], [data-tf-popup], [data-tf-live], [data-tf-slider], ' +
+    '.caldera-grid, .happyforms-form';
+  const FORM_HOSTS =
+    /typeform\.com|jotform|forms\.gle|docs\.google\.com\/forms|hsforms|tally\.so|formstack|cognitoforms|wufoo|zoho\.(com|eu|in)\/forms|forms\.zohopublic|123formbuilder|paperform|fillout\.com|formsite|formspree|forms\.office\.com/i;
+  const BOOKING_HOSTS = /calendly\.com|fresha\.com|booksy\.com|simplybook\.(me|it)|setmore\.com|squareup\.com\/appointments|vagaro\.com|mindbodyonline|zenoti|acuityscheduling/i;
 
   function findForm() {
-    const native = all('form').filter((f) => !isSearchOrNewsletter(f) && hasContactFields(f));
-    if (native.length) return { found: true, kind: 'form' };
-    const plugin = document.querySelector(FORM_PLUGINS);
+    const forms = all('form').map(formKind);
+    if (forms.indexOf('contact') >= 0) return { found: true, kind: 'form' };
+    const plugin = all(FORM_PLUGINS).find((el) => !el.closest('.sqs-block-newsletter, .newsletter-form, .mc4wp-form'));
     if (plugin) return { found: true, kind: 'plugin' };
-    const embed = all('iframe[src], iframe[data-src], script[src]').find((el) => FORM_EMBEDS.test(el.getAttribute('src') || el.getAttribute('data-src') || ''));
-    if (embed) return { found: true, kind: 'embed' };
-    // Forms built without a <form> tag (common on Wix and some page builders).
+    const embedded = all('iframe[src], iframe[data-src], iframe[data-tally-src], script[src]').map((el) =>
+      el.getAttribute('src') || el.getAttribute('data-src') || el.getAttribute('data-tally-src') || ''
+    );
+    if (embedded.some((src) => FORM_HOSTS.test(src))) return { found: true, kind: 'embedded form' };
+    if (all('a[href]').some((a) => /forms\.gle\/|typeform\.com\/to\/|tally\.so\/r\/|form\.jotform\.com\//i.test(a.href || a.getAttribute('href') || ''))) {
+      return { found: true, kind: 'form link' };
+    }
+    if (embedded.some((src) => BOOKING_HOSTS.test(src))) return { found: true, kind: 'booking widget' };
+    // Forms built without a <form> tag (common on Wix and React sites): a message box next to an email/phone field.
     const loose = all('textarea').some((t) => {
-      const box = t.closest('section, div') || document.body;
-      return !!box.querySelector('input[type="email"], input[type="tel"], input[name*="mail" i], input[name*="phone" i]');
+      if (t.closest('form')) return false;
+      let box = t.parentElement;
+      for (let i = 0; box && i < 5; i++, box = box.parentElement) {
+        if (box.querySelector('input[type="email"], input[type="tel"], input[name*="mail" i], input[name*="phone" i]')) return true;
+      }
+      return false;
     });
-    return loose ? { found: true, kind: 'fields' } : { found: false, kind: '' };
+    return loose ? { found: true, kind: 'form' } : { found: false, kind: '' };
   }
 
-  if (opts.formOnly) return { form: findForm(), url: location.href };
+  if (opts.formOnly) return { form: findForm(), url: pageUrl, challenge: challenge };
+  if (opts.timingOnly) return { loadMs: nav.loadEventEnd ? Math.round(nav.loadEventEnd) : null, status: nav.responseStatus || 0 };
 
   // ── Links ──────────────────────────────────────────────────────────────────
   const anchors = all('a[href]');
-  const hrefs = anchors.map((a) => a.getAttribute('href') || '');
-  const absolute = anchors.map((a) => a.href || '');
+  const hrefs = anchors.map((a) => (a.getAttribute('href') || '').trim());
+  const absolute = anchors.map((a) => {
+    try {
+      return new URL(a.getAttribute('href') || '', pageUrl || undefined).href;
+    } catch (e) {
+      return a.getAttribute('href') || '';
+    }
+  });
 
   let contactUrl = '';
-  for (const a of anchors) {
-    const label = ((a.textContent || '') + ' ' + (a.getAttribute('aria-label') || '') + ' ' + (a.getAttribute('href') || '')).toLowerCase();
-    if (!/contact|get in touch|enquir|inquir|book an appointment|اتصل|تواصل/.test(label)) continue;
-    if (/^(mailto|tel|javascript|whatsapp):/i.test(a.getAttribute('href') || '')) continue;
+  for (let i = 0; i < anchors.length && !contactUrl; i++) {
+    const a = anchors[i];
+    const label = (textOf(a) + ' ' + (a.getAttribute('aria-label') || '') + ' ' + (a.getAttribute('title') || '') + ' ' + hrefs[i]).toLowerCase();
+    if (!/contact|get-?in-?touch|reach-?us|enquir|inquir|book an appointment|اتصل|تواصل/.test(label)) continue;
+    if (/^(mailto|tel|javascript|whatsapp|#)/i.test(hrefs[i])) continue;
     try {
-      const u = new URL(a.href);
-      if (u.hostname.replace(/^www\./, '') === location.hostname.replace(/^www\./, '') && u.href.split('#')[0] !== location.href.split('#')[0]) {
-        contactUrl = u.href.split('#')[0];
-        break;
-      }
+      const u = new URL(absolute[i]);
+      if (u.hostname.replace(/^www\./, '') === host && u.href.split('#')[0] !== pageUrl.split('#')[0]) contactUrl = u.href.split('#')[0];
     } catch (e) {
       /* ignore bad links */
     }
   }
 
+  const linkish = absolute.concat(all('[data-href], [data-url], [onclick]').map((el) => (el.getAttribute('data-href') || '') + ' ' + (el.getAttribute('data-url') || '') + ' ' + (el.getAttribute('onclick') || '')));
   const whatsapp =
-    absolute.some((h) => /wa\.me\/|api\.whatsapp\.com|web\.whatsapp\.com|^whatsapp:/i.test(h)) ||
-    /joinchat|ht-ctc|ht_ctc|qlwapp|wa-chat|whatsapp-button|whatsapp-float|wa-float|float-whatsapp|getbutton\.io|elfsight-app.*whatsapp|wp-whatsapp|wpsupportplus-whatsapp|click-to-chat|chaty-widget/.test(lowerHtml);
-  const tel = hrefs.some((h) => /^tel:/i.test(h.trim()));
-  const mailto = hrefs.some((h) => /^mailto:/i.test(h.trim()));
+    linkish.some((h) => /(\/\/|^|\s)(wa\.me\/|api\.whatsapp\.com\/send|web\.whatsapp\.com\/send|wa\.link\/)|whatsapp:\/\/send/i.test(h)) ||
+    /joinchat|wptwa-container|creame-whatsapp-me|ht-ctc|ctc_chat|qlwapp|wp-whatsapp-chat|click-to-chat-for-whatsapp|getbutton\.io|wati-integration|app\.interakt\.ai|whatsapp-(button|float|widget|chat)|(float|floating)-whatsapp|wa-(float|chat|widget)/.test(lowerHtml);
+  const tel = hrefs.some((h) => /^(tel|callto):/i.test(h));
+  const mailto = hrefs.some((h) => /^mailto:/i.test(h));
 
+  // Instagram accounts the site links to (links and JSON-LD "sameAs" only, not scripts like
+  // instagram.com/embed.js). Skips "website by @designer" credits and platform accounts.
   const instagram = [];
-  const igRe = /(?:instagram\.com|instagr\.am)\/(?:#!\/)?@?([a-z0-9._]{1,30})/gi;
-  const reserved = /^(p|reel|reels|tv|stories|explore|accounts|about|legal|developer|direct|web|challenge|graphql|api|emails|oauth|privacy|terms|s|share|invites|ar|session)$/;
-  absolute.concat([html.slice(0, 600000)]).forEach((text) => {
+  const igRe = /(?:instagram\.com|instagr\.am)\/(?:_u\/)?@?([a-z0-9._]{1,30})(?=[/?#"'\s]|$)/gi;
+  const reserved = /^(p|reel|reels|tv|stories|explore|accounts|about|legal|developer|direct|web|challenge|graphql|api|ajax|static|emails|oauth|oembed|embed|privacy|terms|press|help|s|share|invites|ar|session|nametag|qr|directory|lite|create|locations|popular)$/;
+  const PLATFORM = /^(instagram|meta|facebook|envato|themeforest|elementor|wordpress|wix|squarespace|shopify|godaddy|hostinger|webflow|canva)$/;
+  const CREDIT = /designed|developed|powered|made by|website by|site by|theme by|crafted by|built by|created by|تصميم|تطوير/i;
+  const addHandle = (raw) => {
+    const h = String(raw).toLowerCase().replace(/\.+$/, '');
+    if (reserved.test(h) || PLATFORM.test(h) || /\.(js|css|png|jpe?g|svg|gif|webp|php|html?)$/.test(h) || /^\.|\.\./.test(h)) return;
+    if (instagram.indexOf(h) < 0 && instagram.length < 3) instagram.push(h);
+  };
+  anchors.forEach((a, i) => {
+    // "Website by <a>…</a>": the words right before the link, or on the link itself.
+    const before = ((a.previousSibling && a.previousSibling.textContent) || '').slice(-40);
+    const own = textOf(a) + ' ' + (a.getAttribute('aria-label') || '') + ' ' + (a.getAttribute('title') || '');
+    if (CREDIT.test(before + ' ' + own)) return;
     let m;
     igRe.lastIndex = 0;
-    while ((m = igRe.exec(text))) {
-      const h = m[1].toLowerCase().replace(/\.+$/, '');
-      if (!reserved.test(h) && !/^\.|\.\./.test(h) && instagram.indexOf(h) < 0) instagram.push(h);
-      if (instagram.length >= 3) return;
-    }
+    while ((m = igRe.exec(absolute[i]))) addHandle(m[1]);
+  });
+  all('script[type="application/ld+json"]').forEach((el) => {
+    let m;
+    const text = el.textContent || '';
+    igRe.lastIndex = 0;
+    while ((m = igRe.exec(text))) addHandle(m[1]);
   });
   const facebook = absolute.some((h) => /facebook\.com\/(?!sharer|share|plugins|dialog|tr\b)/i.test(h));
 
   // ── Preloader ──────────────────────────────────────────────────────────────
-  const PRELOADER_SEL =
-    '[id*="preload" i]:not(link):not(script), [class*="preloader" i], [class*="pre-loader" i], [id*="pre-loader" i], ' +
-    '[id*="page-loader" i], [class*="page-loader" i], [id*="pageloader" i], [class*="pageloader" i], ' +
-    '[id*="loader-wrap" i], [class*="loader-wrap" i], [id*="loading-screen" i], [class*="loading-screen" i], ' +
-    '[id*="loading-overlay" i], [class*="loading-overlay" i], [id="loader"], [id="loading"], .pace, #nprogress, ' +
-    '[class*="site-loader" i], [id*="site-loader" i], [class*="spinner-wrap" i], [id*="spinner-wrap" i], ' +
-    '.et_pb_preloader, .elementor-preloader, .avada-preloader, #qode-page-loading-effect, .mkdf-smooth-transition-loader, ' +
-    '.qodef-page-loader, .edgtf-smooth-transition-loader, .loftloader-wrapper, #loftloader-wrapper';
-  const loaderEls = all(PRELOADER_SEL).filter(
-    (el) => !el.closest('button, form, input, select, [role="button"], img') && !/^(link|script|style|img|source|meta)$/i.test(el.tagName)
-  );
-  const preloaderLib = /pace(\.min)?\.js|nprogress|preloader|loftloader|page-loading/.test(resourceNames);
-  // Many themes remove the loader once the page is ready, so also look for its styles and scripts.
-  const preloaderCss = /[#.](preloader|pre-loader|page-loader|pageloader|loader-wrapper|loading-screen|site-loader)\b/.test(lowerHtml);
-  const preloader = loaderEls.length > 0 || preloaderLib || preloaderCss;
+  const LOADER_NAME =
+    /(^|[\s_-])(pre-?loader|preloading|page-?loader|site-?loader|loader-?(wrap|wrapper|overlay|container|bg)|loading-?(screen|overlay|page|wrap|wrapper|mask)|page-?(loading|transition)|splash-?screen|se-pre-con|loftloader-wrapper)($|[\s_-])/i;
+  const NOT_A_PAGE_LOADER =
+    'form, button, iframe, .wpcf7, .wpforms-container, .gform_wrapper, .nf-form-cont, .swiper, .slick-slider, .owl-carousel, ' +
+    'rs-module-wrap, .rev_slider_wrapper, .mfp-wrap, .fancybox-container, .pswp, .elementor-lightbox, .blockUI, #sb_instagram';
+  const className = (el) => (typeof el.className === 'string' ? el.className : el.getAttribute('class') || '');
+  const named = all('[id], [class]')
+    .slice(0, 5000)
+    .filter((el) => LOADER_NAME.test(el.id || '') || LOADER_NAME.test(className(el)))
+    .filter((el) => !/^(link|script|style|img|source|meta|svg|path|use)$/i.test(el.tagName))
+    .filter((el) => !el.closest(NOT_A_PAGE_LOADER) && !/wpcf7-spinner/.test(className(el)));
+  // Short names like #loader are only a page loader when they cover the screen.
+  const covering = live
+    ? all('#loader, #loading, #preloader, .preloader, #status, .loader, .loading').some((el) => {
+        if (el.closest(NOT_A_PAGE_LOADER)) return false;
+        const cs = getComputedStyle(el);
+        return cs.position === 'fixed' && (parseInt(cs.zIndex, 10) || 0) >= 100;
+      })
+    : false;
+  const assetUrls = all('script[src], link[href]')
+    .map((el) => el.getAttribute('src') || el.getAttribute('href') || '')
+    .join('\n')
+    .toLowerCase();
+  const preloaderLib =
+    !!doc.querySelector('e-preloader, e-page-transition, div.pace, #nprogress, #loftloader-wrapper, body.pace-done, body.pace-running') ||
+    /pace(\.min)?\.js|nprogress(\.min)?\.js|\/wp-content\/plugins\/[^/"']*(pre-?loader|loader|page-?transition)[^/"']*\//.test(resourceNames + '\n' + assetUrls);
+  const preloader = named.length > 0 || covering || preloaderLib;
 
   // ── Footer copyright year ──────────────────────────────────────────────────
-  const footer = document.querySelector('footer, [role="contentinfo"], #footer, .footer, .site-footer');
-  const footerText = ((footer && (footer.innerText || footer.textContent)) || bodyText.slice(-3000)) + '';
+  const footer = doc.querySelector('footer, [role="contentinfo"], #footer, .footer, .site-footer, [class*="footer"], [id*="footer"]');
+  const footerText = (textOf(footer) || bodyText.slice(-3000)) + '';
   let copyrightYear = null;
-  const yearRe = /(?:©|&copy;|\(c\)|copyright)\s*(?:[^\d\n]{0,30})?((?:19|20)\d{2})(?:\s*[-–—]\s*((?:19|20)\d{2}))?/gi;
+  const yearRe = /(?:©|&copy;|\(c\)|copyright)[^0-9\n]{0,40}((?:19|20)\d{2})(?:\s*[-–—]\s*((?:19|20)\d{2}))?/gi;
   let ym;
   while ((ym = yearRe.exec(footerText))) {
     const year = parseInt(ym[2] || ym[1], 10);
     if (year <= new Date().getFullYear() + 1 && (!copyrightYear || year > copyrightYear)) copyrightYear = year;
   }
 
+  // ── Old technology ─────────────────────────────────────────────────────────
+  const flash = !!doc.querySelector('object[type="application/x-shockwave-flash"], embed[src$=".swf"], param[value*=".swf"]');
+  let jquery = '';
+  const jq = (resourceNames + '\n' + lowerHtml).match(/jquery[-.](\d+\.\d+(?:\.\d+)?)(?:\.min)?\.js|ajax\/libs\/jquery\/(\d+\.\d+(?:\.\d+)?)\//);
+  if (jq) jquery = jq[1] || jq[2];
+  const tableLayout = !!doc.querySelector('body > table, table table') || !!doc.querySelector('font, center, marquee, frameset, bgsound');
+
   // ── Platform & tracking ────────────────────────────────────────────────────
-  const generator = ((document.querySelector('meta[name="generator" i]') || {}).content || '').toLowerCase();
-  const sig = lowerHtml + '\n' + resourceNames + '\n' + generator;
+  const generator = (((doc.querySelector('meta[name="generator" i]') || {}).content || '') + '').toLowerCase();
+  const sig = lowerHtml + '\n' + resourceNames + '\n' + generator + '\n' + headers;
   const BUILDERS = [
-    ['Wix', /wix\.com|wixstatic\.com|_wixcidx|wix-thunderbolt/],
-    ['Squarespace', /squarespace\.com|static1\.squarespace|squarespace-cdn/],
-    ['GoDaddy', /img1\.wsimg\.com|godaddy website builder|websites\.godaddy|secureserver\.net\/.*builder/],
-    ['Weebly', /weebly\.com|editmysite\.com/],
-    ['Webflow', /webflow\.com|data-wf-page|data-wf-site/],
-    ['Shopify', /cdn\.shopify\.com|shopify\.theme|myshopify\.com/],
+    ['Wix', /wix\.com website builder|static\.parastorage\.com|wixstatic\.com|x-wix-|wixbisession/],
+    ['Squarespace', /squarespace|static1\.squarespace|sqs-block/],
+    ['Webflow', /data-wf-site|website-files\.com|webflow\.(com|io)/],
+    ['Shopify', /cdn\.shopify\.com|shopify\.theme|myshopify\.com|x-shopify/],
     ['Duda', /dudaone|cdn-website\.com|multiscreensite|irp\.cdn-website/],
-    ['Hostinger', /zyrosite|zyro\.com|hostinger(website)?builder|hostinger\.com\/.*builder|userapp\.zyrosite/],
+    ['Hostinger', /zyrosite|zyro\.com|hostinger/],
     ['Google Sites', /sites\.google\.com|gstatic\.com\/atari/],
     ['Jimdo', /jimdo/],
     ['Site123', /site123/],
-    ['Strikingly', /strikingly|mystrikingly/],
-    ['WordPress', /wp-content|wp-includes|wordpress/],
+    ['Strikingly', /strikingly/],
+    ['Weebly', /weebly\.com|editmysite\.com/],
+    ['GoDaddy', /go daddy website builder|starfield technologies|img1\.wsimg\.com\/isteam|godaddysites\.com/],
+    ['WordPress', /wp-content|wp-includes|generator[^>]*wordpress|api\.w\.org/],
   ];
   const builderMatch = BUILDERS.find((b) => b[1].test(sig));
   const builder = builderMatch ? builderMatch[0] : '';
-  const metaPixel = /connect\.facebook\.net\/[^"'\s]*\/fbevents\.js|fbq\(\s*['"]init/.test(sig);
-  const analytics = /googletagmanager\.com\/(gtag\/js|gtm\.js)|google-analytics\.com\/(analytics|ga)\.js|gtag\(\s*['"]config/.test(sig);
+  const freeDomainMatch = host.match(
+    /\.(wixsite\.com|wixstudio\.io|godaddysites\.com|webflow\.io|weebly\.com|square\.site|site123\.me|mystrikingly\.com|strikingly\.com|zyrosite\.com|hostingersite\.com|wordpress\.com|blogspot\.com|business\.site|negocio\.site|carrd\.co|jimdosite\.com|yolasite\.com|webnode\.[a-z]+|framer\.website|myshopify\.com|odoo\.com|ueniweb\.com)$/
+  );
+  const freeDomain = freeDomainMatch ? host : '';
+  const metaPixel = /connect\.facebook\.[a-z]+\/[^"'\s]*\/fbevents\.js|fbq\(\s*['"]init|facebook\.com\/tr\?id=|connect\.facebook\.net\/signals\/config/.test(sig);
+  const ga4 = /googletagmanager\.com\/(gtag\/js|gtm\.js)|google-analytics\.com\/g\/collect|gtag\(\s*['"]config['"]\s*,\s*['"](g|aw)-|\bgtm-[a-z0-9]{4,9}\b/.test(sig);
+  const uaOnly = !ga4 && /google-analytics\.com\/(analytics|ga|urchin)\.js|\bua-\d{4,10}-\d{1,4}\b/.test(sig);
+  const analytics = ga4;
 
-  // ── Placeholder / parked / suspended pages ─────────────────────────────────
-  const head = (document.title + ' ' + bodyText.slice(0, 1500)).toLowerCase();
+  // ── Placeholder / parked / suspended / unfinished pages ────────────────────
+  const top = (title + ' ' + bodyText.slice(0, 1500)).toLowerCase();
   let placeholder = '';
-  if (/domain (is|may be) for sale|buy this domain|this domain is for sale|parked free|sedoparking|hugedomains|domain has expired|this domain has expired|parkingcrew|bodis\.com/.test(head + lowerHtml.slice(0, 20000))) placeholder = 'parked';
-  else if (/account (has been )?suspended|suspendedpage|this account has been suspended|website is suspended/.test(head)) placeholder = 'suspended';
-  else if (/coming soon|under construction|launching soon|site is under maintenance|website under maintenance/.test(head) && bodyText.length < 2500) placeholder = 'coming soon';
-  else if (/apache2 (ubuntu|debian) default page|welcome to nginx|it works!|default web site page|index of \//.test(head)) placeholder = 'default server page';
+  if (/domain (is|may be) for sale|buy this domain|this domain is for sale|parked free|this web page is parked|sedoparking|hugedomains|domain has expired|this domain has expired|parkingcrew|bodis\.com|wsimg\.com\/parking-lander/.test(top + ' ' + lowerHtml.slice(0, 20000))) {
+    placeholder = 'parked';
+  } else if (/account (has been )?suspended|suspendedpage|this account has been suspended|website is suspended/.test(top)) {
+    placeholder = 'suspended';
+  } else if (
+    /coming soon|under construction|launching soon|under maintenance/.test(title.toLowerCase()) ||
+    (/coming soon|under construction|launching soon|site is under maintenance|website under maintenance/.test(top) && bodyText.length < 600)
+  ) {
+    placeholder = 'coming soon';
+  } else if (/apache2 (ubuntu|debian) default page|welcome to nginx|^it works!|default web site page|index of \//.test(top)) {
+    placeholder = 'default server page';
+  } else if (/just another wordpress site|hello world!.{0,400}sample page|sample page.{0,400}hello world!/.test(top.replace(/\s+/g, ' '))) {
+    placeholder = 'wordpress demo';
+  }
 
   // ── SEO basics & page weight ───────────────────────────────────────────────
-  const viewportContent = ((document.querySelector('meta[name="viewport" i]') || {}).content || '').toLowerCase();
-  const description = ((document.querySelector('meta[name="description" i]') || {}).content || '').trim();
+  const viewportContent = (((doc.querySelector('meta[name="viewport" i]') || {}).content || '') + '').toLowerCase();
+  const description = (((doc.querySelector('meta[name="description" i]') || {}).content || '') + '').trim();
   let bytes = nav.transferSize || 0;
   resources.forEach((r) => (bytes += r.transferSize || 0));
 
   return {
-    url: location.href,
-    https: location.protocol === 'https:',
+    url: pageUrl,
+    https: /^https:/i.test(pageUrl),
     status: nav.responseStatus || 0,
     ttfbMs: nav.responseStart ? Math.round(nav.responseStart) : null,
     domMs: nav.domContentLoadedEventEnd ? Math.round(nav.domContentLoadedEventEnd) : null,
     loadMs: nav.loadEventEnd ? Math.round(nav.loadEventEnd) : null,
     bytes: bytes,
-    requests: resources.length + 1,
+    requests: live ? resources.length + 1 : null,
     viewport: /width\s*=\s*device-width/.test(viewportContent),
-    title: (document.title || '').trim(),
+    title: title,
     metaDescription: description.length > 0,
-    h1: document.querySelectorAll('h1').length,
+    h1: doc.querySelectorAll('h1').length,
     words: bodyText.split(/\s+/).filter(Boolean).length,
     form: findForm(),
     contactUrl: contactUrl,
@@ -193,10 +291,16 @@ function rrProbeWebsite(options) {
     facebook: facebook,
     preloader: preloader,
     copyrightYear: copyrightYear,
+    flash: flash,
+    jquery: jquery,
+    tableLayout: tableLayout,
     builder: builder,
+    freeDomain: freeDomain,
     metaPixel: metaPixel,
     analytics: analytics,
+    uaOnly: uaOnly,
     placeholder: placeholder,
+    challenge: challenge,
   };
 }
 
@@ -206,27 +310,35 @@ function rrProbeWebsite(options) {
  * ("1,234 Followers, …") is the fallback, parsed in the panel.
  */
 // eslint-disable-next-line no-unused-vars
-function rrProbeInstagram() {
+function rrProbeInstagram(handle) {
   const meta = (sel) => {
     const el = document.querySelector(sel);
     return el ? el.getAttribute('content') || '' : '';
   };
+  const want = String(handle || '').toLowerCase();
   let followers = null;
+  // The page can also hold other accounts (suggestions, the viewer's own), so only take
+  // a follower_count that sits next to this profile's username.
   const scripts = document.querySelectorAll('script[type="application/json"]');
-  for (let i = 0; i < scripts.length && followers == null; i++) {
+  for (let i = 0; i < scripts.length && followers == null && want; i++) {
     const text = scripts[i].textContent || '';
-    const m = text.match(/"follower_count":\s*(\d+)/) || text.match(/"edge_followed_by":\s*\{\s*"count":\s*(\d+)/);
-    if (m) followers = parseInt(m[1], 10);
+    const userRe = new RegExp('"username"\\s*:\\s*"' + want.replace(/[.]/g, '\\.') + '"', 'gi');
+    let m;
+    while (followers == null && (m = userRe.exec(text))) {
+      const around = text.slice(Math.max(0, m.index - 1500), m.index + 1500);
+      const count = around.match(/"follower_count"\s*:\s*(\d+)/) || around.match(/"edge_followed_by"\s*:\s*\{\s*"count"\s*:\s*(\d+)/);
+      if (count) followers = parseInt(count[1], 10);
+    }
   }
-  // Logged-in pages draw the header after load: the followers link holds the exact count in a tooltip.
-  if (followers == null) {
-    const tip = document.querySelector('a[href*="/followers"] span[title], a[href*="/followers"] [title]');
+  // Logged-in pages draw the header after load: this profile's followers link holds the exact count in a tooltip.
+  if (followers == null && want) {
+    const tip = document.querySelector('a[href*="/' + want + '/followers"] [title]');
     const exact = tip && (tip.getAttribute('title') || '').replace(/[^\d]/g, '');
     if (exact) followers = parseInt(exact, 10);
   }
   const header = document.querySelector('header');
   const headerText = header ? (header.innerText || '').replace(/\s+/g, ' ').slice(0, 500) : '';
-  const visible = (document.title + ' ' + (document.body ? (document.body.innerText || '').slice(0, 3000) : ''));
+  const visible = document.title + ' ' + (document.body ? (document.body.innerText || '').slice(0, 3000) : '');
   return {
     header: headerText,
     path: location.pathname,

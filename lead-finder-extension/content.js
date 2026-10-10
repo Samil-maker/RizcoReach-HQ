@@ -55,7 +55,7 @@
     stopRequested = false;
     const settings = await LF.loadSettings();
     const query = searchQuery();
-    const stats = { checked: 0, closed: 0, filtered: 0, noMobile: 0, dupes: 0, added: 0, withSite: 0, unreadable: 0 };
+    const stats = { checked: 0, closed: 0, filtered: 0, noMobile: 0, dupes: 0, added: 0, withSite: 0, fromWebsite: 0, unreadable: 0 };
     const run = { active: true, phase: 'loading', query: query, done: 0, total: 0, startedAt: Date.now(), error: '' };
     const save = () => chrome.storage.local.set({ run: Object.assign({}, run, { stats: Object.assign({}, stats), updatedAt: Date.now() }) });
     await save();
@@ -115,7 +115,20 @@
       stats.filtered++;
       return;
     }
-    const phone = LF.pickPhone([raw.phone], settings);
+    let phone = LF.pickPhone([raw.phone], settings);
+    // Only a landline on Maps? Many businesses show a WhatsApp or mobile number on their website.
+    if (!phone && hasSite && settings.mobileOnly) {
+      try {
+        const found = await chrome.runtime.sendMessage({ type: 'rr-find-mobile', url: raw.website, country: settings.country });
+        if (found && found.e164) {
+          phone = found;
+          raw.phoneSource = found.source;
+          stats.fromWebsite++;
+        }
+      } catch (e) {
+        /* the website didn't answer; treat as no mobile */
+      }
+    }
     if (!phone) {
       stats.noMobile++;
       return;

@@ -23,8 +23,10 @@
   let stopRequested = false;
   let listener = () => {};
   let tabId = null;
+  let tabUses = 0; // the checker tab is replaced every so often (Chrome may freeze long-hidden tabs)
   let lastInstagramAt = 0;
   let emptyPages = 0; // Instagram pages that came back without any profile data, in a row
+  let emptyFetches = 0; // quick lookups that came back empty in a row; after 3, skip them
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -72,8 +74,17 @@
     return { s: s, todo: todo, igPausedUntil: igPausedUntil, waitingForInstagram: waitingForInstagram };
   }
 
+  /** The user can restrict the extension's site access in chrome://extensions. */
+  function canOpenSites() {
+    return chrome.permissions.contains({ origins: ['http://*/*', 'https://*/*'] });
+  }
+
   async function start() {
     if (running) return;
+    if (!(await canOpenSites())) {
+      listener({ running: false, done: 0, left: (await pending()).todo.length, current: '', needsPermission: true });
+      return;
+    }
     running = true;
     stopRequested = false;
     let done = 0;
@@ -109,7 +120,7 @@
       tasks.push(checkPagespeed(lead.website, s.pagespeedKey).then((r) => saveCheck(lead.e164, 'pagespeed', r)));
     }
     if (steps.indexOf('site') >= 0) {
-      const site = await checkWebsite(lead.website);
+      const site = await checkWebsite(lead.website, s);
       await saveCheck(lead.e164, 'site', site);
     }
     if (steps.indexOf('instagram') >= 0 && !stopRequested && !(await instagramPausedUntil(s))) {
@@ -160,44 +171,96 @@
     [/CONNECTION_REFUSED|CONNECTION_RESET|CONNECTION_CLOSED|CONNECTION_TIMED_OUT|TIMED_OUT|ADDRESS_UNREACHABLE|EMPTY_RESPONSE|CONNECTION_FAILED/, 'the server is not responding'],
   ];
 
-  async function checkWebsite(url) {
+  const PLACEHOLDER_WHY = {
+    parked: 'the domain only shows a "for sale"/parking page',
+    suspended: 'the hosting account is suspended',
+    'coming soon': 'it only shows a "coming soon" page',
+    'default server page': 'it only shows a blank server page',
+    'wordpress demo': 'it still shows the WordPress sample content',
+  };
+
+  /**
+   * Checks one website in two ways:
+   *   1. a quick request: status, final address (HTTPS or not), server headers and
+   *      the page's original code (which still has a preloader that scripts remove later);
+   *   2. a real visit in the background tab: load time and the finished page.
+   * If the visit is blocked (e.g. Chrome's "not secure" warning for http-only sites),
+   * the quick request's findings are used on their own.
+   */
+  async function checkWebsite(url, s) {
     const target = /^https?:\/\//i.test(url) ? url : 'https://' + url;
     try {
-      const id = await checkerTab();
-      const load = await loadInTab(id, target, PAGE_TIMEOUT);
-      if (load.error) {
-        if (/BLOCKED_BY_CLIENT|ERR_ABORTED|INTERNET_DISCONNECTED|NETWORK_CHANGED|PROXY/.test(load.error)) {
-          return { state: 'error', at: now(), error: 'Could not load from this computer (' + load.error + ')' };
-        }
-        const known = NET_ERRORS.find((e) => e[0].test(load.error));
-        return done({ reachable: false, failure: known ? known[1] : "it doesn't load", error: load.error, url: target });
+      let fetched = await fetchPage(target);
+      if (!fetched.ok && /^https:/i.test(target)) {
+        const plain = await fetchPage(target.replace(/^https:/i, 'http:'));
+        if (plain.ok) fetched = plain;
       }
-      await sleep(SETTLE_MS);
-      let signals = await probe(id, {});
-      if (!signals) return { state: 'error', at: now(), error: "Couldn't read the page" };
-      signals.timedOut = !!load.timedOut;
-      if (!signals.loadMs) signals.loadMs = load.timedOut ? PAGE_TIMEOUT : load.wallMs;
+      const raw = fetched.ok ? staticSignals(fetched) : null;
+
+      const id = await checkerTab();
+      const load = await loadInTab(id, fetched.ok ? fetched.finalUrl : target, PAGE_TIMEOUT);
+      let live = null;
+      let liveError = load.error || '';
+      if (!load.error) {
+        await sleep(SETTLE_MS);
+        const p = await probe(id, {}, load.timedOut);
+        live = p.result;
+        if (!live) liveError = p.error || "couldn't read the page";
+      }
+
+      if (!live && !raw) {
+        if (/BLOCKED_BY_CLIENT|INTERNET_DISCONNECTED|NETWORK_CHANGED|PROXY|NETWORK_ACCESS_DENIED/.test(liveError + ' ' + (fetched.error || ''))) {
+          return { state: 'error', at: now(), error: 'Could not load from this computer (' + liveError + ')' };
+        }
+        const known = NET_ERRORS.find((e) => e[0].test(liveError));
+        return done({ reachable: false, failure: known ? known[1] : "it doesn't load", error: liveError || fetched.error, url: target });
+      }
+      if ((live && live.challenge) || (!live && raw.challenge)) {
+        return { state: 'error', at: now(), error: 'The website has bot protection (e.g. Cloudflare), so it could not be checked' };
+      }
+
+      let signals;
+      if (live) {
+        signals = live;
+        signals.timedOut = !!load.timedOut;
+        if (!signals.loadMs) signals.loadMs = load.timedOut ? PAGE_TIMEOUT : load.wallMs;
+        if (raw) {
+          // Things the finished page may no longer show.
+          signals.preloader = signals.preloader || raw.preloader;
+          signals.builder = signals.builder || raw.builder;
+          signals.metaPixel = signals.metaPixel || raw.metaPixel;
+          signals.analytics = signals.analytics || raw.analytics;
+          if (!signals.form.found && raw.form.found) signals.form = raw.form;
+          if (!signals.copyrightYear) signals.copyrightYear = raw.copyrightYear;
+        }
+      } else {
+        signals = raw;
+        signals.loadMs = fetched.ms;
+        signals.measured = 'quick request';
+        if (/CERT|SSL|INSECURE|HTTPS/.test(liveError)) signals.https = false;
+      }
+      if (fetched.ok && fetched.status >= 400) signals.status = signals.status || fetched.status;
       if (signals.status >= 400) {
         return done({ reachable: false, failure: 'it shows an error page (HTTP ' + signals.status + ')', url: signals.url, https: signals.https });
       }
-      if (signals.placeholder) {
-        const why = {
-          parked: 'the domain only shows a "for sale"/parking page',
-          suspended: 'the hosting account is suspended',
-          'coming soon': 'it only shows a "coming soon" page',
-          'default server page': 'it only shows a blank server page',
-        }[signals.placeholder];
-        return done(Object.assign(signals, { reachable: false, failure: why }));
-      }
+      if (signals.placeholder) return done(Object.assign(signals, { reachable: false, failure: PLACEHOLDER_WHY[signals.placeholder] }));
       signals.reachable = true;
-      // No form on the home page? Look on the contact page.
-      if (signals.form && !signals.form.found && signals.contactUrl) {
-        const contact = await loadInTab(id, signals.contactUrl, 15000);
-        if (!contact.error) {
-          await sleep(SETTLE_MS);
-          const page = await probe(id, { formOnly: true });
-          if (page && page.form && page.form.found) signals.form = Object.assign({}, page.form, { where: 'contact page' });
+
+      // Slow? Load it once more before saying so (the first visit can hit a cold server or DNS).
+      const slowMs = ((s && s.slowSeconds) || 5) * 1000;
+      if (live && !signals.timedOut && signals.loadMs > slowMs) {
+        const again = await loadInTab(id, signals.url, PAGE_TIMEOUT);
+        if (!again.error && !again.timedOut) {
+          await sleep(500);
+          const timing = (await probe(id, { timingOnly: true }, false)).result;
+          if (timing && timing.loadMs) signals.loadMs = Math.min(signals.loadMs, timing.loadMs);
         }
+      }
+
+      // No form on the home page? Look on the contact page.
+      if (signals.form && !signals.form.found) {
+        const contact = await findContactForm(id, signals);
+        if (contact) signals.form = contact;
       }
       return done(signals);
     } catch (err) {
@@ -209,21 +272,93 @@
     }
   }
 
-  async function probe(id, options) {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        const results = await chrome.scripting.executeScript({ target: { tabId: id }, func: root.rrProbeWebsite, args: [options] });
-        if (results && results[0] && results[0].result) return results[0].result;
-      } catch (err) {
-        // The page was still redirecting; give it a moment.
+  /** Looks for a contact form on the contact page: the linked one, else /contact-us and /contact. */
+  async function findContactForm(id, signals) {
+    if (signals.contactUrl) {
+      const load = await loadInTab(id, signals.contactUrl, 15000);
+      if (!load.error) {
+        await sleep(SETTLE_MS);
+        const page = (await probe(id, { formOnly: true }, load.timedOut)).result;
+        if (page && page.form && page.form.found) return Object.assign({}, page.form, { where: 'contact page' });
       }
-      await sleep(1500);
+      return null;
+    }
+    let origin;
+    try {
+      origin = new URL(signals.url).origin;
+    } catch (e) {
+      return null;
+    }
+    for (const path of ['/contact-us', '/contact']) {
+      const page = await fetchPage(origin + path);
+      if (!page.ok || page.status >= 400) continue;
+      const found = staticSignals(page, { formOnly: true });
+      if (found && found.form && found.form.found) return Object.assign({}, found.form, { where: 'contact page' });
     }
     return null;
   }
 
+  /** A quick logged-out request for a page: status, final address, a few headers and the HTML. */
+  async function fetchPage(url) {
+    const started = Date.now();
+    try {
+      const res = await fetch(url, {
+        credentials: 'omit',
+        redirect: 'follow',
+        headers: { 'Accept-Language': 'en-US,en;q=0.9' },
+        signal: AbortSignal.timeout(15000),
+      });
+      const type = res.headers.get('content-type') || '';
+      const html = /html|xml|text\/plain/i.test(type) || !type ? (await res.text()).slice(0, 1500000) : '';
+      const headers = ['server', 'x-powered-by', 'x-wix-request-id', 'x-shopify-stage', 'x-generator', 'link']
+        .map((h) => (res.headers.get(h) ? h + ': ' + res.headers.get(h) : ''))
+        .join('\n');
+      return { ok: true, status: res.status, finalUrl: res.url || url, html: html, headers: headers, ms: Date.now() - started };
+    } catch (err) {
+      return { ok: false, error: err && err.name === 'TimeoutError' ? 'TIMED_OUT' : (err && err.message) || 'failed' };
+    }
+  }
+
+  /** Runs the website reader on a page's original code. */
+  function staticSignals(page, extra) {
+    if (!page.html) return null;
+    const doc = new DOMParser().parseFromString(page.html, 'text/html');
+    return root.rrProbeWebsite(Object.assign({ url: page.finalUrl, rawHtml: page.html, headers: page.headers }, extra || {}), doc);
+  }
+
+  /** Reads the page in the checker tab. Returns { result } or { error }. */
+  async function probe(id, options, pageStillLoading) {
+    let lastError = '';
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const run = chrome.scripting.executeScript({
+          target: { tabId: id },
+          func: root.rrProbeWebsite,
+          args: [options],
+          injectImmediately: !!pageStillLoading,
+        });
+        const timeout = new Promise((resolve) => setTimeout(() => resolve('timeout'), 10000));
+        const results = await Promise.race([run, timeout]);
+        if (results === 'timeout') {
+          lastError = 'the page did not respond';
+        } else if (results && results[0] && results[0].result) {
+          return { result: results[0].result };
+        }
+      } catch (err) {
+        lastError = (err && err.message) || String(err);
+        if (/showing error page|Cannot access/i.test(lastError)) return { error: lastError };
+      }
+      await sleep(1500); // the page was probably still redirecting
+    }
+    return { error: lastError };
+  }
+
   /** One background tab, reused for every site and closed when the queue ends. */
   async function checkerTab() {
+    if (tabId != null && ++tabUses > 15) {
+      await closeTab();
+      tabUses = 0;
+    }
     if (tabId != null) {
       try {
         await chrome.tabs.get(tabId);
@@ -235,7 +370,8 @@
     const tab = await chrome.tabs.create({ url: 'about:blank', active: false });
     tabId = tab.id;
     try {
-      await chrome.tabs.update(tabId, { muted: true });
+      // Muted, and never put to sleep by Chrome's memory saver mid-check.
+      await chrome.tabs.update(tabId, { muted: true, autoDiscardable: false });
     } catch (e) {
       /* not important */
     }
@@ -319,10 +455,15 @@
     if (cached && Date.now() - Date.parse(cached.at) < IG_CACHE_DAYS * 864e5) return cached;
 
     await paceInstagram();
-    let r = await instagramFromFetch(handle);
-    if (r.followers == null && !r.missing && !r.limited) {
+    let r = {};
+    if (emptyFetches < 3) {
       await countInstagram();
-      await sleep(2000 + Math.random() * 2000);
+      r = await instagramFromFetch(handle);
+      emptyFetches = r.followers == null && !r.missing && !r.limited && !r.error ? emptyFetches + 1 : 0;
+    }
+    if (r.followers == null && !r.missing && !r.limited) {
+      if (emptyFetches < 3 || r.error) await sleep(2000 + Math.random() * 2000);
+      await countInstagram();
       r = await instagramFromTab(handle);
     }
 
@@ -352,7 +493,6 @@
     const wait = lastInstagramAt + gap - Date.now();
     if (wait > 0) await sleep(wait);
     lastInstagramAt = Date.now();
-    await countInstagram();
   }
 
   async function countInstagram() {
@@ -368,9 +508,15 @@
     await chrome.storage.local.set({ igStrikes: strikes, igCooldownUntil: Date.now() + minutes * 60000 });
   }
 
-  function followersIn(text) {
-    const json = String(text).match(/"follower_count":\s*(\d+)/) || String(text).match(/"edge_followed_by":\s*\{\s*"count":\s*(\d+)/);
-    if (json) return { followers: parseInt(json[1], 10), exact: true };
+  /** The exact count from embedded JSON, only when it sits next to this handle's username. */
+  function followersIn(text, handle) {
+    const userRe = new RegExp('"username"\\s*:\\s*"' + handle.replace(/[.]/g, '\\.') + '"', 'gi');
+    let m;
+    while ((m = userRe.exec(text))) {
+      const around = text.slice(Math.max(0, m.index - 1500), m.index + 1500);
+      const count = around.match(/"follower_count"\s*:\s*(\d+)/) || around.match(/"edge_followed_by"\s*:\s*\{\s*"count"\s*:\s*(\d+)/);
+      if (count) return { followers: parseInt(count[1], 10), exact: true };
+    }
     return null;
   }
 
@@ -384,7 +530,7 @@
       if (res.status === 429) return { limited: true };
       if (!res.ok) return { error: 'HTTP ' + res.status };
       const html = await res.text();
-      const exact = followersIn(html);
+      const exact = followersIn(html, handle);
       if (exact) return Object.assign(exact, { source: 'profile page' });
       const meta =
         html.match(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i) ||
@@ -407,7 +553,7 @@
       let page = null;
       for (let attempt = 0; attempt < 2 && !page; attempt++) {
         try {
-          const results = await chrome.scripting.executeScript({ target: { tabId: id }, func: root.rrProbeInstagram });
+          const results = await chrome.scripting.executeScript({ target: { tabId: id }, func: root.rrProbeInstagram, args: [handle] });
           page = results && results[0] && results[0].result;
         } catch (e) {
           await sleep(1500);
@@ -445,10 +591,12 @@
     needs: needs,
     pending: pending,
     isRunning: () => running,
+    canOpenSites: canOpenSites,
     tabId: () => tabId,
     onProgress: (fn) => (listener = fn),
     // for tests
     _checkWebsite: checkWebsite,
+    _probe: probe,
     _checkInstagram: checkInstagram,
   };
 })(globalThis);

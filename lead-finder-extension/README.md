@@ -21,8 +21,12 @@ No accounts, API keys or monthly fees.
 
 **Updating from version 1:** replace the files in the folder with the new ones,
 then click ↻ on the extension's card in chrome://extensions. Your leads are
-kept. Chrome will ask for permission to "read and change data on all websites".
-The extension needs this to open and check each business's website.
+kept.
+
+The extension needs access to all websites so it can open and check each
+business's website. An unpacked extension gets this when you load it, without a
+pop-up. If you've limited its site access in chrome://extensions, the panel
+shows an **Allow website checks** button.
 
 ## How it works
 
@@ -32,17 +36,34 @@ The extension needs this to open and check each business's website.
    It opens every result (you'll see Maps moving) and saves each business with
    a mobile number, plus its website, Google rating, review count, and whether
    the owner has claimed the Google listing.
+
+   If Maps shows only a landline but the business has a website, the extension
+   looks there for a WhatsApp or mobile number before giving up.
 2. **Check them.** This starts by itself. One at a time, each website opens in
    a muted background tab, where the extension:
-   - times how long the site takes to load;
-   - looks for a contact form (on the contact page too), a preloader, phone
-     (mobile) set-up, HTTPS, a WhatsApp button, tap-to-call, the © year in the
-     footer, SEO basics, and Meta Pixel / Google Analytics;
-   - spots dead sites: domain not loading, error pages, "for sale"/parked
-     domains, suspended hosting, "coming soon" pages.
+   - times how long the site takes to load. A slow result is measured twice
+     before it counts.
+   - looks for:
+     - a contact form, including on the contact page. Booking widgets count;
+       newsletter, search, login and blog-comment forms don't.
+     - a preloader
+     - phone (mobile) set-up and HTTPS
+     - a WhatsApp button and tap-to-call
+     - signs of an old site: the footer © year, Flash, very old jQuery,
+       table layouts
+     - a free address like name.wixsite.com
+     - SEO basics, and Meta Pixel / Google Analytics
+   - spots dead sites: a domain that doesn't load, error pages, "for sale" or
+     parked domains, suspended hosting, "coming soon" pages, and WordPress
+     sites still showing the sample content.
+   - sites behind bot protection (e.g. Cloudflare's "Just a moment…") are
+     marked **couldn't check**, never "bad".
 
-   It also finds the business's Instagram (from Maps, from their website, or
-   when their "website" *is* their Instagram) and reads the follower count.
+   It also finds the business's Instagram and reads the follower count. The
+   account can come from Maps, from links on their website, or from their
+   "website" being an Instagram page. Links like "Website by @someagency" are
+   ignored. If no account is found, click **Add Instagram** on the lead,
+   use **Search for it** to look it up, and paste the handle.
    The background tab closes when it's done. If you close the panel, checking
    pauses and carries on next time you open it.
 3. **Message the best ones.** The **Hot** tab shows your best leads first,
@@ -70,7 +91,8 @@ defaults:
 | Instagram followers | At least 1,000, when we can find their Instagram |
 | No Instagram found | Allowed (tick "Skip businesses with no Instagram" to require one) |
 | Google reviews | Any number |
-| Weak website | 2 or more of: slow (over 4 seconds), no contact form, no preloader, old © year, Google PageSpeed under 50. Or any one of: not loading, no HTTPS, not set up for phones. |
+| Weak website | 2 or more of: slow (over 5 seconds), no contact form, no preloader, looks outdated, Google PageSpeed under 50. Or any one of: not loading, no HTTPS, not set up for phones, a free address like name.wixsite.com. |
+| Chains | The same website on 3 or more of your leads counts as a chain and goes to Low |
 | Also available | No WhatsApp button, no tap-to-call, weak SEO, no Meta Pixel/Analytics, built on Wix/GoDaddy/other DIY builders |
 
 **Score (out of 100):**
@@ -86,7 +108,8 @@ your follower or review minimum, or its website looks fine.
 ## Good to know
 
 - **Speed is measured on your connection.** The load time is how long the site
-  takes in your Chrome. Add a free **Google PageSpeed key** under *What makes
+  takes in your Chrome, in a background tab. Messages therefore say "it took
+  about 7 seconds to load **when we checked**". Add a free **Google PageSpeed key** under *What makes
   a good lead* to also get Google's official mobile speed score. That's a
   strong number to quote to a prospect. To get a key, go to Google Cloud,
   enable "PageSpeed Insights API" and create an API key. No card is needed.
@@ -97,6 +120,8 @@ your follower or review minimum, or its website looks fine.
   - Lookups are spaced 8–15 seconds apart, with a daily limit (150 by default).
   - If Instagram pushes back, Instagram checks pause for 15 minutes to 6 hours
     while websites keep being checked.
+  - A follower count is only used if it belongs to that exact account. Unknown
+    is never treated as 0.
   - The safest set-up is a Chrome profile that isn't logged in to your main
     Instagram account.
   - Instagram's rules don't allow automated collection, so keep it modest.
@@ -114,6 +139,14 @@ your follower or review minimum, or its website looks fine.
 - **It doesn't press send for you.** WhatsApp bans numbers that send automated
   messages to people who haven't saved them. Aim for 20–40 new chats a day.
   The panel warns you at 30.
+- **UAE sending hours.** UAE telemarketing rules (2024) limit marketing
+  messages to 9am–6pm and respect the Do Not Call Registry. The panel warns you
+  outside those hours. Check with a lawyer how the rules apply to messaging
+  businesses.
+- **Preloader** is on the list because you asked for it. Google doesn't score
+  preloaders, so the extension never mentions one in a message to a business;
+  it only uses it to sort leads. Untick it under *What makes a good lead* if
+  you change your mind.
 
 ## For developers
 
@@ -126,7 +159,7 @@ your follower or review minimum, or its website looks fine.
 | `qualify.js` | The checker queue, run from the panel. It drives the background tab (webNavigation + scripting), PageSpeed, and the Instagram lookup with pacing and back-off. |
 | `probe.js` | Functions injected into a business website / Instagram profile to read what's on the page |
 | `panel.html/.css/.js` | The side panel |
-| `background.js` | Opens the panel when the toolbar icon is clicked |
+| `background.js` | Opens the panel when the toolbar icon is clicked; looks for a mobile number on a business's website when Maps only shows a landline |
 
 Tests:
 

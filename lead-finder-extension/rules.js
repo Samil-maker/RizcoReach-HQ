@@ -90,11 +90,19 @@
   const ISSUES = [
     {
       id: 'down',
-      label: 'Website not loading',
+      label: 'Website not loading (dead domain, error page, parked or unfinished)',
       critical: true,
       test: (sig) => (sig.reachable === false ? { why: sig.failure || '' } : null),
-      chip: () => 'not loading',
-      pitch: () => "your website isn't loading at the moment",
+      chip: (d) => downChip(d.why),
+      pitch: (d) => d.why || "your website isn't loading at the moment",
+    },
+    {
+      id: 'freeDomain',
+      label: 'Uses a free website address (e.g. name.wixsite.com)',
+      critical: true,
+      test: (sig) => (sig.freeDomain ? { host: sig.freeDomain } : null),
+      chip: (d) => 'free address ' + d.host,
+      pitch: (d) => 'it runs on a free address (' + d.host + ') instead of your own domain',
     },
     {
       id: 'slow',
@@ -104,7 +112,8 @@
         return ms && ms > s.slowSeconds * 1000 ? { seconds: Math.round(ms / 100) / 10, timedOut: !!sig.timedOut } : null;
       },
       chip: (d) => (d.timedOut ? 'very slow (20s+)' : 'slow (' + d.seconds + 's)'),
-      pitch: (d) => (d.timedOut ? 'it takes over 20 seconds to load' : 'it takes about ' + Math.round(d.seconds) + ' seconds to load'),
+      pitch: (d) =>
+        d.timedOut ? 'it took over 20 seconds to load when we checked' : 'it took about ' + Math.round(d.seconds) + ' seconds to load when we checked',
     },
     {
       id: 'lowPagespeed',
@@ -152,13 +161,18 @@
     },
     {
       id: 'outdated',
-      label: 'Looks outdated (old © year)',
+      label: 'Looks outdated (old © year, Flash, very old jQuery, table layout)',
       test: (sig) => {
         const year = sig.copyrightYear;
-        return year && year <= new Date().getFullYear() - 2 ? { year: year } : null;
+        if (year && year <= new Date().getFullYear() - 2) return { chip: '© ' + year, pitch: 'the footer still says © ' + year };
+        if (sig.flash) return { chip: 'uses Flash', pitch: 'it still uses Flash, which browsers stopped supporting in 2021' };
+        const major = parseInt(String(sig.jquery || '').split('.')[0], 10);
+        if (major && major < 3) return { chip: 'jQuery ' + sig.jquery, pitch: 'it runs on code from around 2016' };
+        if (sig.tableLayout) return { chip: 'old table layout', pitch: 'it is built the way sites were in the early 2000s' };
+        return null;
       },
-      chip: (d) => '© ' + d.year,
-      pitch: (d) => 'the footer still says © ' + d.year,
+      chip: (d) => d.chip,
+      pitch: (d) => d.pitch,
     },
     {
       id: 'noCall',
@@ -191,8 +205,23 @@
   ];
   const DIY_BUILDERS = ['Wix', 'GoDaddy', 'Weebly', 'Google Sites', 'Hostinger', 'Jimdo', 'Site123', 'Strikingly'];
 
+  /** Short label for a dead site, from the reason the checker found. */
+  function downChip(why) {
+    const w = String(why || '');
+    if (/for sale|parking/.test(w)) return 'parked domain';
+    if (/suspended/.test(w)) return 'hosting suspended';
+    if (/coming soon/.test(w)) return 'coming-soon page';
+    if (/WordPress sample/.test(w)) return 'WordPress demo content';
+    if (/blank server page/.test(w)) return 'blank server page';
+    if (/HTTP (\d+)/.test(w)) return 'error page (HTTP ' + w.match(/HTTP (\d+)/)[1] + ')';
+    if (/security warning/.test(w)) return 'security warning';
+    if (/expired|domain/.test(w)) return 'domain not loading';
+    return 'not loading';
+  }
+
   const DEFAULT_CRITERIA = {
     down: true,
+    freeDomain: true,
     slow: true,
     lowPagespeed: true,
     noForm: true,
@@ -263,7 +292,29 @@
    * verdict: 'hot' | 'good' | 'low' | 'checking'
    * opportunity: 'noSite' | 'social' | 'broken' | 'weak' | 'ok' | 'pending' | 'unchecked'
    */
-  function evaluate(lead, s) {
+  /** How many leads share each website (the same site on several listings = a chain). */
+  function siteCounts(leads) {
+    const counts = {};
+    leads.forEach((l) => {
+      const key = siteKey(l.website);
+      if (key) counts[key] = (counts[key] || 0) + 1;
+    });
+    return counts;
+  }
+
+  /** Hosts where each business has its own path, e.g. sites.google.com/view/<business>. */
+  const SHARED_HOSTS = ['sites.google.com', 'about.me', 'site.pro', 'jimdo.com', 'wixsite.com'];
+
+  function siteKey(url) {
+    if (!LF.hasRealWebsite([url], true)) return '';
+    const host = LF.hostOf(url);
+    if (SHARED_HOSTS.indexOf(host) < 0) return host;
+    // e.g. sites.google.com/view/<business>/… or /site/<business>/…
+    const parts = String(url).replace(/^[a-z]+:\/\/[^/]+/i, '').split(/[?#]/)[0].split('/').filter(Boolean);
+    return host + '/' + parts.slice(0, 2).join('/').toLowerCase();
+  }
+
+  function evaluate(lead, s, ctx) {
     const checks = lead.checks || {};
     const kind = websiteKind(lead, s);
     const reasons = [];
@@ -294,7 +345,7 @@
         const weak = issues.some((i) => i.critical) || issues.length >= Math.max(1, s.weakAt || 1);
         if (issues.some((i) => i.id === 'down')) {
           opportunity = 'broken';
-          reasons.push({ text: 'Website not loading', tone: 'good' });
+          reasons.push({ text: 'Website not working: ' + issues[0].chip, tone: 'good' });
         } else if (weak) {
           opportunity = 'weak';
           reasons.push({ text: 'Weak website: ' + issues.map((i) => i.chip).join(' · '), tone: 'good' });
@@ -305,6 +356,13 @@
           blockers.push('website');
         }
       }
+    }
+
+    // The same website on 3+ listings is a chain or franchise: not a small business to pitch.
+    const shared = kind === 'site' && ctx && ctx.siteCounts ? ctx.siteCounts[siteKey(lead.website)] || 0 : 0;
+    if (shared >= 3) {
+      reasons.push({ text: 'Same website as ' + (shared - 1) + ' other listings (likely a chain)', tone: 'bad' });
+      blockers.push('chain');
     }
 
     // How big the business is: Instagram.
@@ -425,10 +483,10 @@
   const VERDICT_NAMES = { hot: 'Hot', good: 'Good', low: 'Low', checking: 'Checking' };
 
   /** Google Contacts "Google CSV" import format. */
-  function contactsRows(leads, s) {
+  function contactsRows(leads, s, ctx) {
     const rows = [['Name', 'Given Name', 'Organization 1 - Name', 'Phone 1 - Type', 'Phone 1 - Value', 'Notes', 'Group Membership']];
     leads.forEach((l) => {
-      const ev = evaluate(l, s);
+      const ev = evaluate(l, s, ctx);
       const display = [s.contactPrefix, LF.cleanName(l.name) || LF.formatPhone(l.e164)].filter(Boolean).join(' ');
       const notes = [
         VERDICT_NAMES[ev.verdict] + ' lead (' + ev.score + '/100): ' + ev.reasons.map((r) => r.text).join('; '),
@@ -450,13 +508,13 @@
     return /^[=+\-@\t\r]/.test(v) ? "'" + v : v;
   }
 
-  function sheetRows(leads, s) {
+  function sheetRows(leads, s, ctx) {
     const rows = [[
       'Mobile', 'Business', 'Verdict', 'Score', 'Why', 'Website', 'Website issues', 'Instagram', 'Followers',
       'Google rating', 'Google reviews', 'Category', 'Address', 'Status', 'Added', 'Last contacted', 'Google Maps', 'Search',
     ]];
     leads.forEach((l) => {
-      const ev = evaluate(l, s);
+      const ev = evaluate(l, s, ctx);
       rows.push(
         [
           LF.formatPhone(l.e164), // "+971 50 …" with spaces stays text in spreadsheets
@@ -492,6 +550,7 @@
     instagramOf,
     websiteKind,
     websiteIssues,
+    siteCounts,
     evaluate,
     issueSentence,
     messageFor,

@@ -65,6 +65,15 @@
     $('csvBtn').addEventListener('click', downloadCsv);
     $('deleteAll').addEventListener('click', deleteAll);
 
+    $('permBtn').addEventListener('click', () => {
+      // Must be called straight from the click for Chrome to show its prompt.
+      chrome.permissions.request({ origins: ['<all_urls>'] }).then((granted) => {
+        if (granted) {
+          $('permNote').hidden = true;
+          LeadChecker.start();
+        }
+      });
+    });
     LeadChecker.onProgress(onCheckProgress);
     await renderCheckIdle();
     if (settings.autoCheck) LeadChecker.start(); // carries on where it left off
@@ -222,7 +231,10 @@
       summary.textContent = '';
       const strong = document.createElement('b');
       strong.textContent = s.added + ' new lead' + (s.added === 1 ? '' : 's');
-      const withSite = s.withSite ? ' (' + s.withSite + ' with a website)' : '';
+      const withSite =
+        (s.withSite ? ' (' + s.withSite + ' with a website' : '') +
+        (s.fromWebsite ? (s.withSite ? ', ' : ' (') + s.fromWebsite + ' mobile' + (s.fromWebsite === 1 ? '' : 's') + ' found on their website' : '') +
+        (s.withSite || s.fromWebsite ? ')' : '');
       summary.append((run.phase === 'stopped' ? 'Stopped. ' : 'Done. ') + (run.query ? '"' + run.query + '": ' : ''), strong, withSite + ' · ' + parts.join(' · '));
       summary.hidden = false;
       if (run.error) showError(run.error);
@@ -243,6 +255,7 @@
 
   function onCheckProgress(state) {
     checkState = state;
+    $('permNote').hidden = !state.needsPermission;
     $('checkRunning').hidden = !state.running;
     $('checkIdle').hidden = state.running;
     if (state.running) {
@@ -287,8 +300,14 @@
 
   // ─── 3 · Leads ─────────────────────────────────────────────────────────────
 
+  /** Facts across all leads that scoring needs (e.g. the same website on several listings). */
+  function context() {
+    return { siteCounts: LF.siteCounts(Array.from(leads.values())) };
+  }
+
   function evaluated() {
-    return Array.from(leads.values()).map((lead) => ({ lead: lead, ev: LF.evaluate(lead, settings) }));
+    const c = context();
+    return Array.from(leads.values()).map((lead) => ({ lead: lead, ev: LF.evaluate(lead, settings, c) }));
   }
 
   function inTab(item, f) {
@@ -363,7 +382,10 @@
     head.append(pill, name);
 
     const meta = el('p', 'lead-meta');
-    meta.append(el('span', 'num', LF.formatPhone(lead.e164)));
+    const num = el('span', 'num', LF.formatPhone(lead.e164));
+    if (lead.phoneSource) num.title = 'From the ' + lead.phoneSource;
+    meta.append(num);
+    if (lead.phoneSource) meta.append(' (from their website)');
     if (lead.category) meta.append(' · ' + lead.category);
 
     const reasons = el('ul', 'reasons');
@@ -403,6 +425,46 @@
     });
     foot.appendChild(again);
 
+    // No Instagram found? Let the user look it up and add it.
+    if (!ev.handle && settings.checkInstagram) {
+      const add = el('button', 'linkish', 'Add Instagram');
+      add.type = 'button';
+      add.addEventListener('click', () => {
+        add.hidden = true;
+        const form = el('form', 'ig-form');
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.placeholder = '@handle or instagram.com/…';
+        input.setAttribute('aria-label', 'Instagram for ' + (lead.name || lead.e164));
+        const save = el('button', 'btn', 'Save');
+        save.type = 'submit';
+        const search = link(
+          'https://www.google.com/search?q=' + encodeURIComponent((lead.name || '') + ' ' + (lead.address || '').split(/[-,]/)[0] + ' instagram'),
+          'Search for it'
+        );
+        form.append(input, save, search);
+        form.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const raw = input.value.trim();
+          const handle = LF.instagramHandle(/instagr/i.test(raw) ? raw : 'instagram.com/' + raw.replace(/^@/, ''));
+          if (!handle) {
+            input.setCustomValidity('That doesn\'t look like an Instagram account');
+            input.reportValidity();
+            return;
+          }
+          const current = leads.get(lead.e164) || lead;
+          const checks = Object.assign({}, current.checks || {});
+          delete checks.instagram;
+          await updateLead(lead.e164, { socials: Object.assign({}, current.socials || {}, { instagram: handle }), checks: checks });
+          LeadChecker.start();
+        });
+        input.addEventListener('input', () => input.setCustomValidity(''));
+        li.appendChild(form);
+        input.focus();
+      });
+      foot.appendChild(add);
+    }
+
     const main = el('div', 'lead-main');
     main.append(head, meta, reasons);
     li.append(main, wa, foot);
@@ -428,17 +490,26 @@
 
   async function message(rendered, button, row) {
     const lead = leads.get(rendered.e164) || rendered;
-    if (settings.dailyLimit && sentToday() >= settings.dailyLimit && !button.dataset.confirmed) {
-      button.dataset.confirmed = '1';
-      button.textContent = 'Send anyway';
-      row.appendChild(
-        el('p', 'warn',
+    if (!button.dataset.confirmed) {
+      const warnings = [];
+      if (settings.dailyLimit && sentToday() >= settings.dailyLimit) {
+        warnings.push(
           "You've opened " + sentToday() + ' chats today. Messaging many new people from one number in a day ' +
-            'is the quickest way to get it blocked by WhatsApp. Best to continue tomorrow.')
-      );
-      return;
+            'is the quickest way to get it blocked by WhatsApp. Best to continue tomorrow.'
+        );
+      }
+      const hour = new Date().getHours();
+      if (settings.country === 'AE' && (hour < 9 || hour >= 18)) {
+        warnings.push("It's outside 9am–6pm. UAE telemarketing rules limit marketing messages to those hours.");
+      }
+      if (warnings.length) {
+        button.dataset.confirmed = '1';
+        button.textContent = 'Send anyway';
+        warnings.forEach((w) => row.appendChild(el('p', 'warn', w)));
+        return;
+      }
     }
-    const text = LF.messageFor(lead, settings);
+    const text = LF.messageFor(lead, settings, LF.evaluate(lead, settings, context()));
     await openWhatsApp(LF.whatsAppUrl(lead.e164, text, settings.openIn));
     const patch = { contacted: new Date().toISOString() };
     if (lead.status === 'New') patch.status = 'Messaged';
@@ -490,17 +561,19 @@
 
   /** Leads in score order, best first. */
   function ranked(list) {
+    const c = context();
     return list
-      .map((lead) => ({ lead: lead, ev: LF.evaluate(lead, settings) }))
+      .map((lead) => ({ lead: lead, ev: LF.evaluate(lead, settings, c) }))
       .sort((a, b) => b.ev.score - a.ev.score)
       .map((x) => x.lead);
   }
 
   async function exportContacts() {
     // Hot and good leads by default; everything if there are none.
+    const c = context();
     const usable = ranked(Array.from(leads.values()).filter((l) => l.status !== 'Do not contact'));
     const best = usable.filter((l) => {
-      const v = LF.evaluate(l, settings).verdict;
+      const v = LF.evaluate(l, settings, c).verdict;
       return v === 'hot' || v === 'good';
     });
     const pool = best.length ? best : usable;
@@ -508,7 +581,7 @@
     const batch = fresh.length ? fresh : pool;
     if (!batch.length) return showHint(['No leads to save yet.']);
     const filename = 'rizcoreach-leads-contacts-' + stamp() + '.csv';
-    download(filename, LF.toCsv(LF.contactsRows(batch, settings)), false);
+    download(filename, LF.toCsv(LF.contactsRows(batch, settings, c)), false);
     await chrome.storage.local.set(
       batch.reduce((acc, l) => {
         acc['lead:' + l.e164] = Object.assign({}, leads.get(l.e164) || l, { exported: true });
@@ -528,7 +601,7 @@
     const all = ranked(Array.from(leads.values()));
     if (!all.length) return showHint(['No leads to copy yet.']);
     try {
-      await navigator.clipboard.writeText(LF.toTsv(LF.sheetRows(all, settings)));
+      await navigator.clipboard.writeText(LF.toTsv(LF.sheetRows(all, settings, context())));
     } catch (e) {
       return showHint(["Couldn't copy. Use Download spreadsheet (CSV) instead."]);
     }
@@ -539,7 +612,7 @@
     const all = ranked(Array.from(leads.values()));
     if (!all.length) return showHint(['No leads to download yet.']);
     const filename = 'rizcoreach-leads-' + stamp() + '.csv';
-    download(filename, LF.toCsv(LF.sheetRows(all, settings)), true);
+    download(filename, LF.toCsv(LF.sheetRows(all, settings, context())), true);
     showHint(['Saved ' + filename + '. Open it with Google Sheets (File → Import) or Excel.']);
   }
 

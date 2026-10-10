@@ -178,9 +178,32 @@ test('evaluate: no website, weak website, good website', () => {
   const critical = LF.evaluate({ ...base, website: 'https://noor.ae', ...site({ ...GOOD_SITE, viewport: false }, ig(2400)) }, s);
   assert.equal(critical.opportunity, 'weak', 'one critical issue is enough');
 
-  const down = LF.evaluate({ ...base, website: 'https://noor.ae', ...site({ reachable: false, failure: 'dns' }, ig(2400)) }, s);
+  const down = LF.evaluate({ ...base, website: 'https://noor.ae', ...site({ reachable: false, failure: "the domain doesn't load (it may have expired)" }, ig(2400)) }, s);
   assert.equal(down.opportunity, 'broken');
-  assert.equal(down.reasons[0].text, 'Website not loading');
+  assert.equal(down.reasons[0].text, 'Website not working: domain not loading');
+  assert.match(LF.messageFor({ ...base, website: 'https://noor.ae', ...site({ reachable: false, failure: 'the domain only shows a "for sale"/parking page' }) }, s),
+    /noticed the domain only shows a "for sale"\/parking page\./);
+});
+
+test('free addresses, old technology and dead-site labels', () => {
+  const s = S();
+  const ids = (sig) => [...LF.websiteIssues({ ...GOOD_SITE, ...sig }, s)].map((i) => i.chip);
+  assert.deepEqual(ids({ freeDomain: 'noorsalon.wixsite.com' }), ['free address noorsalon.wixsite.com']);
+  assert.deepEqual(ids({ flash: true }), ['uses Flash']);
+  assert.deepEqual(ids({ jquery: '1.11.3' }), ['jQuery 1.11.3']);
+  assert.deepEqual(ids({ jquery: '3.7.1' }), []);
+  assert.deepEqual(ids({ tableLayout: true }), ['old table layout']);
+  assert.deepEqual(ids({ copyrightYear: 2018, flash: true }), ['© 2018']);
+  const chip = (failure) => LF.websiteIssues({ reachable: false, failure }, s)[0].chip;
+  assert.equal(chip('it shows an error page (HTTP 404)'), 'error page (HTTP 404)');
+  assert.equal(chip('the hosting account is suspended'), 'hosting suspended');
+  assert.equal(chip('it still shows the WordPress sample content'), 'WordPress demo content');
+  assert.equal(chip('browsers show a security warning'), 'security warning');
+  assert.equal(chip('it only shows a "coming soon" page'), 'coming-soon page');
+  // One free-address problem is enough to call the website weak.
+  const ev = LF.evaluate({ e164: '+971501111111', phoneType: 'mobile', name: 'Noor', website: 'https://noor.wixsite.com', reviews: 50, rating: 4.5,
+    ...site({ ...GOOD_SITE, freeDomain: 'noor.wixsite.com' }) }, S({ checkInstagram: false }));
+  assert.equal(ev.opportunity, 'weak');
 });
 
 test('evaluate: follower and review thresholds, pending checks', () => {
@@ -218,12 +241,26 @@ test('spreadsheet export neutralises formula-like text', () => {
   assert.equal(row[12], "'@home");
 });
 
+test('the same website on 3+ listings is a chain', () => {
+  const lead = (n) => ({ e164: '+97150000000' + n, phoneType: 'mobile', name: 'Branch ' + n, website: 'https://bigchain.ae/branch' + n, reviews: 80, rating: 4.4,
+    checks: { site: { state: 'done', signals: { ...GOOD_SITE, loadMs: 9000, form: { found: false } } } } });
+  const leads = [lead(1), lead(2), lead(3), { e164: '+971509999999', website: 'https://solo.ae' }];
+  const ctx = { siteCounts: LF.siteCounts(leads) };
+  assert.equal(ctx.siteCounts['bigchain.ae'], 3);
+  const ev = LF.evaluate(leads[0], S({ checkInstagram: false }), ctx);
+  assert.equal(ev.verdict, 'low');
+  assert.ok(ev.reasons.some((r) => r.text === 'Same website as 2 other listings (likely a chain)'));
+  assert.notEqual(LF.evaluate(leads[0], S({ checkInstagram: false })).verdict, 'low', 'without context it is not treated as a chain');
+  const google = LF.siteCounts(['a', 'b', 'c'].map((x) => ({ website: 'https://sites.google.com/view/salon-' + x + '/home' })));
+  assert.deepEqual(Object.values(google), [1, 1, 1], 'sites.google.com pages belong to different businesses');
+});
+
 test('messages pick the right template and mention real issues', () => {
   const s = S();
   const base = { e164: '+971501111111', phoneType: 'mobile', name: 'Noor Salon', reviews: 40, rating: 4.5 };
   assert.match(LF.messageFor({ ...base, website: '' }, s), /came across Noor Salon on Google Maps and noticed there's no website/);
   const msg = LF.messageFor({ ...base, website: 'https://noor.ae', ...site({ ...GOOD_SITE, loadMs: 6600, form: { found: false }, preloader: false }) }, s);
-  assert.match(msg, /^Hi 👋 We had a look at Noor Salon's website and noticed it takes about 7 seconds to load and there's no contact form for enquiries\./);
+  assert.match(msg, /^Hi 👋 We had a look at Noor Salon's website and noticed it took about 7 seconds to load when we checked and there's no contact form for enquiries\./);
   const onlyPreloader = LF.messageFor({ ...base, website: 'https://noor.ae', ...site({ ...GOOD_SITE, preloader: false, whatsapp: false }) }, S({ criteria: { noWhatsApp: true } }));
   assert.match(onlyPreloader, /noticed there's no WhatsApp button\./);
 });
