@@ -11,22 +11,23 @@
       <img src="icons/icon48.png" alt="" width="28" height="28" />
       <div>
         <h1>Lead Finder</h1>
-        <p>Businesses with no website, mobile numbers only</p>
+        <p>Find businesses, check their website and Instagram, message the best ones</p>
       </div>
     </header>
 
     <section class="block" aria-labelledby="collect-title">
-      <h2 id="collect-title" class="eyebrow">1 · Find leads</h2>
+      <h2 id="collect-title" class="eyebrow">1 · Find businesses</h2>
 
       <div id="noMaps">
         <p class="hint">Open Google Maps and search for a type of business in an area, for example <b>ladies salon in Al Barsha</b>.</p>
-        <a class="btn primary" id="openMaps" href="https://www.google.com/maps" target="_blank" rel="noopener">Open Google Maps</a>
+        <a class="btn primary" id="openMaps" href="https://www.google.com/maps?hl=en" target="_blank" rel="noopener">Open Google Maps</a>
       </div>
 
       <div id="ready" hidden>
         <p class="query"><span class="small">Current search</span><span id="query"></span></p>
         <button type="button" class="btn primary" id="collectBtn">Collect leads from this search</button>
-        <p class="small">It goes through every result, so keep the Google Maps tab open. About a minute per search.</p>
+        <p class="small">It opens every result, so keep the Google Maps tab open. About a minute per search.</p>
+        <p id="langNote" class="warn" hidden>Google Maps is showing in another language, so ratings and reviews may not be read. Add <b>?hl=en</b> to the end of the Maps address, or open Maps from the button above.</p>
       </div>
 
       <div id="running" hidden>
@@ -39,16 +40,32 @@
       <p id="error" class="error" role="alert" hidden></p>
     </section>
 
+    <section class="block" aria-labelledby="check-title">
+      <h2 id="check-title" class="eyebrow">2 · Check them</h2>
+      <div id="checkIdle">
+        <p id="checkText" class="hint"></p>
+        <button type="button" class="btn" id="checkBtn" hidden>Check now</button>
+      </div>
+      <div id="checkRunning" hidden>
+        <p id="checkPhase" class="phase"></p>
+        <p class="small">Websites open one at a time in a muted background tab. Leave that tab alone; it closes when the checks finish.</p>
+        <button type="button" class="btn" id="checkStop">Pause checks</button>
+      </div>
+      <p id="igNote" class="warn" hidden></p>
+    </section>
+
     <section class="block" aria-labelledby="leads-title">
       <div class="row-head">
-        <h2 id="leads-title" class="eyebrow">2 · Message them</h2>
+        <h2 id="leads-title" class="eyebrow">3 · Message the best ones</h2>
         <span id="today" class="small"></span>
       </div>
       <div class="tabs" role="tablist" aria-label="Show leads">
-        <button type="button" role="tab" data-filter="New" aria-selected="true">New <span></span></button>
-        <button type="button" role="tab" data-filter="Messaged" aria-selected="false">Messaged <span></span></button>
-        <button type="button" role="tab" data-filter="Replied" aria-selected="false">Replied <span></span></button>
-        <button type="button" role="tab" data-filter="All" aria-selected="false">All <span></span></button>
+        <button type="button" role="tab" data-filter="hot" aria-selected="true">Hot <span></span></button>
+        <button type="button" role="tab" data-filter="good" aria-selected="false">Good <span></span></button>
+        <button type="button" role="tab" data-filter="checking" aria-selected="false">Checking <span></span></button>
+        <button type="button" role="tab" data-filter="low" aria-selected="false">Low <span></span></button>
+        <button type="button" role="tab" data-filter="contacted" aria-selected="false">Contacted <span></span></button>
+        <button type="button" role="tab" data-filter="all" aria-selected="false">All <span></span></button>
       </div>
       <ul id="list" class="leads"></ul>
       <p id="empty" class="hint" hidden></p>
@@ -56,7 +73,7 @@
     </section>
 
     <section class="block" aria-labelledby="save-title">
-      <h2 id="save-title" class="eyebrow">3 · Save them</h2>
+      <h2 id="save-title" class="eyebrow">4 · Save them</h2>
       <div class="save">
         <button type="button" class="btn" id="contactsBtn">Download for Google Contacts</button>
         <button type="button" class="btn" id="sheetsBtn">Copy for Google Sheets</button>
@@ -65,13 +82,88 @@
       <p id="saveHint" class="hint" hidden></p>
     </section>
 
-    <details class="block settings" id="settingsBox">
-      <summary>Settings</summary>
+    <details class="block settings" id="criteriaBox">
+      <summary>What makes a good lead</summary>
       <div class="fields">
         <label class="field">
-          <span>WhatsApp message</span>
-          <textarea id="set-message" rows="6"></textarea>
-          <small>{name} becomes the business name, {category} its type, e.g. "beauty salon".</small>
+          <span>Businesses to collect</span>
+          <select id="set-keep">
+            <option value="all">All businesses with a mobile number</option>
+            <option value="noSite">Only ones without a website</option>
+            <option value="site">Only ones with a website</option>
+          </select>
+        </label>
+        <div class="field-row">
+          <label class="field">
+            <span>Instagram followers at least</span>
+            <select id="set-minFollowers">
+              <option value="0">Any</option>
+              <option value="500">500</option>
+              <option value="1000">1,000</option>
+              <option value="2000">2,000</option>
+              <option value="5000">5,000</option>
+              <option value="10000">10,000</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Google reviews at least</span>
+            <select id="set-minReviews">
+              <option value="0">Any</option>
+              <option value="5">5</option>
+              <option value="10">10</option>
+              <option value="20">20</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+            </select>
+          </label>
+        </div>
+        <label class="check"><input id="set-requireInstagram" type="checkbox" /> Skip businesses with no Instagram</label>
+
+        <fieldset class="field">
+          <legend>A website counts as weak when it has</legend>
+          <div class="inline">
+            <select id="set-weakAt" aria-label="How many problems">
+              <option value="1">1 or more</option>
+              <option value="2">2 or more</option>
+              <option value="3">3 or more</option>
+            </select>
+            <span class="small">of these problems:</span>
+          </div>
+          <div id="criteriaList" class="criteria"></div>
+          <small>Not loading, no HTTPS and not set up for phones always count as weak.</small>
+        </fieldset>
+        <label class="field">
+          <span>Slow means it takes longer than (seconds) to load</span>
+          <input id="set-slowSeconds" type="number" min="1" max="20" step="0.5" />
+        </label>
+
+        <label class="check"><input id="set-checkWebsites" type="checkbox" /> Check websites</label>
+        <label class="check"><input id="set-checkInstagram" type="checkbox" /> Check Instagram followers</label>
+        <label class="field">
+          <span>Instagram profiles to look at per day</span>
+          <input id="set-instagramPerDay" type="number" min="10" max="500" step="10" />
+          <small>Profiles open in the background like a visit. If you're logged in to Instagram in this Chrome, it's your account viewing them, so keep this modest. Safest: use a Chrome profile that isn't logged in to your main Instagram.</small>
+        </label>
+        <label class="check"><input id="set-autoCheck" type="checkbox" /> Start checking right after collecting</label>
+        <label class="field">
+          <span>Google PageSpeed key (optional)</span>
+          <input id="set-pagespeedKey" type="text" autocomplete="off" spellcheck="false" placeholder="Adds Google's speed score out of 100" />
+          <small>Free from Google Cloud: enable "PageSpeed Insights API" and create an API key. No card needed.</small>
+        </label>
+      </div>
+    </details>
+
+    <details class="block settings" id="settingsBox">
+      <summary>Messages and other settings</summary>
+      <div class="fields">
+        <label class="field">
+          <span>Message for businesses with no website</span>
+          <textarea id="set-messageNoSite" rows="5"></textarea>
+        </label>
+        <label class="field">
+          <span>Message for businesses with a weak website</span>
+          <textarea id="set-messageWeakSite" rows="5"></textarea>
+          <small>{name} is the business name, {issues} the two biggest problems found (e.g. "it takes about 7 seconds to load and there's no contact form for enquiries"), {category} its type.</small>
         </label>
         <label class="field">
           <span>Open chats in</span>
@@ -99,7 +191,7 @@
           <input id="set-contactLabel" type="text" />
         </label>
         <label class="field">
-          <span>Most results to check per search</span>
+          <span>Most results to open per search</span>
           <input id="set-maxResults" type="number" min="10" max="500" step="10" />
         </label>
         <button type="button" class="btn danger" id="deleteAll">Delete all leads</button>
@@ -107,6 +199,9 @@
     </details>
 
     <script src="leads.js"></script>
+    <script src="rules.js"></script>
+    <script src="probe.js"></script>
+    <script src="qualify.js"></script>
     <script src="panel.js"></script>
   </body>
 </html>

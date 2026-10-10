@@ -14,8 +14,9 @@
     <!--
       A stand-in for the Google Maps search results page, built from the markers the
       content script relies on: a role="feed" list that loads more results as you
-      scroll, result links to /maps/place/, and a role="main" details panel with
-      data-item-id="phone:tel:…", "authority" (website) and "address".
+      scroll, result links to /maps/place/, rating/review aria-labels, and a role="main"
+      details panel with data-item-id="phone:tel:…", "authority" (website) and "address".
+      __SITE__ is replaced by the test with its local website server.
     -->
     <div id="side">
       <input id="searchboxinput" name="q" value="ladies salon in al barsha" />
@@ -23,19 +24,20 @@
     </div>
     <div id="detail"></div>
     <script>
+      const SITE = '__SITE__';
       const PLACES = [
-        { name: 'Noor Ladies Salon', phone: '+971501111111', category: 'Beauty salon' },
-        { name: 'Has Website Salon', phone: '+971502222222', website: 'https://hassite.ae/', cardWebsite: true },
-        { name: 'Insta Only Salon', phone: '+971553333333', website: 'https://www.instagram.com/insta/' },
+        { name: 'Noor Ladies Salon', phone: '+971501111111', category: 'Beauty salon', rating: 4.7, reviews: 230, instagram: 'noorsalon' },
+        { name: 'Has Website Salon', phone: '+971502222222', website: SITE + '/good/', cardWebsite: true, rating: 4.5, reviews: 80 },
+        { name: 'Insta Only Salon', phone: '+971553333333', website: 'https://www.instagram.com/instaonly/', rating: 4.1, reviews: 9 },
         { name: 'Landline Salon', phone: '+97144444444' },
         { name: 'Closed Salon', phone: '+971505555555', closed: true },
         { name: 'No Phone Salon' },
-        { name: 'Hidden Website Salon', phone: '+971506666666', website: 'https://hidden.ae/' },
-        { name: 'Glow Beauty Lounge', phone: '+971567777777', category: 'Beauty salon' },
+        { name: 'Slow Salon', phone: '+971506666666', website: SITE + '/slow/', rating: 4.2, reviews: 45 },
+        { name: 'Glow Beauty Lounge', phone: '+971567777777', category: 'Beauty salon', website: SITE + '/glow/', rating: 4.9, reviews: 310 },
         { name: 'Noor Salon Branch', phone: '+971501111111' },
-        { name: 'Fresha Booking Salon', phone: '+971508888888', website: 'https://www.fresha.com/a/x' },
-        { name: 'Al Reem Salon', phone: '+971509999999', category: 'Hair salon' },
-        { name: 'Last Salon', phone: '+971500000001', category: 'Nail salon' },
+        { name: 'Parked Salon', phone: '+971508888888', website: SITE + '/parked/', rating: 3.0, reviews: 3 },
+        { name: 'Error Salon', phone: '+971509999999', category: 'Hair salon', website: SITE + '/missing/', rating: 4.0, reviews: 12 },
+        { name: 'Last Salon', phone: '+971500000001', category: 'Nail salon', unclaimed: true },
       ];
       const feed = document.querySelector('[role=feed]');
       const side = document.getElementById('side');
@@ -48,12 +50,13 @@
           card.setAttribute('role', 'article');
           card.setAttribute('aria-label', p.name);
           card.innerHTML =
-            '<a aria-label="" href=""></a><div class="name"></div><div class="info"></div>' +
+            '<a aria-label="" href=""></a><div class="name"></div><span role="img" class="stars"></span><div class="info"></div>' +
             (p.cardWebsite ? '<a data-value="Website" aria-label="Visit website" href="">Website</a>' : '');
           const a = card.querySelector('a');
           a.setAttribute('aria-label', p.name);
           a.href = 'https://www.google.com/maps/place/' + slug(p.name) + '/data=!4m7!3m6!1s0x' + loaded + ':0x1';
           card.querySelector('.name').textContent = p.name;
+          if (p.rating) card.querySelector('.stars').setAttribute('aria-label', p.rating + ' stars ' + p.reviews + ' Reviews');
           card.querySelector('.info').textContent = (p.category || 'Salon') + ' · Al Barsha 1';
           if (p.cardWebsite) card.querySelector('[data-value=Website]').href = p.website;
           a.addEventListener('click', (e) => {
@@ -74,40 +77,34 @@
         }
       }
 
+      function add(parent, tag, attrs, text) {
+        const el = document.createElement(tag);
+        Object.entries(attrs || {}).forEach(([k, v]) => el.setAttribute(k, v));
+        if (text) el.textContent = text;
+        parent.appendChild(el);
+        return el;
+      }
+
       function showPlace(p) {
         const detail = document.getElementById('detail');
         detail.innerHTML = '';
-        const main = document.createElement('div');
-        main.setAttribute('role', 'main');
-        main.setAttribute('aria-label', p.name);
-        const h1 = document.createElement('h1');
-        h1.textContent = p.name;
-        main.appendChild(h1);
-        if (p.closed) main.appendChild(Object.assign(document.createElement('p'), { textContent: 'Permanently closed' }));
-        const cat = document.createElement('button');
-        cat.setAttribute('jsaction', 'pane.rating.category');
-        cat.textContent = p.category || 'Salon';
-        main.appendChild(cat);
-        const addr = document.createElement('button');
-        addr.setAttribute('data-item-id', 'address');
-        addr.setAttribute('aria-label', 'Address: Al Barsha 1 - Dubai');
-        addr.textContent = 'Al Barsha 1 - Dubai';
-        main.appendChild(addr);
-        if (p.website) {
-          const w = document.createElement('a');
-          w.setAttribute('data-item-id', 'authority');
-          w.href = p.website;
-          w.textContent = p.website;
-          main.appendChild(w);
+        const main = add(detail, 'div', { role: 'main', 'aria-label': p.name });
+        add(main, 'h1', {}, p.name);
+        if (p.rating) {
+          const row = add(main, 'div', { class: 'F7nice' });
+          add(row, 'span', { 'aria-hidden': 'true' }, String(p.rating));
+          add(row, 'span', { role: 'img', 'aria-label': p.rating + ' stars' });
+          add(row, 'span', { 'aria-label': p.reviews + ' reviews' }, '(' + p.reviews + ')');
+          // Review-topic chips also say "N reviews"; the real count is the largest.
+          add(main, 'button', { 'aria-label': 'price, mentioned in 14 reviews' }, 'price 14');
         }
-        if (p.phone) {
-          const ph = document.createElement('button');
-          ph.setAttribute('data-item-id', 'phone:tel:' + p.phone);
-          ph.setAttribute('aria-label', 'Phone: ' + p.phone);
-          ph.textContent = p.phone;
-          main.appendChild(ph);
-        }
-        detail.appendChild(main);
+        if (p.unclaimed) add(main, 'a', { href: 'https://business.google.com/create?claimthisbusiness=1' }, 'Own this business?');
+        if (p.closed) add(main, 'p', {}, 'Permanently closed');
+        add(main, 'button', { jsaction: 'pane.rating.category' }, p.category || 'Salon');
+        add(main, 'button', { 'data-item-id': 'address', 'aria-label': 'Address: Al Barsha 1 - Dubai' }, 'Al Barsha 1 - Dubai');
+        if (p.website) add(main, 'a', { 'data-item-id': 'authority', href: p.website }, p.website);
+        if (p.phone) add(main, 'button', { 'data-item-id': 'phone:tel:' + p.phone, 'aria-label': 'Phone: ' + p.phone }, p.phone);
+        if (p.instagram) add(main, 'a', { href: 'https://www.instagram.com/' + p.instagram + '/' }, 'Instagram');
       }
 
       loadMore(5);

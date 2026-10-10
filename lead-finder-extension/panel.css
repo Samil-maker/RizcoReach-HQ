@@ -12,6 +12,13 @@
   --warn-bg: #fff4d6;
   --warn-fg: #6b4a00;
   --error: #b42318;
+  --hot: #c2410c;
+  --hot-bg: #ffedd5;
+  --good: #15803d;
+  --good-bg: #dcfce7;
+  --muted-bg: #ececea;
+  --plus: #166534;
+  --minus: #b42318;
   --font: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
   --mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
   color-scheme: light;
@@ -30,6 +37,13 @@
     --warn-bg: #3a2e0c;
     --warn-fg: #f4d27a;
     --error: #ff8a80;
+    --hot: #fdba74;
+    --hot-bg: #3b1d0b;
+    --good: #86efac;
+    --good-bg: #0f2a19;
+    --muted-bg: #222220;
+    --plus: #86efac;
+    --minus: #ff9e94;
     color-scheme: dark;
   }
 }
@@ -75,7 +89,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .error { color: var(--error); font-size: 13px; }
 .warn { background: var(--warn-bg); color: var(--warn-fg); border-radius: 8px; padding: 8px 10px; font-size: 13px; }
 
-.tabs { display: flex; gap: 4px; overflow-x: auto; }
+.tabs { display: flex; flex-wrap: wrap; gap: 4px; }
 .tabs button {
   flex: 1 0 auto; padding: 6px 8px; border: 1px solid var(--line); border-radius: 999px; background: transparent;
   font-size: 12px; color: var(--fg-2); cursor: pointer; white-space: nowrap;
@@ -84,14 +98,31 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .tabs span { font-variant-numeric: tabular-nums; opacity: 0.8; }
 
 .leads { list-style: none; margin: 0; padding: 0; display: grid; }
-.lead { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 10px; padding: 10px 0; border-top: 1px solid var(--line); }
+.lead { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 10px; padding: 12px 0; border-top: 1px solid var(--line); }
 .lead:first-child { border-top: 0; }
+.lead-main { min-width: 0; display: grid; gap: 4px; }
+.lead-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .lead-name { font-weight: 600; overflow-wrap: anywhere; }
 .lead-meta { font-size: 12px; color: var(--fg-2); overflow-wrap: anywhere; }
 .lead-meta .num { font-family: var(--mono); color: var(--fg); }
-.lead-foot { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--fg-2); }
+.pill {
+  flex: none; padding: 2px 7px; border-radius: 999px; font: 650 11px/1.4 var(--font);
+  font-variant-numeric: tabular-nums; background: var(--muted-bg); color: var(--fg-2);
+}
+.pill-hot { background: var(--hot-bg); color: var(--hot); }
+.pill-good { background: var(--good-bg); color: var(--good); }
+.reasons { list-style: none; margin: 2px 0 0; padding: 0; display: grid; gap: 2px; font-size: 12px; }
+.reason { padding-left: 14px; position: relative; color: var(--fg-2); overflow-wrap: anywhere; }
+.reason::before { content: '•'; position: absolute; left: 3px; }
+.reason-good { color: var(--plus); }
+.reason-good::before { content: '+'; }
+.reason-bad { color: var(--minus); }
+.reason-bad::before { content: '–'; }
+.lead-foot { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 12px; color: var(--fg-2); }
 .lead-foot select { padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); font-size: 12px; }
+.links { display: inline-flex; gap: 10px; }
 .lead-foot a { color: var(--fg-2); }
+.linkish { margin-left: auto; padding: 0; border: 0; background: none; color: var(--fg-2); font-size: 12px; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 .lead .warn { grid-column: 1 / -1; }
 .wa {
   align-self: start; padding: 7px 12px; border: 0; border-radius: 999px; background: var(--wa); color: var(--wa-fg);
@@ -111,6 +142,12 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .field textarea { resize: vertical; }
 .check { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; }
+.field-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
+fieldset.field { margin: 0; padding: 0; border: 0; min-width: 0; }
+fieldset.field legend { padding: 0; margin-bottom: 4px; font-size: 12px; font-weight: 600; }
+.inline { display: flex; align-items: center; gap: 8px; }
+.inline select { width: auto; padding: 5px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); }
+.criteria { display: grid; gap: 6px; margin: 8px 0 4px; }
 .check input { margin-top: 3px; }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

@@ -1,8 +1,9 @@
 /*
  * Runs on Google Maps. When the side panel asks, it goes through the current
  * search results one by one (like you would by hand), reads each business's
- * phone number and website, and saves the ones with no website and a mobile
- * number. Progress is written to chrome.storage so the panel can show it.
+ * phone number, website, Google rating and social links, and saves the ones
+ * with a mobile number. Progress is written to chrome.storage so the panel can
+ * show it; the panel then checks each lead's website and Instagram.
  */
 (() => {
   if (window.__rrLeadFinderLoaded) return;
@@ -13,6 +14,8 @@
   let stopRequested = false;
   let lastQuery = '';
 
+  const ROBOT_MESSAGE =
+    'Google is asking you to prove you\'re not a robot. Solve it in the Google Maps tab, wait a few minutes, then click Collect again. The leads found so far are saved.';
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const pause = (min, max) => sleep(min + Math.random() * (max - min));
   const norm = (s) => String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
@@ -27,6 +30,7 @@
         hasList: !!document.querySelector('div[role="feed"]'),
         query: searchQuery(),
         placeName: place ? panelName(place) : '',
+        english: /^en\b/i.test(document.documentElement.lang || 'en'),
       });
       return undefined;
     }
@@ -51,7 +55,7 @@
     stopRequested = false;
     const settings = await LF.loadSettings();
     const query = searchQuery();
-    const stats = { checked: 0, closed: 0, website: 0, noMobile: 0, dupes: 0, added: 0, unreadable: 0 };
+    const stats = { checked: 0, closed: 0, filtered: 0, noMobile: 0, dupes: 0, added: 0, withSite: 0, unreadable: 0 };
     const run = { active: true, phase: 'loading', query: query, done: 0, total: 0, startedAt: Date.now(), error: '' };
     const save = () => chrome.storage.local.set({ run: Object.assign({}, run, { stats: Object.assign({}, stats), updatedAt: Date.now() }) });
     await save();
@@ -67,12 +71,13 @@
         run.total = items.length;
         await save();
         for (let i = 0; i < items.length && !stopRequested; i++) {
-          const raw = await readListing(items[i], settings);
+          if (robotCheck()) throw new Error(ROBOT_MESSAGE);
+          const raw = await readListing(items[i], settings, i > 0 ? items[i - 1].name : '');
           if (raw.unreadable) stats.unreadable++;
           await keep(raw, settings, stats, query);
           run.done = i + 1;
           await save();
-          if (i + 1 < items.length) await pause(450, 950);
+          if (i + 1 < items.length) await pause(800, 1500);
         }
       } else {
         // A single business is open instead of a results list.
@@ -105,8 +110,9 @@
       stats.closed++;
       return;
     }
-    if (LF.hasRealWebsite([raw.website], settings.socialIsNoWebsite)) {
-      stats.website++;
+    const hasSite = LF.hasRealWebsite([raw.website], settings.socialIsNoWebsite);
+    if ((settings.keep === 'noSite' && hasSite) || (settings.keep === 'site' && !hasSite)) {
+      stats.filtered++;
       return;
     }
     const phone = LF.pickPhone([raw.phone], settings);
@@ -120,11 +126,20 @@
       stats.dupes++;
       return;
     }
-    await chrome.storage.local.set({ [key]: LF.newLead(phone.e164, raw, query) });
+    await chrome.storage.local.set({ [key]: LF.newLead(phone, raw, query) });
     stats.added++;
+    if (hasSite) stats.withSite++;
   }
 
   // ─── Results list ──────────────────────────────────────────────────────────
+
+  /** Google's "unusual traffic" / CAPTCHA page. */
+  function robotCheck() {
+    if (/\/sorry\//.test(location.pathname)) return true;
+    if (document.querySelector('iframe[src*="recaptcha"], #captcha-form, #captcha')) return true;
+    const text = (document.body && document.body.innerText ? document.body.innerText.slice(0, 3000) : '');
+    return /unusual traffic|our systems have detected|not a robot|automated queries/i.test(text);
+  }
 
   /** Scrolls the results list until Google has loaded all of them (or max). */
   async function loadAllResults(feed, max, onProgress) {
@@ -135,6 +150,7 @@
       const items = listItems(feed);
       await onProgress(items.length);
       if (items.length >= max || reachedEnd(feed) || stopRequested) break;
+      if (robotCheck()) throw new Error(ROBOT_MESSAGE);
       unchanged = items.length === previous ? unchanged + 1 : 0;
       if (unchanged >= 4) break;
       previous = items.length;
@@ -160,6 +176,7 @@
   }
 
   function reachedEnd(feed) {
+    if (feed.querySelector('span.HlvSq')) return true;
     const tail = Array.from(feed.children)
       .slice(-3)
       .map((el) => el.textContent || '')
@@ -177,10 +194,10 @@
 
   // ─── One business ──────────────────────────────────────────────────────────
 
-  async function readListing(item, settings) {
-    // If the result card already shows a real website, there's no need to open it.
+  async function readListing(item, settings, previousName) {
+    // Only collecting businesses without a website? Then one the card shows a website for can be skipped unopened.
     const cardSite = cardWebsite(item.card);
-    if (cardSite && LF.hasRealWebsite([cardSite], settings.socialIsNoWebsite)) {
+    if (settings.keep === 'noSite' && cardSite && LF.hasRealWebsite([cardSite], settings.socialIsNoWebsite)) {
       return { name: item.name, website: cardSite, phone: '', mapsUrl: item.href };
     }
     if (!document.contains(item.link)) return Object.assign(fromCard(item), { unreadable: true });
@@ -190,8 +207,18 @@
     item.link.click();
     const panel = await waitForPanel(item.name, 8000);
     if (!panel) return Object.assign(fromCard(item), { unreadable: true });
-    await pause(300, 600); // let the details finish rendering
-    return readPanel(panel, item.name, item.href);
+    // Let the details finish rendering (longer when the previous business had the same name,
+    // because the panel may still be showing that one).
+    await pause(700, 1000);
+    if (previousName && norm(previousName) === norm(item.name)) await sleep(1800);
+    const raw = readPanel(panel, item.name, item.href);
+    // The card usually shows rating and review count too; use it when the panel didn't.
+    if (raw.rating == null || raw.reviews == null) {
+      const card = readRating(item.card);
+      if (raw.rating == null) raw.rating = card.rating;
+      if (raw.reviews == null) raw.reviews = card.reviews;
+    }
+    return raw;
   }
 
   /** Waits for the details panel of the business we just clicked. */
@@ -247,13 +274,109 @@
     const category = categoryEl ? categoryEl.textContent.trim() : '';
     const top = (panel.innerText || panel.textContent || '').slice(0, 1500);
     const closed = /permanently closed|temporarily closed|مغلق نهائي|مغلق مؤقت/i.test(top);
+    const stars = readRating(panel);
+    const socials = readSocials(panel, website);
+    const labels = Array.from(panel.querySelectorAll('[aria-label]'))
+      .slice(0, 300)
+      .map((el) => el.getAttribute('aria-label'))
+      .join(' ');
+    const unclaimed =
+      !!panel.querySelector('a[href*="claimthisbusiness"], a[href*="claimabusiness"]') ||
+      /claim this business|own this business\?/i.test(top + ' ' + labels);
 
-    return { name: name, phone: phone, website: website, address: address, category: category, closed: closed, mapsUrl: href };
+    return {
+      name: name,
+      phone: phone,
+      website: website,
+      address: address,
+      category: category,
+      closed: closed,
+      mapsUrl: href,
+      rating: stars.rating,
+      reviews: stars.reviews,
+      instagram: socials.instagram,
+      facebook: socials.facebook,
+      unclaimed: unclaimed,
+    };
   }
 
   /** When the details panel can't be read, use what the result card shows. */
   function fromCard(item) {
-    return { name: item.name, phone: cardPhone(item.card), website: cardWebsite(item.card), mapsUrl: item.href };
+    const stars = readRating(item.card);
+    const website = cardWebsite(item.card);
+    return {
+      name: item.name,
+      phone: cardPhone(item.card),
+      website: website,
+      mapsUrl: item.href,
+      rating: stars.rating,
+      reviews: stars.reviews,
+      instagram: LF.instagramHandle(website),
+    };
+  }
+
+  /**
+   * Google rating and review count. Maps labels them for screen readers
+   * ("4.6 stars", "1,234 reviews"); review-topic chips also say "N reviews", so
+   * the count is the LARGEST one. Visible "4.6 (1,234)" text is the fallback.
+   */
+  function readRating(root) {
+    const out = { rating: null, reviews: null };
+    if (!root) return out;
+    const labels = [root].concat(Array.from(root.querySelectorAll('[aria-label]')).slice(0, 400));
+    let most = null;
+    for (const el of labels) {
+      const label = el.getAttribute && el.getAttribute('aria-label');
+      if (!label) continue;
+      if (out.rating == null) {
+        const r = label.match(/([0-5](?:[.,]\d)?)\s*stars?\b/i);
+        if (r) out.rating = parseFloat(r[1].replace(',', '.'));
+      }
+      const n = label.match(/(\d[\d,.\s ]*[KkMm]?)\s*reviews?\b/i);
+      if (n) {
+        const count = countOf(n[1]);
+        if (count != null && (most == null || count > most)) most = count;
+      } else if (/\bno reviews\b/i.test(label) && most == null) {
+        most = 0;
+      }
+    }
+    out.reviews = most;
+    if (out.rating == null) {
+      const visible = root.querySelector('span.MW4etd, div.F7nice span[aria-hidden="true"]');
+      if (visible && /^[0-5][.,]\d$/.test(visible.textContent.trim())) out.rating = parseFloat(visible.textContent.trim().replace(',', '.'));
+    }
+    if (out.reviews == null) {
+      const visible = root.querySelector('span.UY7F9');
+      if (visible) out.reviews = countOf(visible.textContent);
+    }
+    const text = (root.innerText || root.textContent || '').slice(0, 2000);
+    const m = text.match(/([0-5][.,]\d)\s*\(([\d][\d,.\s]*[KkMm]?)\)/);
+    if (m) {
+      if (out.rating == null) out.rating = parseFloat(m[1].replace(',', '.'));
+      if (out.reviews == null) out.reviews = countOf(m[2]);
+    }
+    return out;
+  }
+
+  /** "1,234" / "1.234" / "1 234" → 1234; "1.2K" → 1200 */
+  function countOf(text) {
+    const t = String(text).trim();
+    const k = t.match(/^(\d+(?:[.,]\d+)?)\s*([KkMm])$/);
+    if (k) return Math.round(parseFloat(k[1].replace(',', '.')) * (/k/i.test(k[2]) ? 1e3 : 1e6));
+    const digits = t.replace(/[^\d]/g, '');
+    return digits ? parseInt(digits, 10) : null;
+  }
+
+  /** Instagram / Facebook links shown on the listing (or used as its "website"). */
+  function readSocials(root, website) {
+    let instagram = LF.instagramHandle(website);
+    let facebook = /facebook\.com|fb\.com/i.test(website || '') ? website : '';
+    root.querySelectorAll('a[href*="instagram.com"], a[href*="facebook.com"]').forEach((a) => {
+      const href = unwrapRedirect(a.href);
+      if (!instagram) instagram = LF.instagramHandle(href);
+      if (!facebook && /facebook\.com/i.test(href)) facebook = href;
+    });
+    return { instagram: instagram, facebook: facebook };
   }
 
   function cardWebsite(card) {

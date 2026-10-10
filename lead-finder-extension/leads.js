@@ -1,6 +1,7 @@
 /*
- * Shared rules for the Lead Finder: phone numbers, websites, messages and exports.
- * Loaded by the side panel and by the Google Maps content script (as globalThis.LF).
+ * Shared basics for the Lead Finder: settings, phone numbers, website links and
+ * the lead record. Loaded by the side panel and by the Google Maps content
+ * script (as globalThis.LF). Scoring lives in rules.js (side panel only).
  */
 (function (root) {
   'use strict';
@@ -11,15 +12,32 @@
     "Interested? (Reply STOP and we won't message again.)";
 
   const DEFAULT_SETTINGS = {
+    // Collecting
     country: 'AE',
     mobileOnly: true,
+    keep: 'all', // which businesses to keep: 'all', 'noSite' (no website only) or 'site' (with a website only)
     socialIsNoWebsite: true,
-    message: DEFAULT_MESSAGE,
+    maxResults: 120,
+    // Checking
+    checkWebsites: true,
+    checkInstagram: true,
+    instagramPerDay: 150, // Instagram profile lookups per day (each looks like a visit)
+    autoCheck: true,
+    pagespeedKey: '',
+    // Lead criteria
+    minFollowers: 1000,
+    requireInstagram: false,
+    minReviews: 0,
+    slowSeconds: 4,
+    weakAt: 2,
+    criteria: null, // filled from rules.js DEFAULT_CRITERIA
+    // Outreach
+    messageNoSite: DEFAULT_MESSAGE,
+    messageWeakSite: '', // empty = rules.js default
     contactPrefix: 'Lead -',
     contactLabel: 'RizcoReach Leads',
     dailyLimit: 30,
     openIn: 'web', // 'web' = WhatsApp Web, 'app' = wa.me link (opens the WhatsApp app)
-    maxResults: 120,
   };
 
   const STATUSES = ['New', 'Messaged', 'Replied', 'Interested', 'Not interested', 'Do not contact'];
@@ -162,21 +180,65 @@
     });
   }
 
+  // ─── Instagram links ───────────────────────────────────────────────────────
+
+  const IG_RESERVED = new Set([
+    'p', 'reel', 'reels', 'tv', 'stories', 'explore', 'accounts', 'about', 'legal', 'developer', 'direct', 'web',
+    'challenge', 'graphql', 'api', 'ajax', 'static', 'emails', 'oauth', 'privacy', 'terms', 'press', 'help', 's',
+    'share', 'invites', 'ar', 'session', 'nametag', 'qr', 'directory', 'lite', 'create', 'locations', 'popular',
+  ]);
+  const IG_VALID = /^(?!.*\.\.)(?!\.)(?!.*\.$)[a-z0-9._]{1,30}$/;
+
+  /**
+   * "https://www.instagram.com/noor.salon/?hl=en" → "noor.salon" ('' if it isn't a profile link).
+   * Also handles l.instagram.com redirects, /_u/ app links, /stories/<handle>/… and login?next=/<handle>/.
+   */
+  function instagramHandle(url) {
+    let s = String(url || '').trim();
+    const wrapped = s.match(/l\.instagram\.com\/?\?u=([^&\s]+)/i);
+    if (wrapped) {
+      try {
+        s = decodeURIComponent(wrapped[1]);
+      } catch (e) {
+        return '';
+      }
+    }
+    const next = s.match(/instagram\.com\/accounts\/login\/?\?next=([^&\s]+)/i);
+    if (next) {
+      try {
+        s = 'instagram.com' + decodeURIComponent(next[1]);
+      } catch (e) {
+        return '';
+      }
+    }
+    const m = s.match(/(?:^|\/\/|\.|\s)(?:instagram\.com|instagr\.am)\/(?:#!\/)?((?:_u|stories)\/)?@?([A-Za-z0-9._]{1,30})(?=[/?#\s]|$)/i);
+    if (!m) return '';
+    const handle = m[2].toLowerCase();
+    if (IG_RESERVED.has(handle) || !IG_VALID.test(handle)) return '';
+    return handle;
+  }
+
   // ─── Leads & messages ──────────────────────────────────────────────────────
 
-  function newLead(e164, raw, query) {
+  function newLead(phone, raw, query) {
     return {
-      e164: e164,
+      e164: phone.e164,
+      phoneType: phone.type,
       name: String(raw.name || '').trim(),
       category: String(raw.category || '').trim(),
       address: String(raw.address || '').trim(),
       mapsUrl: raw.mapsUrl || '',
       website: raw.website || '',
+      rating: typeof raw.rating === 'number' ? raw.rating : null,
+      reviews: typeof raw.reviews === 'number' ? raw.reviews : null,
+      socials: { instagram: raw.instagram || '', facebook: raw.facebook || '' },
+      unclaimed: !!raw.unclaimed, // Google listing has "Claim this business"
       query: query || '',
       added: new Date().toISOString(),
       status: 'New',
       contacted: null,
       exported: false,
+      checks: {}, // filled in by the side panel's checker: site, instagram, pagespeed
     };
   }
 
@@ -185,12 +247,15 @@
     return String(name || '').split('|')[0].replace(/\s+/g, ' ').trim();
   }
 
-  function fillMessage(template, lead) {
-    const values = {
-      name: cleanName(lead.name) || 'your business',
-      category: (lead.category || 'business').toLowerCase(),
-      search: lead.query || '',
-    };
+  function fillMessage(template, lead, extra) {
+    const values = Object.assign(
+      {
+        name: cleanName(lead.name) || 'your business',
+        category: (lead.category || 'business').toLowerCase(),
+        search: lead.query || '',
+      },
+      extra || {}
+    );
     return String(template || DEFAULT_MESSAGE)
       .replace(/\{(\w+)\}/g, (match, key) => (Object.prototype.hasOwnProperty.call(values, key.toLowerCase()) ? values[key.toLowerCase()] : match))
       .replace(/[ \t]{2,}/g, ' ')
@@ -205,7 +270,7 @@
       : 'https://web.whatsapp.com/send?phone=' + phone + (text ? '&text=' + t : '');
   }
 
-  // ─── Exports ───────────────────────────────────────────────────────────────
+  // ─── CSV ───────────────────────────────────────────────────────────────────
 
   function csvField(v) {
     const s = v == null ? '' : String(v);
@@ -220,41 +285,19 @@
     return rows.map((r) => r.map((v) => String(v == null ? '' : v).replace(/[\t\r\n]+/g, ' ')).join('\t')).join('\n');
   }
 
-  /** Google Contacts "Google CSV" import format. */
-  function contactsRows(leads, s) {
-    const rows = [['Name', 'Given Name', 'Organization 1 - Name', 'Phone 1 - Type', 'Phone 1 - Value', 'Notes', 'Group Membership']];
-    leads.forEach((l) => {
-      const display = [s.contactPrefix, cleanName(l.name) || formatPhone(l.e164)].filter(Boolean).join(' ');
-      const notes = [l.query ? 'Google Maps search: ' + l.query : 'From Google Maps', l.category, l.address, l.mapsUrl].filter(Boolean).join('\n');
-      const groups = s.contactLabel ? s.contactLabel + ' ::: * myContacts' : '* myContacts';
-      rows.push([display, display, cleanName(l.name), 'Mobile', l.e164, notes, groups]);
-    });
-    return rows;
-  }
-
-  function sheetRows(leads) {
-    const rows = [['Mobile', 'Business', 'Category', 'Address', 'Status', 'Added', 'Last contacted', 'Google Maps', 'Search']];
-    leads.forEach((l) => {
-      rows.push([
-        formatPhone(l.e164),
-        l.name,
-        l.category,
-        l.address,
-        l.status,
-        (l.added || '').slice(0, 10),
-        (l.contacted || '').slice(0, 10),
-        l.mapsUrl,
-        l.query,
-      ]);
-    });
-    return rows;
-  }
-
   // ─── Storage helpers (extension only) ──────────────────────────────────────
+
+  /** Saved settings on top of the defaults (and settings saved by version 1). */
+  function withDefaults(saved) {
+    const s = Object.assign({}, DEFAULT_SETTINGS, saved || {});
+    if (saved && saved.message && !saved.messageNoSite) s.messageNoSite = saved.message;
+    s.criteria = Object.assign({}, root.LF && root.LF.DEFAULT_CRITERIA, (saved && saved.criteria) || {});
+    return s;
+  }
 
   async function loadSettings() {
     const got = await chrome.storage.local.get('settings');
-    return Object.assign({}, DEFAULT_SETTINGS, got.settings || {});
+    return withDefaults(got.settings);
   }
 
   async function loadLeads() {
@@ -275,14 +318,14 @@
     formatPhone,
     hostOf,
     hasRealWebsite,
+    instagramHandle,
     newLead,
     cleanName,
     fillMessage,
     whatsAppUrl,
     toCsv,
     toTsv,
-    contactsRows,
-    sheetRows,
+    withDefaults,
     loadSettings,
     loadLeads,
   };
