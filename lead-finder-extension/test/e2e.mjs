@@ -226,7 +226,7 @@ try {
   assert.deepEqual(await igPage.evaluate(() => rrProbeInstagram()), {
     path: '/ig-profile/', title: 'Noor (@noorsalon) • Instagram photos and videos',
     og: '5,200 Followers, 10 Following, 99 Posts - See Instagram photos and videos from Noor (@noorsalon)',
-    description: '', followers: 5213, notFound: false,
+    header: '', description: '', followers: 5213, notFound: false,
   });
   await igPage.goto(`${SITE}/ig-missing/`);
   await igPage.addScriptTag({ content: probeSource });

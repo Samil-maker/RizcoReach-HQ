@@ -417,7 +417,7 @@
       if (/^\/(accounts\/login|challenge)/.test(page.path) || page.path === '/') return { limited: true };
       if (page.notFound) return { missing: true };
       if (page.followers != null) return { followers: page.followers, exact: true, source: 'profile' };
-      const followers = LF.parseFollowers(page.og) != null ? LF.parseFollowers(page.og) : LF.parseFollowers(page.description);
+      const followers = [page.og, page.description, page.header].map(LF.parseFollowers).find((n) => n != null);
       if (followers != null) return { followers: followers, source: 'profile' };
       return { empty: true };
     } catch (err) {

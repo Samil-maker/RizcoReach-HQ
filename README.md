@@ -44,10 +44,12 @@ result summary (e.g. the audit score and issues).
 
 ## Lead Finder (Chrome extension)
 
-`lead-finder-extension/` is a Chrome extension that collects businesses with no
-website and their mobile numbers from Google Maps, with WhatsApp, Google
-Contacts and Google Sheets buttons. It isn't part of the website build. Install
-and usage: [`lead-finder-extension/README.md`](lead-finder-extension/README.md).
+`lead-finder-extension/` is a Chrome extension that collects businesses and
+their mobile numbers from Google Maps. It then checks each one's website
+(speed, contact form, preloader, mobile set-up, dead domains…) and Instagram
+followers, and scores them Hot / Good / Low. It has WhatsApp, Google Contacts
+and Google Sheets buttons. It isn't part of the website build. Install and
+usage: [`lead-finder-extension/README.md`](lead-finder-extension/README.md).
 
 ## Lead Engine (outbound leads)
 

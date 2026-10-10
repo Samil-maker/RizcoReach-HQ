@@ -137,6 +137,8 @@
   function robotCheck() {
     if (/\/sorry\//.test(location.pathname)) return true;
     if (document.querySelector('iframe[src*="recaptcha"], #captcha-form, #captcha')) return true;
+    // Only trust the wording when the Maps page itself is gone (a review could say "unusual traffic").
+    if (document.querySelector('div[role="feed"], [role="main"]')) return false;
     const text = (document.body && document.body.innerText ? document.body.innerText.slice(0, 3000) : '');
     return /unusual traffic|our systems have detected|not a robot|automated queries/i.test(text);
   }

@@ -218,8 +218,17 @@ function rrProbeInstagram() {
     const m = text.match(/"follower_count":\s*(\d+)/) || text.match(/"edge_followed_by":\s*\{\s*"count":\s*(\d+)/);
     if (m) followers = parseInt(m[1], 10);
   }
+  // Logged-in pages draw the header after load: the followers link holds the exact count in a tooltip.
+  if (followers == null) {
+    const tip = document.querySelector('a[href*="/followers"] span[title], a[href*="/followers"] [title]');
+    const exact = tip && (tip.getAttribute('title') || '').replace(/[^\d]/g, '');
+    if (exact) followers = parseInt(exact, 10);
+  }
+  const header = document.querySelector('header');
+  const headerText = header ? (header.innerText || '').replace(/\s+/g, ' ').slice(0, 500) : '';
   const visible = (document.title + ' ' + (document.body ? (document.body.innerText || '').slice(0, 3000) : ''));
   return {
+    header: headerText,
     path: location.pathname,
     title: document.title,
     og: meta('meta[property="og:description"]'),

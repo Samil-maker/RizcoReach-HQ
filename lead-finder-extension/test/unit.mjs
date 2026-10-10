@@ -201,6 +201,23 @@ test('evaluate: follower and review thresholds, pending checks', () => {
   assert.equal(LF.evaluate({ ...base, website: 'https://noor.ae', checks: {} }, S({ checkWebsites: false, checkInstagram: false })).verdict, 'low');
 });
 
+test('a lead whose website could not be checked is never Hot', () => {
+  const lead = { e164: '+971501111111', phoneType: 'mobile', name: 'Noor', website: 'https://noor.ae', rating: 4.8, reviews: 400,
+    checks: { site: { state: 'error', error: 'offline' }, instagram: { state: 'done', handle: 'noor', followers: 20000 } } };
+  const ev = LF.evaluate(lead, S());
+  assert.equal(ev.score, 22 + 25 + 20 + 10);
+  assert.equal(ev.verdict, 'good');
+});
+
+test('spreadsheet export neutralises formula-like text', () => {
+  const lead = LF.newLead({ e164: '+971501234567', type: 'mobile' }, { name: '=HYPERLINK("http://x","click")', category: '+cat', address: '@home' }, 'q');
+  const row = LF.sheetRows([lead], S({ checkInstagram: false }))[1];
+  assert.equal(row[0], '+971 50 123 4567');
+  assert.equal(row[1], '\'=HYPERLINK("http://x","click")');
+  assert.equal(row[11], "'+cat");
+  assert.equal(row[12], "'@home");
+});
+
 test('messages pick the right template and mention real issues', () => {
   const s = S();
   const base = { e164: '+971501111111', phoneType: 'mobile', name: 'Noor Salon', reviews: 40, rating: 4.5 };

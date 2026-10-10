@@ -360,6 +360,8 @@
     if (blockers.length) verdict = 'low';
     else if (pending) verdict = 'checking';
     else verdict = score >= 70 ? 'hot' : score >= 50 ? 'good' : 'low';
+    // Without knowing what their website is like, a lead can be Good but never Hot.
+    if (verdict === 'hot' && opportunity === 'unchecked') verdict = 'good';
 
     return {
       verdict: verdict,
@@ -442,6 +444,12 @@
     return rows;
   }
 
+  /** Stops spreadsheet apps from running text that starts like a formula (=, +, -, @). */
+  function cell(v) {
+    if (typeof v !== 'string') return v;
+    return /^[=+\-@\t\r]/.test(v) ? "'" + v : v;
+  }
+
   function sheetRows(leads, s) {
     const rows = [[
       'Mobile', 'Business', 'Verdict', 'Score', 'Why', 'Website', 'Website issues', 'Instagram', 'Followers',
@@ -449,26 +457,28 @@
     ]];
     leads.forEach((l) => {
       const ev = evaluate(l, s);
-      rows.push([
-        LF.formatPhone(l.e164),
-        l.name,
-        VERDICT_NAMES[ev.verdict],
-        ev.score,
-        ev.reasons.map((r) => r.text).join('; '),
-        l.website || '',
-        ev.issues.map((i) => i.chip).join(', '),
-        ev.handle ? 'https://www.instagram.com/' + ev.handle + '/' : '',
-        ev.followers != null ? ev.followers : '',
-        l.rating != null ? l.rating : '',
-        l.reviews != null ? l.reviews : '',
-        l.category,
-        l.address,
-        l.status,
-        (l.added || '').slice(0, 10),
-        (l.contacted || '').slice(0, 10),
-        l.mapsUrl,
-        l.query,
-      ]);
+      rows.push(
+        [
+          LF.formatPhone(l.e164), // "+971 50 …" with spaces stays text in spreadsheets
+          cell(l.name),
+          VERDICT_NAMES[ev.verdict],
+          ev.score,
+          cell(ev.reasons.map((r) => r.text).join('; ')),
+          cell(l.website || ''),
+          cell(ev.issues.map((i) => i.chip).join(', ')),
+          ev.handle ? 'https://www.instagram.com/' + ev.handle + '/' : '',
+          ev.followers != null ? ev.followers : '',
+          l.rating != null ? l.rating : '',
+          l.reviews != null ? l.reviews : '',
+          cell(l.category),
+          cell(l.address),
+          l.status,
+          (l.added || '').slice(0, 10),
+          (l.contacted || '').slice(0, 10),
+          cell(l.mapsUrl),
+          cell(l.query),
+        ]
+      );
     });
     return rows;
   }
