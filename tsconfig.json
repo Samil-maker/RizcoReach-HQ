@@ -1,5 +1,5 @@
 {
   "extends": "astro/tsconfigs/strict",
   "include": [".astro/types.d.ts", "**/*"],
-  "exclude": ["dist", ".claude"]
+  "exclude": ["dist", ".claude", "lead-engine", "lead-finder-extension"]
 }
