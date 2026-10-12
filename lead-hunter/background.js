@@ -657,14 +657,24 @@ async function applyQueue(items) {
       if (!lead) continue;
       const item = byId.get(id);
       const before = JSON.stringify([lead.phoneQueue, lead.status]);
+      const prev = lead.phoneQueue || null;
       if (!item) lead.phoneQueue = null;
       else {
-        lead.phoneQueue = { state: item.status, at: item.statusAt, rev: item.addedAt };
-        if (item.status === 'sent' && ['new', 'followup'].includes(lead.status)) {
+        // Each phone "sent" is applied once, so later syncs never override a status set by hand.
+        const seen = prev && prev.state === item.status && prev.at === item.statusAt && prev.rev === item.addedAt;
+        lead.phoneQueue = { state: item.status, at: item.statusAt, rev: item.addedAt, by: seen ? prev.by : undefined, from: seen ? prev.from : undefined };
+        if (!seen && item.status === 'sent' && ['new', 'followup'].includes(lead.status)) {
+          lead.phoneQueue.by = 'phone';
+          lead.phoneQueue.from = lead.status;
           lead.status = 'contacted';
           lead.contactedAt = lead.contactedAt || item.statusAt;
           lead.statusHistory = [...(lead.statusHistory || []), { status: 'contacted', at: item.statusAt, via: 'phone' }].slice(-20);
           contacted++;
+        }
+        // Undo on the phone (back to "To send" or removed) reverts a "contacted" that the phone caused.
+        if (!seen && item.status !== 'sent' && prev && prev.by === 'phone' && lead.status === 'contacted') {
+          lead.status = prev.from || 'new';
+          lead.statusHistory = [...(lead.statusHistory || []), { status: lead.status, at: now(), via: 'phone-undo' }].slice(-20);
         }
       }
       if (JSON.stringify([lead.phoneQueue, lead.status]) !== before) {
@@ -680,9 +690,37 @@ async function applyQueue(items) {
   });
 }
 
+/* Status changes made on the computer for leads waiting on the phone are batched and retried until they land. */
+let mirrorTimer = 0;
+async function mirrorToPhone(update) {
+  await locked(async () => {
+    const { queuePending = [] } = await store.get('queuePending');
+    await store.set({ queuePending: [...queuePending.filter((u) => u.id !== update.id), update] });
+  });
+  clearTimeout(mirrorTimer);
+  mirrorTimer = setTimeout(() => flushMirror().catch(() => {}), 400);
+}
+async function flushMirror() {
+  const { queuePending = [] } = await store.get('queuePending');
+  if (!queuePending.length) return null;
+  const q = await queueApi('POST', { updates: queuePending }); // throws: entries stay for the next try
+  await locked(async () => {
+    const { queuePending: now_ = [] } = await store.get('queuePending');
+    const sent = (u) => queuePending.some((x) => x.id === u.id && x.status === u.status && x.rev === u.rev);
+    await store.set({ queuePending: now_.filter((u) => !sent(u)) });
+  });
+  return q;
+}
+
+const FINISHED_KEEP_MS = 3 * LH.DAY;
 async function syncQueue() {
+  await flushMirror().catch(() => {});
   const q = await queueApi('GET');
-  return applyQueue(q.items);
+  const result = await applyQueue(q.items);
+  // Only the extension cleans up the server, and only items it has just applied, so no "sent" is ever lost.
+  const old = q.items.filter((i) => i.status !== 'queued' && now() - i.statusAt > FINISHED_KEEP_MS).map((i) => i.id);
+  if (old.length) await queueApi('DELETE', { ids: old }).catch(() => {});
+  return result;
 }
 
 async function pushToQueue(ids, overrides = {}) {
@@ -770,10 +808,7 @@ const handlers = {
     if (msg.patch && 'website' in msg.patch) enqueue([msg.id], true);
     const pq = lead && lead.phoneQueue;
     if (pq && pq.state === 'queued' && ['contacted', 'replied', 'meeting', 'won', 'lost', 'skip'].includes(msg.patch && msg.patch.status)) {
-      const status = msg.patch.status === 'contacted' ? 'sent' : 'removed';
-      queueApi('POST', { updates: [{ id: msg.id, status, rev: pq.rev }] })
-        .then((q) => applyQueue(q.items))
-        .catch(() => {});
+      mirrorToPhone({ id: msg.id, status: msg.patch.status === 'contacted' ? 'sent' : 'removed', rev: pq.rev });
     }
     return { lead };
   },
@@ -834,8 +869,12 @@ const handlers = {
     return { ok: true, total: q.items.length, waiting: q.items.filter((i) => i.status === 'queued').length };
   },
   'queue:clear': async () => {
-    const q = await queueApi('DELETE', { finished: true });
-    return applyQueue(q.items);
+    await flushMirror().catch(() => {});
+    const q = await queueApi('GET');
+    const result = await applyQueue(q.items);
+    const done = q.items.filter((i) => i.status !== 'queued').map((i) => i.id);
+    if (done.length) await queueApi('DELETE', { ids: done });
+    return result;
   },
   stats: async () => {
     const leads = await allLeads();
@@ -874,8 +913,8 @@ chrome.alarms.onAlarm.addListener(async (a) => {
   // Watchdog: a hunt tab that has gone quiet (login wall, crash) moves on.
   const { hunt } = await store.get('hunt');
   if (hunt && hunt.status === 'running' && now() - hunt.lastActivity > 150000) nextKeyword('stalled');
-  const { phoneQueueIds = [] } = await store.get('phoneQueueIds');
-  if (phoneQueueIds.length) syncQueue().catch(() => {});
+  const { phoneQueueIds = [], queuePending = [] } = await store.get(['phoneQueueIds', 'queuePending']);
+  if (phoneQueueIds.length || queuePending.length) syncQueue().catch(() => {});
 });
 
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {

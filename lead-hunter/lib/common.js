@@ -65,6 +65,7 @@
     scrollDelayMs: 1800,
     queueSite: 'https://www.rizcoreach.ae',
     queueKey: '',
+    queueKeyAt: 0,
     templates: null, // null = use LH.DEFAULT_TEMPLATES
   };
 
@@ -232,7 +233,8 @@
   /** wa.me click-to-chat link; opens the WhatsApp app on a phone with the message typed in. */
   LH.waLink = (number, text) => {
     const d = String(number || '').replace(/\D/g, '');
-    return `https://wa.me/${d}${text ? `?text=${encodeURIComponent(text)}` : ''}`;
+    const t = text ? String(text) : '';
+    return `https://wa.me/${d}${t ? `?text=${encodeURIComponent(t.toWellFormed ? t.toWellFormed() : t)}` : ''}`;
   };
 
   /** Phone number from a WhatsApp click-to-chat link, if any. */

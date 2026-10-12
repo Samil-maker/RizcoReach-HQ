@@ -15,8 +15,9 @@
     const n = qr.getModuleCount();
     const quiet = 4;
     const total = n + quiet * 2;
-    const ratio = Math.max(1, Math.min(3, root.devicePixelRatio || 1));
-    const cell = Math.max(1, Math.floor((cssSize * ratio) / total));
+    const ratio = Math.max(0.5, Math.min(3, root.devicePixelRatio || 1));
+    // At least 2 device pixels per module: tiny modules are what make screen QR codes fail to scan.
+    const cell = Math.max(2, Math.floor((cssSize * ratio) / total));
     const px = cell * total;
     canvas.width = px;
     canvas.height = px;

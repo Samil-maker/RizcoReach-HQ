@@ -372,7 +372,7 @@ try {
   await dash.click('[data-act="test-queue"]');
   await dash.waitForFunction(() => /Connected\. 0 leads waiting/.test(document.querySelector('[data-queue-status]').textContent));
   const pairUrl = await qrText('[data-pair-canvas]');
-  assert.equal(pairUrl, `https://www.rizcoreach.ae/outreach#k=${encodeURIComponent(QUEUE_KEY)}`);
+  assert.match(pairUrl, new RegExp(`^https://www\\.rizcoreach\\.ae/outreach#k=${encodeURIComponent(QUEUE_KEY)}&t=\\d{13}$`));
   if (SHOTS) {
     await dash.$eval('#phone', (el) => el.scrollIntoView());
     await dash.screenshot({ path: `${SHOTS}/8-settings-phone.png` });
@@ -406,6 +406,13 @@ try {
   const synced = (await storage('lead:' + firstCard))['lead:' + firstCard];
   assert.equal(synced.status, 'contacted');
   assert.equal(synced.phoneQueue.state, 'sent');
+  // A status set by hand afterwards survives later syncs.
+  await dash.selectOption('[data-f="status"]', 'all');
+  await dash.waitForSelector(`tr[data-id="${firstCard}"]`);
+  await dash.selectOption(`tr[data-id="${firstCard}"] [data-status]`, 'followup');
+  await waitFor(async () => (await storage('lead:' + firstCard))['lead:' + firstCard].status === 'followup', 5000, 'manual follow-up');
+  await sw.evaluate(() => syncQueue());
+  assert.equal((await storage('lead:' + firstCard))['lead:' + firstCard].status, 'followup', 'sync must not override a manual status');
 
   // Marking a queued lead as contacted on the computer ticks it off on the phone too.
   const second = ids.find((id) => id !== firstCard);

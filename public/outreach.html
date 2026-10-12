@@ -33,10 +33,10 @@
       }
       * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
       html, body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.45 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
-      body { padding: env(safe-area-inset-top) 0 calc(env(safe-area-inset-bottom) + 24px); min-height: 100vh; }
+      body { padding: 0 0 calc(env(safe-area-inset-bottom) + 24px); min-height: 100vh; }
       [hidden] { display: none !important; }
       button, a.btn { font: inherit; color: inherit; }
-      header { position: sticky; top: 0; z-index: 5; background: rgb(5 5 5 / 0.94); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); padding: 14px 16px 0; }
+      header { position: sticky; top: 0; z-index: 5; background: rgb(5 5 5 / 0.94); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); padding: calc(env(safe-area-inset-top) + 14px) 16px 0; }
       .top { display: flex; align-items: center; gap: 12px; }
       h1 { font-size: 20px; margin: 0; letter-spacing: -0.01em; }
       .sub { color: var(--fg-3); font-size: 13px; }
@@ -113,9 +113,10 @@
 
     <script>
       (() => {
-        const KEY = 'lh-queue-key';
+        const KEY = 'lh-queue-pair';
         const CACHE = 'lh-queue-cache';
         const PENDING = 'lh-queue-pending';
+        const HIDDEN = 'lh-queue-hidden';
         const $ = (s) => document.querySelector(s);
         const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
         const ls = {
@@ -142,9 +143,11 @@
 
         // The pairing link carries the key in the #fragment (never sent to the server).
         // It stays in the address bar so "Add to Home Screen" keeps it on iPhone too.
-        const fromHash = new URLSearchParams(location.hash.slice(1)).get('k');
-        if (fromHash) ls.set(KEY, fromHash);
-        const key = fromHash || ls.get(KEY, '');
+        const hash = new URLSearchParams(location.hash.slice(1));
+        const stored = ls.get(KEY, null);
+        if (hash.get('k') && (!stored || Number(hash.get('t') || 0) >= (stored.t || 0))) ls.set(KEY, { k: hash.get('k'), t: Number(hash.get('t') || 0) });
+        const key = (ls.get(KEY, null) || {}).k || '';
+        const standalone = navigator.standalone || matchMedia('(display-mode: standalone)').matches;
 
         let items = ls.get(CACHE, []);
         let tab = 'queued';
@@ -158,7 +161,14 @@
           const s = Math.max(0, (Date.now() - t) / 1000);
           return s < 90 ? 'just now' : s < 5400 ? `${Math.round(s / 60)} min ago` : s < 129600 ? `${Math.round(s / 3600)} h ago` : `${Math.round(s / 86400)} days ago`;
         };
-        const waLink = (it) => `https://wa.me/${it.wa}?text=${encodeURIComponent(it.message)}`;
+        const waLink = (it) => {
+          const m = String(it.message || '');
+          try {
+            return `https://wa.me/${it.wa}?text=${encodeURIComponent(m.toWellFormed ? m.toWellFormed() : m)}`;
+          } catch {
+            return `https://wa.me/${it.wa}`;
+          }
+        };
 
         async function api(method, body) {
           const res = await fetch('/api/lead-queue', {
@@ -193,15 +203,17 @@
         }
 
         function render() {
+          const hidden = ls.get(HIDDEN, {});
+          const shown = (i) => i.status === 'queued' || hidden[i.id] !== i.statusAt;
           const counts = { queued: 0, sent: 0, removed: 0 };
-          items.forEach((i) => counts[i.status]++);
+          items.filter(shown).forEach((i) => counts[i.status]++);
           $('[data-sub]').textContent = key ? `${counts.queued} to send · ${counts.sent} sent` : 'Not paired';
           document.querySelectorAll('[data-tab]').forEach((b) => {
             b.setAttribute('aria-selected', String(b.dataset.tab === tab));
             b.textContent = { queued: 'To send', sent: 'Sent', removed: 'Removed' }[b.dataset.tab] + (counts[b.dataset.tab] ? ` (${counts[b.dataset.tab]})` : '');
           });
           const list = items
-            .filter((i) => i.status === tab)
+            .filter((i) => i.status === tab && shown(i))
             .sort((a, b) => (tab === 'queued' ? b.priority - a.priority || a.addedAt - b.addedAt : b.statusAt - a.statusAt));
           const el = $('[data-list]');
           if (!list.length) {
@@ -234,14 +246,16 @@
               </article>`,
                 )
                 .join('') +
-              (tab !== 'queued' ? `<button class="btn ghost" data-act="clear">Clear sent and removed</button>` : '');
+              (tab !== 'queued' ? `<button class="btn ghost" data-act="clear">Clear this list</button>` : '');
           }
           $('[data-pair]').hidden = !!key;
           el.hidden = !key;
         }
 
         // Taps are applied locally at once and synced in the background (works with a flaky connection).
+        let mutations = 0;
         function setStatus(item, status) {
+          mutations++;
           const rev = item.addedAt;
           item.status = status;
           item.statusAt = Date.now();
@@ -254,10 +268,12 @@
         }
 
         let flushing = false;
+        let flushErr = null;
         async function flush() {
           const pending = ls.get(PENDING, []);
           if (!pending.length || flushing || !key) return;
           flushing = true;
+          flushErr = null;
           try {
             const q = await api('POST', { updates: pending });
             // Keep only taps made while this request was in flight.
@@ -267,7 +283,8 @@
             if (!left.length) apply(q);
             note('');
           } catch (e) {
-            note(e.status === 401 ? '' : 'Offline. Your taps will sync when you are back online.', e.status !== 401);
+            flushErr = e;
+            if (!e.status) note('Offline. Your taps will sync when you are back online.', true);
           } finally {
             flushing = false;
           }
@@ -285,10 +302,19 @@
           btn.classList.add('spin');
           try {
             await flush();
-            if (!ls.get(PENDING, []).length) apply(await api('GET'));
+            if (flushErr && flushErr.status) throw flushErr;
+            const seq = mutations;
+            const q = await api('GET');
+            if (seq === mutations && !ls.get(PENDING, []).length) apply(q);
             note('');
           } catch (e) {
-            if (e.status === 401) note('This phone is no longer paired (the key changed). Scan the pairing QR in Lead Hunter again.', true);
+            if (e.status === 401)
+              note(
+                standalone
+                  ? 'This app is using an old pairing key. Delete this icon from your home screen, scan the new pairing QR in Lead Hunter, and add it again.'
+                  : 'This phone is no longer paired (the key changed). Scan the pairing QR in Lead Hunter again.',
+                true,
+              );
             else if (e.status === 503) note('The phone queue is not switched on yet: add LEAD_QUEUE_KEY in Netlify, then redeploy.', true);
             else note('Could not reach the server. Showing the last saved list.', true);
           } finally {
@@ -307,12 +333,10 @@
           }
           const act = t.dataset.act;
           if (act === 'clear') {
-            try {
-              apply(await api('DELETE', { finished: true }));
-            } catch {
-              toast('Could not clear right now');
-            }
-            return;
+            const hidden = ls.get(HIDDEN, {});
+            items.filter((i) => i.status === tab).forEach((i) => (hidden[i.id] = i.statusAt));
+            ls.set(HIDDEN, hidden);
+            return render();
           }
           const card = t.closest('[data-id]');
           const item = card && items.find((i) => i.id === card.dataset.id);

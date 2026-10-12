@@ -59,7 +59,8 @@ function cleanItem(raw: unknown, now: number): Item | null {
   const r = raw as Record<string, unknown>;
   const id = str(r.id, 80);
   const wa = str(r.wa, 20).replace(/\D/g, '');
-  const message = str(r.message, 4000);
+  // Cutting at 4000 can split an emoji; drop the dangling half so links never break.
+  const message = str(r.message, 4000).replace(/[\uD800-\uDBFF]$/, '').toWellFormed();
   if (!/^[\w:.-]{1,80}$/.test(id) || !/^\d{8,15}$/.test(wa) || !message) return null;
   const pageUrl = str(r.pageUrl, 300);
   return {
@@ -78,19 +79,20 @@ function cleanItem(raw: unknown, now: number): Item | null {
   };
 }
 
-async function readQueue(store: QueueStore): Promise<{ queue: Queue; etag?: string }> {
+async function readQueue(store: QueueStore): Promise<{ queue: Queue; etag?: string; exists: boolean }> {
   const res = await store.getWithMetadata(KEY, { type: 'json' });
   const data = res?.data as Queue | undefined;
-  return { queue: data && Array.isArray(data.items) ? data : { items: [], updatedAt: 0 }, etag: res?.etag };
+  return { queue: data && Array.isArray(data.items) ? data : { items: [], updatedAt: 0 }, etag: res?.etag, exists: !!res };
 }
 
 /** Read-modify-write with optimistic concurrency, so the phone and the extension never overwrite each other. */
 async function mutate(store: QueueStore, change: (q: Queue) => void): Promise<Queue> {
   for (let attempt = 0; attempt < 6; attempt++) {
-    const { queue, etag } = await readQueue(store);
+    const { queue, etag, exists } = await readQueue(store);
     change(queue);
     queue.updatedAt = Date.now();
-    const res = await store.setJSON(KEY, queue, etag ? { onlyIfMatch: etag } : { onlyIfNew: true });
+    // The local `netlify dev` Blobs server returns no ETag on reads; fall back to a plain write there.
+    const res = await store.setJSON(KEY, queue, etag ? { onlyIfMatch: etag } : exists ? {} : { onlyIfNew: true });
     if (res.modified) return queue;
     await new Promise((r) => setTimeout(r, 40 + attempt * 60));
   }

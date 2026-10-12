@@ -353,7 +353,7 @@ function drawPitchQr() {
   if (!canvas) return;
   const phone = ($('[data-pitch-phone]') || {}).value;
   const text = ($('[data-pitch-body]') || {}).value || '';
-  const ok = phone && LH.drawQr(canvas, LH.waLink(phone, text), 200);
+  const ok = phone && LH.drawQr(canvas, LH.waLink(phone, text), 232);
   canvas.hidden = !ok;
   $('[data-qr-err]').hidden = !!ok;
 }
@@ -771,7 +771,7 @@ function renderPairQr() {
   const { queueKey, queueSite } = S.settings;
   let url = '';
   try {
-    url = queueKey && queueSite ? `${new URL('/outreach', queueSite)}#k=${encodeURIComponent(queueKey)}` : '';
+    url = queueKey && queueSite ? `${new URL('/outreach', queueSite)}#k=${encodeURIComponent(queueKey)}&t=${S.settings.queueKeyAt || 0}` : '';
   } catch {}
   box.hidden = !url;
   if (url) LH.drawQr($('[data-pair-canvas]'), url, 200);
@@ -792,6 +792,7 @@ async function saveSettings() {
   });
   const same = Object.entries(templates).every(([k, t]) => ['whatsapp', 'subject', 'email'].every((x) => t[x] === LH.DEFAULT_TEMPLATES[k][x]));
   next.templates = same ? null : templates;
+  if (next.queueKey !== S.settings.queueKey) next.queueKeyAt = Date.now();
   if (next.queueSite && !/^https?:\/\//i.test(next.queueSite)) next.queueSite = `https://${next.queueSite}`;
   next.queueSite = (next.queueSite || '').replace(/\/+$/, '');
   await chrome.storage.local.set({ settings: next });
@@ -910,8 +911,10 @@ function pmAct(act) {
 
 function phoneModeKey(e) {
   if (document.querySelector('.qr-zoom')) return;
-  const typing = /TEXTAREA|INPUT|SELECT/.test((e.target && e.target.tagName) || '');
+  const tag = (e.target && e.target.tagName) || '';
+  const typing = /^(TEXTAREA|INPUT|SELECT)$/.test(tag);
   if (e.key === 'Escape') return pmAct('close');
+  if (e.key === 'Enter' && /^(BUTTON|A)$/.test(tag) && !e.ctrlKey && !e.metaKey) return; // let the focused button act
   if (e.key === 'Enter' && (!typing || e.ctrlKey || e.metaKey)) {
     e.preventDefault();
     return pmAct(PM.i >= PM.ids.length ? 'close' : 'sent');
@@ -1085,7 +1088,7 @@ function bind() {
         $('[data-templates]').innerHTML = templateEditor(null);
         return toast('Templates reset. Save to keep them.');
       case 'backup': {
-        const settings = { ...S.settings, pagespeedKey: '', placesKey: '' }; // keep API keys out of backups
+        const settings = { ...S.settings, pagespeedKey: '', placesKey: '', queueKey: '' }; // keep keys out of backups
         return download(`lead-hunter-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), settings, leads: [...S.leads.values()] }), 'application/json');
       }
       case 'wipe':
