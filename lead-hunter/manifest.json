@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "RizcoReach Lead Hunter",
   "short_name": "Lead Hunter",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "Find businesses running Meta ads, audit the websites their ads send people to, and pitch them with a personalised message.",
   "minimum_chrome_version": "111",
   "icons": {
@@ -34,6 +34,17 @@
     {
       "matches": ["https://*.facebook.com/ads/library*"],
       "js": ["lib/common.js", "lib/extract-ads.js", "content/adlib.js"],
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["https://www.google.com/maps*", "https://www.google.ae/maps*"],
+      "js": ["content/maps-hook.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://www.google.com/maps*", "https://www.google.ae/maps*"],
+      "js": ["lib/common.js", "content/maps.js"],
       "run_at": "document_start"
     }
   ]

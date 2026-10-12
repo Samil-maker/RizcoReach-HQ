@@ -3,7 +3,7 @@
    - Runs hunts: walks a list of keywords through the Ad Library in one tab
    - Enriches leads: audits the landing page, finds phones/emails/socials,
      optional Google Places + PageSpeed lookups */
-importScripts('lib/common.js', 'lib/site-audit.js');
+importScripts('lib/common.js', 'lib/site-audit.js', 'lib/prospects.js');
 const LH = self.LH;
 
 const DASHBOARD = chrome.runtime.getURL('dashboard/dashboard.html');
@@ -428,28 +428,13 @@ async function fetchPage(url, { timeout = 15000, allowHttpFallback = true } = {}
   };
 }
 
-const STOP_WORDS = /\b(llc|l\.l\.c|fze|fzco|fz|dmcc|est|establishment|trading|services?|company|co|the|and|uae|dubai|abu dhabi|sharjah|ltd|limited|inc|group|official)\b/g;
-const nameTokens = (s) =>
-  new Set(
-    String(s || '')
-      .toLowerCase()
-      .replace(/&/g, ' and ')
-      .replace(STOP_WORDS, ' ')
-      .replace(/[^a-z0-9؀-ۿ]+/g, ' ')
-      .trim()
-      .split(' ')
-      .filter((t) => t.length > 1),
-  );
-function nameMatch(a, b) {
-  const A = nameTokens(a);
-  const B = nameTokens(b);
-  if (!A.size || !B.size) return 0;
-  const inter = [...A].filter((t) => B.has(t)).length;
-  return inter / Math.min(A.size, B.size);
-}
+const nameMatch = (a, b) => LH.nameMatch(a, b);
 
 async function placesLookup(lead, key, country) {
   const c = LH.country(country);
+  const used = await placesBudget();
+  const settings = await getSettings();
+  if (used.count >= (Number(settings.placesMonthlyCap) || 950)) return { error: 'Monthly Google Places limit reached (see Settings).' };
   const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
     method: 'POST',
     signal: AbortSignal.timeout(15000),
@@ -459,8 +444,9 @@ async function placesLookup(lead, key, country) {
       'x-goog-fieldmask':
         'places.displayName,places.formattedAddress,places.nationalPhoneNumber,places.internationalPhoneNumber,places.websiteUri,places.rating,places.userRatingCount,places.googleMapsUri,places.businessStatus',
     },
-    body: JSON.stringify({ textQuery: `${lead.pageName}${c.code !== 'ALL' ? ', ' + c.name : ''}`, ...(c.code !== 'ALL' ? { regionCode: c.code } : {}) }),
+    body: JSON.stringify({ textQuery: `${lead.pageName}${c.code !== 'ALL' ? ', ' + c.name : ''}`, pageSize: 5, ...(c.code !== 'ALL' ? { regionCode: c.code } : {}) }),
   });
+  await placesSpend(); // counts towards the same monthly limit as business searches (finder.js)
   if (!res.ok) return { error: `Google Places error ${res.status}` };
   const data = await res.json();
   const leadDomain = LH.domainOf(lead.website || '');
@@ -745,7 +731,12 @@ async function pushToQueue(ids, overrides = {}) {
       wa: number.replace(/\D/g, ''),
       message: o.message || LH.pitchFor(lead, settings).whatsapp,
       domain: LH.domainOf(lead.website || ''),
-      issue: !lead.website ? `No website: ads go to ${LH.destinationLabel(lead.destinationKind)}` : ((site.issues || [])[0] || {}).label || '',
+      issue:
+        lead.kind === 'prospect'
+          ? [{ none: 'Not running Meta ads', likely: 'No Meta ads found', running: 'Already running Meta ads' }[(lead.adCheck || {}).state] || '', ((lead.sources || {}).maps || {}).reviews ? `${lead.sources.maps.rating || ''}★ (${lead.sources.maps.reviews} reviews)` : ''].filter(Boolean).join(' · ')
+          : !lead.website
+            ? `No website: ads go to ${LH.destinationLabel(lead.destinationKind)}`
+            : ((site.issues || [])[0] || {}).label || '',
       heat: LH.heat(p),
       priority: p,
       pageUrl: lead.pageUrl,
@@ -924,3 +915,6 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
 });
 chrome.runtime.onStartup.addListener(() => pump());
 pump();
+
+// Meta-ads prospecting (Google Maps / Instagram finder + Ad Library checks).
+importScripts('finder.js');

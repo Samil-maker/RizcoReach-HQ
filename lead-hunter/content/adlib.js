@@ -17,6 +17,8 @@
     stopRequested: false,
     hunt: null,
     dead: false,
+    check: null, // set when this tab checks prospects for the Meta ads tab
+    answered: false,
     status: 'Watching results. Scroll or press Auto-collect.',
   };
 
@@ -46,6 +48,16 @@
   };
 
   /* -------------------------------------------------------------- intake */
+  const SEARCH_DATA = /search_results_connection|ad_library_main/;
+  /* For ad checks: the total live-ad count and whether the Ad Library knows the page at all. */
+  function noteSearchData(text) {
+    if (!SEARCH_DATA.test(text)) return;
+    state.answered = true;
+    const c = text.match(/"search_results_connection":\{"count":(\d+)/);
+    if (c) state.count = Math.max(state.count || 0, Number(c[1]));
+    if (/"ad_library_page_info":\{"page_info":null/.test(text)) state.pageInfo = state.pageInfo || false;
+    if (/"ad_library_page_info":\{"page_info":\{/.test(text)) state.pageInfo = true;
+  }
   function take(ads, fromJson) {
     let fresh = 0;
     for (const ad of ads) {
@@ -63,6 +75,7 @@
   window.addEventListener('message', (e) => {
     if (e.source !== window || !e.data || e.data.__leadHunter !== 1 || e.data.kind !== 'payload') return;
     try {
+      noteSearchData(e.data.text);
       take(LH.extractAdsFromText(e.data.text), true);
     } catch {}
   });
@@ -73,6 +86,7 @@
       if (scanned.has(el)) return;
       scanned.add(el);
       const t = el.textContent || '';
+      noteSearchData(t);
       if (t.indexOf('ad_archive_id') === -1) return;
       try {
         take(LH.extractAdsFromText(t), true);
@@ -139,7 +153,7 @@
   }
 
   async function flush() {
-    if (!state.queue.length || state.dead) return;
+    if (!state.queue.length || state.dead || state.check) return;
     const ads = state.queue.splice(0, 200);
     const res = await send({ type: 'ads', ads, ctx: context() });
     if (!res) {
@@ -276,8 +290,46 @@
     if (h && h.onThisTab) ui.hunt.textContent = `Hunt · “${h.keyword}” (${h.index + 1}/${h.total}) · ${h.collected}/${h.target} leads`;
   }
 
+  /* --------------------------------------------------------- ad check */
+  // This tab is checking whether a business found on Google Maps runs ads: read what the Ad
+  // Library shows for the page / domain / name the background opened, report back, wait for the next.
+  async function runCheck(check) {
+    state.check = check;
+    setStatus(`Checking whether “${check.name}” runs Meta ads… This tab is used for ad checks; you can leave it in the background.`);
+    const t0 = Date.now();
+    let quietSince = Date.now();
+    let last = -1;
+    // Results can stream in up to ~25 s after load; Facebook may first show a short "checking your browser" page.
+    while (Date.now() - t0 < 28000) {
+      await sleep(500);
+      scanEmbedded();
+      const text = (document.body && document.body.innerText) || '';
+      if (/\/login|checkpoint/.test(location.pathname) || /you must log in|log in to continue|log into facebook/i.test(text)) {
+        return send({ type: 'adcheck:result', id: check.id, blocked: true, loaded: false, ads: [] });
+      }
+      if (/no ads match your search|no ads match/i.test(text)) {
+        state.answered = true;
+        state.count = state.count || 0;
+      }
+      if (state.queue.length !== last) {
+        last = state.queue.length;
+        quietSince = Date.now();
+      }
+      if (state.answered && Date.now() - quietSince > 2500) break;
+    }
+    if (state.jsonAds === 0) scanDom();
+    const ads = state.queue.splice(0);
+    await send({ type: 'adcheck:result', id: check.id, loaded: state.answered || ads.length > 0, ads, count: state.count ?? null, pageInfo: state.pageInfo ?? null });
+    setStatus('Checked. Waiting for the next business…');
+  }
+
   /* ---------------------------------------------------------------- boot */
   async function boot() {
+    const first = await send({ type: 'hello', ctx: context() });
+    if (first && first.check) {
+      mountHud();
+      return runCheck(first.check);
+    }
     mountHud();
     scanEmbedded();
     setInterval(() => {
@@ -286,7 +338,7 @@
     }, 1200);
     // DOM fallback only kicks in if no structured data has arrived.
     setInterval(() => state.jsonAds === 0 && scanDom(), 4000);
-    const res = await send({ type: 'hello', ctx: context() });
+    const res = first;
     if (res && res.hunt && res.hunt.onThisTab) {
       state.hunt = res.hunt;
       setStatus(`Hunting “${res.hunt.keyword}”… starting in a moment.`);

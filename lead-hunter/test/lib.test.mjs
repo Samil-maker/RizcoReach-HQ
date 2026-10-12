@@ -1,4 +1,4 @@
-// Unit tests for the shared libraries: `node --test lead-hunter/test/`
+// Unit tests for the shared libraries: `node --test lead-hunter/test/*.test.mjs`
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { SAMPLE_ADS, searchResponse, makeAd } from './fixtures.mjs';

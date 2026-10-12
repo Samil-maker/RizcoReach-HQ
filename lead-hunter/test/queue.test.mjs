@@ -1,4 +1,4 @@
-// Tests for the phone queue endpoint (netlify/functions/lead-queue.mts): `node --test lead-hunter/test/`
+// Tests for the phone queue endpoint (netlify/functions/lead-queue.mts): `node --test lead-hunter/test/*.test.mjs`
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { handle } from '../../netlify/functions/lead-queue.mts';

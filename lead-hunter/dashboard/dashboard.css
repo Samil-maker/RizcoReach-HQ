@@ -252,3 +252,20 @@ table.leads { width: 100%; border-collapse: collapse; min-width: 1100px; }
 .pm-done h2 { margin: 0; }
 .qr-zoom { position: fixed; inset: 0; z-index: 80; background: #fff; display: grid; place-items: center; cursor: zoom-out; }
 @media (max-width: 860px) { .pm-body { grid-template-columns: 1fr; justify-items: center; } }
+
+/* ------------------------------------------------------------- meta ads */
+.finder-head { display: flex; gap: 16px; align-items: flex-start; justify-content: space-between; }
+.finder.collapsed form { display: none; }
+.finder .form { margin-top: 16px; }
+.finder-status { border: 1px solid var(--line); border-radius: 14px; margin-bottom: 14px; flex-wrap: wrap; }
+.chip.off { opacity: 0.45; text-decoration: line-through; }
+.src { display: flex; flex-direction: column; gap: 2px; font-size: 12.5px; white-space: nowrap; }
+.src b { font-variant-numeric: tabular-nums; }
+.ad-state { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; white-space: nowrap; }
+.ad-state.none { color: var(--good); }
+.ad-state.likely { color: #b9e8c0; }
+.ad-state.running { color: var(--weak); }
+.ad-state.unclear { color: var(--fg-3); }
+.matches { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 6px; }
+.matches li { background: var(--panel-2); border-radius: 10px; padding: 8px 10px; font-size: 12.5px; }
+.bio { white-space: pre-wrap; color: var(--fg-2); font-size: 13px; margin: 0; }

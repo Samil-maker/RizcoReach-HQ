@@ -1,5 +1,15 @@
 # Lead Hunter (Chrome extension)
 
+Two lead finders in one extension:
+
+- **Website leads** (*New hunt* tab): businesses already running Meta ads
+  whose website is losing them the leads. Described first, below.
+- **Meta ads clients** (*Meta ads* tab): businesses on Google Maps that are
+  **not** running Meta ads, to sell ad management to. See
+  [Meta ads clients](#meta-ads-clients).
+
+## Website leads
+
 Finds businesses that are **running Meta ads right now**, checks the website
 those ads send people to, finds a phone number, scores how worth contacting
 each one is, and writes a personalised WhatsApp or email pitch.
@@ -106,6 +116,72 @@ your own site.
 check which one opens on your first send. Android usually asks; on iPhone
 the link may go to the app you don't send from.
 
+## Meta ads clients
+
+The **Meta ads** tab finds businesses to sell Meta ads to. It does not start
+from the Ad Library on purpose: a business that is already advertising will
+just say "I already run ads". Instead it works in three steps.
+
+1. **Finds businesses on Google Maps** for a niche and the areas you tick
+   (for example "ceramic coating in Al Quoz, Dubai"):
+   - with a **Places API key** (Settings) the search runs in the background,
+     up to 60 businesses per search term and area;
+   - **without a key**, Lead Hunter opens Google Maps in a tab, scrolls the
+     results list and reads every listing (name, rating, reviews, phone,
+     website). Keep that tab open while it runs.
+2. **Checks each website** with the same audit as website leads, which also
+   finds their Facebook page, WhatsApp number and email.
+3. **Checks the Meta Ad Library for each business**, in a background tab,
+   one business every few seconds:
+   1. the live ads on their Facebook page (found through the link on their
+      website);
+   2. a search for their website address, which catches ads run from a
+      different page;
+   3. a search for their name. A page with a merely similar name does not
+      count; it needs the same website, phone number or (almost) exactly the
+      same name.
+
+| Verdict | What it means | The pitch says |
+| --- | --- | --- |
+| **Not running ads** | Their Facebook page was found and has 0 live ads. Confirmed. | "I checked Meta's Ad Library and you aren't running any Facebook or Instagram ads right now" |
+| **No ads found** | No Facebook page to check, and nothing matched their website, phone or name. Very likely not advertising, not certain. | "I couldn't find any Facebook or Instagram ads from you in Meta's Ad Library" |
+| **Running ads** | Live ads matched to them. Hidden by default. | The *Already advertising* angle, or skip them |
+| **Couldn't check** | The Ad Library didn't load or asked you to log in. | Press **Check again**, or open the search link and look |
+
+You can overrule any verdict in the lead panel (**They don't run ads** /
+**They do run ads**).
+
+The list shows *Not running ads* and *No ads found* by default, sorted by
+priority: not advertising, plenty of Google reviews and a good rating (proof
+of demand), a mobile or WhatsApp number, and a website all push it up.
+
+**Niches built in:** Car detailing & PPF (the main one), Aesthetic clinics,
+Boutique fitness (best October to January) and AC servicing (from late
+January). Businesses with long sales cycles or restricted ads (renovation,
+fit-out, real estate, plastic surgery, weight-loss injections, mobile car
+wash and so on) are left out of the list; find them under **Niche → Skipped
+(long sales cycle)**.
+
+**Pitches.** Three templates: *Not advertising, strong reviews*, *Not
+advertising, growing* and *Already advertising*. They only state things Lead
+Hunter checked: the Google rating, the Ad Library result, and how many
+businesses in the same niche you have seen advertising in your UAE website
+hunts (mentioned only when it is 3 or more). Set your city and your offer in
+**Settings → Meta ads offer**; you can edit the templates there too. They are
+written in the first person and never claim past clients or results. Keep it
+that way until you have real ones: UAE consumer protection law bans
+misleading claims, and an invented result is the fastest way to lose a deal.
+
+Phone mode, the phone queue, QR codes, statuses, notes and **Export CSV**
+work the same as for website leads.
+
+**Places API cost.** A Text Search that returns phone numbers and websites is
+billed at Google's Enterprise rate: about 1,000 free requests a month, then
+roughly $35 per 1,000 (check current pricing). Each request returns up to 20
+businesses. Lead Hunter counts requests and stops at the monthly limit in
+Settings (default 950). After that, remove the key to search in a tab
+instead, or raise the limit.
+
 ## Where phone numbers come from
 
 In order of how reliable they are:
@@ -169,6 +245,11 @@ out of backups.
   auto-scroll runs at a human pace (adjustable in Settings). A few hunts a day
   is plenty; using a separate Chrome profile keeps your main account clear of
   any rate limits.
+- The Meta ads tab reads Google Maps and the Ad Library in normal browser
+  tabs, at a human pace. Google's and Meta's terms also restrict automated
+  collection, so search a few niches and areas a day rather than whole
+  cities at once, and use a separate Chrome profile (and Facebook account)
+  for it. Lead Hunter does not search Instagram automatically.
 - Leads are stored only in this Chrome profile. Use **Settings → Download
   backup** before removing the extension or switching computers.
 - If Meta changes the Ad Library and collection stops (the corner panel stays
@@ -178,13 +259,17 @@ out of backups.
 
 | File | What it does |
 | --- | --- |
-| `manifest.json` | Manifest V3; content scripts on `facebook.com/ads/library*` |
+| `manifest.json` | Manifest V3; content scripts on `facebook.com/ads/library*` and `google.com/maps*` |
 | `content/hook.js` | Runs in the page; mirrors the Ad Library's GraphQL responses to the extension |
 | `content/adlib.js` | Collects ads (network data, embedded first page, visible cards as fallback), corner panel, auto-scroll |
 | `lib/extract-ads.js` | Finds ad records in any Ad Library JSON (keys on `ad_archive_id`) |
 | `lib/site-audit.js` | Website audit and contact extraction (same checks as `netlify/functions/audit.mts`, plus ad-specific ones) |
 | `lib/common.js` | Phones, links, priority score, pitch templates, CSV |
 | `background.js` | Lead storage, hunts, enrichment queue, Google lookups |
+| `finder.js` | Meta ads tab: Google Maps search (Places API or a Maps tab) and the Ad Library check queue |
+| `lib/prospects.js` | Prospect de-duplication keys, Places results, matching ads to a business |
+| `content/maps-hook.js` · `content/maps.js` | Read Google Maps search results (network data plus the visible list) |
+| `dashboard/prospects.js` | The Meta ads tab UI |
 | `dashboard/` · `popup/` | The UI |
 | `lib/qr.js` · `lib/vendor/qrcode.js` | QR codes (vendored qrcode-generator, MIT) |
 | `../netlify/functions/lead-queue.mts` | Phone queue API on the site (`/api/lead-queue`, Netlify Blobs) |
@@ -193,6 +278,6 @@ out of backups.
 Tests:
 
 ```bash
-node --test lead-hunter/test/lib.test.mjs lead-hunter/test/queue.test.mjs   # parsers, audit, scoring, templates, phone queue API
-node lead-hunter/test/e2e.mjs   # real Chromium + mock Ad Library, websites and phone page (needs Playwright + openssl)
+node --test lead-hunter/test/*.test.mjs   # parsers, audit, scoring, templates, phone queue API, Meta ads prospects
+node lead-hunter/test/e2e.mjs   # real Chromium + mock Ad Library, Google Maps, Places API, websites and phone page (needs Playwright + openssl)
 ```

@@ -32,7 +32,7 @@ deploy preview.
 | Lighthouse scores (optional) | `netlify/functions/pagespeed.mts` (`/api/pagespeed`) |
 | Estimator timelines | top of `src/scripts/tools/estimator.ts` |
 | Meta Ads CPL benchmarks | `src/content/tools.ts` (`ads.industries`) |
-| Lead Hunter Chrome extension (Meta Ad Library lead gen, not deployed) | `lead-hunter/` (see its README) |
+| Lead Hunter Chrome extension (website leads from the Meta Ad Library, Meta ads clients from Google Maps; not deployed) | `lead-hunter/` (see its README) |
 | Lead Hunter phone queue (private) | `netlify/functions/lead-queue.mts` (`/api/lead-queue`) + `public/outreach.html` (`/outreach`) |
 
 ## Leads

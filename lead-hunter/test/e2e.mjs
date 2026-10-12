@@ -14,6 +14,7 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { makeAd, searchResponse, memStore } from './fixtures.mjs';
+import { metaHandler, checkLog } from './meta-fixtures.mjs';
 import { handle as queueHandle } from '../../netlify/functions/lead-queue.mts';
 
 const require = createRequire(import.meta.url);
@@ -122,6 +123,7 @@ function site(b, url, res) {
 function handler(req, res) {
   const host = (req.headers.host || '').split(':')[0];
   const url = new URL(req.url, `https://${host}`);
+  if (metaHandler(req, res, url, host)) return;
   if (host === 'www.facebook.com') {
     if (url.pathname.startsWith('/ads/library')) {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
@@ -193,7 +195,7 @@ const ctx = await pw.chromium.launchPersistentContext(path.join(tmp, 'profile'),
   args: [
     `--disable-extensions-except=${EXT}`,
     `--load-extension=${EXT}`,
-    `--host-resolver-rules=MAP www.facebook.com 127.0.0.1:${PORT}, MAP *.example 127.0.0.1:${PORT}, MAP wa.me 127.0.0.1:${PORT}, MAP www.rizcoreach.ae 127.0.0.1:${PORT}`,
+    `--host-resolver-rules=MAP www.facebook.com 127.0.0.1:${PORT}, MAP *.example 127.0.0.1:${PORT}, MAP wa.me 127.0.0.1:${PORT}, MAP www.rizcoreach.ae 127.0.0.1:${PORT}, MAP www.google.com 127.0.0.1:${PORT}, MAP places.googleapis.com 127.0.0.1:${PORT}`,
     '--ignore-certificate-errors',
     '--no-proxy-server',
   ],
@@ -236,10 +238,10 @@ try {
 
   // Start a hunt from the dashboard.
   await dash.click('[data-view="hunt"]');
-  await dash.fill('[name="keywords"]', 'car detailing\nceramic coating');
+  await dash.fill('[data-hunt-form] [name="keywords"]', 'car detailing\nceramic coating');
   await dash.selectOption('[data-hunt-form] [name="country"]', 'AE');
-  await dash.fill('[name="target"]', '50');
-  await dash.fill('[name="maxLikes"]', '60000');
+  await dash.fill('[data-hunt-form] [name="target"]', '50');
+  await dash.fill('[data-hunt-form] [name="maxLikes"]', '60000');
   const [huntPage] = await Promise.all([ctx.waitForEvent('page'), dash.click('[data-hunt-form] button[type="submit"]')]);
   await huntPage.waitForURL(/ads\/library/);
   await huntPage.waitForSelector('#lead-hunter-hud');
@@ -421,11 +423,95 @@ try {
   await phone.click('[data-refresh]');
   await phone.waitForFunction(() => /1 to send · 2 sent/.test(document.querySelector('[data-sub]').textContent));
 
+  /* ------------------------------------------- Meta ads: Google Places mode */
+  const setKey = (k) =>
+    sw.evaluate(async (key) => {
+      const { settings } = await chrome.storage.local.get('settings');
+      await chrome.storage.local.set({ settings: { ...settings, placesKey: key } });
+    }, k);
+  const finderDone = (label) =>
+    waitFor(async () => {
+      const { finder } = await storage('finder');
+      return finder && finder.status !== 'running' ? finder : null;
+    }, 90000, label);
+  const checksDone = (label) => waitFor(async () => !((await storage('adCheckQueue')).adCheckQueue || []).length, 300000, label);
+  const prospectsNow = async () => Object.entries(await storage(null)).filter(([k, v]) => k.startsWith('lead:') && v.kind === 'prospect').map(([, v]) => v);
+
+  await setKey('test-places-key');
+  await sw.evaluate(() => startFinder({ niche: 'Car detailing & PPF', keywords: ['ppf'], areas: ['Al Quoz'], city: 'Dubai', target: 6 }));
+  const f1 = await finderDone('Places search');
+  assert.equal(f1.added, 6, 'six new businesses (avoid-list and closed ones not counted)');
+  assert.equal((await storage('placesUsage')).placesUsage.count, 2, 'two Places requests counted this month');
+  await checksDone('ad checks (Places run)');
+  let ps = await prospectsNow();
+  const pn = (n) => ps.find((p) => p.pageName === n);
+  assert.equal(ps.filter((p) => p.website === 'https://glossyppf.example/').length, 1, 'branch listing merged into one business');
+  assert.ok(!pn('Closed Detailing'), 'closed businesses are dropped');
+  assert.equal(pn('Elite Renovation & Detailing').avoid, true);
+  const states = Object.fromEntries(['Glossy PPF Studio', 'Armor Shield Detailing', 'Desert Ceramic Care', 'Nano Pro Tint', 'Shiny Wheels Car Spa', 'Wrap Kings JLT'].map((n) => [n, pn(n).adCheck.state]));
+  assert.deepEqual(states, {
+    'Glossy PPF Studio': 'none', // their Facebook page: 0 live ads (confirmed)
+    'Armor Shield Detailing': 'running', // their Facebook page: 3 live ads
+    'Desert Ceramic Care': 'running', // found by website domain
+    'Nano Pro Tint': 'likely', // only a similar-name decoy
+    'Shiny Wheels Car Spa': 'likely',
+    'Wrap Kings JLT': 'likely', // page unknown to the Ad Library
+  });
+  assert.equal(pn('Armor Shield Detailing').adCheck.activeAds, 3);
+  assert.ok(checkLog.includes('page:5550001') && !checkLog.includes('q:glossyppf.example'), 'a confirmed page check needs no further searches');
+  const glossyPhones = pn('Glossy PPF Studio').phones.map((p) => p.number);
+  assert.equal(glossyPhones[0], '+971507000001', 'the main listing phone comes first');
+  assert.ok(glossyPhones.includes('+97147000008'), 'the second branch phone is kept on the same record');
+
+  /* ------------------------------------- Meta ads: Google Maps tab (no key) */
+  await setKey('');
+  await sw.evaluate(() => startFinder({ niche: 'Aesthetic clinics', keywords: ['aesthetic clinic'], areas: ['JLT'], city: 'Dubai', target: 10 }));
+  const f2 = await finderDone('Maps tab search');
+  assert.equal(f2.mapsMode, 'browser');
+  assert.equal(f2.added, 4, 'two cards from the page + two from the network data');
+  await checksDone('ad checks (Maps run)');
+  ps = await prospectsNow();
+  const pure = pn('Pure Derma Studio');
+  assert.equal(pure.website, 'https://purederma.example/', 'website read from Maps network data');
+  assert.equal(pure.phones[0].number, '+971553334443', 'phone read from Maps network data');
+  assert.equal(pure.sources.maps.reviews, 95);
+  assert.equal(pn('Velvet Laser Lounge').phones[0].number, '+971503334442');
+  assert.match(pn('Glow Skin Clinic JLT').sources.maps.mapsUrl, /^https:\/\/www\.google\.com\/maps\?cid=\d+$/);
+
+  // Dashboard: Meta ads tab shows businesses NOT running ads by default.
+  await dash.click('[data-view="ads"]');
+  await dash.waitForFunction(() => document.querySelectorAll('[data-ads-rows] tr').length === 8);
+  if (SHOTS) await dash.screenshot({ path: `${SHOTS}/10-meta-ads.png` });
+  await dash.selectOption('[data-af="ads"]', 'running');
+  await dash.waitForFunction(() => document.querySelectorAll('[data-ads-rows] tr').length === 2);
+  await dash.selectOption('[data-af="ads"]', 'none');
+  await dash.click(`tr[data-id="${pn('Glossy PPF Studio').id}"] [data-open]`);
+  await dash.waitForSelector('.drawer.open [data-pitch-body]');
+  const adsPitch = await dash.inputValue('[data-pitch-body]');
+  assert.match(adsPitch, /you aren't running any Facebook or Instagram ads right now/);
+  assert.match(adsPitch, /4\.9★ from 312 Google reviews/);
+  assert.match(adsPitch, /car detailing and PPF studios in Dubai/);
+  assert.match(adsPitch, /while \d+ other car detailing and PPF studios in the UAE are\./, 'competitors counted from UAE Ad Library hunts');
+  assert.doesNotMatch(adsPitch, /\{\{|undefined|our team/);
+  if (SHOTS) {
+    await dash.waitForTimeout(500);
+    await dash.screenshot({ path: `${SHOTS}/11-meta-ads-drawer.png` });
+  }
+  await dash.click('[data-act="close"]');
+  await dash.click(`tr[data-id="${pn('Nano Pro Tint').id}"] [data-open]`);
+  await dash.waitForSelector('.drawer.open [data-pitch-body]');
+  assert.match(await dash.inputValue('[data-pitch-body]'), /I couldn't find any Facebook or Instagram ads/);
+  await dash.click('[data-act="close"]');
+  const [dl2] = await Promise.all([dash.waitForEvent('download'), dash.click('[data-act="ads-export"]')]);
+  const csv2 = fs.readFileSync(await dl2.path(), 'utf8');
+  assert.match(csv2.split('\n')[0], /priority,business,niche,area,meta_ads/);
+  assert.equal(csv2.trim().split('\n').length, 9, 'header + 8 prospects');
+
   // Popup renders stats.
   const popup = await ctx.newPage();
   await popup.setViewportSize({ width: 380, height: 460 });
   await popup.goto(`chrome-extension://${extId}/popup/popup.html`);
-  await popup.waitForFunction(() => /25/.test(document.querySelector('[data-stats]').textContent));
+  await popup.waitForFunction(() => /[1-9]\d*\s*leads/.test(document.querySelector('[data-stats]').textContent));
   if (SHOTS) await popup.screenshot({ path: `${SHOTS}/5-popup.png` });
 
   console.log('E2E PASSED:', leads.length, 'leads');

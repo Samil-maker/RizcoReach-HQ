@@ -7,7 +7,8 @@
 
   const WATCH = /\/api\/graphql|\/ads\/library\/async/;
   const relay = (url, text) => {
-    if (typeof text !== 'string' || text.indexOf('ad_archive_id') === -1) return;
+    // Ads, or an Ad Library search answer with no ads in it (needed to tell "no ads" from "not loaded").
+    if (typeof text !== 'string' || (text.indexOf('ad_archive_id') === -1 && text.indexOf('search_results_connection') === -1)) return;
     window.postMessage({ __leadHunter: 1, kind: 'payload', url: String(url), text }, location.origin);
   };
 

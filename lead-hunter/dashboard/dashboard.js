@@ -44,6 +44,9 @@ async function load() {
   );
   S.settings = { ...LH.DEFAULT_SETTINGS, ...(all.settings || {}) };
   S.hunt = all.hunt || null;
+  S.finder = all.finder || null;
+  S.adQueue = all.adCheckQueue || [];
+  S.adPaused = !!all.adCheckPaused;
   S.queue = all.enrichQueue || [];
 }
 
@@ -68,6 +71,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
       settingsChanged = true;
     } else if (k === 'hunt') S.hunt = newValue || null;
     else if (k === 'enrichQueue') S.queue = newValue || [];
+    else if (k === 'finder') S.finder = newValue || null;
+    else if (k === 'adCheckQueue') S.adQueue = newValue || [];
+    else if (k === 'adCheckPaused') S.adPaused = !!newValue;
   }
   if (settingsChanged && S.view !== 'settings') fillSettings();
   scheduleRender();
@@ -80,6 +86,7 @@ function filtered() {
   const now = Date.now();
   const rows = [];
   for (const l of S.leads.values()) {
+    if (l.kind === 'prospect') continue; // Meta-ads prospects live in their own tab
     const p = LH.priority(l, now);
     if (f.hunt && !(l.hunts || []).includes(f.hunt)) continue;
     if (f.hideBig && (l.pageLikes || 0) > BIG_BRAND) continue;
@@ -165,9 +172,11 @@ function contactCell(l) {
   const best = LH.bestPhone(l);
   const wa = LH.whatsappTarget(l);
   const parts = [];
-  if (best)
+  // Show the number the WhatsApp button opens, so what you see is who you message.
+  const shown = wa || (best && best.number);
+  if (shown)
     parts.push(
-      `<div class="p"><span class="num">${esc(LH.formatPhone(best.number))}</span>${wa ? `<button class="icon-btn wa" data-wa title="Open WhatsApp with your pitch" aria-label="WhatsApp ${esc(l.pageName)}">${ICON.wa}</button>` : ''}</div>`,
+      `<div class="p"><span class="num">${esc(LH.formatPhone(shown))}</span>${wa ? `<button class="icon-btn wa" data-wa title="Open WhatsApp with your pitch" aria-label="WhatsApp ${esc(l.pageName)}">${ICON.wa}</button>` : ''}</div>`,
     );
   const extras = [];
   if ((l.emails || [])[0]) extras.push(`<span title="${esc(l.emails[0])}">${ICON.mail}</span>`);
@@ -201,7 +210,8 @@ function rowHtml({ l, p }) {
 
 /* ---------------------------------------------------------------- render */
 function renderKpis() {
-  const leads = [...S.leads.values()];
+  if (S.view === 'ads') return renderProspectKpis();
+  const leads = [...S.leads.values()].filter((l) => l.kind !== 'prospect');
   const now = Date.now();
   const hot = leads.filter((l) => l.status === 'new' && LH.heat(LH.priority(l, now)) === 'hot').length;
   const phone = leads.filter((l) => l.phones.length).length;
@@ -294,6 +304,7 @@ function renderAll() {
     renderTable();
   }
   if (S.view === 'hunt') renderLastHunt();
+  if (S.view === 'ads') renderProspectsView();
   if (S.openId) renderDrawer();
 }
 
@@ -318,8 +329,12 @@ function closeDrawer() {
   d.setAttribute('aria-hidden', 'true');
 }
 
+/* Settings for rendering a pitch; Meta-ads pitches also get how many competitors advertise. */
+function pitchSettings(l) {
+  return l && l.kind === 'prospect' ? { ...S.settings, __competitors: competitorCount(l) } : S.settings;
+}
 function currentPitch(l) {
-  return LH.pitchFor(l, S.settings, S.pitch.angle);
+  return LH.pitchFor(l, pitchSettings(l), S.pitch.angle);
 }
 
 function renderDrawer(fresh = false) {
@@ -432,7 +447,7 @@ function siteSection(l) {
 function contactSection(l) {
   const country = LH.country(l.countries[0] || S.settings.country);
   const q = encodeURIComponent(`${l.pageName} ${country.code !== 'ALL' ? country.name : ''}`.trim());
-  const SRC = { 'whatsapp-ad': 'WhatsApp ad', 'whatsapp-site': 'WhatsApp on site', website: 'website', 'call-ad': 'call ad', google: 'Google', 'ad-text': 'ad text', manual: 'added by you' };
+  const SRC = { 'whatsapp-ad': 'WhatsApp ad', 'whatsapp-site': 'WhatsApp on site', 'whatsapp-ig': 'WhatsApp on Instagram', instagram: 'Instagram', website: 'website', 'call-ad': 'call ad', google: 'Google', 'ad-text': 'ad text', manual: 'added by you' };
   const phones = l.phones.length
     ? `<div class="phones">${l.phones
         .map(
@@ -467,16 +482,16 @@ function contactSection(l) {
       ${S.settings.placesKey ? `<button class="btn sm" data-act="places">Look up on Google Maps</button>` : ''}
       <a class="btn sm ghost" href="https://www.google.com/search?q=${q}" target="_blank" rel="noopener noreferrer">Google ↗</a>
       <a class="btn sm ghost" href="https://www.google.com/maps/search/${q}" target="_blank" rel="noopener noreferrer">Maps ↗</a>
-      <a class="btn sm ghost" href="${esc(safeHref(l.pageUrl))}" target="_blank" rel="noopener noreferrer">Facebook page ↗</a>
+      ${l.kind === 'prospect' ? '' : `<a class="btn sm ghost" href="${esc(safeHref(l.pageUrl))}" target="_blank" rel="noopener noreferrer">Facebook page ↗</a>`}
     </div>
   </section>`;
 }
 
 function pitchSection(l) {
   const p = currentPitch(l);
-  const all = S.settings.templates || LH.DEFAULT_TEMPLATES;
-  const angles = Object.keys(LH.DEFAULT_TEMPLATES)
-    .map((k) => `<button class="chip ${k === S.pitch.angle ? 'on' : ''}" data-angle="${k}">${esc((all[k] || LH.DEFAULT_TEMPLATES[k]).name)}</button>`)
+  const { all, defaults } = LH.templatesFor(l, S.settings);
+  const angles = Object.keys(defaults)
+    .map((k) => `<button class="chip ${k === p.angle ? 'on' : ''}" data-angle="${k}">${esc((all[k] || defaults[k]).name)}</button>`)
     .join('');
   const channels = [
     ['whatsapp', 'WhatsApp'],
@@ -501,7 +516,7 @@ function pitchSection(l) {
       ? `<button class="btn pri" data-act="send-dm">Copy &amp; open Instagram</button>`
       : `<a class="btn" href="${esc(safeHref(l.pageUrl))}" target="_blank" rel="noopener noreferrer" data-act="copy-open">Copy &amp; open Facebook page</a>`;
   }
-  return `<section class="d-sec pitch"><h3>Pitch <span class="tag">${esc((all[p.angle] || LH.DEFAULT_TEMPLATES[p.angle]).name)} angle</span></h3>
+  return `<section class="d-sec pitch"><h3>Pitch <span class="tag">${esc((all[p.angle] || defaults[p.angle]).name)} angle</span></h3>
     <div class="pitch-tabs">${channels}</div>
     <div class="pitch-tabs">${angles}</div>
     ${S.pitch.channel === 'email' ? `<input class="inp" data-pitch-subject value="${esc(p.subject)}" aria-label="Email subject" style="margin-bottom:8px" />` : ''}
@@ -528,6 +543,7 @@ function phoneBlock() {
 }
 
 function drawerHtml(l) {
+  if (l.kind === 'prospect') return prospectDrawerHtml(l);
   const days = LH.daysRunning(l);
   const p = LH.priority(l);
   const ads = Object.values(l.ads || {}).sort((a, b) => Number(b.active) - Number(a.active) || (b.start || 0) - (a.start || 0));
@@ -622,6 +638,7 @@ function download(name, text, type) {
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 function exportCsv(leads) {
+  if (leads.length && leads.every((l) => l.kind === 'prospect')) return exportProspectsCsv(leads);
   const now = Date.now();
   const head = ['priority', 'heat', 'business', 'facebook_page', 'all_ads', 'keywords', 'category', 'page_likes', 'active_ads', 'days_running', 'first_ad_started', 'website', 'landing_page', 'website_score', 'website_status', 'builder', 'meta_pixel', 'top_issues', 'phone', 'whatsapp_link', 'whatsapp_message_link', 'other_phones', 'email', 'instagram', 'google_rating', 'google_reviews', 'status', 'notes', 'found_on'];
   const rows = leads.map((l) => {
@@ -666,6 +683,7 @@ function exportCsv(leads) {
 
 /* ----------------------------------------------------------------- views */
 function setView(v) {
+  if (S.view !== v) S.selected.clear();
   S.view = v;
   $$('.tabs [data-view]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.view === v)));
   $$('[data-view-panel]').forEach((p) => (p.hidden = p.dataset.viewPanel !== v));
@@ -744,26 +762,38 @@ function initHuntForm() {
   });
 }
 
-function templateEditor(tpls) {
-  return Object.entries(LH.DEFAULT_TEMPLATES)
+function templateEditor(tpls, defaults = LH.DEFAULT_TEMPLATES, attr = 'data-tpl') {
+  return Object.entries(defaults)
     .map(([k, def]) => {
       const t = { ...def, ...((tpls || {})[k] || {}) };
       return `<div class="tpl"><h4>${esc(def.name)}</h4>
-      <label class="field"><span class="lbl">WhatsApp / DM</span><textarea class="inp" rows="6" data-tpl="${k}.whatsapp">${esc(t.whatsapp)}</textarea></label>
-      <label class="field"><span class="lbl">Email subject</span><input class="inp" data-tpl="${k}.subject" value="${esc(t.subject)}" /></label>
-      <label class="field"><span class="lbl">Email body</span><textarea class="inp" rows="7" data-tpl="${k}.email">${esc(t.email)}</textarea></label></div>`;
+      <label class="field"><span class="lbl">WhatsApp / DM</span><textarea class="inp" rows="6" ${attr}="${k}.whatsapp">${esc(t.whatsapp)}</textarea></label>
+      <label class="field"><span class="lbl">Email subject</span><input class="inp" ${attr}="${k}.subject" value="${esc(t.subject)}" /></label>
+      <label class="field"><span class="lbl">Email body</span><textarea class="inp" rows="7" ${attr}="${k}.email">${esc(t.email)}</textarea></label></div>`;
     })
     .join('');
+}
+function readTemplates(f, attr, defaults) {
+  const out = {};
+  $$(`[${attr}]`, f).forEach((el) => {
+    const [k, field] = el.getAttribute(attr).split('.');
+    out[k] = out[k] || { name: defaults[k].name };
+    out[k][field] = el.value;
+  });
+  const same = Object.entries(out).every(([k, t]) => ['whatsapp', 'subject', 'email'].every((x) => t[x] === defaults[k][x]));
+  return same ? null : out;
 }
 function fillSettings() {
   const f = $('[data-settings-form]');
   const s = S.settings;
+  $$('[data-ad-cities]', f).forEach((el) => (el.innerHTML = Object.keys(LH.AREAS).map((c) => `<option>${esc(c)}</option>`).join('')));
   for (const el of f.elements) {
     if (!el.name || !(el.name in s)) continue;
     if (el.type === 'checkbox') el.checked = !!s[el.name];
     else el.value = s[el.name] ?? '';
   }
   $('[data-templates]').innerHTML = templateEditor(s.templates);
+  $('[data-ad-templates]').innerHTML = templateEditor(s.adTemplates, LH.DEFAULT_AD_TEMPLATES, 'data-adtpl');
   renderPairQr();
 }
 function renderPairQr() {
@@ -784,14 +814,8 @@ async function saveSettings() {
     if (!el.name || !(el.name in LH.DEFAULT_SETTINGS)) continue;
     next[el.name] = el.type === 'checkbox' ? el.checked : el.type === 'number' ? Number(el.value) || LH.DEFAULT_SETTINGS[el.name] : el.value.trim();
   }
-  const templates = {};
-  $$('[data-tpl]', f).forEach((el) => {
-    const [k, field] = el.dataset.tpl.split('.');
-    templates[k] = templates[k] || { name: LH.DEFAULT_TEMPLATES[k].name };
-    templates[k][field] = el.value;
-  });
-  const same = Object.entries(templates).every(([k, t]) => ['whatsapp', 'subject', 'email'].every((x) => t[x] === LH.DEFAULT_TEMPLATES[k][x]));
-  next.templates = same ? null : templates;
+  next.templates = readTemplates(f, 'data-tpl', LH.DEFAULT_TEMPLATES);
+  next.adTemplates = readTemplates(f, 'data-adtpl', LH.DEFAULT_AD_TEMPLATES);
   if (next.queueKey !== S.settings.queueKey) next.queueKeyAt = Date.now();
   if (next.queueSite && !/^https?:\/\//i.test(next.queueSite)) next.queueSite = `https://${next.queueSite}`;
   next.queueSite = (next.queueSite || '').replace(/\/+$/, '');
@@ -812,11 +836,28 @@ function initSettings() {
   });
 }
 
+async function queueLeads(ids, b) {
+  if (!S.settings.queueKey) {
+    toast('Set up the phone queue in Settings first (takes 2 minutes).');
+    return setView('settings');
+  }
+  const overrides = {};
+  for (const id of ids) {
+    const l = S.leads.get(id);
+    if (l) overrides[id] = { message: LH.pitchFor(l, pitchSettings(l)).whatsapp };
+  }
+  if (b) b.disabled = true;
+  const r = await send({ type: 'queue:push', ids, overrides });
+  if (b) b.disabled = false;
+  if (r && r.error) return toast(r.error);
+  return toast(`Sent ${r.queued} to your phone${r.skipped.length ? ` · ${r.skipped.length} skipped (no phone number)` : ''}`);
+}
+
 /* ------------------------------------------------------------ phone mode */
 // One lead at a time with a big QR: scan with the phone, send in WhatsApp, press Enter for the next.
 const PM = { ids: [], i: 0, sent: 0, edits: {}, phones: {} };
 const pmLead = () => S.leads.get(PM.ids[PM.i]);
-const pmText = (l) => PM.edits[l.id] ?? LH.pitchFor(l, S.settings).whatsapp;
+const pmText = (l) => PM.edits[l.id] ?? LH.pitchFor(l, pitchSettings(l)).whatsapp;
 function pmPhone(l) {
   const nums = l.phones.map((p) => p.number);
   return PM.phones[l.id] && nums.includes(PM.phones[l.id]) ? PM.phones[l.id] : LH.whatsappTarget(l) || nums[0];
@@ -862,7 +903,7 @@ function renderPm() {
   }
   const p = LH.priority(l);
   const days = LH.daysRunning(l);
-  const issues = !l.website ? [`No website: ads go to ${LH.destinationLabel(l.destinationKind)}`] : ((l.site || {}).issues || []).slice(0, 3).map((i) => i.label);
+  const issues = l.kind === 'prospect' ? prospectHighlights(l) : !l.website ? [`No website: ads go to ${LH.destinationLabel(l.destinationKind)}`] : ((l.site || {}).issues || []).slice(0, 3).map((i) => i.label);
   const nums = l.phones.map((x) => x.number);
   const cur = pmPhone(l);
   const st = LH.STATUSES.find((x) => x.id === l.status);
@@ -875,7 +916,7 @@ function renderPm() {
       </div>
       <div class="pm-info">
         <h2>${esc(l.pageName || 'Unknown page')} <span class="heat ${LH.heat(p)}">${p}</span>${l.status !== 'new' ? `<span class="tag">${esc(st ? st.label : l.status)}</span>` : ''}</h2>
-        <div class="muted">${esc([LH.domainOf(l.website || '') || 'No website', `${l.activeAdCount || 0} active ads`, days == null ? '' : `${days} days advertising`].filter(Boolean).join(' · '))}</div>
+        <div class="muted">${esc(l.kind === 'prospect' ? [l.niche, l.area, LH.domainOf(l.website || '') || 'No website'].filter(Boolean).join(' · ') : [LH.domainOf(l.website || '') || 'No website', `${l.activeAdCount || 0} active ads`, days == null ? '' : `${days} days advertising`].filter(Boolean).join(' · '))}</div>
         ${issues.length ? `<ul class="issues">${issues.map((i) => `<li><span class="sev high"></span><span>${esc(i)}</span></li>`).join('')}</ul>` : ''}
         <div class="row"><label class="lbl" for="pm-phone">Send to</label>
           <select id="pm-phone" class="inp" data-pm-phone style="width:auto">${nums.map((n) => `<option value="${esc(n)}" ${n === cur ? 'selected' : ''}>${esc(LH.formatPhone(n))}</option>`).join('')}</select></div>
@@ -1033,6 +1074,7 @@ function bind() {
     if (b.dataset.removePhone && l) return update(l.id, { removePhone: b.dataset.removePhone });
     const act = b.dataset.act;
     const body = () => ($('[data-pitch-body]') || {}).value || '';
+    if (await prospectAction(act, b, l, e)) return;
     switch (act) {
       case 'close':
         return closeDrawer();
@@ -1086,6 +1128,7 @@ function bind() {
       }
       case 'reset-templates':
         $('[data-templates]').innerHTML = templateEditor(null);
+        $('[data-ad-templates]').innerHTML = templateEditor(null, LH.DEFAULT_AD_TEMPLATES, 'data-adtpl');
         return toast('Templates reset. Save to keep them.');
       case 'backup': {
         const settings = { ...S.settings, pagespeedKey: '', placesKey: '', queueKey: '' }; // keep keys out of backups
@@ -1164,11 +1207,7 @@ function bind() {
           toast('Set up the phone queue in Settings first (takes 2 minutes).');
           return setView('settings');
         }
-        b.disabled = true;
-        const r = await send({ type: 'queue:push', ids });
-        b.disabled = false;
-        if (r && r.error) return toast(r.error);
-        return toast(`Sent ${r.queued} leads to your phone${r.skipped.length ? ` · ${r.skipped.length} skipped (no phone number)` : ''}`);
+        return queueLeads(ids, b);
       }
       case 'phone-mode':
         return openPhoneMode(filtered().map((r) => r.l.id));
@@ -1286,8 +1325,9 @@ function bind() {
   bind();
   initHuntForm();
   initSettings();
+  initProspects();
   fillSettings();
   const hash = location.hash.replace('#', '');
-  setView(['leads', 'hunt', 'settings'].includes(hash) ? hash : 'leads');
+  setView(['leads', 'hunt', 'settings', 'ads'].includes(hash) ? hash : 'leads');
   if (S.settings.queueKey) send({ type: 'queue:sync' }).catch(() => {});
 })();
