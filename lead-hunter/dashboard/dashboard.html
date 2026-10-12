@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Lead Hunter</title>
+    <link rel="icon" href="../icons/icon-32.png" />
+    <link rel="stylesheet" href="dashboard.css" />
+  </head>
+  <body>
+    <header class="top">
+      <div class="brand">
+        <img src="../icons/icon-48.png" alt="" width="28" height="28" />
+        <span>Lead Hunter</span>
+      </div>
+      <nav class="tabs" role="tablist">
+        <button role="tab" data-view="leads" aria-selected="true">Leads</button>
+        <button role="tab" data-view="hunt">New hunt</button>
+        <button role="tab" data-view="settings">Settings</button>
+      </nav>
+      <div class="kpis" data-kpis></div>
+    </header>
+
+    <div class="hunt-banner" data-hunt-banner hidden></div>
+
+    <!-- LEADS -->
+    <main class="view" data-view-panel="leads">
+      <section class="welcome" data-welcome hidden>
+        <h1>Find businesses that are already spending on ads.</h1>
+        <p>Lead Hunter pulls advertisers from the Meta Ad Library, checks the website their ads send people to, finds a phone number, and writes the pitch for you.</p>
+        <ol>
+          <li><b>Start a hunt.</b> Pick a niche (say, car detailing) and a country. A Facebook Ad Library tab opens and scrolls through the results for every keyword.</li>
+          <li><b>Leads get checked automatically.</b> Each advertiser's landing page is audited for speed, mobile, Meta Pixel, contact buttons and more. Phone numbers come from WhatsApp ads, the website, and Google.</li>
+          <li><b>Pitch the hottest ones first.</b> Sort by priority, open a lead, and send a personalised WhatsApp or email in one click.</li>
+        </ol>
+        <div class="row">
+          <button class="btn pri" data-goto="hunt">Start your first hunt</button>
+          <button class="btn" data-goto="settings">Add your name to the pitch</button>
+        </div>
+      </section>
+
+      <div class="toolbar">
+        <input type="search" class="inp search" placeholder="Search name, website, phone, keyword…" data-f="q" aria-label="Search leads" />
+        <select class="inp" data-f="heat" aria-label="Priority">
+          <option value="">Any priority</option>
+          <option value="hot">Hot</option>
+          <option value="warm">Warm</option>
+          <option value="cold">Cold</option>
+        </select>
+        <select class="inp" data-f="status" aria-label="Status"></select>
+        <select class="inp" data-f="keyword" aria-label="Keyword"></select>
+        <select class="inp" data-f="site" aria-label="Website">
+          <option value="">Any website</option>
+          <option value="none">No website</option>
+          <option value="broken">Broken / parked</option>
+          <option value="weak">Score under 60</option>
+          <option value="nopixel">No Meta Pixel</option>
+          <option value="has">Has website</option>
+        </select>
+        <select class="inp" data-f="contact" aria-label="Contact">
+          <option value="">Any contact</option>
+          <option value="phone">Has phone</option>
+          <option value="wa">Has WhatsApp</option>
+          <option value="email">Has email</option>
+          <option value="nophone">No phone yet</option>
+        </select>
+        <label class="inp days">Running ≥ <input type="number" min="0" step="1" data-f="minDays" placeholder="0" aria-label="Minimum days running" /> days</label>
+        <label class="chk"><input type="checkbox" data-f="hideBig" checked /> Hide big brands</label>
+        <select class="inp" data-f="sort" aria-label="Sort">
+          <option value="priority">Sort: priority</option>
+          <option value="days">Sort: running longest</option>
+          <option value="ads">Sort: most active ads</option>
+          <option value="score">Sort: worst website</option>
+          <option value="newest">Sort: newest found</option>
+          <option value="name">Sort: name</option>
+        </select>
+        <div class="spacer"></div>
+        <button class="btn" data-act="export-csv">Export CSV</button>
+        <button class="btn" data-act="enrich-pending" hidden>Check websites</button>
+      </div>
+
+      <div class="bulk" data-bulk hidden>
+        <span data-bulk-count></span>
+        <select class="inp" data-bulk-status aria-label="Set status for selected"></select>
+        <button class="btn" data-act="bulk-recheck">Re-check websites</button>
+        <button class="btn" data-act="bulk-export">Export selected</button>
+        <button class="btn danger" data-act="bulk-delete">Delete</button>
+        <button class="btn ghost" data-act="bulk-clear">Clear selection</button>
+      </div>
+
+      <div class="table-wrap">
+        <table class="leads">
+          <thead>
+            <tr>
+              <th class="c-sel"><input type="checkbox" data-sel-all aria-label="Select all" /></th>
+              <th class="c-pri">Priority</th>
+              <th>Business</th>
+              <th>Ads</th>
+              <th>Website</th>
+              <th>Top issue</th>
+              <th>Contact</th>
+              <th>Status</th>
+              <th class="c-act"></th>
+            </tr>
+          </thead>
+          <tbody data-rows></tbody>
+        </table>
+        <p class="empty" data-empty hidden>No leads match these filters.</p>
+      </div>
+      <p class="count" data-count></p>
+    </main>
+
+    <!-- HUNT -->
+    <main class="view narrow" data-view-panel="hunt" hidden>
+      <h1 class="h">New hunt</h1>
+      <p class="sub">Lead Hunter opens the Meta Ad Library, searches each keyword, and scrolls until it has collected your target number of new advertisers. Keep the tab it opens on screen while it runs.</p>
+      <form class="card form" data-hunt-form>
+        <div class="field">
+          <span class="lbl">Niche presets</span>
+          <div class="chips" data-presets></div>
+        </div>
+        <label class="field">
+          <span class="lbl">Keywords <small>one per line, searched in order</small></span>
+          <textarea class="inp" name="keywords" rows="6" required placeholder="car detailing&#10;ceramic coating&#10;paint protection film"></textarea>
+        </label>
+        <div class="grid3">
+          <label class="field">
+            <span class="lbl">Country</span>
+            <select class="inp" name="country" data-countries></select>
+          </label>
+          <label class="field">
+            <span class="lbl">New leads to collect</span>
+            <input class="inp" type="number" name="target" min="1" max="2000" value="150" />
+          </label>
+          <label class="field">
+            <span class="lbl">Skip pages with more than <small>likes, 0 = no limit</small></span>
+            <input class="inp" type="number" name="maxLikes" min="0" step="1000" value="60000" />
+          </label>
+          <label class="field">
+            <span class="lbl">Ads running at least <small>days, 0 = any</small></span>
+            <input class="inp" type="number" name="minDays" min="0" value="0" />
+          </label>
+          <label class="field">
+            <span class="lbl">Ads running at most <small>days, 0 = any</small></span>
+            <input class="inp" type="number" name="maxDays" min="0" value="0" />
+          </label>
+        </div>
+        <p class="hint">Only advertisers with <b>active</b> ads are collected. Everyone found is saved; the filters decide which ones count towards your target.</p>
+        <div class="row">
+          <button class="btn pri" type="submit">Start hunt</button>
+          <button class="btn" type="button" data-act="manual-search">Just open the Ad Library</button>
+        </div>
+        <p class="err" data-hunt-err hidden></p>
+      </form>
+      <section class="card" data-last-hunt hidden></section>
+      <section class="card tips">
+        <h2>Tips</h2>
+        <ul>
+          <li>Any Ad Library page you browse is captured too, even without a hunt. Search, scroll, and the leads show up here.</li>
+          <li>Use 4 to 8 related keywords per niche. Different businesses use different words ("ceramic coating" finds people "car detailing" misses).</li>
+          <li>"Running at least 30 days" finds steady spenders with budget. "At most 14 days" finds businesses that just started advertising and may not have a good site yet.</li>
+          <li>Facebook may slow you down if you scroll thousands of ads in one go. A few hunts a day is plenty.</li>
+        </ul>
+      </section>
+    </main>
+
+    <!-- SETTINGS -->
+    <main class="view narrow" data-view-panel="settings" hidden>
+      <h1 class="h">Settings</h1>
+      <form class="card form" data-settings-form>
+        <h2>You (used in pitches)</h2>
+        <div class="grid2">
+          <label class="field"><span class="lbl">Your name</span><input class="inp" name="myName" placeholder="Samil" /></label>
+          <label class="field"><span class="lbl">Agency</span><input class="inp" name="agency" /></label>
+          <label class="field"><span class="lbl">Your phone</span><input class="inp" name="myPhone" /></label>
+          <label class="field"><span class="lbl">Your website</span><input class="inp" name="myWebsite" /></label>
+        </div>
+        <label class="field"><span class="lbl">Free audit link <small>the lead's domain is added to the end</small></span><input class="inp" name="auditLinkBase" /></label>
+        <label class="field"><span class="lbl">Default country</span><select class="inp" name="country" data-countries></select></label>
+
+        <h2>Enrichment</h2>
+        <label class="chk"><input type="checkbox" name="autoEnrich" /> Check every new lead's website automatically</label>
+        <div class="grid2">
+          <label class="field">
+            <span class="lbl">Google Places API key <small>finds phone numbers and websites on Google Maps</small></span>
+            <input class="inp" name="placesKey" type="password" autocomplete="off" placeholder="AIza…" />
+          </label>
+          <label class="chk inline"><input type="checkbox" name="placesAuto" /> Look up leads on Google automatically</label>
+          <label class="field">
+            <span class="lbl">Google PageSpeed API key <small>adds Google's own mobile speed score</small></span>
+            <input class="inp" name="pagespeedKey" type="password" autocomplete="off" placeholder="AIza…" />
+          </label>
+          <label class="chk inline"><input type="checkbox" name="pagespeedAuto" /> Run PageSpeed for every lead (slow)</label>
+        </div>
+        <p class="hint">Both keys come from Google Cloud Console → APIs &amp; Services → Credentials. Enable "Places API (New)" and "PageSpeed Insights API" on the project. Keys are stored only in this browser.</p>
+
+        <h2>Collecting</h2>
+        <label class="field">
+          <span class="lbl">Delay between scrolls <small>milliseconds; higher is gentler on Facebook</small></span>
+          <input class="inp" name="scrollDelayMs" type="number" min="900" step="100" />
+        </label>
+
+        <h2>Pitch templates</h2>
+        <p class="hint">Lead Hunter picks the template that fits each lead. Variables: <code>{{business}}</code> <code>{{domain}}</code> <code>{{issue_1}}</code> <code>{{issue_2_and}}</code> <code>{{issues}}</code> <code>{{days}}</code> <code>{{days_phrase}}</code> <code>{{ad_count}}</code> <code>{{keyword}}</code> <code>{{destination}}</code> <code>{{score}}</code> <code>{{audit_link}}</code> <code>{{my_name}}</code> <code>{{agency}}</code> <code>{{my_phone}}</code></p>
+        <div data-templates></div>
+        <div class="row">
+          <button class="btn pri" type="submit">Save settings</button>
+          <button class="btn" type="button" data-act="reset-templates">Reset templates</button>
+          <span class="saved" data-saved hidden>Saved</span>
+        </div>
+      </form>
+
+      <section class="card">
+        <h2>Your data</h2>
+        <p class="hint">Leads live in this Chrome profile only. Back them up before removing the extension.</p>
+        <div class="row">
+          <button class="btn" data-act="backup">Download backup (JSON)</button>
+          <label class="btn file">Restore backup<input type="file" accept="application/json" data-import hidden /></label>
+          <button class="btn danger" data-act="wipe">Delete all leads</button>
+        </div>
+      </section>
+    </main>
+
+    <!-- DRAWER -->
+    <div class="scrim" data-scrim hidden></div>
+    <aside class="drawer" data-drawer aria-hidden="true" tabindex="-1"></aside>
+
+    <div class="toast" data-toast role="status" aria-live="polite" hidden></div>
+
+    <script src="../lib/common.js"></script>
+    <script src="dashboard.js"></script>
+  </body>
+</html>

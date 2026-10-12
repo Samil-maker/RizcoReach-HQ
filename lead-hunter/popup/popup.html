@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Lead Hunter</title>
+    <link rel="stylesheet" href="../dashboard/dashboard.css" />
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header class="p-head">
+      <img src="../icons/icon-48.png" alt="" width="24" height="24" />
+      <b>Lead Hunter</b>
+      <button class="btn sm" data-dash>Dashboard</button>
+    </header>
+    <div class="p-stats" data-stats></div>
+    <div class="p-hunt" data-hunt hidden></div>
+    <form class="p-form" data-form>
+      <label class="lbl" for="p-kw">Find advertisers</label>
+      <input id="p-kw" class="inp" name="keywords" placeholder="car detailing, ceramic coating" required />
+      <div class="p-row">
+        <select class="inp" name="country" data-countries aria-label="Country"></select>
+        <input class="inp" name="target" type="number" min="1" max="2000" value="150" aria-label="New leads to collect" title="New leads to collect" />
+      </div>
+      <div class="p-row">
+        <button class="btn pri" type="submit">Start hunt</button>
+        <button class="btn" type="button" data-browse>Just browse</button>
+      </div>
+      <p class="hint">Separate keywords with commas. More options (niche presets, days running) are in the dashboard.</p>
+    </form>
+    <script src="../lib/common.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>
