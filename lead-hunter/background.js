@@ -609,6 +609,120 @@ async function enrichOne(id, opts = {}) {
   });
 }
 
+/* --------------------------------------------------------------- phone queue */
+// Talks to /api/lead-queue on the user's site (netlify/functions/lead-queue.mts).
+const QUEUE_ERRORS = {
+  401: 'The queue key does not match LEAD_QUEUE_KEY on your site.',
+  404: 'Your site does not have the phone queue yet. Deploy the latest site code first.',
+  503: 'The phone queue is not switched on yet: add LEAD_QUEUE_KEY in Netlify, then redeploy.',
+};
+async function queueApi(method, body) {
+  const s = await getSettings();
+  if (!s.queueKey || !s.queueSite) throw new Error('Set up the phone queue in Settings first.');
+  let url;
+  try {
+    url = new URL('/api/lead-queue', s.queueSite).toString();
+  } catch {
+    throw new Error('The site address in Settings is not a valid URL.');
+  }
+  let res;
+  try {
+    res = await fetch(url, {
+      method,
+      cache: 'no-store',
+      credentials: 'omit',
+      signal: AbortSignal.timeout(20000),
+      headers: { authorization: `Bearer ${s.queueKey}`, ...(body ? { 'content-type': 'application/json' } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    throw new Error(`Could not reach ${new URL(url).host}.`);
+  }
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !data) throw new Error(QUEUE_ERRORS[res.status] || (data && data.error) || `Phone queue error (HTTP ${res.status}).`);
+  return data;
+}
+
+/** Mirror the server queue onto leads: "sent" on the phone marks the lead as contacted. */
+async function applyQueue(items) {
+  const byId = new Map((items || []).map((i) => [i.id, i]));
+  return locked(async () => {
+    const { phoneQueueIds = [] } = await store.get('phoneQueueIds');
+    const ids = [...new Set([...phoneQueueIds, ...byId.keys()])];
+    const got = await store.get(ids.map(leadKey));
+    const writes = {};
+    let contacted = 0;
+    for (const id of ids) {
+      const lead = got[leadKey(id)];
+      if (!lead) continue;
+      const item = byId.get(id);
+      const before = JSON.stringify([lead.phoneQueue, lead.status]);
+      if (!item) lead.phoneQueue = null;
+      else {
+        lead.phoneQueue = { state: item.status, at: item.statusAt, rev: item.addedAt };
+        if (item.status === 'sent' && ['new', 'followup'].includes(lead.status)) {
+          lead.status = 'contacted';
+          lead.contactedAt = lead.contactedAt || item.statusAt;
+          lead.statusHistory = [...(lead.statusHistory || []), { status: 'contacted', at: item.statusAt, via: 'phone' }].slice(-20);
+          contacted++;
+        }
+      }
+      if (JSON.stringify([lead.phoneQueue, lead.status]) !== before) {
+        lead.updatedAt = now();
+        writes[leadKey(id)] = lead;
+      }
+    }
+    // Only leads still waiting on the phone need watching.
+    writes.phoneQueueIds = ids.filter((id) => byId.get(id) && byId.get(id).status === 'queued');
+    writes.phoneQueueSyncedAt = now();
+    await store.set(writes);
+    return { contacted, waiting: writes.phoneQueueIds.length };
+  });
+}
+
+async function syncQueue() {
+  const q = await queueApi('GET');
+  return applyQueue(q.items);
+}
+
+async function pushToQueue(ids, overrides = {}) {
+  const settings = await getSettings();
+  const got = await store.get(ids.map(leadKey));
+  const items = [];
+  const skipped = [];
+  for (const id of ids) {
+    const lead = got[leadKey(id)];
+    if (!lead) continue;
+    const o = overrides[id] || {};
+    const number = o.phone || LH.whatsappTarget(lead) || (LH.bestPhone(lead) || {}).number;
+    if (!number) {
+      skipped.push(lead.pageName || id);
+      continue;
+    }
+    const p = LH.priority(lead);
+    const site = lead.site || {};
+    items.push({
+      id: lead.id,
+      name: lead.pageName,
+      wa: number.replace(/\D/g, ''),
+      message: o.message || LH.pitchFor(lead, settings).whatsapp,
+      domain: LH.domainOf(lead.website || ''),
+      issue: !lead.website ? `No website: ads go to ${LH.destinationLabel(lead.destinationKind)}` : ((site.issues || [])[0] || {}).label || '',
+      heat: LH.heat(p),
+      priority: p,
+      pageUrl: lead.pageUrl,
+    });
+  }
+  if (!items.length) return { queued: 0, skipped };
+  const q = await queueApi('PUT', { items });
+  await locked(async () => {
+    const { phoneQueueIds = [] } = await store.get('phoneQueueIds');
+    await store.set({ phoneQueueIds: [...new Set([...phoneQueueIds, ...items.map((i) => i.id)])] });
+  });
+  await applyQueue(q.items);
+  return { queued: items.length, skipped };
+}
+
 /* ------------------------------------------------------------------ messages */
 async function openDashboard(hash = '') {
   const tabs = await chrome.tabs.query({ url: DASHBOARD + '*' });
@@ -654,6 +768,13 @@ const handlers = {
       }
     });
     if (msg.patch && 'website' in msg.patch) enqueue([msg.id], true);
+    const pq = lead && lead.phoneQueue;
+    if (pq && pq.state === 'queued' && ['contacted', 'replied', 'meeting', 'won', 'lost', 'skip'].includes(msg.patch && msg.patch.status)) {
+      const status = msg.patch.status === 'contacted' ? 'sent' : 'removed';
+      queueApi('POST', { updates: [{ id: msg.id, status, rev: pq.rev }] })
+        .then((q) => applyQueue(q.items))
+        .catch(() => {});
+    }
     return { lead };
   },
   'lead:delete': async (msg) => {
@@ -705,6 +826,17 @@ const handlers = {
     });
     return { imported: n };
   },
+  'queue:push': (msg) => pushToQueue(msg.ids || [], msg.overrides || {}),
+  'queue:sync': () => syncQueue(),
+  'queue:test': async () => {
+    const q = await queueApi('GET');
+    await applyQueue(q.items);
+    return { ok: true, total: q.items.length, waiting: q.items.filter((i) => i.status === 'queued').length };
+  },
+  'queue:clear': async () => {
+    const q = await queueApi('DELETE', { finished: true });
+    return applyQueue(q.items);
+  },
   stats: async () => {
     const leads = await allLeads();
     const { hunt, enrichQueue = [] } = await store.get(['hunt', 'enrichQueue']);
@@ -742,6 +874,8 @@ chrome.alarms.onAlarm.addListener(async (a) => {
   // Watchdog: a hunt tab that has gone quiet (login wall, crash) moves on.
   const { hunt } = await store.get('hunt');
   if (hunt && hunt.status === 'running' && now() - hunt.lastActivity > 150000) nextKeyword('stalled');
+  const { phoneQueueIds = [] } = await store.get('phoneQueueIds');
+  if (phoneQueueIds.length) syncQueue().catch(() => {});
 });
 
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {

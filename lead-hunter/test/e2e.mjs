@@ -13,7 +13,8 @@ import os from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
-import { makeAd, searchResponse } from './fixtures.mjs';
+import { makeAd, searchResponse, memStore } from './fixtures.mjs';
+import { handle as queueHandle } from '../../netlify/functions/lead-queue.mts';
 
 const require = createRequire(import.meta.url);
 let pw;
@@ -23,6 +24,9 @@ try {
   pw = require(path.join(execSync('npm root -g').toString().trim(), 'playwright'));
 }
 const EXT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const OUTREACH = path.resolve(EXT, '../public/outreach.html');
+const QUEUE_KEY = 'test-key-' + 'x'.repeat(30);
+const queueStore = memStore();
 const shotsArg = process.argv.indexOf('--shots');
 const SHOTS = shotsArg > -1 ? process.argv[shotsArg + 1] : null;
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'lh-e2e-'));
@@ -137,6 +141,23 @@ function handler(req, res) {
       return;
     }
   }
+  if (host === 'www.rizcoreach.ae') {
+    if (url.pathname === '/outreach' || url.pathname === '/outreach.html') {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      return res.end(fs.readFileSync(OUTREACH));
+    }
+    if (url.pathname === '/api/lead-queue') {
+      const chunks = [];
+      req.on('data', (c) => chunks.push(c));
+      req.on('end', async () => {
+        const body = Buffer.concat(chunks);
+        const r = await queueHandle(new Request(url, { method: req.method, headers: req.headers, body: body.length ? body : undefined }), queueStore, QUEUE_KEY);
+        res.writeHead(r.status, Object.fromEntries(r.headers));
+        res.end(await r.text());
+      });
+      return;
+    }
+  }
   if (host === 'wa.me') {
     res.writeHead(200, { 'content-type': 'text/html' });
     return res.end('whatsapp stub');
@@ -172,7 +193,7 @@ const ctx = await pw.chromium.launchPersistentContext(path.join(tmp, 'profile'),
   args: [
     `--disable-extensions-except=${EXT}`,
     `--load-extension=${EXT}`,
-    `--host-resolver-rules=MAP www.facebook.com 127.0.0.1:${PORT}, MAP *.example 127.0.0.1:${PORT}, MAP wa.me 127.0.0.1:${PORT}`,
+    `--host-resolver-rules=MAP www.facebook.com 127.0.0.1:${PORT}, MAP *.example 127.0.0.1:${PORT}, MAP wa.me 127.0.0.1:${PORT}, MAP www.rizcoreach.ae 127.0.0.1:${PORT}`,
     '--ignore-certificate-errors',
     '--no-proxy-server',
   ],
@@ -312,6 +333,86 @@ try {
   assert.match(csv.split('\n')[0], /priority,heat,business/);
   assert.equal(csv.trim().split('\n').length, 24, 'header + the 23 visible leads');
   assert.match(csv, /Gloss Garage Dubai/);
+
+  /* ---------------------------------------------------- send from phone */
+  const qrText = (sel) => dash.$eval(sel, (c) => c.dataset.qrText);
+  const desert = by('Desert Detailers'); // WhatsApp-ad lead, still "new"
+  await dash.click(`tr[data-id="${desert.id}"] [data-open]`);
+  await dash.waitForSelector('[data-pitch-qr]');
+  const body1 = await dash.inputValue('[data-pitch-body]');
+  assert.equal(await qrText('[data-pitch-qr]'), `https://wa.me/971501000001?text=${encodeURIComponent(body1)}`);
+  await dash.fill('[data-pitch-body]', 'Edited message');
+  await dash.waitForFunction(() => document.querySelector('[data-pitch-qr]').dataset.qrText.endsWith('?text=Edited%20message'));
+  if (SHOTS) {
+    await dash.waitForTimeout(400);
+    await dash.screenshot({ path: `${SHOTS}/6-drawer-qr.png` });
+  }
+  await dash.click('[data-act="mark-contacted"]');
+  await waitFor(async () => (await storage('lead:' + desert.id))['lead:' + desert.id].status === 'contacted', 5000, 'marked contacted from QR panel');
+  await dash.click('[data-act="close"]');
+
+  // Phone mode: one QR per lead, Enter = sent & next.
+  await dash.click('[data-act="phone-mode"]');
+  await dash.waitForSelector('[data-pm-qr]');
+  const pmFirst = await dash.$eval('.pm-info h2', (h) => h.firstChild.textContent.trim());
+  assert.match(await qrText('[data-pm-qr]'), /^https:\/\/wa\.me\/\d+\?text=Hi%20/);
+  if (SHOTS) await dash.screenshot({ path: `${SHOTS}/7-phone-mode.png` });
+  await dash.keyboard.press('Enter');
+  await dash.waitForFunction((n) => document.querySelector('.pm-info h2').firstChild.textContent.trim() !== n, pmFirst);
+  const firstLead = leads.find((l) => l.pageName === pmFirst);
+  await waitFor(async () => (await storage('lead:' + firstLead.id))['lead:' + firstLead.id].status === 'contacted', 5000, 'phone mode marks contacted');
+  await dash.keyboard.press('ArrowRight'); // skip
+  await dash.keyboard.press('Escape');
+  assert.ok(await dash.$eval('[data-pm]', (el) => el.hidden));
+
+  // Phone queue: pair, push three leads, tap one on the phone, sync back.
+  await dash.click('[data-view="settings"]');
+  await dash.click('[data-act="gen-key"]');
+  await dash.fill('[name="queueKey"]', QUEUE_KEY);
+  await dash.click('[data-act="test-queue"]');
+  await dash.waitForFunction(() => /Connected\. 0 leads waiting/.test(document.querySelector('[data-queue-status]').textContent));
+  const pairUrl = await qrText('[data-pair-canvas]');
+  assert.equal(pairUrl, `https://www.rizcoreach.ae/outreach#k=${encodeURIComponent(QUEUE_KEY)}`);
+  if (SHOTS) {
+    await dash.$eval('#phone', (el) => el.scrollIntoView());
+    await dash.screenshot({ path: `${SHOTS}/8-settings-phone.png` });
+  }
+
+  await dash.click('[data-view="leads"]');
+  await dash.selectOption('[data-f="status"]', 'new');
+  await dash.selectOption('[data-f="contact"]', 'phone');
+  const ids = await dash.$$eval('[data-rows] tr', (trs) => trs.slice(0, 3).map((t) => t.dataset.id));
+  assert.equal(ids.length, 3);
+  for (const id of ids) await dash.click(`tr[data-id="${id}"] [data-sel]`);
+  await dash.click('[data-act="bulk-queue"]');
+  await waitFor(async () => (queueStore.peek() || { items: [] }).items.length === 3, 10000, 'queue to receive 3 leads');
+  await dash.waitForFunction(() => document.querySelectorAll('.tag.phone').length === 3);
+
+  const phone = await ctx.newPage();
+  await phone.setViewportSize({ width: 390, height: 844 });
+  await phone.goto(pairUrl);
+  await phone.waitForFunction(() => document.querySelectorAll('[data-list] .card').length === 3);
+  if (SHOTS) await phone.screenshot({ path: `${SHOTS}/9-phone-queue.png` });
+  const firstCard = await phone.$eval('[data-list] .card', (c) => c.dataset.id);
+  const href = await phone.$eval('[data-list] .card [data-act="wa"]', (a) => a.href);
+  assert.match(href, /^https:\/\/wa\.me\/\d+\?text=Hi%20/);
+  const [waTab2] = await Promise.all([ctx.waitForEvent('page'), phone.click('[data-list] .card [data-act="wa"]')]);
+  await waTab2.close();
+  await waitFor(async () => queueStore.peek().items.find((i) => i.id === firstCard).status === 'sent', 10000, 'phone tap to reach the server');
+  await phone.waitForFunction(() => /2 to send · 1 sent/.test(document.querySelector('[data-sub]').textContent));
+
+  // The extension picks up "sent" and marks the lead as contacted.
+  await sw.evaluate(() => syncQueue());
+  const synced = (await storage('lead:' + firstCard))['lead:' + firstCard];
+  assert.equal(synced.status, 'contacted');
+  assert.equal(synced.phoneQueue.state, 'sent');
+
+  // Marking a queued lead as contacted on the computer ticks it off on the phone too.
+  const second = ids.find((id) => id !== firstCard);
+  await dash.selectOption(`tr[data-id="${second}"] [data-status]`, 'contacted');
+  await waitFor(async () => queueStore.peek().items.find((i) => i.id === second).status === 'sent', 10000, 'computer status to reach the phone queue');
+  await phone.click('[data-refresh]');
+  await phone.waitForFunction(() => /1 to send · 2 sent/.test(document.querySelector('[data-sub]').textContent));
 
   // Popup renders stats.
   const popup = await ctx.newPage();

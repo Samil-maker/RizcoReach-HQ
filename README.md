@@ -33,6 +33,7 @@ deploy preview.
 | Estimator timelines | top of `src/scripts/tools/estimator.ts` |
 | Meta Ads CPL benchmarks | `src/content/tools.ts` (`ads.industries`) |
 | Lead Hunter Chrome extension (Meta Ad Library lead gen, not deployed) | `lead-hunter/` (see its README) |
+| Lead Hunter phone queue (private) | `netlify/functions/lead-queue.mts` (`/api/lead-queue`) + `public/outreach.html` (`/outreach`) |
 
 ## Leads
 
@@ -52,6 +53,18 @@ The audit works without any key. To also show Google Lighthouse scores:
    will not work for this API.
 2. In Netlify: Site configuration → Environment variables → add
    `PAGESPEED_API_KEY` with that key, then redeploy.
+
+## Optional: Lead Hunter phone queue
+
+Lets the Lead Hunter extension send leads to a private page on your phone
+(`/outreach`). Off until you set it up:
+
+1. In the extension: Settings → Phone queue → Generate a key → Copy key.
+2. In Netlify: Site configuration → Environment variables → add
+   `LEAD_QUEUE_KEY` with that key, then redeploy.
+
+Data is stored in Netlify Blobs (store `lead-queue`). Every request needs the
+key; without `LEAD_QUEUE_KEY` the endpoint answers 503.
 
 ## Design system
 

@@ -177,6 +177,7 @@ function contactCell(l) {
     const st = (l.site || {}).state;
     return ['queued', 'running'].includes(st) ? '<span class="muted">Looking…</span>' : '<span class="muted">No contact yet</span>';
   }
+  if (l.phoneQueue && l.phoneQueue.state === 'queued') parts.push('<div class="p"><span class="tag phone" title="Waiting in your phone queue">On your phone</span></div>');
   return `<div class="contact">${parts.join('')}</div>`;
 }
 
@@ -343,6 +344,41 @@ function renderDrawer(fresh = false) {
   if (keep.body != null) $('[data-pitch-body]', d).value = keep.body;
   if (keep.subject != null && $('[data-pitch-subject]', d)) $('[data-pitch-subject]', d).value = keep.subject;
   d.scrollTop = keep.scroll;
+  drawPitchQr();
+}
+
+/* QR code for the pitch: scan with a phone and WhatsApp opens there with the message ready. */
+function drawPitchQr() {
+  const canvas = $('[data-pitch-qr]');
+  if (!canvas) return;
+  const phone = ($('[data-pitch-phone]') || {}).value;
+  const text = ($('[data-pitch-body]') || {}).value || '';
+  const ok = phone && LH.drawQr(canvas, LH.waLink(phone, text), 200);
+  canvas.hidden = !ok;
+  $('[data-qr-err]').hidden = !!ok;
+}
+
+function zoomQr(text) {
+  const el = document.createElement('div');
+  el.className = 'qr-zoom';
+  el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-label', 'QR code, click to close');
+  const c = document.createElement('canvas');
+  el.appendChild(c);
+  document.body.appendChild(el);
+  LH.drawQr(c, text, Math.min(innerWidth, innerHeight) * 0.92);
+  const close = () => {
+    el.remove();
+    document.removeEventListener('keydown', onKey, true);
+  };
+  const onKey = (e) => {
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      close();
+    }
+  };
+  el.addEventListener('click', close);
+  document.addEventListener('keydown', onKey, true);
 }
 function renderDrawerFacts(l) {
   const el = $('[data-site-sec]');
@@ -456,8 +492,8 @@ function pitchSection(l) {
   if (S.pitch.channel === 'whatsapp') {
     send = waNumbers.length
       ? `<select class="inp" data-pitch-phone aria-label="Send to">${waNumbers.map((n) => `<option value="${esc(n)}" ${n === waSel ? 'selected' : ''}>${esc(LH.formatPhone(n))}</option>`).join('')}</select>
-         <button class="btn wa" data-act="send-wa">${ICON.wa.replace('<svg', '<svg width="16" height="16"')} Open in WhatsApp</button>`
-      : `<span class="muted">Add a number above to send on WhatsApp.</span>`;
+         <button class="btn" data-act="send-wa" title="Opens WhatsApp Web or the WhatsApp desktop app">${ICON.wa.replace('<svg', '<svg width="16" height="16"')} WhatsApp on this computer</button>`
+      : `<span class="muted">Add a number below to send on WhatsApp.</span>`;
   } else if (S.pitch.channel === 'email') {
     send = (l.emails || []).length ? `<button class="btn pri" data-act="send-email">Open email to ${esc(l.emails[0])}</button>` : `<span class="muted">No email found. Copy the text instead.</span>`;
   } else {
@@ -471,8 +507,24 @@ function pitchSection(l) {
     ${S.pitch.channel === 'email' ? `<input class="inp" data-pitch-subject value="${esc(p.subject)}" aria-label="Email subject" style="margin-bottom:8px" />` : ''}
     <textarea class="inp" data-pitch-body aria-label="Message">${esc(body)}</textarea>
     <div class="row">${send}<button class="btn" data-act="copy-pitch">Copy</button></div>
-    <p class="hint">Opening WhatsApp or email marks the lead as contacted. Edit the message freely; edits are not saved to the template.</p>
+    ${S.pitch.channel === 'whatsapp' && waNumbers.length ? phoneBlock() : ''}
+    <p class="hint">Opening WhatsApp or email here marks the lead as contacted. Edit the message freely; edits are not saved to the template.</p>
   </section>`;
+}
+
+function phoneBlock() {
+  const queueOn = S.settings.queueKey && S.settings.queueSite;
+  return `<div class="qr-wrap">
+      <canvas data-pitch-qr title="Click to enlarge" aria-label="QR code that opens this WhatsApp message on your phone"></canvas>
+      <div><b>Send from your phone</b>
+        <p>Point your phone's camera at the code. WhatsApp opens on your phone with this number and message ready; just press send. Click the code to make it bigger.</p>
+        <p class="qr-err" data-qr-err hidden>This message is too long for one QR code. Shorten it a little.</p>
+        <div class="row" style="margin-top:0">
+          <button class="btn sm pri" data-act="mark-contacted">I sent it</button>
+          ${queueOn ? '<button class="btn sm" data-act="queue-one">Send to phone queue</button>' : '<button class="btn sm ghost" data-goto="settings" data-anchor="phone">Set up phone queue</button>'}
+        </div>
+      </div>
+    </div>`;
 }
 
 function drawerHtml(l) {
@@ -571,7 +623,7 @@ function download(name, text, type) {
 }
 function exportCsv(leads) {
   const now = Date.now();
-  const head = ['priority', 'heat', 'business', 'facebook_page', 'all_ads', 'keywords', 'category', 'page_likes', 'active_ads', 'days_running', 'first_ad_started', 'website', 'landing_page', 'website_score', 'website_status', 'builder', 'meta_pixel', 'top_issues', 'phone', 'whatsapp_link', 'other_phones', 'email', 'instagram', 'google_rating', 'google_reviews', 'status', 'notes', 'found_on'];
+  const head = ['priority', 'heat', 'business', 'facebook_page', 'all_ads', 'keywords', 'category', 'page_likes', 'active_ads', 'days_running', 'first_ad_started', 'website', 'landing_page', 'website_score', 'website_status', 'builder', 'meta_pixel', 'top_issues', 'phone', 'whatsapp_link', 'whatsapp_message_link', 'other_phones', 'email', 'instagram', 'google_rating', 'google_reviews', 'status', 'notes', 'found_on'];
   const rows = leads.map((l) => {
     const p = LH.priority(l, now);
     const site = l.site || {};
@@ -597,7 +649,8 @@ function exportCsv(leads) {
       site.state === 'ok' && !site.parked ? (site.pixel ? 'yes' : 'no') : '',
       (site.issues || []).slice(0, 4).map((i) => i.label).join('; '),
       best ? LH.formatPhone(best.number) : '',
-      wa ? `https://wa.me/${wa.replace(/\D/g, '')}` : '',
+      wa ? LH.waLink(wa) : '',
+      wa ? LH.waLink(wa, LH.pitchFor(l, S.settings).whatsapp) : '',
       l.phones.filter((x) => !best || x.number !== best.number).map((x) => LH.formatPhone(x.number)).join('; '),
       (l.emails || [])[0] || '',
       (l.socials || {}).instagram || '',
@@ -711,29 +764,185 @@ function fillSettings() {
     else el.value = s[el.name] ?? '';
   }
   $('[data-templates]').innerHTML = templateEditor(s.templates);
+  renderPairQr();
 }
+function renderPairQr() {
+  const box = $('[data-pair]');
+  const { queueKey, queueSite } = S.settings;
+  let url = '';
+  try {
+    url = queueKey && queueSite ? `${new URL('/outreach', queueSite)}#k=${encodeURIComponent(queueKey)}` : '';
+  } catch {}
+  box.hidden = !url;
+  if (url) LH.drawQr($('[data-pair-canvas]'), url, 200);
+}
+
+async function saveSettings() {
+  const f = $('[data-settings-form]');
+  const next = { ...S.settings };
+  for (const el of f.elements) {
+    if (!el.name || !(el.name in LH.DEFAULT_SETTINGS)) continue;
+    next[el.name] = el.type === 'checkbox' ? el.checked : el.type === 'number' ? Number(el.value) || LH.DEFAULT_SETTINGS[el.name] : el.value.trim();
+  }
+  const templates = {};
+  $$('[data-tpl]', f).forEach((el) => {
+    const [k, field] = el.dataset.tpl.split('.');
+    templates[k] = templates[k] || { name: LH.DEFAULT_TEMPLATES[k].name };
+    templates[k][field] = el.value;
+  });
+  const same = Object.entries(templates).every(([k, t]) => ['whatsapp', 'subject', 'email'].every((x) => t[x] === LH.DEFAULT_TEMPLATES[k][x]));
+  next.templates = same ? null : templates;
+  if (next.queueSite && !/^https?:\/\//i.test(next.queueSite)) next.queueSite = `https://${next.queueSite}`;
+  next.queueSite = (next.queueSite || '').replace(/\/+$/, '');
+  await chrome.storage.local.set({ settings: next });
+  S.settings = next;
+  renderPairQr();
+  return next;
+}
+
 function initSettings() {
   const f = $('[data-settings-form]');
   f.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const next = { ...S.settings };
-    for (const el of f.elements) {
-      if (!el.name || !(el.name in LH.DEFAULT_SETTINGS)) continue;
-      next[el.name] = el.type === 'checkbox' ? el.checked : el.type === 'number' ? Number(el.value) || LH.DEFAULT_SETTINGS[el.name] : el.value.trim();
-    }
-    const templates = {};
-    $$('[data-tpl]', f).forEach((el) => {
-      const [k, field] = el.dataset.tpl.split('.');
-      templates[k] = templates[k] || { name: LH.DEFAULT_TEMPLATES[k].name };
-      templates[k][field] = el.value;
-    });
-    const same = Object.entries(templates).every(([k, t]) => ['whatsapp', 'subject', 'email'].every((x) => t[x] === LH.DEFAULT_TEMPLATES[k][x]));
-    next.templates = same ? null : templates;
-    await chrome.storage.local.set({ settings: next });
-    S.settings = next;
+    await saveSettings();
     const ok = $('[data-saved]');
     ok.hidden = false;
     setTimeout(() => (ok.hidden = true), 1800);
+  });
+}
+
+/* ------------------------------------------------------------ phone mode */
+// One lead at a time with a big QR: scan with the phone, send in WhatsApp, press Enter for the next.
+const PM = { ids: [], i: 0, sent: 0, edits: {}, phones: {} };
+const pmLead = () => S.leads.get(PM.ids[PM.i]);
+const pmText = (l) => PM.edits[l.id] ?? LH.pitchFor(l, S.settings).whatsapp;
+function pmPhone(l) {
+  const nums = l.phones.map((p) => p.number);
+  return PM.phones[l.id] && nums.includes(PM.phones[l.id]) ? PM.phones[l.id] : LH.whatsappTarget(l) || nums[0];
+}
+
+function openPhoneMode(ids) {
+  const list = ids.map((id) => S.leads.get(id)).filter((l) => l && l.phones.length && !['won', 'lost', 'skip'].includes(l.status));
+  if (!list.length) return toast('None of these leads has a phone number yet.');
+  // Leads you have not contacted yet come first; otherwise keep the current sort order.
+  list.sort((a, b) => Number(a.status !== 'new') - Number(b.status !== 'new'));
+  Object.assign(PM, { ids: list.map((l) => l.id), i: 0, sent: 0, edits: {}, phones: {} });
+  closeDrawer();
+  $('[data-pm]').hidden = false;
+  renderPm();
+}
+function closePhoneMode() {
+  $('[data-pm]').hidden = true;
+  if (PM.sent) toast(`${PM.sent} lead${PM.sent === 1 ? '' : 's'} marked as contacted`);
+}
+
+function drawPmQr() {
+  const l = pmLead();
+  const c = $('[data-pm-qr]');
+  if (!l || !c) return;
+  const ok = LH.drawQr(c, LH.waLink(pmPhone(l), pmText(l)), Math.max(260, Math.min(440, innerHeight - 250)));
+  c.hidden = !ok;
+  $('[data-pm-qr-err]').hidden = ok;
+}
+
+function renderPm() {
+  const box = $('[data-pm-box]');
+  const total = PM.ids.length;
+  const head = (extra = '') => `<header class="pm-head"><b>Phone mode</b>${extra}<button class="btn sm ghost x" data-pm="close" aria-label="Close phone mode">✕</button></header>`;
+  if (PM.i >= total) {
+    box.innerHTML = `${head()}<div class="pm-done"><h2>All done</h2><p class="muted">You went through ${total} lead${total === 1 ? '' : 's'} and marked ${PM.sent} as contacted.</p><button class="btn pri" data-pm="close">Back to leads</button></div>`;
+    box.focus();
+    return;
+  }
+  const l = pmLead();
+  if (!l) {
+    PM.ids.splice(PM.i, 1);
+    return renderPm();
+  }
+  const p = LH.priority(l);
+  const days = LH.daysRunning(l);
+  const issues = !l.website ? [`No website: ads go to ${LH.destinationLabel(l.destinationKind)}`] : ((l.site || {}).issues || []).slice(0, 3).map((i) => i.label);
+  const nums = l.phones.map((x) => x.number);
+  const cur = pmPhone(l);
+  const st = LH.STATUSES.find((x) => x.id === l.status);
+  box.innerHTML = `${head(`<span class="muted num">${PM.i + 1} of ${total} · ${PM.sent} sent</span><span class="pm-prog"><i style="width:${Math.round((100 * PM.i) / total)}%"></i></span>`)}
+    <div class="pm-body">
+      <div class="pm-qr">
+        <canvas data-pm-qr title="Click to enlarge" aria-label="QR code: opens WhatsApp on your phone with this message"></canvas>
+        <p class="qr-err" data-pm-qr-err hidden>Message too long for one QR code. Shorten it a little.</p>
+        <p>Scan with your phone's camera. WhatsApp opens with the number and message ready; press send, then <b>Enter</b> here for the next lead. Click the code to make it bigger.</p>
+      </div>
+      <div class="pm-info">
+        <h2>${esc(l.pageName || 'Unknown page')} <span class="heat ${LH.heat(p)}">${p}</span>${l.status !== 'new' ? `<span class="tag">${esc(st ? st.label : l.status)}</span>` : ''}</h2>
+        <div class="muted">${esc([LH.domainOf(l.website || '') || 'No website', `${l.activeAdCount || 0} active ads`, days == null ? '' : `${days} days advertising`].filter(Boolean).join(' · '))}</div>
+        ${issues.length ? `<ul class="issues">${issues.map((i) => `<li><span class="sev high"></span><span>${esc(i)}</span></li>`).join('')}</ul>` : ''}
+        <div class="row"><label class="lbl" for="pm-phone">Send to</label>
+          <select id="pm-phone" class="inp" data-pm-phone style="width:auto">${nums.map((n) => `<option value="${esc(n)}" ${n === cur ? 'selected' : ''}>${esc(LH.formatPhone(n))}</option>`).join('')}</select></div>
+        <textarea class="inp" data-pm-msg aria-label="Message">${esc(pmText(l))}</textarea>
+        <div class="row">
+          <button class="btn pri" data-pm="sent">Sent, next</button>
+          <button class="btn" data-pm="skip">Skip</button>
+          <button class="btn ghost" data-pm="back" ${PM.i === 0 ? 'disabled' : ''}>Back</button>
+          <button class="btn ghost danger" data-pm="notfit">Not a fit</button>
+        </div>
+        <div class="pm-keys"><kbd>Enter</kbd> sent &amp; next · <kbd>→</kbd> skip · <kbd>←</kbd> back · <kbd>Esc</kbd> close · <kbd>Ctrl</kbd>+<kbd>Enter</kbd> while typing</div>
+      </div>
+    </div>`;
+  drawPmQr();
+  box.focus();
+}
+
+function pmAct(act) {
+  const l = pmLead();
+  if (act === 'close') return closePhoneMode();
+  if (act === 'back') PM.i = Math.max(0, PM.i - 1);
+  else if (!l) return;
+  else if (act === 'sent') {
+    if (['new', 'followup'].includes(l.status)) update(l.id, { status: 'contacted' });
+    PM.sent++;
+    PM.i++;
+  } else if (act === 'notfit') {
+    update(l.id, { status: 'skip' });
+    PM.i++;
+  } else if (act === 'skip') PM.i++;
+  renderPm();
+}
+
+function phoneModeKey(e) {
+  if (document.querySelector('.qr-zoom')) return;
+  const typing = /TEXTAREA|INPUT|SELECT/.test((e.target && e.target.tagName) || '');
+  if (e.key === 'Escape') return pmAct('close');
+  if (e.key === 'Enter' && (!typing || e.ctrlKey || e.metaKey)) {
+    e.preventDefault();
+    return pmAct(PM.i >= PM.ids.length ? 'close' : 'sent');
+  }
+  if (typing) return;
+  if (e.key === 'ArrowRight') pmAct('skip');
+  if (e.key === 'ArrowLeft') pmAct('back');
+}
+
+function bindPhoneMode() {
+  const pm = $('[data-pm]');
+  let t = 0;
+  pm.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-pm]');
+    if (b && b !== pm) return pmAct(b.dataset.pm);
+    if (e.target === pm) return closePhoneMode();
+    const c = e.target.closest('[data-pm-qr]');
+    if (c && c.dataset.qrText) zoomQr(c.dataset.qrText);
+  });
+  pm.addEventListener('input', (e) => {
+    if (!e.target.matches('[data-pm-msg]')) return;
+    const l = pmLead();
+    if (l) PM.edits[l.id] = e.target.value;
+    clearTimeout(t);
+    t = setTimeout(drawPmQr, 200);
+  });
+  pm.addEventListener('change', (e) => {
+    if (!e.target.matches('[data-pm-phone]')) return;
+    const l = pmLead();
+    if (l) PM.phones[l.id] = e.target.value;
+    drawPmQr();
   });
 }
 
@@ -795,7 +1004,15 @@ function bind() {
     const b = e.target.closest('[data-act], [data-goto], [data-angle], [data-channel], [data-copy], [data-remove-phone]');
     if (!b) return;
     const l = S.openId ? S.leads.get(S.openId) : null;
-    if (b.dataset.goto) return setView(b.dataset.goto);
+    if (b.dataset.goto) {
+      setView(b.dataset.goto);
+      if (b.dataset.anchor) {
+        closeDrawer();
+        const t = document.getElementById(b.dataset.anchor);
+        if (t) t.scrollIntoView({ block: 'start' });
+      }
+      return;
+    }
     if (b.dataset.angle) {
       S.pitch.angle = b.dataset.angle;
       S.pitch.dirty = false;
@@ -927,6 +1144,55 @@ function bind() {
         await copy(body());
         openTab(l.pageUrl);
         return markContacted(l);
+      case 'mark-contacted':
+        if (!l) return;
+        if (!['new', 'followup'].includes(l.status)) return toast(`Already marked as ${(LH.STATUSES.find((x) => x.id === l.status) || {}).label || l.status}`);
+        update(l.id, { status: 'contacted' });
+        return toast(`Marked “${l.pageName}” as contacted`, () => update(l.id, { status: l.status }));
+      case 'queue-one': {
+        if (!l) return;
+        const phone = ($('[data-pitch-phone]') || {}).value;
+        const r = await send({ type: 'queue:push', ids: [l.id], overrides: { [l.id]: { message: body(), phone } } });
+        return toast(r && r.error ? r.error : r.queued ? `Sent “${l.pageName}” to your phone` : 'This lead has no phone number yet');
+      }
+      case 'bulk-queue': {
+        const ids = filtered().map((r) => r.l.id).filter((id) => S.selected.has(id));
+        if (!S.settings.queueKey) {
+          toast('Set up the phone queue in Settings first (takes 2 minutes).');
+          return setView('settings');
+        }
+        b.disabled = true;
+        const r = await send({ type: 'queue:push', ids });
+        b.disabled = false;
+        if (r && r.error) return toast(r.error);
+        return toast(`Sent ${r.queued} leads to your phone${r.skipped.length ? ` · ${r.skipped.length} skipped (no phone number)` : ''}`);
+      }
+      case 'phone-mode':
+        return openPhoneMode(filtered().map((r) => r.l.id));
+      case 'bulk-phone-mode':
+        return openPhoneMode(filtered().map((r) => r.l.id).filter((id) => S.selected.has(id)));
+      case 'gen-key': {
+        const bytes = crypto.getRandomValues(new Uint8Array(24));
+        const k = btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+        const input = $('[data-settings-form] [name="queueKey"]');
+        input.value = k;
+        input.type = 'text';
+        return toast('New key made. Copy it into Netlify, then press Save & test.');
+      }
+      case 'copy-key': {
+        const k = $('[data-settings-form] [name="queueKey"]').value.trim();
+        return k ? copy(k) : toast('Generate a key first');
+      }
+      case 'test-queue': {
+        const out = $('[data-queue-status]');
+        await saveSettings();
+        if (!S.settings.queueKey) return (out.textContent = 'Add a key first.');
+        out.textContent = 'Testing…';
+        const r = await send({ type: 'queue:test' });
+        out.textContent = r && r.error ? r.error : `Connected. ${r.waiting} lead${r.waiting === 1 ? '' : 's'} waiting on your phone.`;
+        out.style.color = r && r.error ? 'var(--poor)' : 'var(--good)';
+        return;
+      }
       case 'delete-lead':
         if (!l || !confirm(`Delete ${l.pageName}?`)) return;
         await send({ type: 'lead:delete', ids: [l.id] });
@@ -938,8 +1204,13 @@ function bind() {
   // Drawer inputs
   const drawer = $('[data-drawer]');
   let notesTimer = 0;
+  let qrTimer = 0;
   drawer.addEventListener('input', (e) => {
-    if (e.target.matches('[data-pitch-body], [data-pitch-subject]')) S.pitch.dirty = true;
+    if (e.target.matches('[data-pitch-body], [data-pitch-subject]')) {
+      S.pitch.dirty = true;
+      clearTimeout(qrTimer);
+      qrTimer = setTimeout(drawPitchQr, 200);
+    }
     if (e.target.matches('[data-notes]')) {
       clearTimeout(notesTimer);
       const id = S.openId;
@@ -949,8 +1220,16 @@ function bind() {
   });
   drawer.addEventListener('change', (e) => {
     if (e.target.matches('[data-status]') && S.openId) update(S.openId, { status: e.target.value });
-    if (e.target.matches('[data-pitch-phone]')) S.pitch.phone = e.target.value;
+    if (e.target.matches('[data-pitch-phone]')) {
+      S.pitch.phone = e.target.value;
+      drawPitchQr();
+    }
   });
+  drawer.addEventListener('click', (e) => {
+    const c = e.target.closest('[data-pitch-qr]');
+    if (c && c.dataset.qrText) zoomQr(c.dataset.qrText);
+  });
+  bindPhoneMode();
   drawer.addEventListener('submit', (e) => {
     e.preventDefault();
     const f = e.target;
@@ -966,6 +1245,7 @@ function bind() {
   });
   $('[data-scrim]').addEventListener('click', closeDrawer);
   document.addEventListener('keydown', (e) => {
+    if (!$('[data-pm]').hidden) return phoneModeKey(e);
     if (e.key === 'Escape' && S.openId) closeDrawer();
   });
   // Facebook avatar URLs expire; fall back to initials.
@@ -1006,4 +1286,5 @@ function bind() {
   fillSettings();
   const hash = location.hash.replace('#', '');
   setView(['leads', 'hunt', 'settings'].includes(hash) ? hash : 'leads');
+  if (S.settings.queueKey) send({ type: 'queue:sync' }).catch(() => {});
 })();

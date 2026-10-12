@@ -59,3 +59,26 @@ export const SAMPLE_ADS = [
   makeAd({ id: 1005, pageId: 504, pageName: 'MegaMotors Official', daysAgo: 400, link: 'https://megamotors.example/', likes: 900000 }),
   makeAd({ id: 1006, pageId: 505, pageName: 'Parked Polish', daysAgo: 40, link: 'https://parkedpolish.example/' }),
 ];
+
+const tick = () => new Promise((r) => setImmediate(r));
+
+/** In-memory stand-in for a Netlify Blobs store, with real etag semantics. */
+export function memStore() {
+  let value = null;
+  let etag = 0;
+  return {
+    async getWithMetadata() {
+      await tick();
+      return value ? { data: JSON.parse(value), etag: String(etag) } : null;
+    },
+    async setJSON(_key, v, o = {}) {
+      await tick();
+      if (o.onlyIfMatch && o.onlyIfMatch !== String(etag)) return { modified: false };
+      if (o.onlyIfNew && value) return { modified: false };
+      value = JSON.stringify(v);
+      etag++;
+      return { modified: true, etag: String(etag) };
+    },
+    peek: () => (value ? JSON.parse(value) : null),
+  };
+}

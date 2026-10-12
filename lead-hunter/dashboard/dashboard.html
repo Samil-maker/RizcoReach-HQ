@@ -75,6 +75,7 @@
           <option value="name">Sort: name</option>
         </select>
         <div class="spacer"></div>
+        <button class="btn" data-act="phone-mode" title="Step through these leads with a QR code each: scan with your phone and WhatsApp opens with the message ready">Phone mode</button>
         <button class="btn" data-act="export-csv">Export CSV</button>
         <button class="btn" data-act="enrich-pending" hidden>Check websites</button>
       </div>
@@ -82,6 +83,8 @@
       <div class="bulk" data-bulk hidden>
         <span data-bulk-count></span>
         <select class="inp" data-bulk-status aria-label="Set status for selected"></select>
+        <button class="btn" data-act="bulk-phone-mode">Phone mode</button>
+        <button class="btn" data-act="bulk-queue">Send to phone queue</button>
         <button class="btn" data-act="bulk-recheck">Re-check websites</button>
         <button class="btn" data-act="bulk-export">Export selected</button>
         <button class="btn danger" data-act="bulk-delete">Delete</button>
@@ -194,6 +197,29 @@
         </div>
         <p class="hint">Both keys come from Google Cloud Console → APIs &amp; Services → Credentials. Enable "Places API (New)" and "PageSpeed Insights API" on the project. Keys are stored only in this browser.</p>
 
+        <h2 id="phone">Phone queue</h2>
+        <p class="hint">Send leads to your phone and work through them anywhere: each one opens WhatsApp on your phone with the message ready, and "sent" syncs back here. Without this you can still use the QR codes in each lead and in Phone mode.</p>
+        <div class="grid2">
+          <label class="field"><span class="lbl">Your site</span><input class="inp" name="queueSite" placeholder="https://www.rizcoreach.ae" /></label>
+          <label class="field"><span class="lbl">Queue key <small>must match LEAD_QUEUE_KEY on Netlify</small></span><input class="inp" name="queueKey" type="password" autocomplete="off" /></label>
+        </div>
+        <div class="row" style="margin-top:0">
+          <button type="button" class="btn" data-act="gen-key">Generate a key</button>
+          <button type="button" class="btn" data-act="copy-key">Copy key</button>
+          <button type="button" class="btn" data-act="test-queue">Save &amp; test connection</button>
+          <span class="hint" data-queue-status></span>
+        </div>
+        <ol class="hint steps">
+          <li>Press <b>Generate a key</b>, then <b>Copy key</b>.</li>
+          <li>In Netlify: Site configuration → Environment variables → add <code>LEAD_QUEUE_KEY</code> with that key. Then Deploys → Trigger deploy.</li>
+          <li>Press <b>Save &amp; test connection</b> here.</li>
+          <li>Scan the pairing code below with your phone and open the link. On iPhone, tap Share → Add to Home Screen so it opens like an app.</li>
+        </ol>
+        <div class="pair-qr" data-pair hidden>
+          <canvas data-pair-canvas aria-label="Pairing QR code"></canvas>
+          <p class="hint">Scan with your phone's camera to open your outreach queue. Anyone with this code can see your queue, so don't share it.</p>
+        </div>
+
         <h2>Collecting</h2>
         <label class="field">
           <span class="lbl">Delay between scrolls <small>milliseconds; higher is gentler on Facebook</small></span>
@@ -225,9 +251,14 @@
     <div class="scrim" data-scrim hidden></div>
     <aside class="drawer" data-drawer aria-hidden="true" tabindex="-1"></aside>
 
+    <!-- PHONE MODE -->
+    <div class="pm" data-pm hidden role="dialog" aria-modal="true" aria-label="Phone mode"><div class="pm-box" data-pm-box tabindex="-1"></div></div>
+
     <div class="toast" data-toast role="status" aria-live="polite" hidden></div>
 
     <script src="../lib/common.js"></script>
+    <script src="../lib/vendor/qrcode.js"></script>
+    <script src="../lib/qr.js"></script>
     <script src="dashboard.js"></script>
   </body>
 </html>

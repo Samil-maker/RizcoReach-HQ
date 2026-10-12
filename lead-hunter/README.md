@@ -50,8 +50,9 @@ is saved, with no hunt running.
 - Pick **WhatsApp**, **Email** or **Instagram DM**. The template is chosen for
   you (website has issues, no website, website broken, website decent); you
   can switch it and edit the text before sending.
-- **Open in WhatsApp** opens a chat with the message filled in. You press send.
-  The lead is marked *Contacted* (with an undo).
+- To send from **your phone**, see the next section. **WhatsApp on this
+  computer** opens WhatsApp Web or the WhatsApp desktop app instead. Either
+  way the lead is marked *Contacted* (with an undo).
 - Track the rest with the status column: Follow up, Replied, Meeting booked,
   Won, Not interested, Skip. Add notes in the lead panel.
 - **Export CSV** gives you everything in the current view for Google Sheets.
@@ -60,6 +61,50 @@ Pitches link to your free audit tool
 (`rizcoreach.ae/tools/website-audit?url=their-site`), which runs the audit on
 their site the moment they open it and captures them as a lead through your
 existing email gate. Change the link in Settings.
+
+## Sending from your phone
+
+Three ways, from no setup to most powerful:
+
+1. **Scan a QR code.** Every lead with a number has a QR code under its
+   WhatsApp pitch. Point your phone's camera at it and tap the link:
+   WhatsApp opens **on your phone** with their number and your message
+   already typed. Press send, then press **I sent it** on the computer.
+   Click the code to make it bigger. Editing the message updates the code.
+2. **Phone mode.** Press **Phone mode** above the lead list (or select
+   leads first). It shows one lead at a time with a big QR code: scan, send
+   on your phone, press **Enter** for the next one. 30 leads take a few
+   minutes. Arrow keys skip or go back, Esc closes.
+3. **Phone queue.** Select leads, press **Send to phone queue**, and they
+   appear on a private page on your phone (`rizcoreach.ae/outreach`). Work
+   through them anywhere: one tap opens WhatsApp with the message ready,
+   and "sent" syncs back to the dashboard and marks the lead *Contacted*
+   (within a minute). Marking a lead contacted on the computer ticks it off
+   on the phone too.
+
+### Setting up the phone queue (once, about 2 minutes)
+
+The queue lives on your own Netlify site, so the latest site code must be
+deployed first (it adds `/api/lead-queue` and `/outreach`).
+
+1. Lead Hunter → **Settings** → **Phone queue** → **Generate a key** →
+   **Copy key**.
+2. Netlify → your site → **Site configuration → Environment variables** →
+   add `LEAD_QUEUE_KEY` with that key. Then **Deploys → Trigger deploy**.
+3. Back in Settings, press **Save & test connection**. It should say
+   *Connected*.
+4. Scan the pairing QR code that appears with your phone and open the link.
+   On iPhone tap **Share → Add to Home Screen** (on Android: menu → **Add to
+   Home screen**) so it opens like an app.
+
+The key is the only thing protecting the queue: keep it private, and
+generate a new one (and update Netlify) if it ever leaks. The page is not
+indexed by Google and the key never leaves your devices except to talk to
+your own site.
+
+**Tip:** if you have both WhatsApp and WhatsApp Business on your phone,
+check which one opens on your first send. Android usually asks; on iPhone
+the link may go to the app you don't send from.
 
 ## Where phone numbers come from
 
@@ -141,10 +186,13 @@ out of backups.
 | `lib/common.js` | Phones, links, priority score, pitch templates, CSV |
 | `background.js` | Lead storage, hunts, enrichment queue, Google lookups |
 | `dashboard/` · `popup/` | The UI |
+| `lib/qr.js` · `lib/vendor/qrcode.js` | QR codes (vendored qrcode-generator, MIT) |
+| `../netlify/functions/lead-queue.mts` | Phone queue API on the site (`/api/lead-queue`, Netlify Blobs) |
+| `../public/outreach.html` | The phone page (`/outreach`) |
 
 Tests:
 
 ```bash
-node --test lead-hunter/test/lib.test.mjs   # parsers, audit, scoring, templates
-node lead-hunter/test/e2e.mjs               # real Chromium + mock Ad Library and websites (needs Playwright + openssl)
+node --test lead-hunter/test/lib.test.mjs lead-hunter/test/queue.test.mjs   # parsers, audit, scoring, templates, phone queue API
+node lead-hunter/test/e2e.mjs   # real Chromium + mock Ad Library, websites and phone page (needs Playwright + openssl)
 ```
