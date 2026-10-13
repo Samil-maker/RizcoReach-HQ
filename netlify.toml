@@ -86,6 +86,22 @@
   to = "/contact"
   status = 301
 
+# Private phone page for the Lead Hunter extension's outreach queue.
+[[headers]]
+  for = "/outreach*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+    Cache-Control = "no-cache"
+    Referrer-Policy = "no-referrer"
+
+# Private Lead Desk page and its assets (/desk, /desk-assets/*).
+[[headers]]
+  for = "/desk*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+    Cache-Control = "no-cache"
+    Referrer-Policy = "no-referrer"
+
 [[headers]]
   for = "/_astro/*"
   [headers.values]

@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="referrer" content="no-referrer" />
+    <meta name="theme-color" content="#050505" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Lead Desk" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" href="/favicon-48.png" />
+    <title>Lead Desk</title>
+    <!-- Private desk for confirming clients' ad leads on WhatsApp. Page logic: /desk-assets/desk.js; API: /api/desk (netlify/functions/lead-desk.mts). -->
+    <link rel="stylesheet" href="/desk-assets/desk.css?v=1" />
+  </head>
+  <body>
+    <div data-app hidden>
+      <header class="head" data-head>
+        <div class="shell">
+          <div class="bar">
+            <div class="title">
+              <h1>Lead Desk</h1>
+              <div class="status"><span data-status>Loading…</span><span class="key-note" data-key-note title="Lead Desk is using your phone-queue key. See Setup." hidden>Shared key</span></div>
+            </div>
+            <button type="button" class="icon-btn" data-act="refresh" aria-label="Refresh">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8" /><path d="M21 3v5h-5" /></svg>
+            </button>
+          </div>
+          <div class="search">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
+            <input type="search" data-search placeholder="Search name, phone, email or service" aria-label="Search leads" autocomplete="off" spellcheck="false" enterkeyhint="search" />
+          </div>
+          <div class="chips" data-chips role="group" aria-label="Show leads for" hidden></div>
+          <nav class="tabs" role="tablist" aria-label="Desk" data-tabs>
+            <button type="button" role="tab" data-tab="todo" aria-selected="true">To do</button>
+            <button type="button" role="tab" data-tab="waiting" aria-selected="false">Waiting</button>
+            <button type="button" role="tab" data-tab="chatting" aria-selected="false">Chatting</button>
+            <button type="button" role="tab" data-tab="booked" aria-selected="false">Booked</button>
+            <button type="button" role="tab" data-tab="closed" aria-selected="false">Closed</button>
+            <button type="button" role="tab" data-tab="report" aria-selected="false">Report</button>
+            <button type="button" role="tab" data-tab="setup" aria-selected="false">Setup</button>
+          </nav>
+        </div>
+      </header>
+      <main class="shell main" data-main role="tabpanel"></main>
+    </div>
+
+    <section class="pair" data-pair hidden>
+      <form data-form="pair">
+        <h1>Lead Desk</h1>
+        <p>Enter your desk key to open the desk. It is the <b>LEAD_DESK_KEY</b> set in Netlify (or the phone-queue key, <b>LEAD_QUEUE_KEY</b>, if you didn't set a separate one).</p>
+        <input type="text" name="username" value="Lead Desk" autocomplete="username" hidden />
+        <label class="field"><span>Desk key</span><input type="password" name="key" autocomplete="current-password" required /></label>
+        <button class="btn primary">Open desk</button>
+        <p class="err" data-pair-error role="alert"></p>
+        <p class="help">On your phone? Open Setup → Phone on your computer, press Show phone link and scan the QR code instead.</p>
+      </form>
+    </section>
+
+    <datalist id="desk-reasons">
+      <option value="Too expensive"></option>
+      <option value="Just looking"></option>
+      <option value="Booked somewhere else"></option>
+      <option value="Outside our area"></option>
+      <option value="Changed their mind"></option>
+    </datalist>
+    <div class="toast" data-toast role="status" aria-live="polite" hidden></div>
+    <noscript><p class="note">Lead Desk needs JavaScript.</p></noscript>
+
+    <script src="/desk-assets/qrcode.js?v=1"></script>
+    <script src="/desk-assets/desk-core.js?v=1"></script>
+    <script src="/desk-assets/desk.js?v=1"></script>
+  </body>
+</html>
