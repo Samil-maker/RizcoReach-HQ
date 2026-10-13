@@ -24,6 +24,7 @@
     'suspicious-phone': 'Check the number',
     'suspicious-name': 'Name looks fake',
     'no-phone': 'No phone number',
+    'has-link': 'Contains a link: check before sending',
     test: 'Test lead',
   };
   const STEP_OF = { first: 'first', f1: 'f1', f2: 'f2', close: 'f2', nudge: 'nudge', confirm: 'confirm', reminder: 'reminder', handover: 'handover' };
@@ -43,6 +44,8 @@
   ];
   const VARS = ['first_name', 'name', 'client', 'my_name', 'service', 'booked_time', 'location', 'maps', 'hours', 'phone_display', 'email', 'answers', 'notes_line', 'wa_link', 'greeting'];
   const NOT_CONFIGURED = "Lead Desk isn't switched on yet: add LEAD_DESK_KEY in Netlify → Site configuration → Environment variables, then redeploy.";
+  const BAD_LINK = "That link's key is wrong.";
+  const KEY_WARN = "Lead Desk is using your phone-queue key. Set a separate LEAD_DESK_KEY in Netlify so the outreach link can't open your clients' leads.";
   const ERRORS = {
     offline: "You're offline. It will save when you're back online.",
     unauthorized: 'Wrong key.',
@@ -67,6 +70,7 @@
     invalid_body: "The server couldn't read that request.",
     conflict: 'The desk was busy. Try again.',
     rate_limited: 'Too many leads at once. Try again in a few minutes.',
+    desk_full: 'The desk is full: close or delete old leads.',
     unknown_link: "That intake link doesn't work any more. Copy the current one from Setup.",
     client_archived: "This client is archived, so its link doesn't take leads.",
     server_error: 'Something went wrong on the server. Try again.',
@@ -120,14 +124,16 @@
   const savePrefs = () => store.set(PREFS, prefs);
 
   // The key arrives in the #fragment (never sent to the server) and stays in the address bar,
-  // so "Add to Home Screen" on iPhone keeps it, like /outreach.
+  // so "Add to Home Screen" on iPhone keeps it, like /outreach. A key from a link is only a trial until the
+  // server accepts it, so an old or mistyped link can't replace the key this device already has.
   const hash0 = new URLSearchParams(location.hash.slice(1));
-  if (hash0.get('k')) store.set(KEY, hash0.get('k'));
   let key = store.raw(KEY);
+  let trial = hash0.get('k') && hash0.get('k') !== key ? hash0.get('k') : '';
   let deepLink = hash0.get('lead') || '';
 
   const cached = store.get(CACHE, null);
   let data = fromCache(cached);
+  let keySource = (cached && cached.keySource) || ''; // 'queue': the server let the phone-queue key in
   let pending = (store.get(PENDING, []) || []).filter((op) => op && op.opId && op.type);
   let leads = [];
   let byId = new Map();
@@ -164,6 +170,7 @@
     answers: {},
     closedLimit: 200,
     editingClient: null,
+    pairShown: false,
     report: { client: '', range: '7d' },
     reportDirty: false,
     importRows: null,
@@ -282,7 +289,7 @@
 
   /* --------------------------------------------------------------- render */
   function render() {
-    const ok = !!key && !fatal;
+    const ok = !!(key || trial) && !fatal;
     $('[data-app]').hidden = !ok;
     $('[data-pair]').hidden = ok;
     if (!ok) return renderPair();
@@ -293,7 +300,7 @@
 
   function renderPair() {
     document.title = 'Lead Desk';
-    $('[data-pair-error]').textContent = fatal === 'unauthorized' ? 'Wrong key.' : fatal === 'not_configured' ? NOT_CONFIGURED : '';
+    $('[data-pair-error]').textContent = { unauthorized: 'Wrong key.', bad_link: BAD_LINK, not_configured: NOT_CONFIGURED }[fatal] || '';
   }
 
   function statusText() {
@@ -306,6 +313,7 @@
     const el = $('[data-status]');
     el.textContent = statusText();
     el.classList.toggle('off', offline);
+    $('[data-key-note]').hidden = keySource !== 'queue';
   }
 
   function renderHeader() {
@@ -333,9 +341,33 @@
       if (b.innerHTML !== html) b.innerHTML = html;
       b.setAttribute('aria-selected', String(t === ui.tab));
     }
+    if (tabShown !== ui.tab) {
+      tabShown = ui.tab;
+      showTab($(`[data-tab="${ui.tab}"]`));
+    }
+    tabFade();
+  }
+
+  /** On a phone the tabs scroll sideways: keep the chosen one in full view, clear of the edge fade. */
+  let tabShown = 'todo';
+  function showTab(b) {
+    const nav = b.parentElement;
+    const n = nav.getBoundingClientRect();
+    const r = b.getBoundingClientRect();
+    const pad = 40;
+    const dx = r.left < n.left + pad ? r.left - n.left - pad : r.right > n.right - pad ? r.right - n.right + pad : 0;
+    if (dx) nav.scrollBy({ left: dx, behavior: reduceMotion ? 'auto' : 'smooth' });
+  }
+  /** Fades the edge of the tab row only while more tabs are hidden past it. */
+  function tabFade() {
+    const nav = $('[data-tabs]');
+    const x = nav.scrollLeft;
+    nav.classList.toggle('fade-l', x > 2);
+    nav.classList.toggle('fade-r', x < nav.scrollWidth - nav.clientWidth - 2);
   }
 
   function renderMain() {
+    if (ui.tab !== 'setup') ui.pairShown = false;
     // Before the first sync there is nothing real to show (and Setup must not offer defaults to save over real settings).
     if (!syncedAt && !data.rev) return swap($('[data-main]'), `<p class="note">${offline ? "You're offline and this device has no saved copy yet." : 'Loading…'}</p>`);
     if (ui.tab === 'setup') return renderSetup();
@@ -836,12 +868,13 @@
   const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'leads';
 
   /* ---------------------------------------------------------------- setup */
-  const SECTIONS = ['details', 'device', 'alerts', 'phone', 'clients', 'import', 'export'];
+  const SECTIONS = ['keywarn', 'details', 'device', 'alerts', 'phone', 'clients', 'import', 'export'];
 
   function renderSetup(force) {
     const main = $('[data-main]');
     if (!main.querySelector('[data-setup]')) {
       main.innerHTML = `<div class="setup" data-setup>
+        <div data-sec="keywarn"></div>
         <section class="panel" aria-labelledby="h-details"><h2 id="h-details">Your details</h2><div data-sec="details"></div></section>
         <section class="panel" aria-labelledby="h-alerts"><h2 id="h-alerts">Alerts</h2><div data-sec="device"></div><div data-sec="alerts"></div></section>
         <section class="panel" aria-labelledby="h-phone"><h2 id="h-phone">Phone</h2><div data-sec="phone"></div></section>
@@ -866,6 +899,10 @@
   }
 
   const SEC = {
+    keywarn() {
+      if (keySource !== 'queue') return '';
+      return `<div class="key-warn" role="note"><p><b>${esc(KEY_WARN)}</b></p><p class="help">Netlify → Site configuration → Environment variables, then redeploy and open the desk with the new key.</p></div>`;
+    },
     details() {
       const s = data.settings;
       const radio = (v, text) => `<label class="radio"><input type="radio" name="waMode" value="${v}"${waMode() === v ? ' checked' : ''}> ${text}</label>`;
@@ -913,9 +950,14 @@
       </form>`;
     },
     phone() {
+      // The link carries the desk key, so it stays hidden until asked for (screen shares, people nearby).
+      if (!ui.pairShown) {
+        return `<p>Open the desk on your phone with a private link. It works like a password, so only show it when nobody else can see your screen.</p>
+          <div class="row">${btn('show-pair', 'Show phone link', '')}</div>`;
+      }
       return `<div class="qr"><canvas data-qr role="img" aria-label="QR code that opens this desk on your phone"></canvas></div>
         <p>Scan with your phone, then Share → Add to Home Screen. Keep this link private: it opens your desk.</p>
-        <div class="row">${btn('copy-pair', 'Copy link', '')}</div>`;
+        <div class="row">${btn('copy-pair', 'Copy link', '')}${btn('hide-pair', 'Hide')}</div>`;
     },
     clients() {
       const list = [...data.clients].sort((a, b) => Number(!!a.archived) - Number(!!b.archived) || String(a.name).localeCompare(String(b.name)));
@@ -1021,7 +1063,7 @@
       '  <input name="phone_number" type="tel" placeholder="WhatsApp number" required>',
       '  <input name="email" type="email" placeholder="Email">',
       service ? `  <input name="_service" type="hidden" value="${attr(service)}">` : '',
-      '  <input name="_redirect" type="hidden" value="https://their-site/thank-you">',
+      '  <input name="_redirect" type="hidden" value="https://same-site-as-this-form/thank-you">',
       '  <input name="_gotcha" style="display:none" tabindex="-1" autocomplete="off">',
       `  <label><input type="checkbox" required> ${attr(consentLine(c))}</label>`,
       '  <button>Send</button>',
@@ -1051,7 +1093,7 @@
       <p class="help">Same in Zapier: Facebook Lead Ads “New Lead” → Webhooks by Zapier POST, Payload type JSON, add the fields.</p>
       <div class="sub-h">Website form</div>
       <pre class="code">${esc(snippet)}</pre>
-      <p class="help">Change the thank-you address to a page on their website. The hidden <code>_gotcha</code> field catches spam bots.</p>
+      <p class="help">Change the thank-you address to a page on their website. The thank-you page must be on the same site as the form. The hidden <code>_gotcha</code> field catches spam bots.</p>
       <div class="row"><button type="button" class="btn ghost" data-act="copy" data-copy="${esc(snippet)}">Copy form code</button></div>
       <div class="sub-h">Consent line</div>
       <p class="help">Paste this into the Instant Form's custom disclaimer (and next to the website form's checkbox):</p>
@@ -1107,10 +1149,19 @@
     return out;
   }
 
+  /** Which key the server let in ('desk' or 'queue'). Returns true when it changed. */
+  function noteKeySource(d) {
+    if (typeof d.keySource !== 'string' || d.keySource === keySource) return false;
+    keySource = d.keySource;
+    return true;
+  }
+  const saveCache = () => store.set(CACHE, { rev: data.rev, config: { clients: data.clients, settings: data.settings }, leads: data.leads, skew, keySource });
+
   function accept(d) {
     if (typeof d.now === 'number') skew = d.now - Date.now();
+    noteKeySource(d);
     data = fromCache(d.config ? { rev: String(d.rev || ''), config: d.config, leads: d.leads } : null);
-    store.set(CACHE, { rev: data.rev, config: { clients: data.clients, settings: data.settings }, leads: data.leads, skew });
+    saveCache();
     syncedAt = Date.now();
     offline = false;
     fatal = '';
@@ -1120,18 +1171,13 @@
     if (deepLink) openDeepLink();
   }
 
+  // A 503 can also be a full desk; only "not_configured" means the key isn't set up in Netlify.
+  const lockedOut = (e) => e.status === 401 || (e.status === 503 && e.code === 'not_configured');
+
   function fail(e) {
-    if (e.status === 401 || e.status === 503) {
+    if (lockedOut(e)) {
       fatal = e.status === 401 ? 'unauthorized' : 'not_configured';
-      if (e.status === 401) {
-        // The key changed or was wrong: forget it and the cached leads on this device.
-        key = '';
-        store.del(KEY);
-        store.del(CACHE);
-        data = fromCache(null);
-        seen = null;
-        rebuild();
-      }
+      if (e.status === 401) forget();
       return render();
     }
     if (!e.status) {
@@ -1141,13 +1187,67 @@
     toast(errText(e.code), { error: true });
   }
 
+  /** The saved key stopped working (changed in Netlify): forget it and everything this device kept with it. */
+  function forget() {
+    key = '';
+    keySource = '';
+    store.del(KEY);
+    store.del(CACHE);
+    store.del(PENDING);
+    const dropped = pending;
+    pending = [];
+    for (const op of dropped) settle(op, { ok: false, error: 'unauthorized' });
+    data = fromCache(null);
+    older = { days: 0, at: 0, leads: null, busy: false };
+    seen = null;
+    rebuild();
+  }
+
+  function setHash(h) {
+    const rest = h.toString();
+    history.replaceState(null, '', location.pathname + location.search + (rest ? `#${rest}` : ''));
+  }
+  /** Puts the working key in the address (or takes a wrong one out), so "Add to Home Screen" carries the right one. */
+  function hashKey(k) {
+    const h = new URLSearchParams(location.hash.slice(1));
+    if (k) h.set('k', k);
+    else h.delete('k');
+    setHash(h);
+  }
+
+  /** Checks a key from a #k= link. It replaces the saved key only once the server accepts it. False: stop loading. */
+  async function tryTrial() {
+    const k = trial;
+    let d;
+    try {
+      d = await api('GET', null, '', k);
+    } catch (e) {
+      if (e.status !== 401) throw e;
+      if (trial === k) trial = '';
+      hashKey(key);
+      if (key) {
+        toast(`${BAD_LINK} Still using the key saved on this device.`, { error: true });
+        return true;
+      }
+      fatal = 'bad_link';
+      render();
+      return false;
+    }
+    if (trial !== k) return true; // a newer link arrived meanwhile: the next load checks that one
+    trial = '';
+    key = k;
+    store.set(KEY, k);
+    accept(d);
+    return true;
+  }
+
   function spin(on) {
     const b = $('[data-act="refresh"]');
     if (b) b.classList.toggle('spin', on);
   }
 
   async function load(force) {
-    if (!key || fatal) return;
+    if ((!key && !trial) || fatal) return;
     if (loading) {
       again = again || !!force;
       return;
@@ -1157,6 +1257,7 @@
     lastLoad = Date.now();
     spin(true);
     try {
+      if (trial && !(await tryTrial())) return;
       await flush();
       if (fatal || !key) return;
       const before = posted;
@@ -1167,7 +1268,10 @@
         syncedAt = Date.now();
         offline = false;
         if (!seen) noticeNew();
-        renderStatus();
+        if (noteKeySource(d)) {
+          saveCache();
+          render();
+        } else renderStatus();
         if (deepLink) openDeepLink();
       } else accept(d);
     } catch (e) {
@@ -1208,11 +1312,11 @@
             for (const p of pending) settle(p, { ok: false, error: 'offline' });
             break;
           }
-          if (e.status === 401 || e.status === 503) {
+          if (lockedOut(e)) {
             fail(e);
             break;
           }
-          if ((e.status === 409 || e.status >= 500) && (op.tries || 0) < 2) {
+          if ((e.status === 409 || (e.status >= 500 && e.code !== 'desk_full')) && (op.tries || 0) < 2) {
             op.tries = (op.tries || 0) + 1;
             savePending();
             break;
@@ -1259,7 +1363,7 @@
       accept(d);
       return (d.results && d.results[0]) || { ok: false, error: 'server_error' };
     } catch (e) {
-      if (e.status === 401 || e.status === 503) fail(e);
+      if (lockedOut(e)) fail(e);
       return { ok: false, error: e.status ? e.code || 'server_error' : 'offline' };
     }
   }
@@ -1327,8 +1431,7 @@
       deepLink = '';
       const h = new URLSearchParams(location.hash.slice(1));
       h.delete('lead');
-      const rest = h.toString();
-      history.replaceState(null, '', location.pathname + location.search + (rest ? `#${rest}` : ''));
+      setHash(h);
       if (!openLead(id)) toast("That lead isn't on the desk any more.");
     }
   }
@@ -1404,7 +1507,10 @@
   }
 
   function focusIn(id, sel) {
-    const el = $(`[data-id="${CSS.escape(id)}"] ${sel}`);
+    focusSel(`[data-id="${CSS.escape(id)}"] ${sel}`);
+  }
+  function focusSel(sel) {
+    const el = $(sel);
     if (el) el.focus();
   }
 
@@ -1426,8 +1532,6 @@
     ui.tab = tab;
     render();
     window.scrollTo(0, 0);
-    const b = $(`[data-tab="${tab}"]`);
-    if (b && b.scrollIntoView) b.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }
 
   function setSearch(v, typed) {
@@ -1646,10 +1750,13 @@
       busy(t, true, 'Looking…');
       const r = await direct({ type: 'telegram.detect', token });
       busy(t, false);
-      if (!r.ok) return toast(errText(r.error), { error: true });
-      f.elements.telegramChatId.value = r.data.chatId;
-      const s = await saveSettings(f, { telegramToken: token, telegramChatId: r.data.chatId }, true);
-      if (s.ok) toast(`Found ${r.data.name || 'your chat'}. Telegram alerts are on.`);
+      if (!r.ok || !r.data || !r.data.chatId) return toast(errText(r.ok ? 'server_error' : r.error), { error: true });
+      // The latest chat with the bot may not be Samil's (anyone can message a bot), so he checks the name first.
+      const { chatId, name } = r.data;
+      if (!confirm(`Send alerts to Telegram chat "${name || chatId}"?`)) return toast('Nothing saved. Send /start to your bot from your own Telegram, then press Find my chat again.');
+      f.elements.telegramChatId.value = chatId;
+      const s = await saveSettings(f, { telegramToken: token, telegramChatId: chatId }, true);
+      if (s.ok) toast(`Telegram alerts go to ${name || 'that chat'} now.`);
     },
     'test-alert': async ({ t }) => {
       const f = t.closest('form');
@@ -1663,9 +1770,20 @@
       const r = await direct({ type: 'notify.test' });
       busy(t, false);
       if (!r.ok) return toast(errText(r.error), { error: true });
+      if (!r.data) return toast('Test alert sent. Check your phone.');
       const say = (v) => (v === 'ok' ? 'sent' : v === 'off' ? 'not set up' : `failed (${errText(v)})`);
       const bad = [r.data.ntfy, r.data.telegram].some((v) => String(v).startsWith('error'));
       toast(`Test alert: ntfy ${say(r.data.ntfy)} · Telegram ${say(r.data.telegram)}`, { error: bad });
+    },
+    'show-pair': () => {
+      ui.pairShown = true;
+      renderSetup('phone');
+      focusSel('[data-act="copy-pair"]');
+    },
+    'hide-pair': () => {
+      ui.pairShown = false;
+      renderSetup('phone');
+      focusSel('[data-act="show-pair"]');
     },
     'copy-pair': () => copy(pairUrl(), 'Link copied. Keep it private.'),
     copy: ({ t }) => copy(t.dataset.copy || '', 'Copied'),
@@ -1787,20 +1905,17 @@
       try {
         const d = await api('GET', null, '', k);
         key = k;
+        trial = '';
         store.set(KEY, k);
         // On a phone, keep the key in the address so "Add to Home Screen" carries it (like the QR link).
-        const h = new URLSearchParams(location.hash.slice(1));
-        if (isTouch || h.has('k')) {
-          h.set('k', k);
-          history.replaceState(null, '', `${location.pathname}${location.search}#${h}`);
-        }
+        if (isTouch || new URLSearchParams(location.hash.slice(1)).has('k')) hashKey(k);
         f.reset();
         seen = null;
         accept(d);
         load(true);
       } catch (e) {
         if (e.status === 401) err.textContent = 'Wrong key.';
-        else if (e.status === 503) err.textContent = NOT_CONFIGURED;
+        else if (e.code === 'not_configured') err.textContent = NOT_CONFIGURED;
         else err.textContent = e.status ? errText(e.code) : "Couldn't reach the server. Check the connection and try again.";
       } finally {
         busy(b, false);
@@ -1861,8 +1976,9 @@
       if (!r.ok && r.error !== 'offline') return (err.textContent = errText(r.error));
       delete f.closest('[data-sec]').dataset.dirty;
       if (r.ok) {
-        ui.editingClient = r.data.id;
-        toast(f.dataset.cid ? 'Client saved' : 'Client added. Its intake link is below.');
+        // A save the server already had (sent again after a dropped connection) comes back without the client.
+        ui.editingClient = r.data ? r.data.id : f.dataset.cid || null;
+        toast(f.dataset.cid || !r.data ? 'Client saved' : 'Client added. Its intake link is below.');
       } else {
         ui.editingClient = null;
         toast(errText('offline'));
@@ -1880,7 +1996,8 @@
       if (!r.ok) return toast(errText(r.error), { error: r.error !== 'offline' });
       f.reset();
       delete f.closest('[data-sec]').dataset.dirty;
-      if (r.data.status === 'dup') toast('Added, but the same number came in earlier, so it is closed as a duplicate.');
+      if (!r.data) toast('Lead added');
+      else if (r.data.status === 'dup') toast('Added, but the same number came in earlier, so it is closed as a duplicate.');
       else {
         toast('Lead added');
         openLead(r.data.id);
@@ -1897,7 +2014,8 @@
       delete f.closest('[data-sec]').dataset.dirty;
       if (ui.tab === 'setup') renderSetup('import');
       if (!r.ok) return toast(errText(r.error), { error: r.error !== 'offline' });
-      const { added = 0, skipped = 0, dups = 0 } = r.data || {};
+      if (!r.data) return toast('Import done');
+      const { added = 0, skipped = 0, dups = 0 } = r.data;
       toast(`Import done: added ${added} · duplicates ${dups} · skipped ${skipped}`);
     },
   };
@@ -2003,11 +2121,9 @@
   addEventListener('hashchange', () => {
     const h = new URLSearchParams(location.hash.slice(1));
     const k = h.get('k');
-    if (k && k !== key) {
-      key = k;
-      store.set(KEY, k);
+    if (k && k !== key && k !== trial) {
+      trial = k;
       fatal = '';
-      seen = null;
       render();
       load(true);
     }
@@ -2036,11 +2152,17 @@
 
   /* ----------------------------------------------------------------- boot */
   const head = $('[data-head]');
-  if ('ResizeObserver' in window) new ResizeObserver(() => document.documentElement.style.setProperty('--head-h', `${head.offsetHeight}px`)).observe(head);
+  if ('ResizeObserver' in window) {
+    new ResizeObserver(() => {
+      document.documentElement.style.setProperty('--head-h', `${head.offsetHeight}px`);
+      tabFade();
+    }).observe(head);
+  }
+  $('[data-tabs]').addEventListener('scroll', tabFade, { passive: true });
   rebuild();
   render();
   if (deepLink && byId.has(deepLink)) openDeepLink();
-  if (key) load(true);
+  if (key || trial) load(true);
   setInterval(() => document.visibilityState === 'visible' && load(), POLL_MS);
   setInterval(tick, 15000);
   document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && load());

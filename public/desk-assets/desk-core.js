@@ -56,6 +56,16 @@
   D.isClosed = (lead) => !!lead && D.CLOSED.includes(lead.status);
 
   /* --------------------------------------------------------- text helpers */
+  // A web link in form text: a scheme, "www." or a bare domain with a common ending.
+  const LINK = /[a-z][a-z\d+.-]*:\/\/|\bwww\.|\b[a-z\d-]+\.(?:com|net|org|info|biz|io|co|me|ly|gl|ae|uk|ru|cn|xyz|top|site|online|link|app|shop|store|click|live)\b/i;
+  D.hasLink = (s) => LINK.test(str(s));
+  /** Drops every word that looks like a link, so untrusted form text never carries one into messages or alerts. */
+  D.stripLinks = (s) =>
+    str(s)
+      .split(/\s+/)
+      .filter((w) => w && !LINK.test(w))
+      .join(' ');
+
   D.scriptFor = (step, client) => {
     const custom = client && client.scripts && typeof client.scripts[step] === 'string' ? client.scripts[step] : '';
     if (custom.trim()) return custom;
@@ -63,13 +73,20 @@
     return own(D.DEFAULT_SCRIPTS, step) ? D.DEFAULT_SCRIPTS[step] : '';
   };
 
-  /** First word of a name, Title Cased when the whole name is typed in one case. '' when there is no usable name. */
+  /** First word of a name (links skipped), Title Cased when the whole name is typed in one case. '' when there is no usable name. */
   D.firstName = (name) => {
-    const full = str(name).trim().replace(/\s+/g, ' ');
+    const full = D.stripLinks(name);
     const word = (full.split(' ')[0] || '').replace(/^[^\p{L}]+|[^\p{L}]+$/gu, '');
     if (!word) return '';
     if (full === full.toUpperCase() || full === full.toLowerCase()) return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
     return word;
+  };
+
+  /** "Ceramic coating" reads "ceramic coating" mid-sentence; PPF, AC, iPhone, HydraFacial and Title Case names stay as typed. */
+  const midSentence = (s) => {
+    const words = s.split(' ');
+    const plain = /^\p{Lu}\p{Ll}+(?:[-'’]\p{Ll}+)*$/u.test(words[0]) && !words.slice(1).some((w) => /^\p{Lu}\p{Ll}/u.test(w));
+    return plain ? s.charAt(0).toLowerCase() + s.slice(1) : s;
   };
 
   D.varsFor = (lead, client, settings, now) => {
@@ -81,12 +98,13 @@
     const notes = str(l.notes).trim();
     const phone = str(l.phone).replace(/\D/g, '');
     const hour = Math.floor((((Number(now) || 0) + OFFSET) % DAY) / HOUR);
+    const service = D.stripLinks(l.service);
     return {
       first_name: D.firstName(l.name) || 'there',
-      name: str(l.name).trim() || '(no name)',
+      name: D.stripLinks(l.name) || '(no name)',
       client: str(c.name).trim(),
       my_name: str(s.myName).trim() || 'the team',
-      service: str(l.service).trim() || SERVICE_FALLBACK[niche],
+      service: service ? midSentence(service) : SERVICE_FALLBACK[niche],
       booked_time: l.bookedFor ? D.fmtBooked(l.bookedFor) : '',
       location,
       location_line: location ? ', ' + location : '',
@@ -192,6 +210,7 @@
     if (type === 'none') f.push('no-phone');
     if (type === 'invalid') f.push('invalid-phone');
     if (D.suspiciousName(l.name)) f.push('suspicious-name');
+    if (D.hasLink(l.name)) f.push('has-link');
     if (l.phone && D.suspiciousPhone(l.phone)) f.push('suspicious-phone');
     if (l.verified === false) f.push('unverified');
     if (l.source === 'test') f.push('test');
@@ -219,7 +238,64 @@
   for (const [field, keys] of Object.entries(KEYS)) for (const k of keys) FIELD_OF[k] = field;
   const IGNORED = new Set(['adid', 'adsetid', 'campaignid', 'formid', 'pageid', 'isorganic', 'leadstatus', 'customdisclaimerresponses', 'inboxurl', 'partnername', 'retailerid']);
   const META_FIELDS = new Set(['extId', 'campaign', 'adset', 'ad', 'form', 'platform', 'verified']);
+  // Too vague to be sure of: used only when no more specific key was posted.
+  const GENERIC = new Set(['number', 'date']);
+  const SERVICE_FIRST = /^(which|what)\b.*(service|treatment|package|are you interested)/i;
   const SERVICE_Q = /service|treatment|interest|looking for|package|which .*(want|need|like)|what .*(need|want|like)/i;
+  const MAX_ANSWERS = 15;
+  const MAX_ANSWERS_TEXT = 3000;
+
+  /** Form text without control characters (C0/C1); line breaks are kept only when `multiline` is set. */
+  const cleanText = (v, multiline) => {
+    const s = str(v)
+      .replace(/\r\n?/g, '\n')
+      .replace(/\t/g, ' ')
+      .replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '');
+    return multiline ? s : s.replace(/\s+/g, ' ');
+  };
+  const cut = (s, max) => (s.length <= max ? s : s.slice(0, Math.max(0, max - 1)).replace(/[\uD800-\uDBFF]$/, '') + '…');
+
+  /** At most 15 answers and about 3000 characters in all, so one lead can't bloat the desk. */
+  D.capAnswers = (list) => {
+    const out = [];
+    let left = MAX_ANSWERS_TEXT;
+    for (const x of Array.isArray(list) ? list : []) {
+      if (out.length >= MAX_ANSWERS || left <= 0) break;
+      if (!x) continue;
+      const q = cut(str(x.q), left);
+      const a = cut(str(x.a), left - q.length);
+      out.push({ q, a });
+      left -= q.length + a.length;
+    }
+    return out;
+  };
+
+  const phoneType = (c) => D.normPhone(c.value).type;
+  /** Which of the values posted for one field is used; the others stay as answers. */
+  const pickField = (field, list) => {
+    const specific = list.filter((c) => own(FIELD_OF, c.nk) && !GENERIC.has(c.nk));
+    const generic = list.filter((c) => GENERIC.has(c.nk));
+    if (field === 'phone') {
+      const valid = (c) => phoneType(c) !== 'invalid' && phoneType(c) !== 'none';
+      return (
+        list.find((c) => c.nk.includes('whatsapp') && (phoneType(c) === 'mobile' || phoneType(c) === 'foreign')) ||
+        specific.find(valid) ||
+        specific[0] ||
+        generic.find(valid)
+      );
+    }
+    if (field === 'submittedAt') {
+      const parses = (c) => D.parseTime(c.value) != null;
+      return specific.length ? specific.find(parses) : generic.find(parses);
+    }
+    return list[0];
+  };
+
+  /** A service needs a real answer: not yes/no/maybe, and at least 3 letters. */
+  const usableService = (a) => {
+    const letters = str(a).replace(/[^\p{L}]/gu, '');
+    return letters.length >= 3 && !/^(yes|no|true|false|maybe)$/i.test(letters);
+  };
 
   D.humanizeKey = (key) => {
     const s = str(key).replace(/_/g, ' ').replace(/\s+/g, ' ').trim().replace(/\?{2,}$/, '?');
@@ -273,6 +349,7 @@
       honeypot: false,
       redirect: '',
       test: false,
+      flags: [],
     };
     if (!input || typeof input !== 'object' || Array.isArray(input)) return out;
     const entries = [];
@@ -295,14 +372,16 @@
         }
       } else entries.push([k, v]);
     }
-    const found = {};
+    const rows = []; // everything posted, in order; the values not used for a field become answers
+    const cands = {};
     let sourceIn = '';
-    for (const [key, raw] of entries) {
+    for (const [rawKey, raw] of entries) {
       if (!scalar(raw)) continue;
-      const value = typeof raw === 'string' ? raw.trim() : raw;
+      const key = cleanText(rawKey).trim();
+      const value = typeof raw === 'string' ? cleanText(raw, true).trim() : raw;
       if (key.startsWith('_')) {
         const c = key.toLowerCase();
-        const v = str(value).trim();
+        const v = cleanText(value).trim();
         if (c === '_gotcha' || c === '_hp' || c === '_honey') out.honeypot = out.honeypot || (raw !== false && v !== '');
         else if (c === '_redirect') out.redirect = httpsUrl(v) || out.redirect;
         else if (c === '_source') sourceIn = v.toLowerCase();
@@ -313,15 +392,24 @@
       if (value === '') continue;
       const nk = normKey(key);
       if (IGNORED.has(nk)) continue;
-      const field = own(FIELD_OF, nk) ? FIELD_OF[nk] : null;
-      if (field) {
-        if (META_FIELDS.has(field)) meta = true;
-        if (!own(found, field)) found[field] = value;
-        continue;
-      }
-      if (out.answers.length < 15) out.answers.push({ q: D.humanizeKey(key), a: D.humanizeValue(value) });
+      // Any "WhatsApp ..." question may hold the number to message.
+      const field = own(FIELD_OF, nk) ? FIELD_OF[nk] : nk.includes('whatsapp') ? 'phone' : null;
+      const row = { key, nk, value, used: false };
+      rows.push(row);
+      if (!field) continue;
+      if (META_FIELDS.has(field)) meta = true;
+      if (!own(cands, field)) cands[field] = [];
+      cands[field].push(row);
     }
-    const text = (f, max) => (own(found, f) ? str(found[f]).trim().slice(0, max) : '');
+    const found = {};
+    for (const field of Object.keys(cands)) {
+      const row = pickField(field, cands[field]);
+      if (!row) continue;
+      row.used = true;
+      found[field] = row.value;
+    }
+    out.answers = D.capAnswers(rows.filter((r) => !r.used).map((r) => ({ q: D.humanizeKey(r.key), a: D.humanizeValue(r.value) })));
+    const text = (f, max) => (own(found, f) ? cleanText(found[f]).trim().slice(0, max) : '');
     out.name = (text('name', 120) || [text('first', 60), text('last', 60)].filter(Boolean).join(' ')).slice(0, 120);
     out.phone = text('phone', 40);
     out.email = text('email', 160);
@@ -333,9 +421,13 @@
       out.verified = v === 'true' ? true : v === 'false' ? false : null;
     }
     if (!out.service) {
-      const a = out.answers.find((x) => SERVICE_Q.test(x.q));
-      if (a) out.service = a.a.slice(0, 120);
+      const usable = out.answers.filter((x) => usableService(x.a));
+      const a = usable.find((x) => SERVICE_FIRST.test(x.q)) || usable.find((x) => SERVICE_Q.test(x.q));
+      if (a) out.service = cleanText(a.a).trim().slice(0, 120);
     }
+    // A link in the name or service is spam or a trick: flag it, and keep it out of the service used in messages.
+    if (D.hasLink(out.name) || D.hasLink(out.service)) out.flags.push('has-link');
+    if (D.hasLink(out.service)) out.service = '';
     out.source = D.SOURCES.includes(sourceIn) ? sourceIn : meta ? 'meta' : 'website';
     return out;
   };
@@ -448,7 +540,7 @@
 
   /* ----------------------------------------------------- workflow logic */
   const touchesOf = (lead) => (Array.isArray(lead.touches) ? lead.touches : []);
-  const lastTouch = (lead, k) => touchesOf(lead).reduce((acc, t) => (t && t.k === k && (acc == null || t.at > acc) ? t.at : acc), null);
+  const lastTouch = (lead, k, since = -Infinity) => touchesOf(lead).reduce((acc, t) => (t && t.k === k && t.at >= since && (acc == null || t.at > acc) ? t.at : acc), null);
   const touchedSince = (lead, k, since) => touchesOf(lead).some((t) => t && t.k === k && t.at >= since);
 
   D.nextAction = (lead, settings, now) => {
@@ -460,12 +552,15 @@
       case 'new':
         return { kind: 'first', due: defer(lead.createdAt || now), label: 'Send first message' };
       case 'contacted': {
-        const f2 = lastTouch(lead, 'f2');
+        // A reopened lead starts over from its latest first message (firstTouchAt stays the earliest, for reports).
+        const first = lastTouch(lead, 'first');
+        const since = first != null ? first : -Infinity;
+        const f2 = lastTouch(lead, 'f2', since);
         if (f2 != null) return { kind: 'close', due: defer(f2 + DAY), label: 'Call or close' };
-        const f1 = lastTouch(lead, 'f1');
+        const f1 = lastTouch(lead, 'f1', since);
         if (f1 != null) return { kind: 'f2', due: defer(D.atLocalTime(f1 + DAY, s.followup2At)), label: 'Last follow-up' };
         const mins = Number(s.followup1Min) > 0 ? Number(s.followup1Min) : 120;
-        return { kind: 'f1', due: defer((lead.firstTouchAt || fallback) + mins * MIN), label: 'Follow-up 1' };
+        return { kind: 'f1', due: defer((first != null ? first : lead.firstTouchAt || fallback) + mins * MIN), label: 'Follow-up 1' };
       }
       case 'replied': {
         const since = lead.repliedAt || fallback;
@@ -479,9 +574,10 @@
         if (!touchedSince(lead, 'confirm', bookedAt)) return { kind: 'confirm', due: bookedAt, label: 'Send booking confirmation' };
         // A changed booking (new bookedAt) goes to the client again.
         if (!lead.handedAt || lead.handedAt < bookedAt) return { kind: 'handover', due: bookedAt, label: 'Send to {client}' };
-        if (Number.isFinite(appt) && appt - bookedAt > 20 * HOUR && !touchedSince(lead, 'reminder', bookedAt)) {
+        if (Number.isFinite(appt) && !touchedSince(lead, 'reminder', bookedAt)) {
+          // The evening before, but only when that is at least 2 hours after the booking was made and still before the appointment.
           const due = defer(D.atLocalTime(appt - DAY, '17:00'));
-          if (due < appt) return { kind: 'reminder', due, label: 'Send reminder' };
+          if (due >= bookedAt + 2 * HOUR && due < appt) return { kind: 'reminder', due, label: 'Send reminder' };
         }
         return { kind: 'outcome', due: Number.isFinite(appt) ? appt + 2 * HOUR : bookedAt, label: 'Did they show up?' };
       }
@@ -555,8 +651,9 @@
       }
       l.bookedFor = booked;
       if (status) {
+        // Each new reply (e.g. after a reopen) restarts the check-in timer.
+        if (status === 'replied' && l.status !== 'replied') l.repliedAt = at;
         l.status = status;
-        if (status === 'replied' && l.repliedAt == null) l.repliedAt = at;
         if (status === 'contacted' && l.firstTouchAt == null) l.firstTouchAt = at;
         l.closedAt = D.CLOSED.includes(status) ? at : null;
       }
@@ -665,8 +762,8 @@
     }
     const cell = (v) => {
       let s = str(v);
-      // Stop spreadsheet apps from running a cell that came from a public form as a formula.
-      if (/^[=@\t\r]/.test(s) || /^[+-][^\d\s]/.test(s)) s = "'" + s;
+      // Stop spreadsheet apps from running a cell that came from a public form as a formula (plain numbers and phones stay as they are).
+      if (/^[=+\-@\t\r]/.test(s) && !/^[+-]?[\d\s().-]+$/.test(s)) s = "'" + s;
       return /[",\r\n]|^\s|\s$/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
     return table.map((r) => (Array.isArray(r) ? r : []).map(cell).join(',')).join('\r\n') + (table.length ? '\r\n' : '');

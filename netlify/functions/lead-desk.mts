@@ -1,6 +1,6 @@
 import type { Config } from '@netlify/functions';
 import { getStore } from '@netlify/blobs';
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import '../../public/desk-assets/desk-core.js';
 
 /**
@@ -53,6 +53,8 @@ export interface Lead {
   notes: string;
   dupOf: string;
   updatedAt: number;
+  /** Intake leads: a short keyed hash of the sender's IP for the per-sender rate limit (never the IP itself). */
+  ipHash?: string;
 }
 export interface Client {
   id: string;
@@ -108,6 +110,7 @@ interface Mapped {
   honeypot: boolean;
   redirect: string;
   test: boolean;
+  flags: string[];
 }
 /** The parts of public/desk-assets/desk-core.js this function uses. */
 interface DeskCoreApi {
@@ -120,7 +123,9 @@ interface DeskCoreApi {
   normPhone(raw: unknown): { digits: string; type: string };
   flagsFor(lead: Lead): string[];
   firstName(name: string): string;
+  stripLinks(s: string): string;
   httpsUrl(v: string): string;
+  capAnswers(list: Answer[]): Answer[];
   mapIntake(input: unknown): Mapped;
   applyUpdate(lead: Lead, upd: unknown, now: number): Lead;
   uid(prefix: string): string;
@@ -135,6 +140,12 @@ export interface DeskStore {
 export interface Deps {
   fetch: typeof fetch;
   now: () => number;
+}
+/** Which environment variable holds the desk key: LEAD_DESK_KEY, or LEAD_QUEUE_KEY as the fallback when that is unset. */
+export type KeySource = 'desk' | 'queue';
+export interface DeskKey {
+  secret: string | undefined;
+  keySource: KeySource;
 }
 type Op = Record<string, unknown>;
 interface OpResult {
@@ -154,10 +165,12 @@ const MAX_OPS = 100;
 const MAX_IMPORT_ROWS = 2000;
 const KEEP_OPS = 500;
 const KEEP_LEADS = 6000;
+const MAX_LEADS_BYTES = 3_500_000;
 const PRUNE_AFTER = 180 * DAY;
 const DUP_WINDOW = 30 * DAY;
 const RATE_WINDOW = 10 * MIN;
-const RATE_MAX = 60;
+const RATE_MAX = 120;
+const SENDER_RATE_MAX = 20;
 const MAX_NOTIFY = 3;
 const SCRIPT_STEPS = ['first', 'f1', 'f2', 'nudge', 'confirm', 'reminder', 'handover'];
 const CONFIG_OPS = ['client.save', 'client.rotate', 'settings.save'];
@@ -229,23 +242,37 @@ async function mutate<T extends { rev: number }>(store: DeskStore, key: string, 
   throw new HttpError(409, 'conflict');
 }
 
-/** Drop finished leads after 180 days, and keep the list under 6000 (oldest finished ones go first). */
-function prune(doc: LeadsDoc, now: number) {
-  const finished = (l: Lead) => D.CLOSED.includes(l.status) || (l.status === 'booked' && !!l.outcome);
+const finished = (l: Lead) => D.CLOSED.includes(l.status) || (l.status === 'booked' && !!l.outcome);
+const jsonBytes = (v: unknown) => Buffer.byteLength(JSON.stringify(v));
+
+/**
+ * Drops finished leads after 180 days, then the oldest finished ones while the doc is over 6000 leads or ~3.5 MB.
+ * Open leads are never dropped. Returns the doc's size in bytes.
+ */
+function prune(doc: LeadsDoc, now: number): number {
   const touched = (l: Lead) => l.updatedAt || l.createdAt || 0;
   doc.leads = doc.leads.filter((l) => !(finished(l) && touched(l) < now - PRUNE_AFTER));
-  if (doc.leads.length > KEEP_LEADS) {
-    const order = [...doc.leads].sort((a, b) => Number(finished(b)) - Number(finished(a)) || touched(a) - touched(b));
-    const drop = new Set(order.slice(0, doc.leads.length - KEEP_LEADS).map((l) => l.id));
-    doc.leads = doc.leads.filter((l) => !drop.has(l.id));
-  }
   if (doc.ops.length > KEEP_OPS) doc.ops = doc.ops.slice(-KEEP_OPS);
+  let count = doc.leads.length;
+  let bytes = jsonBytes(doc);
+  const drop = new Set<Lead>();
+  for (const l of doc.leads.filter(finished).sort((a, b) => touched(a) - touched(b))) {
+    if (count <= KEEP_LEADS && bytes <= MAX_LEADS_BYTES) break;
+    drop.add(l);
+    count--;
+    bytes -= jsonBytes(l) + 1;
+  }
+  if (!drop.size) return bytes;
+  doc.leads = doc.leads.filter((l) => !drop.has(l));
+  return jsonBytes(doc);
 }
 
-const mutateLeads = (store: DeskStore, now: number, change: (doc: LeadsDoc) => boolean) =>
+/** Every leads write prunes. With `refuseWhenFull` (intake) the write fails with 503 desk_full when the desk is still over its limits. */
+const mutateLeads = (store: DeskStore, now: number, change: (doc: LeadsDoc) => boolean, refuseWhenFull = false) =>
   mutate(store, 'leads', asLeads, (doc) => {
     if (!change(doc)) return false;
-    prune(doc, now);
+    const bytes = prune(doc, now);
+    if (refuseWhenFull && (doc.leads.length > KEEP_LEADS || bytes > MAX_LEADS_BYTES)) throw new HttpError(503, 'desk_full');
     return true;
   });
 
@@ -266,7 +293,7 @@ function newLead(m: Mapped, clientId: string, source: string, createdAt: number,
     phone: p.digits,
     phoneType: p.type,
     email: m.email,
-    answers: m.answers.slice(0, 15),
+    answers: D.capAnswers(m.answers),
     service: m.service,
     ad: m.ad,
     verified: m.verified,
@@ -286,7 +313,7 @@ function newLead(m: Mapped, clientId: string, source: string, createdAt: number,
     dupOf: '',
     updatedAt: now,
   };
-  lead.flags = D.flagsFor(lead);
+  lead.flags = [...new Set([...D.flagsFor(lead), ...(m.flags || [])])];
   return lead;
 }
 
@@ -365,11 +392,14 @@ async function sendTelegram(d: Deps, settings: Settings, a: Alert): Promise<stri
   }
 }
 
-/** Alerts carry only the client name plus the lead's first name and service (or nothing personal when turned off). */
+/**
+ * Alerts carry only the client name plus the lead's first name and service (or nothing personal when turned off).
+ * The desk link comes first, and links are stripped from the lead's own words, so a form can't slip its own link in.
+ */
 function leadAlert(lead: Lead, client: Client, settings: Settings, origin: string): Alert {
   const click = `${origin}/desk#lead=${lead.id}`;
   const body = settings.notifyDetails
-    ? `${D.firstName(lead.name) || 'No name given'} · ${lead.service || 'no service given'}\nReply within 5 minutes: ${click}`
+    ? `Reply within 5 minutes: ${click}\n${D.firstName(lead.name) || 'No name given'} · ${D.stripLinks(lead.service) || 'no service given'}`
     : `Open Lead Desk: ${click}`;
   return { title: `New lead · ${client.name}`, body, click };
 }
@@ -428,6 +458,27 @@ async function intakeItems(req: Request): Promise<{ items: unknown[]; wrapper: R
   throw new HttpError(400, 'invalid_body');
 }
 
+/** A short keyed hash of the sender's IP, for the per-sender rate limit; '' when the IP is unknown. The IP itself is never stored. */
+function senderHash(req: Request, secret: string): string {
+  const ip = (req.headers.get('x-nf-client-connection-ip') || (req.headers.get('x-forwarded-for') || '').split(',')[0]).trim();
+  return ip ? createHmac('sha256', secret).update(ip).digest('base64url').slice(0, 16) : '';
+}
+
+/** Host of the page a form was posted from (Origin header, else Referer), or '' when unknown. */
+function siteHost(req: Request): string {
+  const from = req.headers.get('origin') || req.headers.get('referer') || '';
+  try {
+    return from ? new URL(from).host : '';
+  } catch {
+    return '';
+  }
+}
+
+const THANKS_PAGE =
+  '<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex">' +
+  '<title>Thank you</title><body style="font:18px/1.5 system-ui,sans-serif;max-width:32rem;margin:20vh auto;padding:0 16px;text-align:center">' +
+  "<p>Thanks, we got your details. We'll be in touch shortly.</p></body></html>";
+
 function findClient(clients: Client[], token: string): Client | null {
   const want = digest(token);
   let found: Client | null = null;
@@ -459,6 +510,7 @@ async function intake(req: Request, store: DeskStore, secret: string | undefined
   const now = d.now();
   const mapped = items.map((i) => (isObj(i) ? D.mapIntake(i) : null));
   const redirect = (typeof wrapper._redirect === 'string' ? D.httpsUrl(wrapper._redirect) : '') || mapped.find((m) => m?.redirect)?.redirect || '';
+  const sender = senderHash(req, secret);
 
   let ids: string[] = [];
   let created: Lead[] = [];
@@ -493,17 +545,22 @@ async function intake(req: Request, store: DeskStore, secret: string | undefined
       }
       const source = m.test || wrapperTest ? 'test' : m.source;
       const lead = newLead(m, client.id, source, now, now, taken);
+      if (sender) lead.ipHash = sender;
       markIfDuplicate(lead, [...doc.leads, ...fresh], now);
       fresh.push(lead);
     }
     if (!fresh.length) return false;
-    const recent = doc.leads.filter((l) => l.clientId === client.id && l.createdAt > now - RATE_WINDOW).length;
+    const since = now - RATE_WINDOW;
+    const recent = doc.leads.filter((l) => l.clientId === client.id && l.createdAt > since).length;
     if (recent + fresh.length > RATE_MAX) throw new HttpError(429, 'rate_limited');
+    if (sender && doc.leads.filter((l) => l.ipHash === sender && l.createdAt > since).length + fresh.length > SENDER_RATE_MAX) {
+      throw new HttpError(429, 'rate_limited');
+    }
     doc.leads.push(...fresh);
     ids = fresh.map((l) => l.id);
     created = fresh;
     return true;
-  });
+  }, true);
 
   if (!ids.length && !duplicates && !honeypots && rejected) return out({ error: 'no_contact_details' }, 400);
 
@@ -511,8 +568,16 @@ async function intake(req: Request, store: DeskStore, secret: string | undefined
   const origin = new URL(req.url).origin;
   await notifyAll(d, settings, created.filter((l) => l.status !== 'dup').map((l) => leadAlert(l, client, settings, origin)));
 
-  if (form && redirect) return new Response(null, { status: 303, headers: { ...CORS, location: redirect, 'cache-control': 'no-store' } });
-  return out({ ok: true, ids, duplicates, rejected });
+  if (!form) return out({ ok: true, ids, duplicates, rejected });
+  // Only back to the site the form was on: the intake link must not work as an open redirect.
+  const site = siteHost(req);
+  if (redirect && site && new URL(redirect).host === site) {
+    return new Response(null, { status: 303, headers: { ...CORS, location: redirect, 'cache-control': 'no-store' } });
+  }
+  return new Response(THANKS_PAGE, {
+    status: 200,
+    headers: { ...CORS, 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-robots-tag': 'noindex' },
+  });
 }
 
 /* -------------------------------------------------------------- admin ops */
@@ -650,6 +715,48 @@ function applyConfigOp(doc: ConfigDoc, op: Op, now: number): OpResult {
   return { opId, ok: false, error: 'unknown_op' };
 }
 
+/** A lead typed in on the desk (`lead.add`), mapped like an intake post. */
+function manualIntake(raw: Record<string, unknown>): Mapped {
+  const m = D.mapIntake({
+    full_name: str(raw.name, 120),
+    phone_number: str(raw.phone, 40),
+    email: str(raw.email, 160),
+    _service: str(raw.service, 120),
+  });
+  if (Array.isArray(raw.answers)) {
+    m.answers = raw.answers
+      .filter(isObj)
+      .map((a) => ({ q: str(a.q, 120), a: str(a.a, 500) }))
+      .filter((a) => a.q || a.a)
+      .slice(0, 15);
+  }
+  return m;
+}
+
+/** What a replayed op (its opId was already applied) can still tell the page, looked up in the current data. */
+function replayedConfig(doc: ConfigDoc, op: Op): { data?: unknown } {
+  if (op.type === 'settings.save') return { data: doc.settings };
+  if (op.type !== 'client.save' && op.type !== 'client.rotate') return {};
+  const raw = op.type === 'client.save' ? (isObj(op.client) ? op.client : {}) : { id: op.id };
+  const id = str(raw.id, 40);
+  const name = str(raw.name, 80);
+  // A replayed create has no id: the newest client with that name is the one it made.
+  const c = id ? doc.clients.find((x) => x.id === id) : doc.clients.filter((x) => x.name === name).sort((a, b) => b.createdAt - a.createdAt)[0];
+  return c ? { data: c } : {};
+}
+
+function replayedLead(doc: LeadsDoc, op: Op): { data?: unknown } {
+  if (op.type !== 'lead.add') return {};
+  const raw = isObj(op.lead) ? op.lead : {};
+  const clientId = str(raw.clientId, 40);
+  const m = manualIntake(raw);
+  const phone = D.normPhone(m.phone).digits;
+  const lead = doc.leads
+    .filter((l) => l.source === 'manual' && l.clientId === clientId && l.name === m.name && l.phone === phone && l.email === m.email)
+    .sort((a, b) => b.createdAt - a.createdAt)[0];
+  return lead ? { data: { id: lead.id, status: lead.status, dupOf: lead.dupOf } } : {};
+}
+
 function applyLeadOp(doc: LeadsDoc, config: ConfigDoc, op: Op, now: number): OpResult {
   const opId = opIdOf(op);
   const clientExists = (id: unknown) => config.clients.some((c) => c.id === id);
@@ -665,19 +772,7 @@ function applyLeadOp(doc: LeadsDoc, config: ConfigDoc, op: Op, now: number): OpR
       const raw = isObj(op.lead) ? op.lead : {};
       const clientId = str(raw.clientId, 40);
       if (!clientExists(clientId)) return { opId, ok: false, error: 'unknown_client' };
-      const m = D.mapIntake({
-        full_name: str(raw.name, 120),
-        phone_number: str(raw.phone, 40),
-        email: str(raw.email, 160),
-        _service: str(raw.service, 120),
-      });
-      if (Array.isArray(raw.answers)) {
-        m.answers = raw.answers
-          .filter(isObj)
-          .map((a) => ({ q: str(a.q, 120), a: str(a.a, 500) }))
-          .filter((a) => a.q || a.a)
-          .slice(0, 15);
-      }
+      const m = manualIntake(raw);
       if (!hasContact(m)) return { opId, ok: false, error: 'no_contact_details' };
       const lead = newLead(m, clientId, 'manual', now, now, new Set(doc.leads.map((l) => l.id)));
       lead.notes = str(raw.notes, 2000);
@@ -757,7 +852,7 @@ async function runOps(store: DeskStore, d: Deps, ops: Op[], now: number): Promis
         for (const { op, i } of cfgOps) {
           const opId = opIdOf(op);
           if (opId && doc.ops.includes(opId)) {
-            results[i] = { opId, ok: true, dup: true };
+            results[i] = { opId, ok: true, dup: true, ...replayedConfig(doc, op) };
             continue;
           }
           results[i] = applyConfigOp(doc, op, now);
@@ -778,7 +873,7 @@ async function runOps(store: DeskStore, d: Deps, ops: Op[], now: number): Promis
         for (const { op, i } of leadOps) {
           const opId = opIdOf(op);
           if (opId && doc.ops.includes(opId)) {
-            results[i] = { opId, ok: true, dup: true };
+            results[i] = { opId, ok: true, dup: true, ...replayedLead(doc, op) };
             continue;
           }
           results[i] = applyLeadOp(doc, config, op, now);
@@ -808,8 +903,13 @@ async function runOps(store: DeskStore, d: Deps, ops: Op[], now: number): Promis
 /* -------------------------------------------------------------------- entry */
 const publicConfig = (c: ConfigDoc) => ({ clients: c.clients, settings: c.settings });
 
-export async function handle(req: Request, store: DeskStore, secret: string | undefined, deps: Partial<Deps> = {}): Promise<Response> {
+/**
+ * `key` is the desk key, either as a plain string (from LEAD_DESK_KEY) or with the env var it came from,
+ * which admin responses report as `keySource` so the page can suggest a separate LEAD_DESK_KEY.
+ */
+export async function handle(req: Request, store: DeskStore, key: string | undefined | null | DeskKey, deps: Partial<Deps> = {}): Promise<Response> {
   const d: Deps = { fetch: deps.fetch || globalThis.fetch, now: deps.now || (() => Date.now()) };
+  const { secret, keySource }: DeskKey = key && typeof key === 'object' ? key : { secret: key || undefined, keySource: 'desk' };
   const url = new URL(req.url);
   const intakeMatch = url.pathname.match(/^\/api\/desk\/in\/([^/]*)\/?$/);
   try {
@@ -824,15 +924,15 @@ export async function handle(req: Request, store: DeskStore, secret: string | un
     }
 
     if (!secret || secret.length < 24) return json({ error: 'not_configured' }, 503);
-    const key = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '').trim();
-    if (!key || !sameSecret(key, secret)) return json({ error: 'unauthorized' }, 401);
+    const given = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '').trim();
+    if (!given || !sameSecret(given, secret)) return json({ error: 'unauthorized' }, 401);
 
     if (req.method === 'GET') {
       const [{ doc: config }, { doc: leads }] = await Promise.all([readConfig(store), readLeads(store)]);
       const rev = `${config.rev}.${leads.rev}`;
-      if (url.searchParams.get('rev') === rev) return json({ unchanged: true, rev });
+      if (url.searchParams.get('rev') === rev) return json({ unchanged: true, rev, keySource });
       const now = d.now();
-      return json({ rev, config: publicConfig(config), leads: leadsView(leads.leads, daysParam(url), now), now });
+      return json({ rev, config: publicConfig(config), leads: leadsView(leads.leads, daysParam(url), now), now, keySource });
     }
 
     if (req.method === 'POST') {
@@ -843,7 +943,7 @@ export async function handle(req: Request, store: DeskStore, secret: string | un
       const ops = body.ops.map((op) => (isObj(op) ? op : {}));
       const now = d.now();
       const { results, config, leads } = await runOps(store, d, ops, now);
-      return json({ results, rev: `${config.rev}.${leads.rev}`, config: publicConfig(config), leads: leadsView(leads.leads, daysParam(url), now), now });
+      return json({ results, rev: `${config.rev}.${leads.rev}`, config: publicConfig(config), leads: leadsView(leads.leads, daysParam(url), now), now, keySource });
     }
 
     return json({ error: 'method_not_allowed' }, 405);
@@ -854,8 +954,11 @@ export async function handle(req: Request, store: DeskStore, secret: string | un
   }
 }
 
-export default async (req: Request) =>
-  handle(req, getStore({ name: 'lead-desk', consistency: 'strong' }), Netlify.env.get('LEAD_DESK_KEY') || Netlify.env.get('LEAD_QUEUE_KEY'));
+export default async (req: Request) => {
+  const desk = Netlify.env.get('LEAD_DESK_KEY');
+  const key: DeskKey = desk ? { secret: desk, keySource: 'desk' } : { secret: Netlify.env.get('LEAD_QUEUE_KEY'), keySource: 'queue' };
+  return handle(req, getStore({ name: 'lead-desk', consistency: 'strong' }), key);
+};
 
 export const config: Config = {
   path: ['/api/desk', '/api/desk/in/:token'],

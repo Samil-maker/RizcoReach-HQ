@@ -73,8 +73,8 @@ function setup({ now = T0, fetch = mockFetch() } = {}) {
     return { status: res.status, data: await res.json() };
   };
   const ops = (...list) => api('POST', { ops: list.map((o) => ({ opId: D.uid('op'), ...o })) });
-  const post = async (token, body, { type = 'application/json', secret = KEY, method = 'POST' } = {}) => {
-    const init = { method, headers: {} };
+  const post = async (token, body, { type = 'application/json', secret = KEY, method = 'POST', headers = {} } = {}) => {
+    const init = { method, headers: { ...headers } };
     if (body !== undefined) {
       if (body instanceof FormData) init.body = body;
       else {
@@ -84,7 +84,8 @@ function setup({ now = T0, fetch = mockFetch() } = {}) {
     }
     const res = await handle(new Request(`${ORIGIN}/api/desk/in/${token}`, init), store, secret, deps);
     const text = await res.text();
-    return { status: res.status, data: text ? JSON.parse(text) : null, headers: res.headers };
+    const isJson = (res.headers.get('content-type') || '').includes('application/json');
+    return { status: res.status, data: text && isJson ? JSON.parse(text) : null, text, headers: res.headers };
   };
   const addClient = async (client = {}) =>
     (await ops({ type: 'client.save', client: { name: 'Glossy PPF', niche: 'car', contactName: 'Omar', contactWa: '0501112222', location: 'Al Quoz 3, Dubai', ...client } })).data.results[0].data;
@@ -293,7 +294,7 @@ test('renderScript fills variables and cleans up empty lines', () => {
   const reminder = D.renderScript(D.scriptFor('reminder', client), vars);
   assert.ok(!reminder.includes('📍'), 'pin line without a maps link is dropped');
   const handover = D.renderScript(D.scriptFor('handover', client), vars);
-  assert.equal(handover, 'New confirmed booking ✅\n\nName: Sara Ali\nPhone: +971 55 765 1298\nFor: Full body PPF\nWhen: Saturday 18 Oct, 11:00 am\nWhatsApp them: https://wa.me/971557651298');
+  assert.equal(handover, 'New confirmed booking ✅\n\nName: Sara Ali\nPhone: +971 55 765 1298\nFor: full body PPF\nWhen: Saturday 18 Oct, 11:00 am\nWhatsApp them: https://wa.me/971557651298');
   const withMore = D.renderScript(D.scriptFor('handover', client), D.varsFor({ ...lead, answers: [{ q: 'Car', a: 'BMW X5' }], notes: 'Prefers mornings' }, client, {}, T0));
   assert.match(withMore, /\n• Car: BMW X5\nNotes: Prefers mornings\nWhatsApp them:/);
   const first = D.renderScript(D.scriptFor('first', client), vars);
@@ -535,6 +536,135 @@ test('waUrl builds app and web links, CSV and ids', () => {
   assert.match(D.uid('op_'), /^op_[a-z0-9]{12,}$/);
 });
 
+test('nextAction: the reminder is never due before the booking, nor within 2 hours of it', () => {
+  const ready = (bookedAt, bookedFor) => baseLead({ status: 'booked', bookedAt, bookedFor, touches: [{ k: 'confirm', at: bookedAt }], handedAt: bookedAt + 1 });
+  // Booked at 18:00 for 15:00 tomorrow (21 hours ahead): 17:00 today is already behind us.
+  assert.equal(D.nextAction(ready(dt('2025-10-17T18:00'), '2025-10-18T15:00'), S, dt('2025-10-17T18:05')).kind, 'outcome');
+  // Booked at 15:30 for tomorrow morning: 17:00 would be only 90 minutes after the booking.
+  assert.equal(D.nextAction(ready(dt('2025-10-17T15:30'), '2025-10-18T09:00'), S, dt('2025-10-17T15:35')).kind, 'outcome');
+  // Exactly 2 hours after the booking is fine.
+  assert.deepEqual(D.nextAction(ready(dt('2025-10-17T15:00'), '2025-10-18T09:00'), S, dt('2025-10-17T15:05')), { kind: 'reminder', due: dt('2025-10-17T17:00'), label: 'Send reminder' });
+  // Booked days ahead: the evening before, as always.
+  assert.equal(D.nextAction(ready(dt('2025-10-14T10:00'), '2025-10-18T11:00'), S, T0).due, dt('2025-10-17T17:00'));
+});
+
+test('nextAction: a reopened lead starts over from its latest first message, and a new reply restarts the check-in', () => {
+  let lead = D.applyUpdate(baseLead(), { touch: 'first', at: T0 }, T0);
+  lead = D.applyUpdate(lead, { touch: 'f1', at: T0 + 3 * HOUR }, T0 + 3 * HOUR);
+  lead = D.applyUpdate(lead, { touch: 'f2', at: T0 + DAY }, T0 + DAY);
+  lead = D.applyUpdate(lead, { set: { status: 'noanswer' } }, T0 + 2 * DAY);
+  const t = T0 + 10 * DAY;
+  lead = D.applyUpdate(lead, { set: { status: 'new' } }, t);
+  assert.equal(D.nextAction(lead, S, t).kind, 'first');
+  lead = D.applyUpdate(lead, { touch: 'first', at: t }, t);
+  assert.equal(lead.status, 'contacted');
+  assert.equal(lead.firstTouchAt, T0, 'reports keep the very first message');
+  assert.deepEqual(D.nextAction(lead, S, t), { kind: 'f1', due: t + 120 * MIN, label: 'Follow-up 1' });
+  lead = D.applyUpdate(lead, { touch: 'f1', at: t + 2 * HOUR }, t + 2 * HOUR);
+  assert.equal(D.nextAction(lead, S, t + 2 * HOUR).kind, 'f2');
+
+  let chat = D.applyUpdate(baseLead({ status: 'contacted' }), { set: { status: 'replied' } }, T0);
+  assert.equal(chat.repliedAt, T0);
+  chat = D.applyUpdate(chat, { touch: 'nudge', at: T0 + DAY }, T0 + DAY);
+  assert.equal(D.nextAction(chat, S, T0 + DAY), null);
+  chat = D.applyUpdate(chat, { set: { status: 'lost' } }, T0 + 2 * DAY);
+  chat = D.applyUpdate(chat, { set: { status: 'replied' } }, T0 + 5 * DAY);
+  assert.equal(chat.repliedAt, T0 + 5 * DAY);
+  assert.deepEqual(D.nextAction(chat, S, T0 + 5 * DAY), { kind: 'nudge', due: T0 + 6 * DAY, label: 'Check in' });
+  assert.equal(D.applyUpdate(chat, { set: { status: 'replied' } }, T0 + 6 * DAY).repliedAt, T0 + 5 * DAY, 'already replied: unchanged');
+});
+
+test('mapIntake keeps extra values as answers and picks the best phone number', () => {
+  const two = D.mapIntake({ full_name: 'Sara Ali', name: 'Sara', phone: '0501234567', mobile: '0559876543', email: 'a@example.com', 'E-mail': 'b@example.com' });
+  assert.deepEqual([two.name, two.phone, two.email], ['Sara Ali', '0501234567', 'a@example.com']);
+  assert.deepEqual(two.answers, [{ q: 'Name', a: 'Sara' }, { q: 'Mobile', a: '0559876543' }, { q: 'E-mail', a: 'b@example.com' }]);
+
+  // A WhatsApp key wins when it holds a mobile or foreign number, even one the key list doesn't know.
+  const wa = D.mapIntake({ phone_number: '04 123 4567', whatsapp_number: '050 123 4567' });
+  assert.equal(wa.phone, '050 123 4567');
+  assert.deepEqual(wa.answers, [{ q: 'Phone number', a: '04 123 4567' }]);
+  const waOther = D.mapIntake({ phone: '0501234567', 'WhatsApp (if different)': '+44 7700 900123' });
+  assert.equal(waOther.phone, '+44 7700 900123');
+  assert.deepEqual(waOther.answers, [{ q: 'Phone', a: '0501234567' }]);
+  const waNo = D.mapIntake({ phone: '0501234567', do_you_use_whatsapp: 'yes' });
+  assert.equal(waNo.phone, '0501234567');
+  assert.deepEqual(waNo.answers, [{ q: 'Do you use whatsapp', a: 'yes' }]);
+
+  // Otherwise the first key holding a usable number; a bad one is still kept (and flagged) when it's all there is.
+  const junkFirst = D.mapIntake({ phone: 'n/a', mobile: '0501234567' });
+  assert.equal(junkFirst.phone, '0501234567');
+  assert.deepEqual(junkFirst.answers, [{ q: 'Phone', a: 'n/a' }]);
+  assert.equal(D.mapIntake({ name: 'Omar', phone: '12' }).phone, '12');
+
+  // Generic "number" and "date" only count when nothing more specific was posted.
+  const units = D.mapIntake({ name: 'Omar', phone: '0501234567', number: '3' });
+  assert.equal(units.phone, '0501234567');
+  assert.deepEqual(units.answers, [{ q: 'Number', a: '3' }]);
+  assert.equal(D.mapIntake({ name: 'Omar', number: '050 123 4567' }).phone, '050 123 4567');
+  const notPhone = D.mapIntake({ name: 'Omar', number: '2' });
+  assert.equal(notPhone.phone, '');
+  assert.deepEqual(notPhone.answers, [{ q: 'Number', a: '2' }]);
+  const dated = D.mapIntake({ name: 'Omar', created_time: '2025-10-14T06:00:00Z', date: '2025-10-20' });
+  assert.equal(dated.submittedAt, T0);
+  assert.deepEqual(dated.answers, [{ q: 'Date', a: '2025-10-20' }]);
+  assert.equal(D.mapIntake({ name: 'Omar', date: '2025-10-14 10:00:00' }).submittedAt, T0);
+});
+
+test('service skips yes/no answers, prefers "which/what service" questions, and reads well mid-sentence', () => {
+  assert.equal(D.mapIntake({ are_you_interested_in_a_free_inspection: 'Yes', which_treatment_would_you_like: 'Botox' }).service, 'Botox');
+  assert.equal(D.mapIntake({ interested_in_weekend_slots: 'Saturday please', 'What service do you need?': 'Window tint' }).service, 'Window tint');
+  assert.equal(D.mapIntake({ are_you_interested: 'Yes', looking_for: 'Ceramic coating' }).service, 'Ceramic coating');
+  for (const [q, a] of [['interested', 'true'], ['service', 'no'], ['service', 'Maybe.'], ['which_service', 'AC'], ['which_package', '2']]) {
+    assert.equal(D.mapIntake({ [q]: a }).service, '', `${q}: ${a}`);
+  }
+  const svc = (service) => D.varsFor({ service }, { niche: 'car' }, {}, T0).service;
+  assert.equal(svc('Ceramic coating'), 'ceramic coating');
+  assert.equal(svc('Window tint'), 'window tint');
+  assert.equal(svc('Full body PPF'), 'full body PPF');
+  assert.equal(svc('Full-body wrap'), 'full-body wrap');
+  for (const kept of ['PPF', 'AC deep clean', 'iPhone screen', 'HydraFacial', 'Laser Hair Removal', 'ceramic coating']) assert.equal(svc(kept), kept);
+  assert.equal(svc(''), 'detailing');
+  const first = D.renderScript(D.scriptFor('first', { niche: 'car' }), D.varsFor({ name: 'Omar', service: 'Ceramic coating' }, { name: 'Glossy PPF', niche: 'car' }, {}, T0));
+  assert.match(first, /enquiry about ceramic coating!/);
+});
+
+test('mapIntake strips control characters, keeps one-line fields on one line, caps answers and flags links', () => {
+  const m = D.mapIntake({
+    'full\u0000_name': ' Sa\u0007ra\n Ali\u0085 ',
+    phone: '050\u0000 123 4567',
+    email: 'sara@example.com\r\n',
+    campaign_name: 'PPF\nOctober',
+    _service: 'Ceramic\r\ncoating',
+    'Message\u001b': 'line one\r\nline two\u009b\tend',
+  });
+  assert.deepEqual([m.name, m.phone, m.email, m.ad.campaign, m.service], ['Sara Ali', '050 123 4567', 'sara@example.com', 'PPF October', 'Ceramic coating']);
+  assert.deepEqual(m.answers, [{ q: 'Message', a: 'line one\nline two end' }]);
+  assert.deepEqual(m.flags, []);
+
+  const big = D.mapIntake(Object.fromEntries(Array.from({ length: 15 }, (_, i) => [`question_${i}`, 'x'.repeat(500)])));
+  const total = big.answers.reduce((n, a) => n + a.q.length + a.a.length, 0);
+  assert.ok(total <= 3000, `answers text is ${total}`);
+  assert.equal(big.answers.length, 6);
+  assert.ok(big.answers[5].a.endsWith('…'));
+  assert.equal(D.capAnswers([{ q: 'Car', a: 'BMW' }]).length, 1);
+
+  const spam = D.mapIntake({ full_name: 'Win cash www.spam.example', phone: '0501234567', _service: 'Visit https://spam.example/now' });
+  assert.deepEqual(spam.flags, ['has-link']);
+  assert.equal(spam.service, '', 'a service with a link is dropped');
+  const linkName = D.mapIntake({ full_name: 'Sara https://x.example', phone: '0501234567', which_service: 'Tint' });
+  assert.deepEqual([linkName.flags, linkName.service], [['has-link'], 'Tint']);
+  assert.equal(D.mapIntake({ name: 'Omar', which_service_do_you_need: 'see bit.ly/abc' }).service, '');
+  assert.ok(D.flagsFor({ name: 'Omar www.x.example', phone: '971501112223', phoneType: 'mobile' }).includes('has-link'));
+  assert.ok(!D.hasLink('Sara Ali') && !D.hasLink('Dr. Mona') && !D.hasLink('Full body PPF'));
+  const v = D.varsFor({ name: 'www.spam.example Sara Ali', service: 'Tint http://spam.example' }, { niche: 'car' }, {}, T0);
+  assert.deepEqual([v.first_name, v.name, v.service], ['Sara', 'Sara Ali', 'tint']);
+});
+
+test('toCsv neutralises formulas but leaves plain numbers and phones alone', () => {
+  const row = ['=SUM(A1)', '+cmd|x', '-2+3', '@me', '\tTab', '\rCR', '+971 50 123 4567', '-5', '(050) 123-4567', '+1 (555) 010-9999', 'Sara'];
+  assert.equal(D.toCsv([row]), `'=SUM(A1),'+cmd|x,'-2+3,'@me,'\tTab,"'\rCR",+971 50 123 4567,-5,(050) 123-4567,+1 (555) 010-9999,Sara\r\n`);
+});
+
 /* ================================================================== server */
 test('admin API is off without a key, needs the right key, and starts empty', async () => {
   const { api } = setup();
@@ -545,7 +675,7 @@ test('admin API is off without a key, needs the right key, and starts empty', as
   assert.equal((await api('GET', undefined, { key: KEY + 'x' })).status, 401);
   const r = await api('GET');
   assert.equal(r.status, 200);
-  assert.deepEqual(r.data, { rev: '0.0', config: { clients: [], settings: D.DEFAULT_SETTINGS }, leads: [], now: T0 });
+  assert.deepEqual(r.data, { rev: '0.0', config: { clients: [], settings: D.DEFAULT_SETTINGS }, leads: [], now: T0, keySource: 'desk' });
   assert.equal((await api('PUT', {})).status, 405);
   assert.equal((await api('POST', 'not json')).status, 400);
   assert.equal((await api('POST', { ops: 'x' })).status, 400);
@@ -689,7 +819,7 @@ test('intake: honeypot, form posts with redirect, multipart and size limit', asy
   assert.equal(leads().length, 0);
 
   const form = 'full_name=Omar+Saeed&phone_number=055+123+4321&_service=Ceramic+coating&_redirect=https%3A%2F%2Fglossy.example%2Fthanks&_gotcha=';
-  const r = await post(c.intakeToken, form, { type: 'application/x-www-form-urlencoded' });
+  const r = await post(c.intakeToken, form, { type: 'application/x-www-form-urlencoded', headers: { origin: 'https://glossy.example' } });
   assert.equal(r.status, 303);
   assert.equal(r.headers.get('location'), 'https://glossy.example/thanks');
   const omar = leads()[0];
@@ -700,7 +830,8 @@ test('intake: honeypot, form posts with redirect, multipart and size limit', asy
 
   const noRedirect = await post(c.intakeToken, 'name=Lina&phone=0559990001&_redirect=http%3A%2F%2Finsecure.example', { type: 'application/x-www-form-urlencoded' });
   assert.equal(noRedirect.status, 200);
-  assert.equal(noRedirect.data.ids.length, 1);
+  assert.match(noRedirect.headers.get('content-type'), /^text\/html/);
+  assert.ok(leads().some((l) => l.name === 'Lina'));
 
   const fd = new FormData();
   fd.append('add_ons', 'Wax');
@@ -711,7 +842,7 @@ test('intake: honeypot, form posts with redirect, multipart and size limit', asy
   fd.append('photo', new Blob(['binary']), 'car.jpg');
   const multi = await post(c.intakeToken, fd);
   assert.equal(multi.status, 200);
-  const hana = leads().find((l) => l.id === multi.data.ids[0]);
+  const hana = leads().find((l) => l.name === 'Hana');
   assert.equal(hana.name, 'Hana');
   assert.equal(hana.service, 'Gold');
   assert.deepEqual(hana.answers, [{ q: 'Add ons', a: 'Wax, Tint' }, { q: 'What package do you need', a: 'Gold' }]);
@@ -725,12 +856,13 @@ test('intake: rate limit per client and archived clients', async () => {
   const { post, addClient, ops, clock } = setup();
   const c = await addClient();
   const batch = (n) => Array.from({ length: 20 }, (_, i) => ({ full_name: `Lead ${n}-${i}`, phone_number: `05581${String(n * 100 + i).padStart(5, '0')}` }));
-  for (let n = 0; n < 3; n++) assert.equal((await post(c.intakeToken, batch(n))).status, 200);
-  const limited = await post(c.intakeToken, batch(3));
+  // No IP headers here, so only the per-client cap (120 per 10 minutes) applies.
+  for (let n = 0; n < 6; n++) assert.equal((await post(c.intakeToken, batch(n))).status, 200, `batch ${n}`);
+  const limited = await post(c.intakeToken, batch(6));
   assert.equal(limited.status, 429);
   assert.equal(limited.data.error, 'rate_limited');
   clock.now += 11 * MIN;
-  assert.equal((await post(c.intakeToken, batch(4))).status, 200);
+  assert.equal((await post(c.intakeToken, batch(7))).status, 200);
 
   await ops({ type: 'client.save', client: { id: c.id, archived: true } });
   const gone = await post(c.intakeToken, { full_name: 'Late', phone_number: '0551234000' });
@@ -756,11 +888,11 @@ test('intake notifies ntfy and Telegram with minimal details, and never fails be
   assert.equal(ntfy.headers.click, `${ORIGIN}/desk#lead=${id}`);
   assert.equal(ntfy.headers.tags, 'bell');
   assert.equal(ntfy.headers.priority, 'high');
-  assert.equal(ntfy.body, `Sara · Full body PPF\nReply within 5 minutes: ${ORIGIN}/desk#lead=${id}`);
+  assert.equal(ntfy.body, `Reply within 5 minutes: ${ORIGIN}/desk#lead=${id}\nSara · Full body PPF`);
   assert.ok(!ntfy.body.includes('0507651298') && !ntfy.body.includes('sara@example.com'), 'no phone or email in alerts');
   const tg = fetch.calls.find((x) => x.url.startsWith('https://api.telegram.org/'));
   assert.equal(tg.url, 'https://api.telegram.org/bot123456:ABCdefGhIJKlmnoPQRstuVWxyz12345/sendMessage');
-  assert.deepEqual(JSON.parse(tg.body), { chat_id: '987654', text: `New lead · Glossy PPF\nSara · Full body PPF\nReply within 5 minutes: ${ORIGIN}/desk#lead=${id}`, disable_web_page_preview: true });
+  assert.deepEqual(JSON.parse(tg.body), { chat_id: '987654', text: `New lead · Glossy PPF\nReply within 5 minutes: ${ORIGIN}/desk#lead=${id}\nSara · Full body PPF`, disable_web_page_preview: true });
 
   // Duplicates are not announced; at most 3 alerts per request.
   fetch.calls.length = 0;
@@ -811,7 +943,7 @@ test('notify.test reports each channel', async () => {
 test('GET answers "unchanged" when the revision matches', async () => {
   const { api, addClient, post } = setup();
   const first = await api('GET');
-  assert.deepEqual(await api('GET', undefined, { query: `?rev=${first.data.rev}` }).then((r) => r.data), { unchanged: true, rev: '0.0' });
+  assert.deepEqual(await api('GET', undefined, { query: `?rev=${first.data.rev}` }).then((r) => r.data), { unchanged: true, rev: '0.0', keySource: 'desk' });
   const c = await addClient();
   const second = await api('GET', undefined, { query: '?rev=0.0' });
   assert.equal(second.data.rev, '1.0');
@@ -820,7 +952,7 @@ test('GET answers "unchanged" when the revision matches', async () => {
   const third = await api('GET', undefined, { query: '?rev=1.0' });
   assert.equal(third.data.rev, '1.1');
   assert.equal(third.data.leads.length, 1);
-  assert.deepEqual((await api('GET', undefined, { query: '?rev=1.1' })).data, { unchanged: true, rev: '1.1' });
+  assert.deepEqual((await api('GET', undefined, { query: '?rev=1.1' })).data, { unchanged: true, rev: '1.1', keySource: 'desk' });
 });
 
 test('GET and POST only send open leads plus recent finished ones', async () => {
@@ -1009,4 +1141,175 @@ test('concurrent writes from two devices and the intake link all land', async ()
   assert.deepEqual(final.map((l) => l.name).sort(), ['Khalid', 'Mona', 'Sara', 'Walk-in']);
   assert.equal(store.peek('config').settings.myName, 'Samil');
   assert.equal(store.peek('leads').rev, 5);
+});
+
+test('pruning never drops open leads; intake refuses with desk_full while admin ops keep working', async () => {
+  const { ops, post, store, addClient, leads } = setup();
+  const c = await addClient();
+  const open = Array.from({ length: 6000 }, (_, i) => baseLead({ id: `open-${i}`, clientId: c.id, phone: '', createdAt: T0 - DAY - i * MIN, updatedAt: T0 - DAY - i * MIN }));
+  const lost = baseLead({ id: 'lost-1', clientId: c.id, status: 'lost', phone: '', createdAt: T0 - 2 * DAY, updatedAt: T0 - 2 * DAY });
+  store.put('leads', { rev: 1, ops: [], leads: [...open, lost] });
+
+  const full = await post(c.intakeToken, { full_name: 'Late lead', phone_number: '0551234000' });
+  assert.equal(full.status, 503);
+  assert.equal(full.data.error, 'desk_full');
+  assert.equal(full.headers.get('access-control-allow-origin'), '*');
+  assert.equal(store.peek('leads').rev, 1, 'nothing written');
+
+  const upd = await ops({ type: 'lead.update', id: 'open-0', upd: { touch: 'first' } });
+  assert.equal(upd.status, 200);
+  assert.equal(upd.data.results[0].ok, true);
+  assert.equal(leads().length, 6000, 'only the finished lead was pruned');
+  assert.ok(!leads().some((l) => l.id === 'lost-1'));
+  const add = await ops({ type: 'lead.add', lead: { clientId: c.id, name: 'Walk-in', phone: '0552223333' } });
+  assert.equal(add.data.results[0].ok, true);
+  assert.equal(leads().length, 6001, 'open leads are never pruned, even over the cap');
+  assert.equal((await post(c.intakeToken, { full_name: 'Late lead', phone_number: '0551234000' })).data.error, 'desk_full');
+
+  // Size counts too: the oldest finished leads go first, and a desk of open leads alone refuses intake.
+  const heavy = setup();
+  const hc = await heavy.addClient();
+  const notes = 'x'.repeat(9000);
+  heavy.store.put('leads', {
+    rev: 1,
+    ops: [],
+    leads: [
+      ...Array.from({ length: 300 }, (_, i) => baseLead({ id: `open-${i}`, clientId: hc.id, phone: '', notes, createdAt: T0 - DAY })),
+      ...Array.from({ length: 100 }, (_, i) => baseLead({ id: `done-${i}`, clientId: hc.id, status: 'lost', phone: '', notes, createdAt: T0 - 5 * DAY, updatedAt: T0 - (100 - i) * HOUR })),
+    ],
+  });
+  assert.equal((await heavy.post(hc.intakeToken, { full_name: 'Sara', phone_number: '0507651298' })).status, 200);
+  const kept = heavy.leads();
+  assert.ok(Buffer.byteLength(JSON.stringify(heavy.store.peek('leads'))) <= 3_500_000);
+  assert.equal(kept.filter((l) => l.id.startsWith('open-')).length, 300);
+  assert.ok(!kept.some((l) => l.id === 'done-0') && kept.some((l) => l.id === 'done-99'), 'oldest finished leads dropped first');
+  heavy.store.put('leads', { rev: 5, ops: [], leads: Array.from({ length: 400 }, (_, i) => baseLead({ id: `open-${i}`, clientId: hc.id, phone: '', notes, createdAt: T0 - DAY })) });
+  const tooBig = await heavy.post(hc.intakeToken, { full_name: 'Mona', phone_number: '0501230001' });
+  assert.deepEqual([tooBig.status, tooBig.data.error], [503, 'desk_full']);
+});
+
+test('intake: per-sender rate limit keyed by a hash of the IP, which is all that is stored', async () => {
+  const { post, addClient, leads, clock } = setup();
+  const a = await addClient();
+  const b = await addClient({ name: 'FitLab', niche: 'fitness' });
+  const ip = (addr) => ({ headers: { 'x-nf-client-connection-ip': addr } });
+  const batch = (n, size) => Array.from({ length: size }, (_, i) => ({ full_name: `Lead ${n}-${i}`, phone_number: `05582${String(n * 100 + i).padStart(5, '0')}` }));
+  assert.equal((await post(a.intakeToken, batch(0, 15), ip('203.0.113.7'))).status, 200);
+  // The same sender on another client's link is still the same sender: 15 + 6 > 20.
+  const limited = await post(b.intakeToken, batch(1, 6), ip('203.0.113.7'));
+  assert.deepEqual([limited.status, limited.data.error], [429, 'rate_limited']);
+  assert.equal((await post(b.intakeToken, batch(1, 5), ip('203.0.113.7'))).status, 200);
+  const viaXff = await post(b.intakeToken, batch(2, 1), { headers: { 'x-forwarded-for': '203.0.113.7, 10.0.0.1' } });
+  assert.equal(viaXff.status, 429, 'x-forwarded-for (first IP) is the fallback');
+  assert.equal((await post(b.intakeToken, batch(2, 1), ip('198.51.100.9'))).status, 200, 'another sender');
+  assert.equal((await post(b.intakeToken, batch(3, 1))).status, 200, 'no IP header: only the per-client cap applies');
+
+  const stored = leads();
+  assert.equal(new Set(stored.map((l) => l.ipHash)).size, 3, 'two senders plus one without an IP');
+  for (const l of stored) if (l.ipHash) assert.match(l.ipHash, /^[\w-]{16}$/);
+  assert.equal(stored.find((l) => l.name === 'Lead 3-0').ipHash, undefined);
+  assert.ok(!JSON.stringify(stored).includes('203.0.113.7') && !JSON.stringify(stored).includes('198.51.100.9'), 'the IP itself is never stored');
+  clock.now += 11 * MIN;
+  assert.equal((await post(a.intakeToken, batch(4, 20), ip('203.0.113.7'))).status, 200);
+});
+
+test('alerts put the desk link first and strip links from the lead\'s own words', async () => {
+  const fetch = mockFetch();
+  const { post, addClient, ops, leads } = setup({ fetch });
+  const c = await addClient();
+  await ops({ type: 'settings.save', settings: { ntfyUrl: 'https://ntfy.sh/rr-desk-abc123', telegramToken: '123456:ABCdefGhIJKlmnoPQRstuVWxyz12345', telegramChatId: '42' } });
+  const r = await post(c.intakeToken, { full_name: 'https://evil.example/login Sara', phone_number: '0507651298', which_service: 'PPF www.evil.example' });
+  const id = r.data.ids[0];
+  const link = `Reply within 5 minutes: ${ORIGIN}/desk#lead=${id}`;
+  assert.equal(fetch.calls.find((x) => x.url.startsWith('https://ntfy.sh/')).body, `${link}\nSara · no service given`);
+  assert.equal(JSON.parse(fetch.calls.find((x) => x.url.includes('telegram')).body).text, `New lead · Glossy PPF\n${link}\nSara · no service given`);
+  const lead = leads().find((l) => l.id === id);
+  assert.ok(lead.flags.includes('has-link'));
+  assert.equal(lead.service, '');
+
+  fetch.calls.length = 0;
+  const r2 = await post(c.intakeToken, { full_name: 'www.evil.example', phone_number: '0507651299', _service: 'Tint' });
+  assert.equal(fetch.calls[0].body, `Reply within 5 minutes: ${ORIGIN}/desk#lead=${r2.data.ids[0]}\nNo name given · Tint`);
+  for (const call of fetch.calls) assert.ok(!String(call.body).includes('evil'));
+});
+
+test('intake: _redirect only goes back to the site the form was on; otherwise a built-in thank-you page', async () => {
+  const { post, addClient, leads } = setup();
+  const c = await addClient();
+  const type = 'application/x-www-form-urlencoded';
+  const form = (extra = '') => `full_name=Omar&phone_number=0551234321&_redirect=https%3A%2F%2Fglossy.example%2Fthanks${extra}`;
+
+  const same = await post(c.intakeToken, form(), { type, headers: { origin: 'https://glossy.example' } });
+  assert.equal(same.status, 303);
+  assert.equal(same.headers.get('location'), 'https://glossy.example/thanks');
+  assert.equal((await post(c.intakeToken, form(), { type, headers: { referer: 'https://glossy.example/contact?x=1' } })).status, 303, 'Referer when there is no Origin');
+
+  const others = [{ origin: 'https://evil.example' }, { origin: 'null' }, { referer: 'https://evil.example/' }, {}, { origin: 'https://evil.example', referer: 'https://glossy.example/' }];
+  for (const headers of others) {
+    const r = await post(c.intakeToken, form(), { type, headers });
+    assert.equal(r.status, 200, JSON.stringify(headers));
+    assert.equal(r.headers.get('location'), null);
+    assert.equal(r.headers.get('content-type'), 'text/html; charset=utf-8');
+    assert.match(r.text, /Thanks, we got your details\. We'll be in touch shortly\./);
+  }
+  assert.equal(leads().length, 2 + others.length, 'every one was stored');
+
+  // Honeypot posts get the same answer and store nothing.
+  const bot = await post(c.intakeToken, form('&_gotcha=spam'), { type, headers: { origin: 'https://glossy.example' } });
+  assert.equal(bot.status, 303);
+  const bot2 = await post(c.intakeToken, form('&_gotcha=spam'), { type, headers: { origin: 'https://evil.example' } });
+  assert.equal(bot2.status, 200);
+  assert.match(bot2.text, /Thanks, we got your details/);
+  assert.equal(leads().length, 2 + others.length);
+
+  // JSON posts still get JSON, and errors stay JSON.
+  const json = await post(c.intakeToken, { full_name: 'Mona', phone_number: '0551234322', _redirect: 'https://glossy.example/thanks' }, { headers: { origin: 'https://glossy.example' } });
+  assert.deepEqual([json.status, json.data.ok], [200, true]);
+  const empty = await post(c.intakeToken, 'message=hi', { type, headers: { origin: 'https://glossy.example' } });
+  assert.deepEqual([empty.status, empty.data.error], [400, 'no_contact_details']);
+});
+
+test('admin responses say which env var the key came from', async () => {
+  const { api, post, addClient } = setup();
+  const queue = { secret: KEY, keySource: 'queue' };
+  assert.equal((await api('GET')).data.keySource, 'desk', 'a plain string is LEAD_DESK_KEY');
+  assert.equal((await api('GET', undefined, { secret: { secret: KEY, keySource: 'desk' } })).data.keySource, 'desk');
+  const got = await api('GET', undefined, { secret: queue });
+  assert.equal(got.data.keySource, 'queue');
+  assert.equal((await api('POST', { ops: [] }, { secret: queue })).data.keySource, 'queue');
+  assert.deepEqual((await api('GET', undefined, { secret: queue, query: `?rev=${got.data.rev}` })).data, { unchanged: true, rev: '0.0', keySource: 'queue' });
+  assert.deepEqual(await api('GET', undefined, { secret: { secret: undefined, keySource: 'queue' } }), { status: 503, data: { error: 'not_configured' } });
+  assert.deepEqual(await api('GET', undefined, { secret: queue, key: 'q'.repeat(32) }), { status: 401, data: { error: 'unauthorized' } });
+  const c = await addClient();
+  assert.equal((await post(c.intakeToken, { full_name: 'Sara', phone_number: '0507651298' }, { secret: queue })).status, 200, 'intake works with either key');
+});
+
+test('replayed ops answer dup with the data the page needs', async () => {
+  const { api, leads } = setup();
+  const send = async (op) => (await api('POST', { ops: [op] })).data;
+
+  const create = { opId: 'op-client-1', type: 'client.save', client: { name: 'Glossy PPF', niche: 'car' } };
+  const made = (await send(create)).results[0];
+  const again = await send(create);
+  assert.deepEqual(again.results[0], { opId: 'op-client-1', ok: true, dup: true, data: made.data });
+  assert.equal(again.config.clients.length, 1, 'not created twice');
+  const edit = { opId: 'op-client-2', type: 'client.save', client: { id: made.data.id, location: 'Al Quoz' } };
+  await send(edit);
+  assert.equal((await send(edit)).results[0].data.location, 'Al Quoz');
+  const rotate = { opId: 'op-rotate-1', type: 'client.rotate', id: made.data.id };
+  const token = (await send(rotate)).results[0].data.intakeToken;
+  assert.equal((await send(rotate)).results[0].data.intakeToken, token, 'rotated once');
+  const settings = { opId: 'op-set-1', type: 'settings.save', settings: { myName: 'Samil' } };
+  await send(settings);
+  assert.equal((await send(settings)).results[0].data.myName, 'Samil');
+
+  const add = { opId: 'op-add-1', type: 'lead.add', lead: { clientId: made.data.id, name: 'Walk-in Omar', phone: '055 222 3333' } };
+  const added = (await send(add)).results[0];
+  assert.deepEqual((await send(add)).results[0], { opId: 'op-add-1', ok: true, dup: true, data: added.data });
+  assert.equal(leads().length, 1);
+  const upd = { opId: 'op-upd-1', type: 'lead.update', id: added.data.id, upd: { touch: 'first' } };
+  await send(upd);
+  assert.deepEqual((await send(upd)).results[0], { opId: 'op-upd-1', ok: true, dup: true });
+  await send({ opId: 'op-del-1', type: 'lead.delete', ids: [added.data.id] });
+  assert.deepEqual((await send(add)).results[0], { opId: 'op-add-1', ok: true, dup: true }, 'gone: nothing to report');
 });

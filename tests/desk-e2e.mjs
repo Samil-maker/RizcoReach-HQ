@@ -279,7 +279,7 @@ try {
   assert.equal(meta.status, 200, JSON.stringify(meta));
   assert.equal(meta.body.ids.length, 1);
   // The client's website uses the form code from Setup, with their own thank-you page.
-  siteForm = `<!doctype html><meta charset="utf-8"><title>Glossy PPF</title>${snippet.replace('https://their-site/thank-you', `${SITE}/thank-you`)}`;
+  siteForm = `<!doctype html><meta charset="utf-8"><title>Glossy PPF</title>${snippet.replace('https://same-site-as-this-form/thank-you', `${SITE}/thank-you`)}`;
   const site = await ctx.newPage();
   await site.goto(`${SITE}/`);
   await site.fill('[name="full_name"]', 'John Smith');
@@ -315,15 +315,16 @@ try {
   assert.ok((await cardOf('SARA AHMED').innerText()).includes('Tesla Model 3 <b>2024</b>'));
   assert.equal(await page.locator('[data-main] img, [data-main] b:text("2024")').count(), 0);
   const saraMsg = await sara.locator('[data-f="msg"]').inputValue();
-  assert.match(saraMsg, /^Hi Sara 👋 This is Samil from the Glossy PPF bookings team\. Thanks for your enquiry about Full body PPF!/);
+  assert.match(saraMsg, /^Hi Sara 👋 This is Samil from the Glossy PPF bookings team\. Thanks for your enquiry about full body PPF!/);
   const saraId = leadNamed('SARA AHMED').id;
   const ntfy = alerts.filter((a) => a.url === ntfyUrl);
   assert.equal(ntfy.length, 2, 'one alert per lead');
-  const saraAlert = ntfy.find((a) => a.body.startsWith('Sara ·'));
+  const saraAlert = ntfy.find((a) => a.body.includes('\nSara ·'));
   assert.ok(saraAlert, JSON.stringify(ntfy));
   assert.match(saraAlert.headers.title, /Glossy PPF/);
   assert.equal(saraAlert.headers.click, `${ORIGIN}/desk#lead=${saraId}`);
-  assert.equal(saraAlert.body, `Sara · Full body PPF\nReply within 5 minutes: ${ORIGIN}/desk#lead=${saraId}`);
+  // The fixed desk link comes first; the lead's own words follow (links stripped).
+  assert.equal(saraAlert.body, `Reply within 5 minutes: ${ORIGIN}/desk#lead=${saraId}\nSara · Full body PPF`);
   // The alert's link opens the desk on that lead.
   const fromAlert = await ctx.newPage();
   await fromAlert.goto(saraAlert.headers.click);
@@ -376,7 +377,7 @@ try {
   assert.match(await cardOf('SARA AHMED').locator('a[data-act="send"]').innerText(), /Send to Omar/);
   const wa4 = await openWhatsApp(cardOf('SARA AHMED').locator('a[data-act="send"]'));
   assert.equal(wa4.phone, '971501112222');
-  for (const s of ['SARA AHMED', '+971 55 876 5439', 'Full body PPF', booked, 'https://wa.me/971558765439']) assert.ok(wa4.text.includes(s), `handover has ${s}:\n${wa4.text}`);
+  for (const s of ['SARA AHMED', '+971 55 876 5439', 'full body PPF', booked, 'https://wa.me/971558765439']) assert.ok(wa4.text.includes(s), `handover has ${s}:\n${wa4.text}`);
   await waitFor(() => leadNamed('SARA AHMED').handedAt, 'handover saved');
   await waitFor(async () => (await cardOf('SARA AHMED').count()) === 0, 'card leaves To do after the handover');
   await tab('booked');
