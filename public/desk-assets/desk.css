@@ -156,7 +156,7 @@ input[type='checkbox'], input[type='radio'] { width: 20px; height: 20px; min-hei
 input[type='file'] { padding: 9px 10px; }
 input[type='search']::-webkit-search-cancel-button { filter: invert(0.7); }
 .form { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); }
-.field { display: grid; gap: 6px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.field { display: grid; gap: 6px; align-content: start; min-width: 0; margin: 0; padding: 0; border: 0; }
 .field > span, .field > label, legend { font-size: 13.5px; color: var(--fg-2); font-weight: 600; padding: 0; }
 .field small, .help { color: var(--fg-3); font-size: 13.5px; }
 .help b { color: var(--fg-2); }
