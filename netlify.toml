@@ -94,6 +94,14 @@
     Cache-Control = "no-cache"
     Referrer-Policy = "no-referrer"
 
+# Private Lead Desk page and its assets (/desk, /desk-assets/*).
+[[headers]]
+  for = "/desk*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+    Cache-Control = "no-cache"
+    Referrer-Policy = "no-referrer"
+
 [[headers]]
   for = "/_astro/*"
   [headers.values]
