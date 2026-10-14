@@ -26,6 +26,8 @@ export const PLACES_PAGE_1 = [
 export const PLACES_PAGE_2 = [
   place('ChIJwrap', 'Wrap Kings JLT', { website: 'https://wrapkings.example/', phone: '056 700 0007' }),
   place('ChIJglossy2', 'Glossy PPF Studio - Branch 2', { website: 'https://glossyppf.example/branch', phone: '04 700 0008' }),
+  // Maps lists their Instagram as the "website": saved as their Instagram, not as a website.
+  place('ChIJinsta', 'Insta Tint Bar', { website: 'https://www.instagram.com/instatintbar/', phone: '052 700 0009', reviews: 18, rating: 4.8 }),
   place('ChIJclosed', 'Closed Detailing', { status: 'CLOSED_PERMANENTLY' }),
 ];
 

@@ -2,22 +2,54 @@
 
 Two lead finders in one extension:
 
-- **Website leads** (*New hunt* tab): businesses already running Meta ads
-  whose website is losing them the leads. Described first, below.
-- **Meta ads clients** (*Meta ads* tab): businesses on Google Maps that are
-  **not** running Meta ads, to sell ad management to. See
-  [Meta ads clients](#meta-ads-clients).
+- **Website leads** (*New hunt* tab): businesses already running Meta ads.
+  The ones **without a website** get the Website script. Described first, below.
+- **Meta ads clients** (*Meta ads* tab): businesses on Google Maps, each
+  checked in the Meta Ad Library. The ones with a website and **no** Meta ads
+  get the Ads script. See [Meta ads clients](#meta-ads-clients).
 
-## Website leads
+Lead Hunter never sends a message by itself. Every bubble is typed in for you
+(or copied), and you press Send.
 
-Finds businesses that are **running Meta ads right now**, checks the website
-those ads send people to, finds a phone number, scores how worth contacting
-each one is, and writes a personalised WhatsApp or email pitch.
+## Two scripts, picked for you
 
-The pitch angle: *"You're paying for ads, but the page they land on is losing
-you the leads."* Every lead comes with real evidence for that sentence: no
-HTTPS, not mobile-friendly, slow, no Meta Pixel, no WhatsApp button, a © 2019
-footer, a parked page, or no website at all.
+| The lead | Script | Tag |
+| --- | --- | --- |
+| No website (either tab) | Website script | *No website* |
+| Website down or parked (either tab) | Website script, saying their site wasn't loading | *Site down* |
+| Website, and the Ad Library check found no Meta ads | Ads script | *No Meta ads* |
+| Website, Ad Library check not done yet | Ads script, with a note in the lead panel | *Ad check not done* |
+| Working website and running ads (every website lead with one, or a Meta ads business the check found advertising) | none: skipped | *Running ads* |
+
+Skipped leads are not deleted. They are left out of phone mode and the phone
+queue, and hidden from the list while they are New; tick **Show skipped
+(running ads)** to see them. Leads you are already talking to (contacted,
+replied, meeting booked…) always show. In the lead panel, **Pitch anyway
+(website script)** is the one override; the panel then reminds you to edit
+the line that says they have no website.
+
+`{{business}}` is the name the way you'd type it: *Dr. Smile Dental Clinic -
+Best Dentist in Dubai* becomes *Dr. Smile Dental Clinic*, and *AL NOOR SALON
+L.L.C* becomes *Al Noor Salon*. The saved name is not changed. With no name
+it uses their Instagram handle or domain, else *Hello there* and "your business".
+
+Each script has three parts, sent as three WhatsApp bubbles: greeting
+(*Hello Glossy PPF*), the message, and the closing (*Let me know*). Set
+**Settings → Message bubbles** to 2 to send the greeting and the message
+together. Edit both scripts in **Settings → Scripts**. Variables:
+`{{business}}`, `{{niche}}`, `{{city}}`, `{{found_on}}` (Google Maps,
+Instagram, or Facebook and Instagram), `{{website_line}}` ("couldn't find a
+website for you", or "your website wasn't loading when I checked" when it is
+down), `{{my_name}}`, `{{agency}}`, `{{my_phone}}`.
+
+**Niches** are one list for both tabs (Settings → Niches): a name and its
+search keywords. Write the name the way it reads in a message (*Car detailing
+studios* becomes "We help car detailing studios in Dubai…"). Website leads
+get their niche from the keywords they were found with.
+
+Row tags (*No website*, *Site down*, *Good reviews* for 4.0★ and 25+ Google
+reviews, *Growing* for fewer reviews, *Running ads*) are for sorting and filtering; they never change the
+message.
 
 ## Install (2 minutes)
 
@@ -35,8 +67,8 @@ the Lead Hunter card. Your leads are kept.
 
 ## Your first hunt
 
-1. Dashboard → **New hunt** → click a niche preset (for example *Car detailing*),
-   or type your own keywords, one per line.
+1. Dashboard → **New hunt** → click a niche (for example *Car detailing
+   studios*), or type your own keywords, one per line.
 2. Pick the country and how many **new** leads you want (default 150).
 3. Optional filters:
    - *Ads running at least 30 days*: steady spenders with budget.
@@ -55,40 +87,42 @@ is saved, with no hunt running.
 - **Sort by priority** (default). Priority is 0 to 100: more active ads, ads
   running longer, a worse (or missing) website, a phone number found, and not
   a big brand all push it up. Hot is 70+.
-- Click a row to open the lead. You get the website score and issue list,
-  every phone number with where it came from, their live ads, and the pitch.
-- Pick **WhatsApp**, **Email** or **Instagram DM**. The template is chosen for
-  you (website has issues, no website, website broken, website decent); you
-  can switch it and edit the text before sending.
-- To send from **your phone**, see the next section. **WhatsApp on this
-  computer** opens WhatsApp Web or the WhatsApp desktop app instead. Either
-  way the lead is marked *Contacted* (with an undo).
-- Track the rest with the status column: Follow up, Replied, Meeting booked,
-  Won, Not interested, Skip. Add notes in the lead panel.
-- **Export CSV** gives you everything in the current view for Google Sheets.
-
-Pitches link to your free audit tool
-(`rizcoreach.ae/tools/website-audit?url=their-site`), which runs the audit on
-their site the moment they open it and captures them as a lead through your
-existing email gate. Change the link in Settings.
+- Click a row to open the lead. You get the bubbles, every phone number with
+  where it came from, their Instagram and email, and their live ads.
+- **WhatsApp**: one box per bubble. **Open bubble 1 in WhatsApp** opens
+  WhatsApp (Web or the desktop app) with just that bubble typed in; press
+  Send there, then open bubble 2, then 3. Every bubble of a lead loads in the
+  same WhatsApp tab. After the last one the lead is marked *Contacted* (with
+  an undo). **Mark as sent** does the same by hand.
+- **Instagram**: the same bubbles with Copy buttons, and a link to their
+  profile when Lead Hunter found one. **Email**: one block with a subject.
+- When they answer, press **Replied** on the row (press again to undo). Track
+  the rest with the status column: Follow up, Meeting booked, Won, Not
+  interested, Skip. Add notes in the lead panel.
+- **Results** (top of both tabs) shows sent, replied and reply rate by niche
+  and by script, across every lead.
+- **Export CSV** gives you everything in the current view for Google Sheets,
+  including Instagram and email.
 
 ## Sending from your phone
 
 Three ways, from no setup to most powerful:
 
 1. **Scan a QR code.** Every lead with a number has a QR code under its
-   WhatsApp pitch. Point your phone's camera at it and tap the link:
-   WhatsApp opens **on your phone** with their number and your message
-   already typed. Press send, then press **I sent it** on the computer.
-   Click the code to make it bigger. Editing the message updates the code.
+   bubbles, with 1 / 2 / 3 buttons to pick the bubble. Point your phone's
+   camera at it and tap the link: WhatsApp opens **on your phone** with
+   their number and that bubble typed in. Press send, switch to the next
+   bubble, then press **Mark as sent**. Click the code to make it bigger.
 2. **Phone mode.** Press **Phone mode** above the lead list (or select
-   leads first). It shows one lead at a time with a big QR code: scan, send
-   on your phone, press **Enter** for the next one. 30 leads take a few
-   minutes. Arrow keys skip or go back, Esc closes.
+   leads first). One lead at a time, one big QR code per bubble: scan, send
+   on your phone, press **Enter** for the next bubble. After the last
+   bubble the lead is marked *Contacted* and the next lead comes up.
+   Shift+Enter goes back a bubble, the arrow keys skip leads, Esc closes.
 3. **Phone queue.** Select leads, press **Send to phone queue**, and they
-   appear on a private page on your phone (`rizcoreach.ae/outreach`). Work
-   through them anywhere: one tap opens WhatsApp with the message ready,
-   and "sent" syncs back to the dashboard and marks the lead *Contacted*
+   appear on a private page on your phone (`rizcoreach.ae/outreach`) with
+   one button per bubble. Tap 1, send, come back, tap 2, and so on; each
+   tapped bubble gets a tick. Tapping the last bubble files the lead under
+   *Sent*, which syncs back to the dashboard and marks it *Contacted*
    (within a minute). Marking a lead contacted on the computer ticks it off
    on the phone too.
 
@@ -141,36 +175,31 @@ just say "I already run ads". Instead it works in three steps.
       count; it needs the same website, phone number or (almost) exactly the
       same name.
 
-| Verdict | What it means | The pitch says |
+| Verdict | What it means | Script (with a website) |
 | --- | --- | --- |
-| **Not running ads** | Their Facebook page was found and has 0 live ads. Confirmed. | "I checked Meta's Ad Library and you aren't running any Facebook or Instagram ads right now" |
-| **No ads found** | No Facebook page to check, and nothing matched their website, phone or name. Very likely not advertising, not certain. | "I couldn't find any Facebook or Instagram ads from you in Meta's Ad Library" |
-| **Running ads** | Live ads matched to them. Hidden by default. | The *Already advertising* angle, or skip them |
-| **Couldn't check** | The Ad Library didn't load or asked you to log in. | Press **Check again**, or open the search link and look |
+| **Not running ads** | Their Facebook page was found and has 0 live ads. Confirmed. | Ads script |
+| **No ads found** | No Facebook page to check, and nothing matched their website, phone or name. Very likely not advertising, not certain. | Ads script |
+| **Running ads** | Live ads matched to them. | Skipped (hidden by default) |
+| **Couldn't check** | The Ad Library didn't load or asked you to log in. Press **Check again**, or open the search link and look. | Ads script, marked *Ad check not done* |
 
+Businesses without a working website get the Website script whatever the verdict.
 You can overrule any verdict in the lead panel (**They don't run ads** /
 **They do run ads**).
 
-The list shows *Not running ads* and *No ads found* by default, sorted by
-priority: not advertising, plenty of Google reviews and a good rating (proof
-of demand), a mobile or WhatsApp number, and a website all push it up.
+The list is sorted by priority: not advertising, plenty of Google reviews and
+a good rating (proof of demand), a mobile or WhatsApp number, and a website
+all push it up.
 
-**Niches built in:** Car detailing & PPF (the main one), Aesthetic clinics,
-Boutique fitness (best October to January) and AC servicing (from late
-January). Businesses with long sales cycles or restricted ads (renovation,
-fit-out, real estate, plastic surgery, weight-loss injections, mobile car
-wash and so on) are left out of the list; find them under **Niche → Skipped
-(long sales cycle)**.
+**Niches built in:** Car detailing studios, Aesthetic clinics, Dental clinics
+and Beauty salons. Add or change them in **Settings → Niches**. Businesses
+with long sales cycles or restricted ads (renovation, fit-out, real estate,
+plastic surgery, weight-loss injections, mobile car wash and so on) are left
+out of the list; find them under **Niche → Skipped (long sales cycle)**.
 
-**Pitches.** Three templates: *Not advertising, strong reviews*, *Not
-advertising, growing* and *Already advertising*. They only state things Lead
-Hunter checked: the Google rating, the Ad Library result, and how many
-businesses in the same niche you have seen advertising in your UAE website
-hunts (mentioned only when it is 3 or more). Set your city and your offer in
-**Settings → Meta ads offer**; you can edit the templates there too. They are
-written in the first person and never claim past clients or results. Keep it
-that way until you have real ones: UAE consumer protection law bans
-misleading claims, and an invented result is the fastest way to lose a deal.
+The scripts never claim past clients or results. Keep it that way until you
+have real ones: UAE consumer protection law bans misleading claims, and an
+invented result is the fastest way to lose a deal. If Google Maps lists an
+Instagram profile as their website, it is saved as their Instagram instead.
 
 Phone mode, the phone queue, QR codes, statuses, notes and **Export CSV**
 work the same as for website leads.
@@ -231,9 +260,10 @@ out of backups.
 
 - Send by hand, with a real edit or two per message. WhatsApp restricts
   numbers that send the same text to lots of people who haven't saved them,
-  so keep the daily volume modest and vary the wording.
-- Lead with the one or two issues that cost them money (no HTTPS, not mobile,
-  no WhatsApp button, no Pixel), not the full list.
+  so keep the daily volume modest and vary the wording. This is also why
+  Lead Hunter has no auto-send: you press Send on every bubble.
+- Watch **Results**: if one niche or script gets far fewer replies, change
+  that script and compare.
 - Follow up once after 2 to 3 days, then move on. Set the status to *Follow up*.
 - Leads with **no website** and ads going straight to WhatsApp are often the
   easiest yes: offer a free homepage mockup.
@@ -264,7 +294,7 @@ out of backups.
 | `content/adlib.js` | Collects ads (network data, embedded first page, visible cards as fallback), corner panel, auto-scroll |
 | `lib/extract-ads.js` | Finds ad records in any Ad Library JSON (keys on `ad_archive_id`) |
 | `lib/site-audit.js` | Website audit and contact extraction (same checks as `netlify/functions/audit.mts`, plus ad-specific ones) |
-| `lib/common.js` | Phones, links, priority score, pitch templates, CSV |
+| `lib/common.js` | Phones, links, priority score, niches, scripts and bubbles, tags, results, CSV |
 | `background.js` | Lead storage, hunts, enrichment queue, Google lookups |
 | `finder.js` | Meta ads tab: Google Maps search (Places API or a Maps tab) and the Ad Library check queue |
 | `lib/prospects.js` | Prospect de-duplication keys, Places results, matching ads to a business |
@@ -278,6 +308,6 @@ out of backups.
 Tests:
 
 ```bash
-node --test lead-hunter/test/*.test.mjs   # parsers, audit, scoring, templates, phone queue API, Meta ads prospects
+node --test lead-hunter/test/*.test.mjs   # parsers, audit, scoring, scripts and bubbles, niches, results, phone queue API, Meta ads prospects
 node lead-hunter/test/e2e.mjs   # real Chromium + mock Ad Library, Google Maps, Places API, websites and phone page (needs Playwright + openssl)
 ```

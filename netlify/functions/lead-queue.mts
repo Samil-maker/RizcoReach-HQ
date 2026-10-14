@@ -4,9 +4,10 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 
 /**
  * Phone queue for the Lead Hunter Chrome extension (lead-hunter/).
- * The extension pushes leads with a ready-made WhatsApp message; the phone page
- * (public/outreach.html) lists them and opens WhatsApp with one tap, then reports
- * "sent" back so the extension can mark the lead as contacted.
+ * The extension pushes leads with a ready-made WhatsApp message, split into bubbles (`parts`);
+ * the phone page (public/outreach.html) opens WhatsApp with each bubble typed in, one tap per
+ * bubble (the person presses Send), then reports "sent" back so the extension can mark the
+ * lead as contacted. Nothing here sends a message.
  *
  * Private to the site owner: every request needs `Authorization: Bearer <LEAD_QUEUE_KEY>`.
  * Disabled (503) until LEAD_QUEUE_KEY is set in Netlify's environment variables.
@@ -18,6 +19,8 @@ export interface Item {
   name: string;
   wa: string;
   message: string;
+  /** The message as separate WhatsApp bubbles (up to 4). Empty for single-message and older items. */
+  parts: string[];
   domain: string;
   issue: string;
   heat: string;
@@ -53,21 +56,27 @@ const sameSecret = (a: string, b: string) => timingSafeEqual(digest(a), digest(b
 
 const str = (v: unknown, max: number) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+// Cutting a message can split an emoji; drop the dangling half so links never break.
+const clip = (v: unknown, max: number) => str(v, max).replace(/[\uD800-\uDBFF]$/, '').toWellFormed();
+const MAX_PARTS = 4;
 
 function cleanItem(raw: unknown, now: number): Item | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, unknown>;
   const id = str(r.id, 80);
   const wa = str(r.wa, 20).replace(/\D/g, '');
-  // Cutting at 4000 can split an emoji; drop the dangling half so links never break.
-  const message = str(r.message, 4000).replace(/[\uD800-\uDBFF]$/, '').toWellFormed();
+  const message = clip(r.message, 4000);
   if (!/^[\w:.-]{1,80}$/.test(id) || !/^\d{8,15}$/.test(wa) || !message) return null;
+  // Bubbles: same cleaning as the message, empty ones dropped. More than 4 falls back to the single message.
+  const bubbles = (Array.isArray(r.parts) ? r.parts : []).map((p) => clip(p, 2000)).filter(Boolean);
+  const parts = bubbles.length <= MAX_PARTS ? bubbles : [];
   const pageUrl = str(r.pageUrl, 300);
   return {
     id,
     name: str(r.name, 200) || 'Unknown business',
     wa,
     message,
+    parts,
     domain: str(r.domain, 200),
     issue: str(r.issue, 300),
     heat: ['hot', 'warm', 'cold'].includes(r.heat as string) ? (r.heat as string) : 'cold',

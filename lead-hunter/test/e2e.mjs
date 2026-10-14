@@ -32,6 +32,27 @@ const shotsArg = process.argv.indexOf('--shots');
 const SHOTS = shotsArg > -1 ? process.argv[shotsArg + 1] : null;
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'lh-e2e-'));
 
+/** Rows of a CSV export (quoted fields, commas and new lines inside quotes, leading byte order mark). */
+function parseCsv(text) {
+  const rows = [[]];
+  let field = '';
+  let quoted = false;
+  const s = text.replace(/^\uFEFF/, '');
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (quoted) {
+      if (c === '"' && s[i + 1] === '"') (field += '"'), i++;
+      else if (c === '"') quoted = false;
+      else field += c;
+    } else if (c === '"') quoted = true;
+    else if (c === ',') rows[rows.length - 1].push(field), (field = '');
+    else if (c === '\n') rows[rows.length - 1].push(field.replace(/\r$/, '')), (field = ''), rows.push([]);
+    else field += c;
+  }
+  rows[rows.length - 1].push(field);
+  return rows.filter((r) => r.length > 1 || r[0]);
+}
+
 /* ---------------------------------------------------------------- fixtures */
 const NAMES = ['Shine Auto Spa', 'Desert Detailers', 'Gloss Garage Dubai', 'Parked Polish', 'Broken Buff', 'Fortress Car Care', 'Ceramic Kings', 'Contact Page Coaters', 'React Ride Studio', 'MegaMotors Official', 'Mirror Finish JLT', 'Wash Wizards', 'Tint Masters', 'Auto Aura', 'Prestige Paint Pros', 'Sparkle Squad', 'Velvet Wax Co', 'Nano Shield UAE', 'Pure Gloss', 'Detail District', 'Royal Rinse', 'Shield & Shine', 'Glasscoat Garage', 'Showroom Sheen', 'Luxe Lather'];
 const TYPES = ['good', 'whatsapp', 'bad', 'parked', 'error', 'blocked', 'good', 'contact', 'spa', 'brand'];
@@ -214,6 +235,8 @@ try {
   const extId = new URL(sw.url()).host;
   const dashUrl = `chrome-extension://${extId}/dashboard/dashboard.html`;
   const storage = (key) => sw.evaluate((k) => chrome.storage.local.get(k), key);
+  // The number a lead's WhatsApp bubbles go to (WhatsApp sources first), as digits.
+  const LHwa = (l) => (l.phones.find((p) => /whatsapp/.test(p.source)) || l.phones[0]).number.replace(/\D/g, '');
   const waitFor = async (fn, ms = 90000, label = 'condition') => {
     const t0 = Date.now();
     while (Date.now() - t0 < ms) {
@@ -229,15 +252,44 @@ try {
   await dash.waitForSelector('[data-welcome]:not([hidden])');
   if (SHOTS) await dash.screenshot({ path: `${SHOTS}/1-welcome.png` });
 
-  // Settings: name + faster scrolling for the test.
+  // Settings: name, faster scrolling for the test, and a new niche.
   await dash.click('[data-view="settings"]');
   await dash.fill('[name="myName"]', 'Samil');
   await dash.fill('[name="scrollDelayMs"]', '900');
+  assert.equal(await dash.$$eval('[data-niche-row]', (r) => r.length), 4, 'the 4 default niches');
+  assert.equal(await dash.$$eval('[data-script-card]', (r) => r.length), 2, 'two scripts');
+  assert.equal(await dash.inputValue('[name="bubbles"]'), '3');
+  // "Reset to default" brings back the default website script, with {{website_line}}.
+  const webBody = '[data-script="website.body"]';
+  await dash.fill(webBody, 'Something else');
+  await dash.click('[data-script-card="website"] [data-act="reset-script"]');
+  assert.equal(
+    await dash.inputValue(webBody),
+    "I came across {{business}} on {{found_on}} and {{website_line}}.\n\nWe build simple websites for {{niche}} in {{city}} that turn visitors into WhatsApp inquiries.\n\nIf this sounds interesting I'd be happy to send you a free mockup of how yours could look.",
+  );
+  await dash.click('[data-act="add-niche"]');
+  await dash.fill('[data-niche-row]:last-child [data-niche-name]', 'Pet groomers');
+  await dash.fill('[data-niche-row]:last-child [data-niche-kw]', 'dog grooming, Pet Salon');
   await dash.click('[data-settings-form] button[type="submit"]');
   await waitFor(async () => (await storage('settings')).settings.myName === 'Samil', 5000, 'settings saved');
+  const saved = (await storage('settings')).settings;
+  assert.deepEqual(saved.niches[4], { name: 'Pet groomers', keywords: ['dog grooming', 'pet salon'] });
+  assert.ok(!('adsOffer' in saved) && !('templates' in saved) && !('adTemplates' in saved), 'old settings are gone');
+  if (SHOTS) {
+    await dash.$eval('#outreach', (el) => el.scrollIntoView());
+    await dash.screenshot({ path: `${SHOTS}/12-settings-niches.png` });
+  }
+  // The new niche shows up in both niche pickers, and fills in its keywords.
+  await dash.click('[data-view="ads"]');
+  await dash.click('[data-ad-niche="Pet groomers"]');
+  assert.equal(await dash.inputValue('[data-finder-form] [name="keywords"]'), 'dog grooming\npet salon');
+  assert.deepEqual(await dash.$$eval('[data-ad-niche]', (c) => c.map((x) => x.textContent)), ['Car detailing studios', 'Aesthetic clinics', 'Dental clinics', 'Beauty salons', 'Pet groomers']);
+  await dash.click('[data-view="hunt"]');
+  assert.ok(await dash.$('[data-preset="Pet groomers"]'), 'New hunt chips too');
+  await dash.click('[data-preset="Dental clinics"]');
+  assert.match(await dash.inputValue('[data-hunt-form] [name="keywords"]'), /^cosmetic dentist\nteeth whitening/);
 
   // Start a hunt from the dashboard.
-  await dash.click('[data-view="hunt"]');
   await dash.fill('[data-hunt-form] [name="keywords"]', 'car detailing\nceramic coating');
   await dash.selectOption('[data-hunt-form] [name="country"]', 'AE');
   await dash.fill('[data-hunt-form] [name="target"]', '50');
@@ -256,6 +308,7 @@ try {
   assert.equal(hunt.status, 'done');
   assert.equal(hunt.finishReason, 'keywords');
   assert.equal(hunt.collected, 23, 'every unique advertiser except the two big brands counts towards the target');
+  await dash.bringToFront(); // the hunt tab is in front; background tabs don't run the drawer's slide-in
 
   await waitFor(async () => {
     const s = await storage('enrichQueue');
@@ -265,8 +318,10 @@ try {
   const all = await storage(null);
   const leads = Object.entries(all).filter(([k]) => k.startsWith('lead:')).map(([, v]) => v);
   const by = (name) => leads.find((l) => l.pageName === name);
+  const lead = async (id) => (await storage('lead:' + id))['lead:' + id];
   assert.equal(leads.length, 25, 'one lead per advertiser across overlapping keywords');
   assert.deepEqual(by('Fortress Car Care').keywords.sort(), ['car detailing', 'ceramic coating']);
+  assert.ok(leads.every((l) => l.niche === 'Car detailing studios'), 'website leads get their niche from the hunt keywords');
 
   const good = by('Shine Auto Spa');
   assert.equal(good.website, 'https://shineautospa.example/');
@@ -275,7 +330,7 @@ try {
   assert.ok(good.site.score >= 85, 'good site score ' + good.site.score);
   assert.ok(good.phones.some((p) => p.source === 'whatsapp-site'));
   assert.ok(good.emails.includes('hello@shineautospa.example'));
-  assert.ok(good.socials.instagram);
+  assert.equal(good.socials.instagram, 'https://www.instagram.com/shineautospa/');
 
   const wa = by('Desert Detailers');
   assert.equal(wa.website, null);
@@ -296,78 +351,174 @@ try {
   assert.ok(!by('React Ride Studio').site.issues.some((i) => i.id === 'contactLinks'));
   assert.equal(by('MegaMotors Official').pageLikes, 900000);
 
-  // Dashboard renders the leads, big brand hidden by default.
+  // Website leads: advertisers with a working website are skipped (running ads). The 3 without one show,
+  // and so do the 6 whose website is parked or down: they get the website script, tagged "Site down".
   await dash.click('[data-view="leads"]');
   await dash.click('[data-act="clear-hunt-filter"]').catch(() => {});
-  await dash.waitForFunction(() => document.querySelectorAll('[data-rows] tr').length === 23);
+  await dash.waitForFunction(() => document.querySelectorAll('[data-rows] tr').length === 9);
+  const shown = await dash.$$eval('[data-rows] tr .biz .n', (n) => n.map((x) => x.textContent).sort());
+  assert.deepEqual(shown, ['Auto Aura', 'Broken Buff', 'Desert Detailers', 'Luxe Lather', 'Parked Polish', 'Prestige Paint Pros', 'Shield & Shine', 'Showroom Sheen', 'Wash Wizards']);
+  assert.match(await dash.textContent('[data-count]'), /16 skipped \(running ads with a website\)/);
+  assert.equal(await dash.textContent(`tr[data-id="${by('Parked Polish').id}"] .tags`), 'Site down');
+  assert.equal(await dash.textContent(`tr[data-id="${by('Broken Buff').id}"] .tags`), 'Site down');
+  assert.equal(await dash.textContent(`tr[data-id="${wa.id}"] .tags`), 'No website');
   if (SHOTS) await dash.screenshot({ path: `${SHOTS}/3-leads.png` });
+  // The website filter: no website, or a site that is down. Nothing else (those would only match skipped leads).
+  assert.deepEqual(await dash.$$eval('[data-f="site"] option', (o) => o.map((x) => x.value)), ['', 'none', 'down']);
+  await dash.selectOption('[data-f="site"]', 'none');
+  await dash.waitForFunction(() => document.querySelectorAll('[data-rows] tr').length === 3);
+  await dash.selectOption('[data-f="site"]', 'down');
+  await dash.waitForFunction(() => document.querySelectorAll('[data-rows] tr').length === 6);
+  await dash.selectOption('[data-f="site"]', '');
+  await dash.selectOption('[data-f="tag"]', 'Site down');
+  await dash.waitForFunction(() => document.querySelectorAll('[data-rows] tr').length === 6);
+  await dash.selectOption('[data-f="tag"]', '');
+  await dash.waitForFunction(() => document.querySelectorAll('[data-rows] tr').length === 9);
+  // A site that is down: the website script says it wasn't loading.
+  await dash.click(`tr[data-id="${by('Broken Buff').id}"] [data-open]`);
+  await dash.waitForFunction(() => document.querySelectorAll('.drawer.open [data-bubble]').length === 3);
+  assert.equal(await dash.inputValue('[data-bubble="0"]'), 'Hello Broken Buff');
+  assert.match(await dash.inputValue('[data-bubble="1"]'), /^I came across Broken Buff on Facebook and Instagram and your website wasn't loading when I checked\.\n\nWe build simple websites/);
+  assert.match(await dash.textContent('.drawer .pitch h3'), /Website script\s*Site down/);
+  assert.equal(await dash.$$eval('.drawer .pitch .note', (n) => n.length), 0);
+  if (SHOTS) {
+    await dash.waitForTimeout(500); // let the drawer finish sliding in
+    await dash.screenshot({ path: `${SHOTS}/3c-site-down-drawer.png` });
+  }
+  await dash.click('[data-act="close"]');
+  await dash.check('[data-f="skipped"]');
+  await dash.waitForFunction(() => document.querySelectorAll('[data-rows] tr').length === 23);
+  const lastRow = await dash.$eval('[data-rows] tr:last-child', (tr) => tr.querySelector('.tags').textContent);
+  assert.match(lastRow, /Running ads/, 'skipped leads sink to the bottom');
+  assert.match(await dash.textContent(`tr[data-id="${good.id}"]`), /@shineautospa/);
+  assert.match(await dash.textContent(`tr[data-id="${good.id}"]`), /hello@shineautospa\.example/);
+  if (SHOTS) {
+    await dash.waitForTimeout(400); // let the drawer finish sliding out
+    await dash.screenshot({ path: `${SHOTS}/3b-leads-skipped.png` });
+  }
+  // CSV export of the current view (skipped shown): instagram and email columns.
+  const [dl] = await Promise.all([dash.waitForEvent('download'), dash.click('[data-act="export-csv"]')]);
+  const [csvHead, ...csvRows] = parseCsv(fs.readFileSync(await dl.path(), 'utf8'));
+  assert.deepEqual(csvHead.slice(0, 3), ['priority', 'heat', 'business']);
+  assert.ok(csvHead.includes('instagram') && csvHead.includes('email'));
+  assert.equal(csvRows.length, 23, 'the 23 visible leads');
+  const shineRow = csvRows.find((r) => r[2] === 'Shine Auto Spa');
+  assert.equal(shineRow[csvHead.indexOf('instagram')], 'https://www.instagram.com/shineautospa/');
+  assert.equal(shineRow[csvHead.indexOf('email')], 'hello@shineautospa.example');
 
-  // Open a lead, check the pitch, send on WhatsApp.
+  // A skipped lead: no message, unless you pitch it anyway with the website script.
   await dash.click(`tr[data-id="${bad.id}"] [data-open]`);
-  await dash.waitForSelector('.drawer.open');
-  const pitch = await dash.inputValue('[data-pitch-body]');
-  assert.match(pitch, /^Hi Gloss Garage Dubai team/);
-  assert.match(pitch, /Samil, RizcoReach$/);
-  assert.doesNotMatch(pitch, /\{\{|undefined/);
+  await dash.waitForSelector('.drawer.open .skip-box');
+  assert.match(await dash.textContent('.drawer .skip-box'), /Skipped: running ads/);
+  assert.equal(await dash.$$eval('.drawer [data-bubble]', (b) => b.length), 0);
+  await dash.click('[data-act="pitch-anyway"]');
+  await dash.waitForFunction(() => document.querySelectorAll('.drawer [data-bubble]').length === 3);
+  assert.equal(await dash.inputValue('[data-bubble="0"]'), 'Hello Gloss Garage', 'the city at the end of the page name is left out');
+  assert.match(await dash.inputValue('[data-bubble="1"]'), /^I came across Gloss Garage on Facebook and Instagram/);
+  assert.match(await dash.inputValue('[data-bubble="1"]'), /and couldn't find a website for you\./);
+  assert.equal(await dash.textContent('.drawer .pitch .note'), 'Bubble 2 says they have no website. Edit that line before you send.');
+  if (SHOTS) await dash.screenshot({ path: `${SHOTS}/3d-pitch-anyway.png` });
+  await dash.click('[data-channel="email"]');
+  assert.equal(await dash.inputValue('[data-email-subject]'), 'Gloss Garage + website');
+  assert.match(await dash.inputValue('[data-email-body]'), /^Hello Gloss Garage\n\nI came across/);
+  await dash.click('[data-act="close"]');
+  await dash.uncheck('[data-f="skipped"]');
+  await dash.waitForFunction(() => document.querySelectorAll('[data-rows] tr').length === 9);
+
+  /* ------------------------------------------ the drawer: one WhatsApp bubble at a time */
+  const desert = wa;
+  await dash.click(`tr[data-id="${desert.id}"] [data-open]`);
+  await dash.waitForSelector('.drawer.open [data-bubble]');
+  const bubbles = await dash.$$eval('.drawer [data-bubble]', (b) => b.map((x) => x.value));
+  assert.equal(bubbles.length, 3, 'three bubbles');
+  assert.equal(bubbles[0], 'Hello Desert Detailers');
+  assert.match(bubbles[1], /^I came across Desert Detailers on Facebook and Instagram and couldn't find a website for you\.\n\nWe build simple websites for car detailing studios in Dubai that turn visitors into WhatsApp inquiries\./);
+  assert.equal(bubbles[2], 'Let me know');
+  assert.doesNotMatch(bubbles.join(' '), /\{\{|undefined/);
   if (SHOTS) {
     await dash.waitForTimeout(500); // let the drawer finish sliding in
     await dash.screenshot({ path: `${SHOTS}/4-drawer.png` });
   }
-  const [waTab] = await Promise.all([ctx.waitForEvent('page'), dash.click('[data-act="send-wa"]')]);
-  await waTab.waitForLoadState();
-  assert.match(waTab.url(), /^https:\/\/wa\.me\/971507654321\?text=Hi%20Gloss/);
+  // One WhatsApp tab: bubble 1 opens it and bubble 2 loads in it. Bubble 3 opens a new one because that tab was closed.
+  const typedIn = (u) => {
+    const x = new URL(u);
+    return x.origin + x.pathname === 'https://wa.me/971501000001' ? x.searchParams.get('text') : null;
+  };
+  const [waTab] = await Promise.all([ctx.waitForEvent('page'), dash.click('[data-act="open-bubble"][data-i="0"]')]);
+  await waTab.waitForURL((u) => typedIn(u) === bubbles[0]);
+  const tabsOpen = ctx.pages().length;
+  await dash.bringToFront(); // back to the dashboard for the next bubble
+  await dash.waitForSelector('.bubble:nth-child(1) .tick');
+  assert.equal((await lead(desert.id)).status, 'new', 'not contacted before the last bubble');
+  await dash.click('[data-act="open-bubble"][data-i="1"]');
+  await waTab.waitForURL((u) => typedIn(u) === bubbles[1]);
+  assert.equal(ctx.pages().length, tabsOpen, 'bubble 2 loads in the same WhatsApp tab');
+  await dash.waitForSelector('.bubble:nth-child(2) .tick');
+  assert.equal((await lead(desert.id)).status, 'new', 'not contacted before the last bubble');
   await waTab.close();
-  await waitFor(async () => (await storage('lead:' + bad.id))['lead:' + bad.id].status === 'contacted', 5000, 'status contacted');
-
-  // Email angle for the parked page uses the broken-site template.
+  await dash.bringToFront();
+  const [waTab2] = await Promise.all([ctx.waitForEvent('page'), dash.click('[data-act="open-bubble"][data-i="2"]')]);
+  await waTab2.waitForURL((u) => typedIn(u) === bubbles[2]);
+  await waTab2.close();
+  await dash.bringToFront();
+  await waitFor(async () => (await lead(desert.id)).status === 'contacted', 5000, 'contacted after the last bubble');
+  assert.match(await dash.textContent('[data-toast]'), /Marked “Desert Detailers” as contacted/);
+  const d1 = await lead(desert.id);
+  assert.equal(d1.sentScript, 'website');
+  assert.ok(d1.contactedAt > 0);
   await dash.click('[data-act="close"]');
-  await dash.click(`tr[data-id="${by('Parked Polish').id}"] [data-open]`);
-  await dash.click('[data-channel="email"]');
-  assert.match(await dash.inputValue('[data-pitch-subject]'), /parkedpolish\.example is not loading properly/);
-  await dash.click('[data-act="close"]');
 
-  // Filters + CSV export.
-  await dash.selectOption('[data-f="site"]', 'none');
-  await dash.waitForFunction(() => document.querySelectorAll('[data-rows] tr').length === 3);
-  await dash.selectOption('[data-f="site"]', '');
-  const [dl] = await Promise.all([dash.waitForEvent('download'), dash.click('[data-act="export-csv"]')]);
-  const csv = fs.readFileSync(await dl.path(), 'utf8');
-  assert.match(csv.split('\n')[0], /priority,heat,business/);
-  assert.equal(csv.trim().split('\n').length, 24, 'header + the 23 visible leads');
-  assert.match(csv, /Gloss Garage Dubai/);
-
-  /* ---------------------------------------------------- send from phone */
+  // QR per bubble, edits update the code, and "Mark as sent".
   const qrText = (sel) => dash.$eval(sel, (c) => c.dataset.qrText);
-  const desert = by('Desert Detailers'); // WhatsApp-ad lead, still "new"
-  await dash.click(`tr[data-id="${desert.id}"] [data-open]`);
+  const wash = by('Wash Wizards');
+  const washNum = LHwa(wash);
+  await dash.click(`tr[data-id="${wash.id}"] [data-open]`);
   await dash.waitForSelector('[data-pitch-qr]');
-  const body1 = await dash.inputValue('[data-pitch-body]');
-  assert.equal(await qrText('[data-pitch-qr]'), `https://wa.me/971501000001?text=${encodeURIComponent(body1)}`);
-  await dash.fill('[data-pitch-body]', 'Edited message');
+  const wb = await dash.$$eval('.drawer [data-bubble]', (b) => b.map((x) => x.value));
+  assert.equal(await qrText('[data-pitch-qr]'), `https://wa.me/${washNum}?text=${encodeURIComponent(wb[0])}`, 'the QR shows bubble 1');
+  await dash.click('[data-qr-i="1"]');
+  assert.equal(await qrText('[data-pitch-qr]'), `https://wa.me/${washNum}?text=${encodeURIComponent(wb[1])}`, 'toggle 2 shows bubble 2');
+  await dash.fill('[data-bubble="1"]', 'Edited message');
   await dash.waitForFunction(() => document.querySelector('[data-pitch-qr]').dataset.qrText.endsWith('?text=Edited%20message'));
   if (SHOTS) {
+    await dash.$eval('.qr-wrap', (el) => el.scrollIntoView({ block: 'end' }));
     await dash.waitForTimeout(400);
     await dash.screenshot({ path: `${SHOTS}/6-drawer-qr.png` });
   }
-  await dash.click('[data-act="mark-contacted"]');
-  await waitFor(async () => (await storage('lead:' + desert.id))['lead:' + desert.id].status === 'contacted', 5000, 'marked contacted from QR panel');
+  await dash.click('[data-act="mark-sent"]');
+  await waitFor(async () => (await lead(wash.id)).status === 'contacted', 5000, 'marked as sent from the drawer');
+  assert.equal((await lead(wash.id)).sentScript, 'website');
   await dash.click('[data-act="close"]');
 
-  // Phone mode: one QR per lead, Enter = sent & next.
+  // Phone mode: one QR per bubble. Enter = next bubble, after the last one the lead is contacted.
   await dash.click('[data-act="phone-mode"]');
   await dash.waitForSelector('[data-pm-qr]');
-  const pmFirst = await dash.$eval('.pm-info h2', (h) => h.firstChild.textContent.trim());
-  assert.match(await qrText('[data-pm-qr]'), /^https:\/\/wa\.me\/\d+\?text=Hi%20/);
+  const pmName = () => dash.$eval('.pm-info h2', (h) => h.firstChild.textContent.trim());
+  const pmFirst = await pmName();
+  assert.equal(pmFirst, 'Shield & Shine', 'leads not contacted yet come first');
+  const shield = by(pmFirst);
+  const shieldNum = LHwa(shield);
+  assert.equal(await dash.textContent('[data-pm-step]'), 'Bubble 1 of 3');
+  assert.equal(await qrText('[data-pm-qr]'), `https://wa.me/${shieldNum}?text=${encodeURIComponent('Hello Shield & Shine')}`);
   if (SHOTS) await dash.screenshot({ path: `${SHOTS}/7-phone-mode.png` });
   await dash.keyboard.press('Enter');
+  await dash.waitForFunction(() => document.querySelector('[data-pm-step]').textContent === 'Bubble 2 of 3');
+  assert.match(await qrText('[data-pm-qr]'), /\?text=I%20came%20across%20Shield/);
+  await dash.keyboard.press('Shift+Enter');
+  await dash.waitForFunction(() => document.querySelector('[data-pm-step]').textContent === 'Bubble 1 of 3');
+  await dash.keyboard.press('Enter');
+  await dash.keyboard.press('Enter');
+  await dash.waitForFunction(() => document.querySelector('[data-pm-step]').textContent === 'Bubble 3 of 3');
+  assert.equal((await lead(shield.id)).status, 'new');
+  await dash.keyboard.press('Enter');
   await dash.waitForFunction((n) => document.querySelector('.pm-info h2').firstChild.textContent.trim() !== n, pmFirst);
-  const firstLead = leads.find((l) => l.pageName === pmFirst);
-  await waitFor(async () => (await storage('lead:' + firstLead.id))['lead:' + firstLead.id].status === 'contacted', 5000, 'phone mode marks contacted');
-  await dash.keyboard.press('ArrowRight'); // skip
+  await waitFor(async () => (await lead(shield.id)).status === 'contacted', 5000, 'phone mode marks contacted after the last bubble');
+  assert.equal((await lead(shield.id)).sentScript, 'website');
+  await dash.keyboard.press('ArrowRight'); // skip a lead
   await dash.keyboard.press('Escape');
   assert.ok(await dash.$eval('[data-pm]', (el) => el.hidden));
 
-  // Phone queue: pair, push three leads, tap one on the phone, sync back.
+  // Phone queue: pair.
   await dash.click('[data-view="settings"]');
   await dash.click('[data-act="gen-key"]');
   await dash.fill('[name="queueKey"]', QUEUE_KEY);
@@ -379,49 +530,6 @@ try {
     await dash.$eval('#phone', (el) => el.scrollIntoView());
     await dash.screenshot({ path: `${SHOTS}/8-settings-phone.png` });
   }
-
-  await dash.click('[data-view="leads"]');
-  await dash.selectOption('[data-f="status"]', 'new');
-  await dash.selectOption('[data-f="contact"]', 'phone');
-  const ids = await dash.$$eval('[data-rows] tr', (trs) => trs.slice(0, 3).map((t) => t.dataset.id));
-  assert.equal(ids.length, 3);
-  for (const id of ids) await dash.click(`tr[data-id="${id}"] [data-sel]`);
-  await dash.click('[data-act="bulk-queue"]');
-  await waitFor(async () => (queueStore.peek() || { items: [] }).items.length === 3, 10000, 'queue to receive 3 leads');
-  await dash.waitForFunction(() => document.querySelectorAll('.tag.phone').length === 3);
-
-  const phone = await ctx.newPage();
-  await phone.setViewportSize({ width: 390, height: 844 });
-  await phone.goto(pairUrl);
-  await phone.waitForFunction(() => document.querySelectorAll('[data-list] .card').length === 3);
-  if (SHOTS) await phone.screenshot({ path: `${SHOTS}/9-phone-queue.png` });
-  const firstCard = await phone.$eval('[data-list] .card', (c) => c.dataset.id);
-  const href = await phone.$eval('[data-list] .card [data-act="wa"]', (a) => a.href);
-  assert.match(href, /^https:\/\/wa\.me\/\d+\?text=Hi%20/);
-  const [waTab2] = await Promise.all([ctx.waitForEvent('page'), phone.click('[data-list] .card [data-act="wa"]')]);
-  await waTab2.close();
-  await waitFor(async () => queueStore.peek().items.find((i) => i.id === firstCard).status === 'sent', 10000, 'phone tap to reach the server');
-  await phone.waitForFunction(() => /2 to send · 1 sent/.test(document.querySelector('[data-sub]').textContent));
-
-  // The extension picks up "sent" and marks the lead as contacted.
-  await sw.evaluate(() => syncQueue());
-  const synced = (await storage('lead:' + firstCard))['lead:' + firstCard];
-  assert.equal(synced.status, 'contacted');
-  assert.equal(synced.phoneQueue.state, 'sent');
-  // A status set by hand afterwards survives later syncs.
-  await dash.selectOption('[data-f="status"]', 'all');
-  await dash.waitForSelector(`tr[data-id="${firstCard}"]`);
-  await dash.selectOption(`tr[data-id="${firstCard}"] [data-status]`, 'followup');
-  await waitFor(async () => (await storage('lead:' + firstCard))['lead:' + firstCard].status === 'followup', 5000, 'manual follow-up');
-  await sw.evaluate(() => syncQueue());
-  assert.equal((await storage('lead:' + firstCard))['lead:' + firstCard].status, 'followup', 'sync must not override a manual status');
-
-  // Marking a queued lead as contacted on the computer ticks it off on the phone too.
-  const second = ids.find((id) => id !== firstCard);
-  await dash.selectOption(`tr[data-id="${second}"] [data-status]`, 'contacted');
-  await waitFor(async () => queueStore.peek().items.find((i) => i.id === second).status === 'sent', 10000, 'computer status to reach the phone queue');
-  await phone.click('[data-refresh]');
-  await phone.waitForFunction(() => /1 to send · 2 sent/.test(document.querySelector('[data-sub]').textContent));
 
   /* ------------------------------------------- Meta ads: Google Places mode */
   const setKey = (k) =>
@@ -438,9 +546,9 @@ try {
   const prospectsNow = async () => Object.entries(await storage(null)).filter(([k, v]) => k.startsWith('lead:') && v.kind === 'prospect').map(([, v]) => v);
 
   await setKey('test-places-key');
-  await sw.evaluate(() => startFinder({ niche: 'Car detailing & PPF', keywords: ['ppf'], areas: ['Al Quoz'], city: 'Dubai', target: 6 }));
+  await sw.evaluate(() => startFinder({ niche: 'Car detailing studios', keywords: ['ppf'], areas: ['Al Quoz'], city: 'Dubai', target: 6 }));
   const f1 = await finderDone('Places search');
-  assert.equal(f1.added, 6, 'six new businesses (avoid-list and closed ones not counted)');
+  assert.equal(f1.added, 7, 'seven new businesses (avoid-list and closed ones not counted)');
   assert.equal((await storage('placesUsage')).placesUsage.count, 2, 'two Places requests counted this month');
   await checksDone('ad checks (Places run)');
   let ps = await prospectsNow();
@@ -462,6 +570,10 @@ try {
   const glossyPhones = pn('Glossy PPF Studio').phones.map((p) => p.number);
   assert.equal(glossyPhones[0], '+971507000001', 'the main listing phone comes first');
   assert.ok(glossyPhones.includes('+97147000008'), 'the second branch phone is kept on the same record');
+  const insta = pn('Insta Tint Bar');
+  assert.equal(insta.website, null, 'an Instagram link from Maps is not a website');
+  assert.equal(insta.socials.instagram, 'https://www.instagram.com/instatintbar/');
+  assert.equal(pn('Glossy PPF Studio').niche, 'Car detailing studios');
 
   /* ------------------------------------- Meta ads: Google Maps tab (no key) */
   await setKey('');
@@ -470,6 +582,7 @@ try {
   assert.equal(f2.mapsMode, 'browser');
   assert.equal(f2.added, 4, 'two cards from the page + two from the network data');
   await checksDone('ad checks (Maps run)');
+  await dash.bringToFront(); // the Maps and Ad Library tabs were in front; background tabs don't run the drawer's slide-in
   ps = await prospectsNow();
   const pure = pn('Pure Derma Studio');
   assert.equal(pure.website, 'https://purederma.example/', 'website read from Maps network data');
@@ -478,34 +591,217 @@ try {
   assert.equal(pn('Velvet Laser Lounge').phones[0].number, '+971503334442');
   assert.match(pn('Glow Skin Clinic JLT').sources.maps.mapsUrl, /^https:\/\/www\.google\.com\/maps\?cid=\d+$/);
 
-  // Dashboard: Meta ads tab shows businesses NOT running ads by default.
+  // Meta ads tab: businesses running ads (with a website) are hidden by default and show with the filter.
   await dash.click('[data-view="ads"]');
-  await dash.waitForFunction(() => document.querySelectorAll('[data-ads-rows] tr').length === 8);
+  await dash.waitForFunction(() => document.querySelectorAll('[data-ads-rows] tr').length === 9);
+  assert.ok(!(await dash.$(`tr[data-id="${pn('Armor Shield Detailing').id}"]`)), 'running ads: hidden');
+  assert.match(await dash.textContent(`tr[data-id="${insta.id}"]`), /@instatintbar/);
   if (SHOTS) await dash.screenshot({ path: `${SHOTS}/10-meta-ads.png` });
+  await dash.check('[data-af="skipped"]');
+  await dash.waitForFunction(() => document.querySelectorAll('[data-ads-rows] tr').length === 11);
+  assert.match(await dash.textContent(`tr[data-id="${pn('Armor Shield Detailing').id}"] .tags`), /Running ads/);
+  await dash.uncheck('[data-af="skipped"]');
   await dash.selectOption('[data-af="ads"]', 'running');
   await dash.waitForFunction(() => document.querySelectorAll('[data-ads-rows] tr').length === 2);
-  await dash.selectOption('[data-af="ads"]', 'none');
+  await dash.selectOption('[data-af="ads"]', '');
+  await dash.selectOption('[data-af="tag"]', 'No website');
+  await dash.waitForFunction(() => document.querySelectorAll('[data-ads-rows] tr').length === 5);
+  await dash.selectOption('[data-af="tag"]', '');
+  await dash.waitForFunction(() => document.querySelectorAll('[data-ads-rows] tr').length === 9);
+
+  // Ads script for a business with a website and no Meta ads.
   await dash.click(`tr[data-id="${pn('Glossy PPF Studio').id}"] [data-open]`);
-  await dash.waitForSelector('.drawer.open [data-pitch-body]');
-  const adsPitch = await dash.inputValue('[data-pitch-body]');
-  assert.match(adsPitch, /you aren't running any Facebook or Instagram ads right now/);
-  assert.match(adsPitch, /4\.9★ from 312 Google reviews/);
-  assert.match(adsPitch, /car detailing and PPF studios in Dubai/);
-  assert.match(adsPitch, /while \d+ other car detailing and PPF studios in the UAE are\./, 'competitors counted from UAE Ad Library hunts');
-  assert.doesNotMatch(adsPitch, /\{\{|undefined|our team/);
+  await dash.waitForSelector('.drawer.open [data-bubble]');
+  const gb = await dash.$$eval('.drawer [data-bubble]', (b) => b.map((x) => x.value));
+  assert.equal(gb[0], 'Hello Glossy PPF Studio');
+  assert.ok(gb[1].includes('We help car detailing studios in Dubai get consistent inquiries through Facebook and Instagram ads.'));
+  assert.equal(gb[2], 'Let me know');
+  assert.match(await dash.textContent('.drawer .pitch h3'), /Ads script/);
   if (SHOTS) {
     await dash.waitForTimeout(500);
     await dash.screenshot({ path: `${SHOTS}/11-meta-ads-drawer.png` });
   }
+  await dash.click('[data-channel="instagram"]');
+  assert.equal(await dash.$$eval('.drawer [data-act="open-bubble"]', (b) => b.length), 0, 'Instagram: copy only');
+  assert.equal(await dash.$$eval('.drawer [data-act="copy-bubble"]', (b) => b.length), 3);
   await dash.click('[data-act="close"]');
+  // Website script for one without a website, with a link to their Instagram.
+  await dash.click(`tr[data-id="${insta.id}"] [data-open]`);
+  await dash.waitForSelector('.drawer.open [data-bubble]');
+  assert.match(await dash.inputValue('[data-bubble="1"]'), /^I came across Insta Tint Bar on Google Maps and couldn't find a website for you\./);
+  await dash.click('[data-channel="instagram"]');
+  assert.equal(await dash.getAttribute('.drawer .send-to a', 'href'), 'https://www.instagram.com/instatintbar/');
+  await dash.click('[data-act="close"]');
+  // 2 bubbles: greeting and body together.
+  await sw.evaluate(async () => {
+    const { settings } = await chrome.storage.local.get('settings');
+    await chrome.storage.local.set({ settings: { ...settings, bubbles: 2 } });
+  });
   await dash.click(`tr[data-id="${pn('Nano Pro Tint').id}"] [data-open]`);
-  await dash.waitForSelector('.drawer.open [data-pitch-body]');
-  assert.match(await dash.inputValue('[data-pitch-body]'), /I couldn't find any Facebook or Instagram ads/);
+  await dash.waitForFunction(() => document.querySelectorAll('.drawer.open [data-bubble]').length === 2);
+  assert.match(await dash.inputValue('[data-bubble="0"]'), /^Hello Nano Pro Tint\n\nI came across Nano Pro Tint/);
   await dash.click('[data-act="close"]');
+  await sw.evaluate(async () => {
+    const { settings } = await chrome.storage.local.get('settings');
+    await chrome.storage.local.set({ settings: { ...settings, bubbles: 3 } });
+  });
   const [dl2] = await Promise.all([dash.waitForEvent('download'), dash.click('[data-act="ads-export"]')]);
-  const csv2 = fs.readFileSync(await dl2.path(), 'utf8');
-  assert.match(csv2.split('\n')[0], /priority,business,niche,area,meta_ads/);
-  assert.equal(csv2.trim().split('\n').length, 9, 'header + 8 prospects');
+  const [head2, ...rows2] = parseCsv(fs.readFileSync(await dl2.path(), 'utf8'));
+  assert.deepEqual(head2.slice(0, 5), ['priority', 'business', 'niche', 'area', 'meta_ads']);
+  assert.ok(head2.includes('instagram') && head2.includes('email'));
+  assert.equal(rows2.length, 9, '9 prospects');
+  assert.equal(rows2.find((r) => r[1] === 'Insta Tint Bar')[head2.indexOf('instagram')], 'https://www.instagram.com/instatintbar/');
+  assert.equal(rows2.find((r) => r[1] === 'Glossy PPF Studio')[head2.indexOf('niche')], 'Car detailing studios');
+
+  /* ------------------------------- phone queue: one button per bubble, synced back */
+  await dash.selectOption('[data-af="status"]', 'new');
+  await dash.selectOption('[data-af="contact"]', 'phone');
+  const ids = await dash.$$eval('[data-ads-rows] tr', (trs) => trs.slice(0, 3).map((t) => t.dataset.id));
+  assert.equal(ids.length, 3);
+  for (const id of ids) await dash.click(`tr[data-id="${id}"] [data-sel]`);
+  await dash.click('[data-act="ads-bulk-queue"]');
+  await waitFor(async () => (queueStore.peek() || { items: [] }).items.length === 3, 10000, 'queue to receive 3 leads');
+  await dash.waitForFunction(() => document.querySelectorAll('.tag.phone').length === 3);
+  const queued = queueStore.peek().items;
+  assert.ok(queued.every((i) => i.parts.length === 3 && i.message === i.parts.join('\n\n')), 'each lead goes to the phone as 3 bubbles');
+  assert.ok(queued.every((i) => /^(No website|No Meta ads)/.test(i.issue)), 'the tag line: ' + queued.map((i) => i.issue).join(' | '));
+  await dash.click('[data-ads-bulk] [data-act="bulk-clear"]');
+
+  const phone = await ctx.newPage();
+  await phone.setViewportSize({ width: 390, height: 844 });
+  await phone.goto(pairUrl);
+  await phone.waitForFunction(() => document.querySelectorAll('[data-list] .card').length === 3);
+  const firstCard = await phone.$eval('[data-list] .card', (c) => c.dataset.id);
+  const fc = queued.find((i) => i.id === firstCard);
+  const card = `[data-list] .card[data-id="${firstCard}"]`;
+  const labels = await phone.$$eval(`${card} [data-act="part"]`, (a) => a.map((x) => x.textContent.trim()));
+  assert.deepEqual(labels, [`1 · ${fc.parts[0]}`, '2 · Message', '3 · Let me know'], 'one button per bubble');
+  assert.equal(await phone.$eval(`${card} [data-act="part"]`, (a) => a.href), `https://wa.me/${fc.wa}?text=${encodeURIComponent(fc.parts[0])}`);
+  if (SHOTS) await phone.screenshot({ path: `${SHOTS}/9-phone-queue.png` });
+  for (let k = 0; k < 3; k++) {
+    const [tab] = await Promise.all([ctx.waitForEvent('page'), phone.click(`${card} [data-act="part"][data-k="${k}"]`)]);
+    await tab.close();
+    if (k < 2) {
+      await phone.waitForFunction((sel) => document.querySelector(sel) && document.querySelector(sel).classList.contains('ticked'), `${card} [data-act="part"][data-k="${k}"]`);
+      assert.equal(queueStore.peek().items.find((i) => i.id === firstCard).status, 'queued', 'still to send until the last bubble');
+    }
+  }
+  await waitFor(async () => queueStore.peek().items.find((i) => i.id === firstCard).status === 'sent', 10000, 'last bubble files the lead under Sent');
+  await phone.waitForFunction(() => /2 to send · 1 sent/.test(document.querySelector('[data-sub]').textContent));
+  if (SHOTS) {
+    await phone.click('[data-tab="sent"]');
+    await phone.screenshot({ path: `${SHOTS}/9b-phone-queue-sent.png` });
+    await phone.click('[data-tab="queued"]');
+  }
+
+  // The extension picks up "sent" and marks the lead as contacted, with the script it got.
+  await sw.evaluate(() => syncQueue());
+  const synced = await lead(firstCard);
+  assert.equal(synced.status, 'contacted');
+  assert.equal(synced.phoneQueue.state, 'sent');
+  assert.equal(synced.queuedScript, synced.website ? 'ads' : 'website', 'the script its bubbles came from');
+  assert.equal(synced.sentScript, synced.queuedScript);
+  assert.ok(synced.contactedAt > 0 && synced.niche);
+  // A status set by hand afterwards survives later syncs.
+  await dash.selectOption('[data-af="status"]', 'all');
+  await dash.waitForSelector(`tr[data-id="${firstCard}"]`);
+  await dash.selectOption(`tr[data-id="${firstCard}"] [data-status]`, 'followup');
+  await waitFor(async () => (await lead(firstCard)).status === 'followup', 5000, 'manual follow-up');
+  await sw.evaluate(() => syncQueue());
+  assert.equal((await lead(firstCard)).status, 'followup', 'sync must not override a manual status');
+
+  // Marking a queued lead as contacted on the computer ticks it off on the phone too.
+  const second = ids.find((id) => id !== firstCard);
+  await dash.selectOption(`tr[data-id="${second}"] [data-status]`, 'contacted');
+  await waitFor(async () => queueStore.peek().items.find((i) => i.id === second).status === 'sent', 10000, 'computer status to reach the phone queue');
+  assert.ok((await lead(second)).contactedAt > 0 && (await lead(second)).sentScript, 'a status change records the contact too');
+  await phone.click('[data-refresh]');
+  await phone.waitForFunction(() => /1 to send · 2 sent/.test(document.querySelector('[data-sub]').textContent));
+
+  // A long name ends in … on a 390px phone instead of pushing the page sideways, and bubble 1 still reads "Hello …".
+  const queueCall = (method, body) =>
+    queueHandle(new Request('https://www.rizcoreach.ae/api/lead-queue', { method, headers: { authorization: `Bearer ${QUEUE_KEY}`, 'content-type': 'application/json' }, body: JSON.stringify(body) }), queueStore, QUEUE_KEY);
+  const longName = 'Dr. Smile Dental Clinic - Best Dentist in Dubai Marina';
+  const longParts = [`Hello ${longName}`, 'Line one\n\nLine two', 'Let me know'];
+  await queueCall('PUT', { items: [{ id: 'long-name', name: longName, wa: '971500000099', message: longParts.join('\n\n'), parts: longParts }] });
+  await phone.click('[data-refresh]');
+  await phone.waitForSelector('[data-id="long-name"]');
+  assert.equal(await phone.evaluate(() => document.documentElement.scrollWidth), 390, 'no sideways scrolling at 390px');
+  assert.deepEqual(await phone.$$eval('[data-id="long-name"] [data-act="part"]', (a) => a.map((x) => x.textContent.trim())), [`1 · Hello ${longName}`, '2 · Message', '3 · Let me know']);
+  if (SHOTS) await phone.screenshot({ path: `${SHOTS}/9c-phone-queue-long-name.png`, fullPage: true });
+  await queueCall('DELETE', { ids: ['long-name'] });
+
+  /* ------------------------------------------------------ Replied + Results */
+  const replied = `tr[data-id="${firstCard}"] [data-replied]`;
+  await dash.click(replied);
+  await waitFor(async () => (await lead(firstCard)).status === 'replied', 5000, 'Replied button');
+  assert.ok((await lead(firstCard)).repliedAt > 0);
+  await dash.waitForFunction((sel) => document.querySelector(sel).getAttribute('aria-pressed') === 'true', replied);
+  await dash.click(replied);
+  await waitFor(async () => (await lead(firstCard)).status === 'contacted', 5000, 'Replied tapped again undoes it');
+  assert.equal((await lead(firstCard)).repliedAt, null);
+  await dash.waitForFunction((sel) => document.querySelector(sel).getAttribute('aria-pressed') === 'false', replied);
+  await dash.click(replied);
+  await waitFor(async () => (await lead(firstCard)).status === 'replied', 5000, 'Replied again');
+
+  // Results count every lead in both tabs: 3 website leads + 2 prospects sent, 1 replied.
+  const everyLead = Object.entries(await storage(null)).filter(([k]) => k.startsWith('lead:')).map(([, v]) => v);
+  const sentLeads = everyLead.filter((l) => l.contactedAt);
+  const repliedLeads = everyLead.filter((l) => ['replied', 'meeting', 'won'].includes(l.status) || l.repliedAt);
+  assert.equal(sentLeads.length, 5);
+  assert.equal(repliedLeads.length, 1);
+  await dash.click('[data-view-panel="ads"] [data-results] summary');
+  await dash.waitForFunction(() => /^5 sent · 1 replied · 20% reply rate$/.test(document.querySelector('[data-view-panel="ads"] [data-results-sum]').textContent));
+  const rows = await dash.$$eval('[data-view-panel="ads"] [data-results-body] table', (ts) =>
+    ts.map((t) => [...t.querySelectorAll('tbody tr')].map((tr) => [...tr.children].map((td) => td.textContent).join('|'))),
+  );
+  const webSent = sentLeads.filter((l) => l.sentScript === 'website').length;
+  const webReplied = repliedLeads.filter((l) => l.sentScript === 'website').length;
+  assert.ok(rows[1].includes(`Website script|${webSent}|${webReplied}|${Math.round((100 * webReplied) / webSent)}%`), JSON.stringify(rows));
+  assert.ok(rows[0].some((r) => r.startsWith('Car detailing studios|')), JSON.stringify(rows));
+  assert.equal(sentLeads.filter((l) => l.niche === 'Car detailing studios').length + sentLeads.filter((l) => l.niche === 'Aesthetic clinics').length, 5);
+  if (SHOTS) {
+    await dash.evaluate(() => scrollTo(0, 0));
+    await dash.screenshot({ path: `${SHOTS}/13-results.png` });
+  }
+  // The same panel on the Website leads tab, open too.
+  await dash.click('[data-view="leads"]');
+  assert.equal(await dash.textContent('[data-view-panel="leads"] [data-results-sum]'), '5 sent · 1 replied · 20% reply rate');
+  assert.ok(await dash.$eval('[data-view-panel="leads"] [data-results]', (d) => d.open));
+
+  /* --------------------------------- leads you are talking to stay in view */
+  // A skipped lead (website and running ads) that is in your pipeline shows with the default filters, and by its status.
+  const rowShown = (id) => dash.$(`[data-rows] tr[data-id="${id}"]`).then(Boolean);
+  assert.ok(!(await rowShown(bad.id)), 'skipped and new: hidden');
+  await dash.evaluate((id) => update(id, { status: 'meeting' }), bad.id);
+  await waitFor(async () => (await lead(bad.id)).status === 'meeting', 5000, 'meeting booked');
+  await dash.waitForSelector(`[data-rows] tr[data-id="${bad.id}"]`);
+  await dash.selectOption('[data-f="status"]', 'meeting');
+  await dash.waitForFunction((id) => [...document.querySelectorAll('[data-rows] tr')].map((t) => t.dataset.id).join() === id, bad.id);
+  await dash.selectOption('[data-f="status"]', '');
+
+  // A "sent" from the phone records the script that was queued, even if an ad check changes the lead in between.
+  const adsId = await sw.evaluate(async () =>
+    (Object.values(await chrome.storage.local.get(null)).find((x) => x && x.kind === 'prospect' && x.status === 'new' && x.phones.length && LH.scriptFor(x).script === 'ads') || {}).id,
+  );
+  assert.ok(adsId, 'a new prospect that gets the ads script');
+  await sw.evaluate((id) => pushToQueue([id]), adsId);
+  assert.equal((await lead(adsId)).queuedScript, 'ads');
+  await sw.evaluate(async (id) => {
+    const k = `lead:${id}`;
+    const { [k]: l } = await chrome.storage.local.get(k);
+    await chrome.storage.local.set({ [k]: { ...l, adCheck: { ...l.adCheck, state: 'running' } } }); // now skipped: no script
+  }, adsId);
+  await queueCall('POST', { updates: [{ id: adsId, status: 'sent', rev: queueStore.peek().items.find((i) => i.id === adsId).addedAt }] });
+  await sw.evaluate(() => syncQueue());
+  const late = await lead(adsId);
+  assert.equal(late.status, 'contacted');
+  assert.equal(late.sentScript, 'ads', 'the script that was sent, not the one the lead would get now');
+  // It runs ads now, but you messaged it: it stays in the Meta ads list.
+  await dash.click('[data-view="ads"]');
+  await dash.selectOption('[data-af="status"]', '');
+  await dash.waitForSelector(`[data-ads-rows] tr[data-id="${adsId}"]`);
+  assert.match(await dash.textContent(`[data-ads-rows] tr[data-id="${adsId}"] .tags`), /Running ads/);
 
   // Popup renders stats.
   const popup = await ctx.newPage();

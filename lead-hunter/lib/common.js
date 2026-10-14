@@ -23,31 +23,61 @@
   ];
   LH.country = (code) => LH.COUNTRIES.find((c) => c.code === code) || LH.COUNTRIES[0];
 
-  LH.NICHES = {
-    'Car detailing': ['car detailing', 'ceramic coating', 'paint protection film', 'car polishing', 'window tinting', 'car wash'],
-    'Auto repair & garages': ['car service', 'car repair', 'auto garage', 'car maintenance'],
-    'Aesthetic clinics': ['aesthetic clinic', 'botox', 'laser hair removal', 'skin clinic', 'fillers'],
-    'Dental clinics': ['dental clinic', 'teeth whitening', 'dental implants', 'braces'],
-    'Salons & spas': ['hair salon', 'beauty salon', 'nail salon', 'spa', 'massage'],
-    'Fitness': ['gym', 'personal trainer', 'pilates', 'yoga studio', 'fitness'],
-    'Home services': ['cleaning services', 'deep cleaning', 'pest control', 'ac repair', 'ac maintenance', 'handyman'],
-    'Movers & storage': ['movers', 'moving company', 'storage units'],
-    'Interiors & fit-out': ['interior design', 'fit out', 'home renovation', 'kitchen cabinets'],
-    'Restaurants & cafes': ['restaurant', 'cafe', 'catering', 'food delivery'],
-    'Business setup': ['business setup', 'company formation', 'golden visa', 'pro services'],
-    'Events & photography': ['event management', 'wedding planner', 'photographer', 'videographer'],
-    'Education & training': ['training center', 'courses', 'tutoring', 'language school'],
+  /* ------------------------------------------------------------------ Niches */
+  // One list for both tabs: Ad Library hunts (New hunt) and Google Maps searches (Meta ads).
+  // The name is written the way it reads in a message: it becomes {{niche}} in the scripts.
+  LH.DEFAULT_NICHES = [
+    { name: 'Car detailing studios', keywords: ['ceramic coating', 'paint protection film', 'car detailing', 'window tinting', 'car polishing'] },
+    { name: 'Aesthetic clinics', keywords: ['aesthetic clinic', 'laser hair removal', 'skin clinic', 'hydrafacial', 'botox clinic'] },
+    { name: 'Dental clinics', keywords: ['cosmetic dentist', 'teeth whitening', 'dental clinic', 'invisalign', 'dental veneers'] },
+    { name: 'Beauty salons', keywords: ['beauty salon', 'hair salon', 'ladies salon', 'nail salon', 'lash studio'] },
+  ];
+  // Niche names stored on prospects by earlier versions.
+  LH.LEGACY_NICHES = {
+    'Car detailing & PPF': 'Car detailing studios',
+    'Aesthetic clinics': 'Aesthetic clinics',
+    'Boutique fitness (Oct–Jan)': 'Fitness studios',
+    'AC servicing (from late Jan)': 'AC service companies',
   };
 
-  /* ------------------------------------------------- Meta ads prospecting */
-  // Google Maps search terms per niche, in the order the 2026 niche research recommends them:
-  // short sales cycle, AED 800+ first ticket, room for a lead-confirmation step.
-  LH.AD_NICHES = {
-    'Car detailing & PPF': ['paint protection film', 'ceramic coating', 'car detailing', 'window tinting', 'car polishing'],
-    'Aesthetic clinics': ['aesthetic clinic', 'laser hair removal', 'skin clinic', 'medical spa', 'hydrafacial'],
-    'Boutique fitness (Oct–Jan)': ['reformer pilates', 'pilates studio', 'ems training', 'ladies gym', 'boutique gym'],
-    'AC servicing (from late Jan)': ['ac duct cleaning', 'ac maintenance', 'ac service company'],
+  /** "ceramic coating, PPF\nwindow tinting" -> ['ceramic coating', 'ppf', 'window tinting'] */
+  LH.parseKeywords = (v) => [
+    ...new Set(
+      (Array.isArray(v) ? v : String(v || '').split(/[,\n]/))
+        .map((k) => String(k).trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  ];
+
+  /** The niches in use: the ones edited in Settings, or the four defaults. */
+  LH.nichesFor = (settings) => {
+    const list = ((settings && Array.isArray(settings.niches) && settings.niches) || [])
+      .map((n) => ({ name: String((n && n.name) || '').trim().slice(0, 80), keywords: LH.parseKeywords(n && n.keywords) }))
+      .filter((n) => n.name);
+    return list.length ? list : LH.DEFAULT_NICHES;
   };
+
+  /** How a niche name reads mid-sentence: "Car detailing studios" -> "car detailing studios", "AC companies" stays. */
+  LH.nicheText = (name) => {
+    const s = String(name || '').trim();
+    const first = s.split(/\s+/)[0];
+    if (!s || (first.length > 1 && first === first.toUpperCase() && /[A-Z]/.test(first))) return s;
+    return s.charAt(0).toLowerCase() + s.slice(1);
+  };
+
+  /** A lead's niche name: its stored niche (old names mapped), else the niche its keywords belong to, else ''. */
+  LH.nicheOf = (lead, settings) => {
+    const niches = LH.nichesFor(settings);
+    const raw = String((lead && lead.niche) || '').trim();
+    if (LH.LEGACY_NICHES[raw]) return LH.LEGACY_NICHES[raw];
+    const named = raw && niches.find((n) => n.name.toLowerCase() === raw.toLowerCase());
+    if (named) return named.name;
+    const kws = LH.parseKeywords([...((lead && lead.keywords) || []), raw]);
+    const byKeyword =
+      niches.find((n) => n.keywords.some((k) => kws.includes(k))) || niches.find((n) => n.keywords.some((k) => kws.some((x) => x.includes(k))));
+    return byKeyword ? byKeyword.name : raw;
+  };
+
   LH.AREAS = {
     Dubai: ['Al Quoz', 'Dubai Investment Park', 'Al Barsha', 'Dubai Marina', 'JLT', 'JBR', 'Business Bay', 'Downtown Dubai', 'DIFC', 'Jumeirah', 'Al Wasl', 'Umm Suqeim', 'Dubai Hills', 'Arabian Ranches', 'JVC', 'Motor City', 'Al Karama', 'Deira', 'Bur Dubai', 'Mirdif', 'Al Nahda', 'Silicon Oasis', 'Palm Jumeirah', 'Ras Al Khor'],
     'Abu Dhabi': ['Al Reem Island', 'Khalifa City', 'Al Raha', 'Corniche', 'Al Bateen', 'Saadiyat', 'Yas Island', 'Al Khalidiyah', 'Mohammed Bin Zayed City'],
@@ -110,10 +140,19 @@
     queueKey: '',
     queueKeyAt: 0,
     adsCity: 'Dubai',
-    adsOffer: 'AED 600 to start, and the other AED 600 only after you get your first customer from the ads',
-    adTemplates: null, // null = use LH.DEFAULT_AD_TEMPLATES
-    templates: null, // null = use LH.DEFAULT_TEMPLATES
+    bubbles: 3, // WhatsApp messages per pitch: 3 = greeting, body, closing · 2 = greeting with body, closing
+    niches: null, // null = use LH.DEFAULT_NICHES
+    scripts: null, // null = use LH.DEFAULT_SCRIPTS
   };
+  // Settings from earlier versions that no longer do anything.
+  const OLD_SETTINGS = ['templates', 'adTemplates', 'adsOffer'];
+  /** Stored settings over the defaults, without the old keys. */
+  LH.withDefaults = (stored) => {
+    const s = { ...LH.DEFAULT_SETTINGS, ...(stored || {}) };
+    for (const k of OLD_SETTINGS) delete s[k];
+    return s;
+  };
+  LH.hasOldSettings = (stored) => !!stored && OLD_SETTINGS.some((k) => k in stored);
 
   /* ------------------------------------------------------------- Ad Library URLs */
   LH.adLibraryUrl = ({ keyword = '', country = 'AE', activeOnly = true } = {}) => {
@@ -333,10 +372,13 @@
     return Math.max(0, Math.min(100, Math.round(s + 10)));
   };
 
-  /** 0–100: how worth contacting this advertiser is right now. */
+  /** 0–100: how worth contacting this lead is right now. Leads skipped for running ads sink to the bottom. */
   LH.priority = (lead, now = Date.now()) => {
     if (!lead) return 0;
-    if (lead.kind === 'prospect') return LH.prospectPriority(lead);
+    const p = lead.kind === 'prospect' ? LH.prospectPriority(lead) : advertiserPriority(lead, now);
+    return LH.scriptFor(lead).script ? p : Math.round(p / 10);
+  };
+  const advertiserPriority = (lead, now) => {
     let s = 0;
     const ads = lead.activeAdCount || 0;
     s += Math.min(ads, 8) * 3; // up to 24: more creatives = more budget
@@ -356,178 +398,200 @@
   };
   LH.heat = (p) => (p >= 70 ? 'hot' : p >= 48 ? 'warm' : 'cold');
 
-  /* ----------------------------------------------------------------- Templates */
-  LH.DEFAULT_TEMPLATES = {
-    weakSite: {
-      name: 'Website has issues',
-      whatsapp:
-        'Hi {{business}} team, I came across your ads on Facebook/Instagram ({{days_phrase}}). I build websites for businesses running ads, so I had a quick look at {{domain}} and noticed {{issue_1}}{{issue_2_and}}.\n\nWhen someone taps an ad, the website is the first thing they judge you on, so issues like these quietly lose leads you are already paying for.\n\nI ran a free audit of your site here: {{audit_link}}\n\nHappy to send over a few specific fixes if useful. {{my_name}}, {{agency}}',
-      subject: 'Quick note about {{domain}} and your ads',
-      email:
-        'Hi {{business}} team,\n\nI came across your ads on Facebook/Instagram ({{days_phrase}}) and had a quick look at the page they send people to.\n\nA few things stood out on {{domain}}:\n{{issues}}\n\nWhen someone taps an ad, the website is the first thing they judge you on. Issues like these mean a share of the clicks you pay for never turn into enquiries.\n\nYou can see the full audit here: {{audit_link}}\n\nWould it be worth a 15-minute call to go through the fixes?\n\n{{my_name}}\n{{agency}} · {{my_phone}}',
+  /* ------------------------------------------------------------------ Scripts */
+  // Two scripts, picked per lead by LH.scriptFor. Written the way Samil types on his phone:
+  // short lines, few commas, no dashes. Each part goes out as its own WhatsApp bubble.
+  LH.DEFAULT_SCRIPTS = {
+    ads: {
+      name: 'Ads script',
+      greeting: 'Hello {{business}}',
+      body: "Are you dependent on word of mouth for appointments in {{city}}?\n\nWe help {{niche}} in {{city}} get consistent inquiries through Facebook and Instagram ads.\n\nWe personally screen each and every lead so the ones that reach you are genuine people with real interest.\n\nThere's no big setup fee. Just one flat monthly rate so there's minimal risk on your end.\n\nIf this sounds interesting I'd be happy to send you a quick explanation of how it works.",
+      closing: 'Let me know',
     },
-    noWebsite: {
-      name: 'No website',
-      whatsapp:
-        'Hi {{business}} team, I saw your ads running on Facebook/Instagram ({{days_phrase}}). I noticed they send people straight to {{destination}} and there is no website behind them.\n\nMost people check a business online before they message, especially for {{keyword}}, so a proper website usually means more of those clicks turn into real enquiries.\n\nI build fast, mobile-first websites for businesses running ads. Happy to put together a quick free mockup of what yours could look like. {{my_name}}, {{agency}}',
-      subject: 'Your {{keyword}} ads have no website behind them',
-      email:
-        'Hi {{business}} team,\n\nI saw your ads running on Facebook/Instagram ({{days_phrase}}). They send people straight to {{destination}}, and I could not find a website behind them.\n\nMost customers check a business online before they get in touch. Without a website, part of the budget you spend on ads is lost to people who wanted more proof before messaging.\n\nI build fast, mobile-first websites for businesses that advertise. I would be happy to put together a free mockup of your homepage so you can see the difference.\n\nInterested?\n\n{{my_name}}\n{{agency}} · {{my_phone}}',
-    },
-    brokenSite: {
-      name: 'Website is broken',
-      whatsapp:
-        'Hi {{business}} team, quick heads-up: I saw your ads on Facebook/Instagram, but when I visited {{domain}} {{issue_1}}.\n\nThat means people clicking your ads right now may be hitting a dead end. I build websites for businesses running ads and can help get this fixed quickly if you want. {{my_name}}, {{agency}}',
-      subject: 'Heads-up: {{domain}} is not loading properly',
-      email:
-        'Hi {{business}} team,\n\nI saw your ads running on Facebook/Instagram and clicked through to {{domain}}. Unfortunately {{issue_1}}.\n\nWhile the ads are live, anyone who clicks through may be hitting a dead end, which is budget going straight out of the window.\n\nI build and fix websites for businesses that run ads and can get this sorted quickly. Want me to take a look?\n\n{{my_name}}\n{{agency}} · {{my_phone}}',
-    },
-    goodSite: {
-      name: 'Website is decent',
-      whatsapp:
-        'Hi {{business}} team, I came across your ads on Facebook/Instagram, nice work. I build websites for businesses running ads and had a quick look at {{domain}}. It is in decent shape, but {{issue_1}}.\n\nSmall fixes like that usually lift how many ad clicks turn into enquiries. Free audit here if you are curious: {{audit_link}}\n\n{{my_name}}, {{agency}}',
-      subject: 'One quick win for {{domain}}',
-      email:
-        'Hi {{business}} team,\n\nI came across your ads on Facebook/Instagram and had a look at {{domain}}. It is in decent shape, but a couple of things are likely costing you enquiries:\n{{issues}}\n\nFull audit: {{audit_link}}\n\nHappy to walk you through the fixes on a quick call if useful.\n\n{{my_name}}\n{{agency}} · {{my_phone}}',
+    website: {
+      name: 'Website script',
+      greeting: 'Hello {{business}}',
+      body: "I came across {{business}} on {{found_on}} and {{website_line}}.\n\nWe build simple websites for {{niche}} in {{city}} that turn visitors into WhatsApp inquiries.\n\nIf this sounds interesting I'd be happy to send you a free mockup of how yours could look.",
+      closing: 'Let me know',
     },
   };
+  LH.SCRIPT_PARTS = ['greeting', 'body', 'closing'];
 
-  // Honest by design: first person, no invented clients, results or team. Describe the offer, not a track record.
-  LH.DEFAULT_AD_TEMPLATES = {
-    adsProof: {
-      name: 'Not advertising, strong reviews',
-      whatsapp:
-        "Hi {{business}} team, I came across you on {{found_on}}. {{proof_line}}, so people clearly rate you. {{ads_line}}{{competitor_line}}.\n\nI'm taking on a small number of {{niche_plural}} in {{city}} for Meta ads. The part most agencies skip: every lead gets a WhatsApp message within minutes to confirm they're serious, and only the confirmed ones are passed to you.\n\nTo keep it low-risk: {{offer}}. Open to a quick 10-minute call this week? {{my_name}}, {{agency}}",
-      subject: '{{business}}: more bookings from Instagram and Facebook',
-      email:
-        "Hi {{business}} team,\n\nI came across you on {{found_on}}. {{proof_line}}, so people clearly rate you. {{ads_line}}{{competitor_line}}.\n\nI'm taking on a small number of {{niche_plural}} in {{city}} for Meta ads. The difference is in what happens after the ad: every lead gets a WhatsApp message within minutes to confirm they're genuine and ready to book, and only confirmed leads are passed to you, so your team spends its time on real customers.\n\nTo keep it low-risk for you: {{offer}}.\n\nWould a 10-minute call this week work?\n\n{{my_name}}\n{{agency}} · {{my_phone}}",
-    },
-    adsGrowing: {
-      name: 'Not advertising, growing',
-      whatsapp:
-        "Hi {{business}} team, I found you on {{found_on}}{{followers_line}}. Looks like you're putting real work into your business. {{ads_line}}.\n\nI'm setting up Meta ads for a few {{niche_plural}} in {{city}}, with every lead confirmed on WhatsApp before it reaches you, so you only talk to people who are ready to book.\n\n{{offer}}. Worth a quick chat? {{my_name}}, {{agency}}",
-      subject: 'More bookings from Instagram and Facebook',
-      email:
-        "Hi {{business}} team,\n\nI found you on {{found_on}}{{followers_line}}. You're clearly putting work into your business. {{ads_line}}.\n\nI'm setting up Meta ads for a few {{niche_plural}} in {{city}}. Every lead is messaged on WhatsApp within minutes to confirm they're serious, and only confirmed ones are passed to you.\n\n{{offer}}.\n\nOpen to a short call?\n\n{{my_name}}\n{{agency}} · {{my_phone}}",
-    },
-    adsRunning: {
-      name: 'Already advertising',
-      whatsapp:
-        "Hi {{business}} team, I noticed you're running Facebook and Instagram ads. Quick question: is someone getting back to every lead within a few minutes? That's usually where ad budget quietly gets lost.\n\nI run Meta ads with a confirmation step: every lead is messaged on WhatsApp within minutes and only serious ones reach you. {{offer}}. Happy to share a few notes on your current ads. {{my_name}}, {{agency}}",
-      subject: 'Your Meta ads and the leads they bring in',
-      email:
-        "Hi {{business}} team,\n\nI noticed you're running Facebook and Instagram ads. Is someone getting back to every lead within a few minutes? That's usually where most of the ad budget quietly gets lost.\n\nI run Meta ads with a confirmation step: every lead is messaged on WhatsApp within minutes, and only the ones who are serious are passed to you.\n\n{{offer}}.\n\nHappy to send a few notes on your current ads if useful.\n\n{{my_name}}\n{{agency}} · {{my_phone}}",
-    },
-  };
-
-  LH.templatesFor = (lead, settings = {}) =>
-    lead && lead.kind === 'prospect'
-      ? { all: settings.adTemplates || LH.DEFAULT_AD_TEMPLATES, defaults: LH.DEFAULT_AD_TEMPLATES }
-      : { all: settings.templates || LH.DEFAULT_TEMPLATES, defaults: LH.DEFAULT_TEMPLATES };
-
-  LH.pitchAngle = (lead) => {
-    if (lead && lead.kind === 'prospect') {
-      const ad = (lead.adCheck || {}).state;
-      if (ad === 'running') return 'adsRunning';
-      const m = (lead.sources || {}).maps || {};
-      return (m.reviews || 0) >= 25 && (m.rating || 0) >= 4 ? 'adsProof' : 'adsGrowing';
+  /** The scripts in use: edits from Settings over the defaults, part by part. */
+  LH.scriptsFor = (settings) => {
+    const saved = (settings && settings.scripts) || {};
+    const out = {};
+    for (const [k, def] of Object.entries(LH.DEFAULT_SCRIPTS)) {
+      out[k] = { ...def };
+      for (const part of LH.SCRIPT_PARTS) if (saved[k] && typeof saved[k][part] === 'string') out[k][part] = saved[k][part];
     }
-    const site = (lead && lead.site) || {};
-    if (!lead || !lead.website) return 'noWebsite';
-    if (site.state === 'error' || site.parked) return 'brokenSite';
-    if (typeof site.score === 'number' && site.score >= 80) return 'goodSite';
-    return 'weakSite';
+    return out;
   };
 
-  // How each niche reads inside a sentence ("a few car detailing and PPF studios in Dubai").
-  LH.NICHE_PLURALS = {
-    'Car detailing & PPF': 'car detailing and PPF studios',
-    'Aesthetic clinics': 'aesthetic clinics',
-    'Boutique fitness (Oct–Jan)': 'fitness studios',
-    'AC servicing (from late Jan)': 'AC service companies',
+  /** They have a website but it is down or parked: for outreach that is no working website. */
+  LH.siteDown = (lead) => !!lead && !!lead.website && ((lead.site || {}).state === 'error' || !!(lead.site || {}).parked);
+  /**
+   * Which script a lead gets, plus the reason as a tag:
+   *   no website (either tab)                 -> 'website'  "No website"
+   *   website down or parked (either tab)     -> 'website'  "Site down"
+   *   website, ad check found no Meta ads     -> 'ads'      "No Meta ads"
+   *   website, ad check pending or unclear    -> 'ads'      "Ad check not done"
+   *   website and running ads                 -> null       "Running ads" (skipped for outreach)
+   * Website leads come from the Ad Library, so they all advertise: only the ones without a working website get a script.
+   */
+  LH.scriptFor = (lead) => {
+    if (!lead || !lead.website) return { script: 'website', tag: 'No website' };
+    if (LH.siteDown(lead)) return { script: 'website', tag: 'Site down' };
+    if (lead.kind !== 'prospect') return { script: null, tag: 'Running ads' };
+    const ad = (lead.adCheck || {}).state;
+    if (ad === 'running') return { script: null, tag: 'Running ads' };
+    if (ad === 'none' || ad === 'likely') return { script: 'ads', tag: 'No Meta ads' };
+    return { script: 'ads', tag: 'Ad check not done' };
   };
-  const nichePlural = (lead) => LH.NICHE_PLURALS[lead.niche] || `${String(lead.niche || (lead.keywords || [])[0] || 'local').toLowerCase()} businesses`;
-  const compact = (n) => (n >= 10000 ? `${Math.round(n / 1000)}k` : n >= 1000 ? `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k` : String(n));
-  LH.templateVars = (lead, settings = {}, now = Date.now()) => {
-    if (lead && lead.kind === 'prospect') {
-      const m = (lead.sources || {}).maps || {};
-      const ig = (lead.sources || {}).instagram || {};
-      const competitors = settings.__competitors || 0;
-      return {
-        business: lead.pageName || 'there',
-        found_on: m.placeId && !ig.username ? 'Google Maps' : ig.username && !m.placeId ? 'Instagram' : 'Google Maps and Instagram',
-        proof_line: m.reviews ? `${m.rating ? `${m.rating}★ from ` : ''}${m.reviews} Google reviews` : ig.followers ? `${compact(ig.followers)} followers on Instagram` : 'You have a great reputation',
-        followers_line: ig.followers ? ` (${compact(ig.followers)} followers)` : '',
-        // Only claim what was checked: a confirmed "no ads" reads differently from "couldn't find any".
-        ads_line:
-          (lead.adCheck || {}).state === 'none'
-            ? "I checked Meta's Ad Library and you aren't running any Facebook or Instagram ads right now"
-            : "I couldn't find any Facebook or Instagram ads from you in Meta's Ad Library",
-        // __competitors counts advertisers seen in UAE Ad Library hunts, so say "the UAE", not the city.
-        competitor_line: competitors >= 3 ? `, while ${competitors} other ${nichePlural(lead)} in the UAE are` : '',
-        niche_plural: nichePlural(lead),
-        rating: m.rating ? String(m.rating) : '',
-        reviews: m.reviews ? String(m.reviews) : '',
-        followers: ig.followers ? compact(ig.followers) : '',
-        niche: (lead.niche || (lead.keywords || [])[0] || 'local').toLowerCase(),
-        city: settings.adsCity || 'the UAE',
-        area: lead.area || settings.adsCity || '',
-        offer: settings.adsOffer || '',
-        domain: LH.domainOf(lead.website || ''),
-        my_name: settings.myName || '',
-        agency: settings.agency || '',
-        my_phone: settings.myPhone || '',
-        my_website: settings.myWebsite || '',
-      };
+  /** The script a contacted lead got. "Pitch anyway" on a skipped lead uses the website script. */
+  LH.sentScriptFor = (lead) => LH.scriptFor(lead).script || 'website';
+
+  /** Google rating from Maps (Meta ads tab) or a Places lookup (website leads). */
+  const googleRating = (lead) => {
+    const m = ((lead && lead.sources) || {}).maps || {};
+    const pl = lead && lead.places && lead.places.match ? lead.places : {};
+    return { rating: m.rating || pl.rating || 0, reviews: m.reviews || pl.reviews || 0, known: !!(m.placeId || pl.match) };
+  };
+  /** Row tags, for sorting and filtering only (they never change the message). */
+  LH.leadTags = (lead) => {
+    if (!lead) return [];
+    const tags = [];
+    if (!lead.website) tags.push('No website');
+    else if (LH.siteDown(lead)) tags.push('Site down');
+    if (!LH.scriptFor(lead).script) tags.push('Running ads');
+    const g = googleRating(lead);
+    if (g.rating >= 4 && g.reviews >= 25) tags.push('Good reviews');
+    else if (g.known && g.reviews < 25) tags.push('Growing');
+    return tags;
+  };
+  /** The one-line summary the phone queue shows: "No website", "No Meta ads · Good reviews". */
+  LH.tagLine = (lead) => [...new Set([LH.scriptFor(lead).tag, ...LH.leadTags(lead)])].join(' · ');
+
+  /** Instagram username (no @) from where the lead was found or the profile link on their website. */
+  LH.igFromUrl = (url) => {
+    const u = typeof url === 'string' ? LH.safeUrl(url) : url;
+    if (!u || LH.linkKind(u) !== 'instagram') return '';
+    const h = u.pathname.split('/').filter(Boolean)[0] || '';
+    return /^[A-Za-z0-9._]{1,30}$/.test(h) && !/^(p|reel|reels|stories|explore|tv|accounts|direct|m)$/i.test(h) ? h : '';
+  };
+  LH.igHandle = (lead) => {
+    const found = ((((lead && lead.sources) || {}).instagram || {}).username || '').replace(/^@/, '');
+    return found || LH.igFromUrl(((lead && lead.socials) || {}).instagram);
+  };
+
+  /**
+   * A business name the way you'd type it in a message. Only for {{business}}: the stored name stays as it is.
+   *   "Dr. Smile Dental Clinic - Best Dentist in Dubai" -> "Dr. Smile Dental Clinic"
+   *   "Glossy PPF | Ceramic Coating | Car Detailing Dubai" -> "Glossy PPF"
+   *   "AL NOOR BEAUTY SALON L.L.C" -> "Al Noor Beauty Salon" · "Gloss Garage Dubai" -> "Gloss Garage"
+   */
+  const LEGAL_END = /[\s,]+(l\.?l\.?c\.?|fz[\s-]?llc|fzco|fze|fzc|dmcc|est\.?|ltd\.?)$/i;
+  const PLACE_END = /[\s,]+(dubai|uae|abu dhabi|sharjah)$/i;
+  const ACRONYM = (w) => !/[aeiouy]/i.test(w) || /^(ac|uae|ksa|vip|difc|usa|uk)$/i.test(w); // PPF, BMW, JLT stay in capitals
+  LH.shortName = (name) => {
+    const full = String(name || '').replace(/\s+/g, ' ').trim();
+    let s = full.split(/\s[-–—·]\s|\s*\|\s*|\s\(/)[0].trim() || full;
+    for (let prev = ''; prev !== s; ) {
+      prev = s;
+      s = s.replace(LEGAL_END, '').replace(/[\s,.]+$/, '');
+      const rest = s.replace(PLACE_END, '').replace(/[\s,.]+$/, '');
+      if (rest.split(' ').length >= 2) s = rest; // "Glossy Dubai" keeps its city
     }
-    const days = LH.daysRunning(lead, now);
-    const issues = ((lead.site && lead.site.issues) || []).map((i) => i.pitch || i.label);
-    const domain = LH.domainOf(lead.website || '') || '';
-    const ads = lead.activeAdCount || 0;
+    if (/[A-Z]/.test(s) && !/[a-z]/.test(s)) s = s.replace(/[A-Z][A-Z']*/g, (w) => (ACRONYM(w) ? w : w.charAt(0) + w.slice(1).toLowerCase()));
+    return s || full;
+  };
+
+  /** Script variables. Missing data never shows up as "undefined" or {{…}}. */
+  LH.scriptVars = (lead, settings = {}) => {
+    const l = lead || {};
+    const m = (l.sources || {}).maps || {};
+    const ig = (l.sources || {}).instagram || {};
+    const niche = LH.nicheOf(l, settings);
     return {
-      business: lead.pageName || 'there',
-      days: days == null ? '' : String(days),
-      days_phrase:
-        days == null
-          ? 'they look great'
-          : days >= 30
-            ? `looks like you have been running them for ${days}+ days`
-            : days >= 7
-              ? 'looks like a fairly new campaign'
-              : 'looks like you just launched a new campaign',
-      ad_count: String(ads),
-      keyword: (lead.keywords && lead.keywords[0]) || 'your service',
-      domain,
-      website: lead.website || '',
-      landing: lead.landingUrl || lead.website || '',
-      score: lead.site && typeof lead.site.score === 'number' ? String(lead.site.score) : '',
-      issue_1: issues[0] || 'a few things that are probably costing you enquiries',
-      issue_2: issues[1] || '',
-      issue_2_and: issues[1] ? `, and ${issues[1]}` : '',
-      issues: issues.length ? issues.slice(0, 4).map((i) => `- ${i.charAt(0).toUpperCase()}${i.slice(1)}`).join('\n') : '- A few quick wins on speed, mobile and conversion',
-      destination: LH.destinationLabel(lead.destinationKind),
-      audit_link: domain ? (settings.auditLinkBase || '') + encodeURIComponent(domain) : settings.myWebsite || '',
+      // No name: their Instagram handle or domain. pitchFor writes "Hello there" and "your business" when there is neither.
+      business: LH.shortName(l.pageName) || LH.igHandle(l) || LH.domainOf(l.website || ''),
+      niche: niche ? LH.nicheText(niche) : 'businesses',
+      city: settings.adsCity || 'Dubai',
+      found_on: l.kind !== 'prospect' ? 'Facebook and Instagram' : ig.username && !m.placeId ? 'Instagram' : 'Google Maps',
+      website_line: LH.siteDown(l) ? "your website wasn't loading when I checked" : "couldn't find a website for you",
       my_name: settings.myName || '',
       agency: settings.agency || '',
       my_phone: settings.myPhone || '',
-      my_website: settings.myWebsite || '',
     };
   };
 
   LH.render = (tpl, vars) =>
     String(tpl || '')
       .replace(/\{\{\s*(\w+)\s*\}\}/g, (_, k) => (vars[k] != null ? vars[k] : ''))
+      .replace(/[ \t]{2,}/g, ' ')
       .replace(/ ,/g, ',')
       .replace(/[ \t]+\n/g, '\n')
       .replace(/, \./g, '.')
       .trim();
 
-  LH.pitchFor = (lead, settings = {}, angle) => {
-    const { all, defaults } = LH.templatesFor(lead, settings);
-    const key = angle && (all[angle] || defaults[angle]) ? angle : LH.pitchAngle(lead);
-    const t = { ...defaults[key], ...(all[key] || {}) };
-    const vars = LH.templateVars(lead, settings);
-    return { angle: key, whatsapp: LH.render(t.whatsapp, vars), subject: LH.render(t.subject, vars), email: LH.render(t.email, vars) };
+  /**
+   * The message for a lead, split into WhatsApp bubbles. Nothing is ever sent from here:
+   * every bubble is prefilled or copied, and Samil presses Send himself.
+   *   3 bubbles: [greeting] [body] [closing] · 2 bubbles: [greeting + body] [closing]. Empty bubbles are dropped.
+   * `force` = 'website' pitches a lead that is skipped for running ads anyway.
+   */
+  LH.pitchFor = (lead, settings = {}, force) => {
+    const pick = LH.scriptFor(lead);
+    const script = force && LH.DEFAULT_SCRIPTS[force] ? force : pick.script;
+    if (!script) return { script: null, tag: pick.tag, bubbles: [], text: '', subject: '', email: '' };
+    const t = LH.scriptsFor(settings)[script];
+    const vars = LH.scriptVars(lead, settings);
+    // No name at all: "Hello there", and the body says "I came across your business on…".
+    const nameless = (business) => (vars.business ? vars : { ...vars, business });
+    const [greeting, body, closing] = LH.SCRIPT_PARTS.map((p) => LH.render(t[p], nameless({ greeting: 'there', body: 'your business' }[p] || '')));
+    const parts = Number(settings.bubbles) === 2 ? [[greeting, body].filter(Boolean).join('\n\n'), closing] : [greeting, body, closing];
+    const bubbles = parts.filter(Boolean);
+    const offer = script === 'ads' ? 'Meta ads' : 'website';
+    return {
+      script,
+      tag: pick.tag,
+      bubbles,
+      text: bubbles.join('\n\n'),
+      subject: vars.business ? `${vars.business} + ${offer}` : offer.charAt(0).toUpperCase() + offer.slice(1),
+      email: [greeting, body].filter(Boolean).join('\n\n'),
+    };
+  };
+
+  /* ------------------------------------------------------------------ Results */
+  const REPLIED = ['replied', 'meeting', 'won'];
+  LH.hasReplied = (l) => !!l && (REPLIED.includes(l.status) || !!l.repliedAt);
+  LH.replyRate = (r) => (r.sent ? `${Math.round((100 * r.replied) / r.sent)}%` : '–');
+  /**
+   * Reply rates across all leads (both tabs), by niche and by script.
+   * Sent = has contactedAt (a lead that replied was sent something too). Replied = replied, meeting, won or a recorded reply.
+   */
+  LH.results = (leads, settings) => {
+    const scripts = LH.scriptsFor(settings);
+    const total = { sent: 0, replied: 0 };
+    const byNiche = new Map();
+    const byScript = new Map();
+    const add = (map, key, label, replied) => {
+      const r = map.get(key) || { key, label, sent: 0, replied: 0 };
+      r.sent++;
+      if (replied) r.replied++;
+      map.set(key, r);
+    };
+    for (const l of leads || []) {
+      const replied = LH.hasReplied(l);
+      if (!l || !(l.contactedAt || replied)) continue;
+      total.sent++;
+      if (replied) total.replied++;
+      const niche = LH.nicheOf(l, settings);
+      add(byNiche, niche || '', niche || 'No niche', replied);
+      add(byScript, l.sentScript || '', l.sentScript && scripts[l.sentScript] ? scripts[l.sentScript].name : 'Not recorded', replied);
+    }
+    const list = (map) => [...map.values()].sort((a, b) => b.sent - a.sent || a.label.localeCompare(b.label)).map((r) => ({ ...r, rate: LH.replyRate(r) }));
+    return { total: { ...total, rate: LH.replyRate(total) }, byNiche: list(byNiche), byScript: list(byScript) };
   };
 
   /* ---------------------------------------------------------------------- CSV */

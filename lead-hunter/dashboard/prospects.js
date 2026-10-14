@@ -1,7 +1,7 @@
 /* Lead Hunter dashboard: the Meta ads tab (businesses found on Google Maps).
    Loaded after dashboard.js and shares its helpers ($, esc, S, send, toast, openDrawer…). */
 
-S.af = { q: '', ads: 'none', niche: '', heat: '', status: '', contact: '', sort: 'priority' };
+S.af = { q: '', ads: '', niche: '', tag: '', heat: '', status: '', contact: '', skipped: false, sort: 'priority' };
 S.areasOff = new Set();
 S.finderNiche = '';
 
@@ -16,19 +16,6 @@ const AD_STATE = {
 };
 const compactNum = (n) => Intl.NumberFormat(undefined, { notation: 'compact' }).format(n || 0);
 
-/* How many advertisers in the same niche we have seen running ads in the UAE (website-lead hunts).
-   Hunts are filtered by country, not city, so the pitch says "in the UAE". */
-const competitorCache = new Map();
-function competitorCount(l) {
-  const terms = new Set([...(LH.AD_NICHES[l.niche] || []), ...(l.keywords || [])].map((k) => k.toLowerCase()));
-  const key = [...terms].sort().join('|');
-  if (competitorCache.has(key) && competitorCache.get(key).size === S.leads.size) return competitorCache.get(key).n;
-  let n = 0;
-  for (const x of S.leads.values()) if (x.kind !== 'prospect' && x.activeAdCount && (x.countries || []).includes('AE') && (x.keywords || []).some((k) => terms.has(k))) n++;
-  competitorCache.set(key, { n, size: S.leads.size });
-  return n;
-}
-
 function prospects() {
   return [...S.leads.values()].filter((l) => l.kind === 'prospect');
 }
@@ -40,10 +27,12 @@ function filteredProspects() {
   for (const l of prospects()) {
     const p = LH.priority(l);
     const ad = (l.adCheck || {}).state || 'pending';
-    const ig = (l.sources || {}).instagram;
     if (l.avoid && f.niche !== '__avoid') continue;
+    // Running ads with a website and not messaged yet: skipped for outreach, shown only when asked for.
+    if (skippedNew(l) && !f.skipped && f.ads !== 'running' && f.tag !== 'Running ads') continue;
+    if (!tagMatch(l, f.tag)) continue;
     if (f.ads === 'pending' ? !['pending', 'queued', 'checking'].includes(ad) : f.ads === 'none' ? !['none', 'likely'].includes(ad) : f.ads && ad !== f.ads) continue;
-    if (f.niche && f.niche !== '__avoid' && l.niche !== f.niche) continue;
+    if (f.niche && f.niche !== '__avoid' && LH.nicheOf(l, S.settings) !== f.niche) continue;
     if (f.heat && LH.heat(p) !== f.heat) continue;
     if (f.status === '' && l.status === 'skip') continue;
     if (f.status && f.status !== 'all' && l.status !== f.status) continue;
@@ -51,7 +40,7 @@ function filteredProspects() {
     if (f.contact === 'wa' && !LH.whatsappTarget(l)) continue;
     if (f.contact === 'nophone' && l.phones.length) continue;
     if (q) {
-      const hay = [l.pageName, l.area, l.niche, l.website, ig && ig.username, ...l.phones.map((x) => x.number), l.notes].join(' ').toLowerCase();
+      const hay = [l.pageName, l.area, l.niche, l.website, LH.igHandle(l), ...(l.emails || []), ...l.phones.map((x) => x.number), l.notes].join(' ').toLowerCase();
       if (!hay.includes(q)) continue;
     }
     rows.push({ l, p });
@@ -61,8 +50,8 @@ function filteredProspects() {
     reviews: (r) => ((r.l.sources || {}).maps || {}).reviews || 0,
     newest: (r) => r.l.createdAt || 0,
   };
-  if (S.af.sort === 'name') return rows.sort((a, b) => (a.l.pageName || '').localeCompare(b.l.pageName || ''));
-  return rows.sort((a, b) => val[S.af.sort](b) - val[S.af.sort](a) || b.p - a.p);
+  if (S.af.sort === 'name') return rows.sort((a, b) => isSkipped(a.l) - isSkipped(b.l) || (a.l.pageName || '').localeCompare(b.l.pageName || ''));
+  return rows.sort((a, b) => isSkipped(a.l) - isSkipped(b.l) || val[S.af.sort](b) - val[S.af.sort](a) || b.p - a.p);
 }
 
 function sourceCell(l) {
@@ -83,17 +72,17 @@ function adCell(l) {
 }
 
 function prospectRow({ l, p }) {
-  const meta = [l.niche, l.area || (l.sources.maps && l.sources.maps.address ? l.sources.maps.address.split(',').slice(-3, -2)[0] : '')].filter(Boolean).join(' · ');
-  const dim = ['lost', 'skip', 'won'].includes(l.status) ? ' dim' : '';
+  const meta = [LH.nicheOf(l, S.settings), l.area || (l.sources.maps && l.sources.maps.address ? l.sources.maps.address.split(',').slice(-3, -2)[0] : '')].filter(Boolean).join(' · ');
+  const dim = ['lost', 'skip', 'won'].includes(l.status) || skippedNew(l) ? ' dim' : '';
   return `<tr data-id="${esc(l.id)}" class="${S.selected.has(l.id) ? 'sel' : ''}${dim}">
     <td class="c-sel"><input type="checkbox" data-sel ${S.selected.has(l.id) ? 'checked' : ''} aria-label="Select ${esc(l.pageName)}" /></td>
     <td><span class="heat ${LH.heat(p)}" title="Priority ${p}/100">${p}</span></td>
-    <td><div class="biz">${avatar(l)}<div style="min-width:0"><div class="n">${esc(l.pageName || 'Unknown')}</div><div class="m">${esc(meta)}</div></div></div></td>
+    <td><div class="biz">${avatar(l)}<div style="min-width:0"><div class="n">${esc(l.pageName || 'Unknown')}</div><div class="m">${esc(meta)}</div>${tagsHtml(l)}</div></div></td>
     <td>${sourceCell(l)}</td>
     <td>${adCell(l)}</td>
     <td>${l.website ? siteCell(l) : '<span class="muted">No website</span>'}</td>
     <td>${contactCell(l)}</td>
-    <td><select class="status-sel" data-status aria-label="Status">${statusOptions(l.status)}</select></td>
+    <td>${statusCell(l)}</td>
     <td><button class="btn sm" data-open>Pitch</button></td>
   </tr>`;
 }
@@ -112,6 +101,8 @@ function renderProspectKpis() {
     (waiting ? `<span class="kpi"><span class="spin"></span> checking ads <b>${waiting}</b></span>` : '');
 }
 
+const finderWhat = (f) => (f.niche ? LH.nicheText(LH.LEGACY_NICHES[f.niche] || f.niche) : `“${f.keywords[0]}” businesses`);
+
 function renderFinderStatus() {
   const el = $('[data-finder-status]');
   const f = S.finder;
@@ -121,11 +112,11 @@ function renderFinderStatus() {
   const parts = [];
   if (f && f.status === 'running') {
     const pct = Math.min(100, Math.round((100 * f.added) / f.target));
-    parts.push(`<span class="pulse"></span><span class="t">Finding ${esc(f.niche || f.keywords[0])} businesses in ${esc(f.city)}</span>
+    parts.push(`<span class="pulse"></span><span class="t">Finding ${esc(finderWhat(f))} in ${esc(f.city)}</span>
       <span class="m"><b class="num">${f.added}</b> / ${f.target} new · search ${Math.min(f.mapsI + 1, f.mapsQ.length)} of ${f.mapsQ.length}</span>
       <span class="bar"><i style="width:${pct}%"></i></span><button class="btn sm danger" data-act="finder-stop">Stop</button>`);
   } else if (f) {
-    parts.push(`<span class="t">Last search: ${esc(f.niche || f.keywords[0])}, ${esc(f.city)}</span><span class="m">${f.added} new businesses · ${esc(f.status)}</span>`);
+    parts.push(`<span class="t">Last search: ${esc(finderWhat(f))}, ${esc(f.city)}</span><span class="m">${f.added} new businesses · ${esc(f.status)}</span>`);
   }
   const notes = f && f.mapsNote ? [`Google Maps: ${f.mapsNote}`] : [];
   if (notes.length) parts.push(`<span class="err" style="margin:0">${esc(notes.join(' · '))}</span>`);
@@ -135,7 +126,7 @@ function renderFinderStatus() {
 
 function renderProspectsView() {
   renderFinderStatus();
-  const niches = [...new Set(prospects().map((l) => l.niche).filter(Boolean))];
+  const niches = [...new Set(prospects().map((l) => LH.nicheOf(l, S.settings)).filter(Boolean))];
   const ns = $('[data-af="niche"]');
   ns.innerHTML = `<option value="">Any niche</option>${niches.map((n) => `<option ${n === S.af.niche ? 'selected' : ''}>${esc(n)}</option>`).join('')}<option value="__avoid" ${S.af.niche === '__avoid' ? 'selected' : ''}>Skipped (long sales cycle)</option>`;
   const st = $('[data-af="status"]');
@@ -145,10 +136,11 @@ function renderProspectsView() {
   const rows = filteredProspects();
   $('[data-ads-rows]').innerHTML = rows.map(prospectRow).join('');
   const total = prospects().length;
+  const skipped = S.af.skipped ? 0 : prospects().filter((l) => !l.avoid && skippedNew(l)).length;
   const empty = $('[data-ads-empty]');
   empty.hidden = rows.length > 0;
   empty.textContent = total ? 'No businesses match these filters.' : 'No businesses yet. Pick a niche above and press Find businesses.';
-  $('[data-ads-count]').textContent = total ? `Showing ${rows.length} of ${total} businesses.` : '';
+  $('[data-ads-count]').textContent = total ? `Showing ${rows.length} of ${total} businesses.${skipped ? ` ${skipped} skipped (running ads).` : ''}` : '';
   const ids = rows.map((r) => r.l.id);
   const all = $('[data-ads-sel-all]');
   all.checked = ids.length > 0 && ids.every((id) => S.selected.has(id));
@@ -177,7 +169,7 @@ function prospectDrawerHtml(l) {
   const a = l.adCheck || {};
   const [cls, label] = AD_STATE[a.state || 'pending'] || AD_STATE.pending;
   const links = [
-    ig && `<a href="https://www.instagram.com/${esc(encodeURIComponent(ig.username))}/" target="_blank" rel="noopener noreferrer">Instagram</a>`,
+    LH.igHandle(l) && `<a href="https://www.instagram.com/${esc(encodeURIComponent(LH.igHandle(l)))}/" target="_blank" rel="noopener noreferrer">@${esc(LH.igHandle(l))}</a>`,
     m && m.mapsUrl && `<a href="${esc(safeHref(m.mapsUrl))}" target="_blank" rel="noopener noreferrer">Google Maps</a>`,
     a.searchUrl && `<a href="${esc(safeHref(a.searchUrl))}" target="_blank" rel="noopener noreferrer">Ad Library search</a>`,
   ].filter(Boolean);
@@ -187,7 +179,7 @@ function prospectDrawerHtml(l) {
   const adText = {
     none: a.evidence || 'Their Facebook page has no active ads in the Ad Library.',
     likely: a.evidence || 'No ads found, but their Facebook page could not be checked directly.',
-    running: 'They are running ads right now. Use the "Already advertising" angle, or skip them.',
+    running: 'They are running ads right now.',
     unclear: `Couldn't check automatically${a.reason ? `: ${a.reason}` : ''}. Open the Ad Library search to look yourself.`,
     checking: 'Checking the Ad Library now…',
     queued: 'Waiting for its turn in the Ad Library check.',
@@ -196,7 +188,7 @@ function prospectDrawerHtml(l) {
   return `
     <header class="d-head">${avatar(l)}
       <div style="min-width:0"><h2>${esc(l.pageName || 'Unknown')}</h2>
-        <div class="links"><span class="heat ${LH.heat(p)}">${p}</span>${links.join('')}${l.niche ? `<span>${esc(l.niche)}</span>` : ''}</div></div>
+        <div class="links"><span class="heat ${LH.heat(p)}">${p}</span>${links.join('')}${LH.nicheOf(l, S.settings) ? `<span>${esc(LH.nicheOf(l, S.settings))}</span>` : ''}</div></div>
       <button class="btn sm ghost x" data-act="close" aria-label="Close">✕</button>
     </header>
     <section class="d-sec">
@@ -237,7 +229,7 @@ function prospectDrawerHtml(l) {
 
 /* --------------------------------------------------------------------- csv */
 function exportProspectsCsv(list) {
-  const head = ['priority', 'business', 'niche', 'area', 'meta_ads', 'active_ads', 'ad_library_search', 'google_rating', 'google_reviews', 'google_maps', 'website', 'website_score', 'phone', 'whatsapp_link', 'whatsapp_message_link', 'email', 'address', 'status', 'notes', 'found_on'];
+  const head = ['priority', 'business', 'niche', 'area', 'meta_ads', 'active_ads', 'ad_library_search', 'google_rating', 'google_reviews', 'google_maps', 'website', 'website_score', 'tags', 'phone', 'whatsapp_link', 'whatsapp_message_link', 'email', 'instagram', 'address', 'status', 'notes', 'found_on'];
   const rows = list.map((l) => {
     const m = (l.sources || {}).maps || {};
     const a = l.adCheck || {};
@@ -246,7 +238,7 @@ function exportProspectsCsv(list) {
     return [
       LH.priority(l),
       l.pageName,
-      l.niche,
+      LH.nicheOf(l, S.settings),
       l.area,
       (AD_STATE[a.state || 'pending'] || AD_STATE.pending)[1],
       a.activeAds || '',
@@ -256,10 +248,12 @@ function exportProspectsCsv(list) {
       m.mapsUrl || '',
       l.website || '',
       typeof (l.site || {}).score === 'number' ? l.site.score : '',
+      LH.leadTags(l).join('; '),
       best ? LH.formatPhone(best.number) : '',
       wa ? LH.waLink(wa) : '',
-      wa ? LH.waLink(wa, LH.pitchFor(l, pitchSettings(l)).whatsapp) : '',
+      wa && !isSkipped(l) ? LH.waLink(wa, LH.pitchFor(l, S.settings).text) : '',
       (l.emails || [])[0] || '',
+      igUrl(l),
       m.address || '',
       (LH.STATUSES.find((s) => s.id === l.status) || {}).label || l.status,
       l.notes || '',
@@ -279,18 +273,17 @@ function renderAreas() {
 
 function initProspects() {
   const form = $('[data-finder-form]');
-  $('[data-ad-niches]').innerHTML = Object.keys(LH.AD_NICHES)
-    .map((n) => `<button type="button" class="chip" data-ad-niche="${esc(n)}">${esc(n)}</button>`)
-    .join('');
+  renderNicheChips();
   $$('[data-ad-cities]').forEach((el) => (el.innerHTML = Object.keys(LH.AREAS).map((c) => `<option ${c === S.settings.adsCity ? 'selected' : ''}>${esc(c)}</option>`).join('')));
   renderAreas();
   $('[data-maps-mode]').textContent = S.settings.placesKey ? '(Places API)' : '(in a tab)';
 
   form.addEventListener('click', (e) => {
     const n = e.target.closest('[data-ad-niche]');
-    if (n) {
-      S.finderNiche = n.dataset.adNiche;
-      form.keywords.value = LH.AD_NICHES[S.finderNiche].join('\n');
+    const niche = n && nicheNamed(n.dataset.adNiche);
+    if (niche) {
+      S.finderNiche = niche.name;
+      form.keywords.value = niche.keywords.join('\n');
       $$('[data-ad-niche]', form).forEach((c) => c.classList.toggle('on', c === n));
     }
     const a = e.target.closest('[data-area]');
@@ -318,7 +311,7 @@ function initProspects() {
     if (!areas.length) return fail('Leave at least one area switched on.');
     const res = await send({
       type: 'finder:start',
-      config: { niche: S.finderNiche || keywords[0], keywords, city: form.city.value, areas, target: form.target.value },
+      config: { niche: S.finderNiche, keywords, city: form.city.value, areas, target: form.target.value },
     });
     if (!res || res.error) return fail((res && res.error) || 'Could not start the search.');
     toast('Searching. Businesses appear below as they are found, and each one is checked in the Ad Library.');
@@ -327,7 +320,7 @@ function initProspects() {
   // Filters, table and bulk actions.
   $$('[data-af]').forEach((el) =>
     el.addEventListener(el.type === 'search' ? 'input' : 'change', () => {
-      S.af[el.dataset.af] = el.value;
+      S.af[el.dataset.af] = el.type === 'checkbox' ? el.checked : el.value;
       renderProspectsView();
     }),
   );
@@ -341,6 +334,7 @@ function initProspects() {
       return renderProspectsView();
     }
     if (e.target.closest('[data-wa]')) return quickWhatsApp(l);
+    if (e.target.closest('[data-replied]')) return toggleReplied(l);
     if (e.target.closest('a, select, [data-stop]')) return;
     openDrawer(l.id);
   });

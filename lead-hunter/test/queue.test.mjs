@@ -49,6 +49,49 @@ test('PUT adds valid items, rejects invalid ones and sanitises fields', async ()
   assert.equal(one.status, 'queued');
 });
 
+test('items carry their WhatsApp bubbles as parts, cleaned like the message', async () => {
+  const s = memStore();
+  const r = await call(s, 'PUT', {
+    items: [
+      item('1', { message: 'Hello Glossy\n\nBody\n\nLet me know', parts: ['  Hello Glossy  ', 'Body', '', 'Let me know', 42, null] }),
+      item('2', { parts: ['x'.repeat(1999) + '😀 and more', 'y'.repeat(2500)] }),
+      item('3', { parts: ['a', 'b', 'c', 'd', 'e'] }),
+      item('4', { parts: 'not a list' }),
+      item('5', { message: '', parts: ['only parts'] }),
+      item('6'),
+    ],
+  });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.accepted, 5, 'message stays required');
+  const by = (id) => r.data.items.find((i) => i.id === id);
+  assert.deepEqual(by('1').parts, ['Hello Glossy', 'Body', 'Let me know'], 'trimmed, empties and non-strings dropped');
+  assert.equal(by('1').message, 'Hello Glossy\n\nBody\n\nLet me know');
+  assert.equal(by('2').parts[1].length, 2000, 'each part is capped at 2000 characters');
+  assert.equal(by('2').parts[0], 'x'.repeat(1999), 'no half emoji left at the cut');
+  assert.ok(by('2').parts[0].isWellFormed());
+  assert.deepEqual(by('3').parts, [], 'more than 4 bubbles falls back to the single message');
+  assert.deepEqual(by('4').parts, []);
+  assert.deepEqual(by('6').parts, [], 'single-message items work as before');
+  assert.equal(by('6').message, 'Hi 6');
+  // GET returns the parts.
+  const g = await call(s, 'GET');
+  assert.deepEqual(g.data.items.find((i) => i.id === '1').parts, ['Hello Glossy', 'Body', 'Let me know']);
+});
+
+test('legacy items stored without parts still read, update and delete', async () => {
+  const s = memStore();
+  await s.setJSON('queue', { items: [{ id: 'old', name: 'Old Biz', wa: '971501234567', message: 'Hi', domain: '', issue: '', heat: 'warm', priority: 50, pageUrl: '', addedAt: 5, status: 'queued', statusAt: 5 }], updatedAt: 5 });
+  let r = await call(s, 'GET');
+  assert.equal(r.data.items[0].message, 'Hi');
+  assert.equal(r.data.items[0].parts, undefined);
+  r = await call(s, 'POST', { updates: [{ id: 'old', status: 'sent', rev: 5 }] });
+  assert.equal(r.data.items[0].status, 'sent');
+  r = await call(s, 'PUT', { items: [item('new', { parts: ['a', 'b'] })] });
+  assert.deepEqual(r.data.items.map((i) => i.id), ['old', 'new']);
+  r = await call(s, 'DELETE', { finished: true });
+  assert.deepEqual(r.data.items.map((i) => i.id), ['new']);
+});
+
 test('phone updates use the revision so stale taps are ignored', async () => {
   const s = memStore();
   const first = (await call(s, 'PUT', { items: [item('1'), item('2')] })).data.items;

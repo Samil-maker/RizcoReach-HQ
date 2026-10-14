@@ -1,4 +1,4 @@
-/* Lead Hunter dashboard: lead table, detail drawer with pitch composer, hunts and settings.
+/* Lead Hunter dashboard: lead table, detail drawer with the message bubbles, hunts and settings.
    Reads chrome.storage directly and re-renders on every change; all lead writes
    go through the background worker so they never race with enrichment. */
 const LH = globalThis.LH;
@@ -24,14 +24,17 @@ const ICON = {
 
 const S = {
   leads: new Map(),
-  settings: { ...LH.DEFAULT_SETTINGS },
+  settings: LH.withDefaults(),
   hunt: null,
   queue: [],
   selected: new Set(),
   view: 'leads',
   openId: null,
-  pitch: { id: null, angle: null, channel: 'whatsapp', dirty: false, phone: null },
-  filters: { q: '', heat: '', status: '', keyword: '', site: '', contact: '', minDays: 0, hideBig: true, sort: 'priority', hunt: '' },
+  huntNiche: '',
+  // force: 'website' after "Pitch anyway" · bubbles/email/subject: edits while the drawer is open · qr: bubble in the QR code
+  // waTab: the WhatsApp tab this lead's bubbles open in
+  pitch: { id: null, channel: 'whatsapp', force: null, bubbles: null, email: null, subject: null, phone: null, qr: 0, opened: new Set(), waTab: null },
+  filters: { q: '', heat: '', status: '', keyword: '', site: '', tag: '', contact: '', minDays: 0, hideBig: true, skipped: false, sort: 'priority', hunt: '' },
 };
 
 /* ------------------------------------------------------------------ data */
@@ -42,7 +45,7 @@ async function load() {
       .filter(([k]) => k.startsWith('lead:'))
       .map(([, v]) => [v.id, v]),
   );
-  S.settings = { ...LH.DEFAULT_SETTINGS, ...(all.settings || {}) };
+  S.settings = LH.withDefaults(all.settings);
   S.hunt = all.hunt || null;
   S.finder = all.finder || null;
   S.adQueue = all.adCheckQueue || [];
@@ -67,7 +70,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
         S.selected.delete(id);
       }
     } else if (k === 'settings') {
-      S.settings = { ...LH.DEFAULT_SETTINGS, ...(newValue || {}) };
+      S.settings = LH.withDefaults(newValue);
       settingsChanged = true;
     } else if (k === 'hunt') S.hunt = newValue || null;
     else if (k === 'enrichQueue') S.queue = newValue || [];
@@ -76,10 +79,18 @@ chrome.storage.onChanged.addListener((changes, area) => {
     else if (k === 'adCheckPaused') S.adPaused = !!newValue;
   }
   if (settingsChanged && S.view !== 'settings') fillSettings();
+  if (settingsChanged) renderNicheChips();
   scheduleRender();
 });
 
 /* --------------------------------------------------------------- filters */
+const isSkipped = (l) => !LH.scriptFor(l).script; // running ads: left out of outreach (phone mode, phone queue)
+/** Skipped leads you have not messaged. Leads already in your pipeline (contacted, replied, meeting…) always show. */
+const skippedNew = (l) => isSkipped(l) && l.status === 'new' && !l.contactedAt;
+/** Those show only when asked for: the checkbox or the "Running ads" tag. */
+const skipHidden = (l, f) => skippedNew(l) && !f.skipped && f.tag !== 'Running ads';
+const tagMatch = (l, tag) => !tag || LH.leadTags(l).includes(tag);
+
 function filtered() {
   const f = S.filters;
   const q = f.q.trim().toLowerCase();
@@ -90,23 +101,20 @@ function filtered() {
     const p = LH.priority(l, now);
     if (f.hunt && !(l.hunts || []).includes(f.hunt)) continue;
     if (f.hideBig && (l.pageLikes || 0) > BIG_BRAND) continue;
+    if (skipHidden(l, f) || !tagMatch(l, f.tag)) continue;
     if (f.heat && LH.heat(p) !== f.heat) continue;
     if (f.status === '' && l.status === 'skip') continue;
     if (f.status && f.status !== 'all' && l.status !== f.status) continue;
     if (f.keyword && !(l.keywords || []).includes(f.keyword)) continue;
-    const site = l.site || {};
     if (f.site === 'none' && l.website) continue;
-    if (f.site === 'has' && !l.website) continue;
-    if (f.site === 'broken' && !(site.state === 'error' || site.parked)) continue;
-    if (f.site === 'weak' && !(typeof site.score === 'number' && site.score < 60)) continue;
-    if (f.site === 'nopixel' && !(site.state === 'ok' && !site.parked && site.pixel === false)) continue;
+    if (f.site === 'down' && !LH.siteDown(l)) continue;
     if (f.contact === 'phone' && !l.phones.length) continue;
     if (f.contact === 'wa' && !LH.whatsappTarget(l)) continue;
     if (f.contact === 'email' && !(l.emails || []).length) continue;
     if (f.contact === 'nophone' && l.phones.length) continue;
     if (f.minDays && (LH.daysRunning(l, now) ?? -1) < f.minDays) continue;
     if (q) {
-      const hay = [l.pageName, l.website, ...(l.keywords || []), ...(l.categories || []), ...l.phones.map((x) => x.number), ...(l.emails || []), l.notes]
+      const hay = [l.pageName, l.website, LH.igHandle(l), ...(l.keywords || []), ...(l.categories || []), ...l.phones.map((x) => x.number), ...(l.emails || []), l.notes]
         .join(' ')
         .toLowerCase();
       if (!hay.includes(q)) continue;
@@ -122,7 +130,7 @@ function filtered() {
     newest: (a, b) => (b.l.createdAt || 0) - (a.l.createdAt || 0),
     name: (a, b) => (a.l.pageName || '').localeCompare(b.l.pageName || ''),
   };
-  return rows.sort((a, b) => sorters[f.sort](a, b) || b.p - a.p);
+  return rows.sort((a, b) => isSkipped(a.l) - isSkipped(b.l) || sorters[f.sort](a, b) || b.p - a.p);
 }
 
 /* ---------------------------------------------------------------- pieces */
@@ -172,16 +180,16 @@ function contactCell(l) {
   const best = LH.bestPhone(l);
   const wa = LH.whatsappTarget(l);
   const parts = [];
-  // Show the number the WhatsApp button opens, so what you see is who you message.
+  // Show the number the WhatsApp bubbles go to, so what you see is who you message.
   const shown = wa || (best && best.number);
   if (shown)
     parts.push(
-      `<div class="p"><span class="num">${esc(LH.formatPhone(shown))}</span>${wa ? `<button class="icon-btn wa" data-wa title="Open WhatsApp with your pitch" aria-label="WhatsApp ${esc(l.pageName)}">${ICON.wa}</button>` : ''}</div>`,
+      `<div class="p"><span class="num">${esc(LH.formatPhone(shown))}</span>${wa ? `<button class="icon-btn wa" data-wa title="Open the WhatsApp bubbles" aria-label="WhatsApp ${esc(l.pageName)}">${ICON.wa}</button>` : ''}</div>`,
     );
-  const extras = [];
-  if ((l.emails || [])[0]) extras.push(`<span title="${esc(l.emails[0])}">${ICON.mail}</span>`);
-  if ((l.socials || {}).instagram) extras.push(`<span title="Instagram">${ICON.ig}</span>`);
-  if (extras.length) parts.push(`<div class="p muted" style="gap:8px">${extras.join('')}${!best && l.emails[0] ? `<span>${esc(l.emails[0])}</span>` : ''}</div>`);
+  const ig = LH.igHandle(l);
+  const email = (l.emails || [])[0];
+  if (ig) parts.push(`<div class="p muted">${ICON.ig}<a class="trunc" href="https://www.instagram.com/${esc(encodeURIComponent(ig))}/" target="_blank" rel="noopener noreferrer" data-stop>@${esc(ig)}</a></div>`);
+  if (email) parts.push(`<div class="p muted">${ICON.mail}<span class="trunc" title="${esc(email)}">${esc(email)}</span></div>`);
   if (!parts.length) {
     const st = (l.site || {}).state;
     return ['queued', 'running'].includes(st) ? '<span class="muted">Looking…</span>' : '<span class="muted">No contact yet</span>';
@@ -190,20 +198,38 @@ function contactCell(l) {
   return `<div class="contact">${parts.join('')}</div>`;
 }
 
+/* Row tags are for sorting and filtering only: the script never changes because of them. */
+const TAG_CLASS = { 'No website': 'amber', 'Site down': 'amber', 'Running ads': 'red', 'Good reviews': 'green' };
+const tagsHtml = (l) => {
+  const tags = LH.leadTags(l);
+  return tags.length ? `<div class="tags">${tags.map((t) => `<span class="tag ${TAG_CLASS[t] || ''}">${esc(t)}</span>`).join('')}</div>` : '';
+};
+/** One tap: they replied. Tap again to undo (back to contacted). Meeting booked and Won are past it. */
+function repliedButton(l) {
+  const on = LH.hasReplied(l);
+  const past = ['meeting', 'won'].includes(l.status);
+  return `<button class="btn sm reply ${on ? 'on' : ''}" data-replied aria-pressed="${on}" ${past ? 'disabled' : ''} title="${on ? 'They replied. Tap again to undo' : 'Mark that they replied'}">${on ? '✓ Replied' : 'Replied'}</button>`;
+}
+const statusCell = (l) => `<div class="status-cell"><select class="status-sel" data-status aria-label="Status">${statusOptions(l.status)}</select>${repliedButton(l)}</div>`;
+function toggleReplied(l) {
+  if (LH.hasReplied(l)) update(l.id, { status: 'contacted', repliedAt: null });
+  else update(l.id, { status: 'replied' });
+}
+
 function rowHtml({ l, p }) {
   const heat = LH.heat(p);
   const days = LH.daysRunning(l);
   const meta = [l.categories && l.categories[0], l.keywords && l.keywords[0] && `“${l.keywords[0]}”`].filter(Boolean).join(' · ');
-  const dim = ['lost', 'skip', 'won'].includes(l.status) ? ' dim' : '';
+  const dim = ['lost', 'skip', 'won'].includes(l.status) || skippedNew(l) ? ' dim' : '';
   return `<tr data-id="${esc(l.id)}" class="${S.selected.has(l.id) ? 'sel' : ''}${dim}">
     <td class="c-sel"><input type="checkbox" data-sel ${S.selected.has(l.id) ? 'checked' : ''} aria-label="Select ${esc(l.pageName)}" /></td>
     <td><span class="heat ${heat}" title="Priority ${p}/100">${p}</span></td>
-    <td><div class="biz">${avatar(l)}<div style="min-width:0"><div class="n">${esc(l.pageName || 'Unknown page')}</div><div class="m">${esc(meta)}</div></div></div></td>
+    <td><div class="biz">${avatar(l)}<div style="min-width:0"><div class="n">${esc(l.pageName || 'Unknown page')}</div><div class="m">${esc(meta)}</div>${tagsHtml(l)}</div></div></td>
     <td class="nowrap"><b class="num">${l.activeAdCount || 0}</b> <span class="muted">active</span><div class="muted">${esc(daysText(days))}</div></td>
     <td>${siteCell(l)}</td>
     <td>${issueCell(l)}</td>
     <td>${contactCell(l)}</td>
-    <td><select class="status-sel" data-status aria-label="Status">${statusOptions(l.status)}</select></td>
+    <td>${statusCell(l)}</td>
     <td><button class="btn sm" data-open>Pitch</button></td>
   </tr>`;
 }
@@ -275,10 +301,13 @@ function renderFilterOptions() {
 
 function renderTable() {
   const rows = filtered();
+  const website = [...S.leads.values()].filter((l) => l.kind !== 'prospect');
+  const skipped = S.filters.skipped ? 0 : website.filter(skippedNew).length;
   $('[data-rows]').innerHTML = rows.map(rowHtml).join('');
-  $('[data-empty]').hidden = rows.length > 0 || S.leads.size === 0;
-  $('[data-count]').innerHTML = S.leads.size
-    ? `Showing ${rows.length} of ${S.leads.size} leads${S.filters.hunt ? ' from one hunt' : ''}.${S.filters.hideBig ? ' Big brands hidden.' : ''}` +
+  $('[data-empty]').hidden = rows.length > 0 || website.length === 0;
+  $('[data-empty]').textContent = skipped && !rows.length ? 'No leads to message here. The rest run ads and already have a website: tick "Show skipped" to see them.' : 'No leads match these filters.';
+  $('[data-count]').innerHTML = website.length
+    ? `Showing ${rows.length} of ${website.length} leads${S.filters.hunt ? ' from one hunt' : ''}.${skipped ? ` ${skipped} skipped (running ads with a website).` : ''}${S.filters.hideBig ? ' Big brands hidden.' : ''}` +
       (S.filters.hunt ? ` <button class="btn sm ghost" data-act="clear-hunt-filter">Show all leads</button>` : '')
     : '';
   const ids = rows.map((r) => r.l.id);
@@ -296,9 +325,26 @@ function renderTable() {
   $('.table-wrap').hidden = S.leads.size === 0;
 }
 
+/* Results: reply rates across every lead in both tabs, by niche and by script. */
+function renderResults() {
+  const r = LH.results([...S.leads.values()], S.settings);
+  const table = (title, list) =>
+    `<table class="mini"><thead><tr><th>${title}</th><th>Sent</th><th>Replied</th><th>Reply rate</th></tr></thead><tbody>${list
+      .map((x) => `<tr><td>${esc(x.label)}</td><td class="num">${x.sent}</td><td class="num">${x.replied}</td><td class="num">${esc(x.rate)}</td></tr>`)
+      .join('')}</tbody></table>`;
+  const sum = `${r.total.sent} sent · ${r.total.replied} replied · ${r.total.rate} reply rate`;
+  const body = r.total.sent ? `${table('By niche', r.byNiche)}${table('By script', r.byScript)}` : '<p class="muted">Nothing sent yet. Leads you message show up here, with who replied.</p>';
+  $$('[data-results]').forEach((el) => {
+    el.hidden = S.leads.size === 0;
+    $('[data-results-sum]', el).textContent = sum;
+    $('[data-results-body]', el).innerHTML = body;
+  });
+}
+
 function renderAll() {
   renderKpis();
   renderBanner();
+  renderResults();
   if (S.view === 'leads') {
     renderFilterOptions();
     renderTable();
@@ -313,7 +359,7 @@ function openDrawer(id) {
   const l = S.leads.get(id);
   if (!l) return;
   S.openId = id;
-  S.pitch = { id, angle: LH.pitchAngle(l), channel: 'whatsapp', dirty: false, phone: LH.whatsappTarget(l) };
+  S.pitch = { id, channel: 'whatsapp', force: null, bubbles: null, email: null, subject: null, phone: LH.whatsappTarget(l), qr: 0, opened: new Set(), waTab: null };
   renderDrawer(true);
   $('[data-scrim]').hidden = false;
   const d = $('[data-drawer]');
@@ -329,13 +375,10 @@ function closeDrawer() {
   d.setAttribute('aria-hidden', 'true');
 }
 
-/* Settings for rendering a pitch; Meta-ads pitches also get how many competitors advertise. */
-function pitchSettings(l) {
-  return l && l.kind === 'prospect' ? { ...S.settings, __competitors: competitorCount(l) } : S.settings;
-}
-function currentPitch(l) {
-  return LH.pitchFor(l, pitchSettings(l), S.pitch.angle);
-}
+/** The message for the open lead ("Pitch anyway" forces the website script). */
+const currentPitch = (l) => LH.pitchFor(l, S.settings, S.pitch.force);
+/** The bubbles as edited in the drawer, or as the script writes them. */
+const pitchBubbles = (p) => (S.pitch.bubbles && S.pitch.bubbles.length === p.bubbles.length ? S.pitch.bubbles : p.bubbles);
 
 function renderDrawer(fresh = false) {
   const l = S.leads.get(S.openId);
@@ -350,25 +393,29 @@ function renderDrawer(fresh = false) {
   }
   const keep = {
     notes: $('[data-notes]', d) && !fresh ? $('[data-notes]', d).value : null,
-    body: S.pitch.dirty && $('[data-pitch-body]', d) ? $('[data-pitch-body]', d).value : null,
-    subject: S.pitch.dirty && $('[data-pitch-subject]', d) ? $('[data-pitch-subject]', d).value : null,
     scroll: fresh ? 0 : d.scrollTop,
   };
   d.innerHTML = drawerHtml(l);
   if (keep.notes != null && keep.notes !== (l.notes || '')) $('[data-notes]', d).value = keep.notes;
-  if (keep.body != null) $('[data-pitch-body]', d).value = keep.body;
-  if (keep.subject != null && $('[data-pitch-subject]', d)) $('[data-pitch-subject]', d).value = keep.subject;
   d.scrollTop = keep.scroll;
   drawPitchQr();
 }
 
-/* QR code for the pitch: scan with a phone and WhatsApp opens there with the message ready. */
+/** Re-render the open drawer where it is scrolled to (after a click inside it). */
+function redrawDrawer() {
+  const top = $('[data-drawer]').scrollTop;
+  renderDrawer(true);
+  $('[data-drawer]').scrollTop = top;
+}
+
+/* QR code for one bubble: scan with a phone and WhatsApp opens there with that bubble typed in. */
 function drawPitchQr() {
   const canvas = $('[data-pitch-qr]');
   if (!canvas) return;
   const phone = ($('[data-pitch-phone]') || {}).value;
-  const text = ($('[data-pitch-body]') || {}).value || '';
-  const ok = phone && LH.drawQr(canvas, LH.waLink(phone, text), 232);
+  const boxes = $$('[data-bubble]');
+  const box = boxes[Math.min(S.pitch.qr, boxes.length - 1)];
+  const ok = phone && box && LH.drawQr(canvas, LH.waLink(phone, box.value), 232);
   canvas.hidden = !ok;
   $('[data-qr-err]').hidden = !!ok;
 }
@@ -460,7 +507,9 @@ function contactSection(l) {
         .join('')}</div>`
     : `<p class="muted">No phone number found yet.</p>`;
   const emails = (l.emails || []).map((e) => `<a href="mailto:${esc(e)}">${esc(e)}</a>`).join(' · ');
+  const ig = LH.igHandle(l);
   const socials = Object.entries(l.socials || {})
+    .filter(([k]) => !(ig && k === 'instagram'))
     .map(([k, u]) => `<a href="${esc(safeHref(u))}" target="_blank" rel="noopener noreferrer">${esc(k)}</a>`)
     .join(' · ');
   const pl = l.places;
@@ -474,6 +523,7 @@ function contactSection(l) {
           : '';
   return `<section class="d-sec" data-contact-sec><h3>Contact</h3>
     ${phones}
+    ${ig ? `<p>Instagram: <a href="https://www.instagram.com/${esc(encodeURIComponent(ig))}/" target="_blank" rel="noopener noreferrer">@${esc(ig)}</a></p>` : ''}
     ${emails ? `<p>Email: ${emails}</p>` : ''}
     ${socials ? `<p>Profiles: ${socials}</p>` : ''}
     ${places}
@@ -487,57 +537,94 @@ function contactSection(l) {
   </section>`;
 }
 
+const bubbleRows = (t) => Math.min(12, Math.max(1, (String(t).match(/\n/g) || []).length + Math.ceil(String(t).length / 64)));
+
 function pitchSection(l) {
   const p = currentPitch(l);
-  const { all, defaults } = LH.templatesFor(l, S.settings);
-  const angles = Object.keys(defaults)
-    .map((k) => `<button class="chip ${k === p.angle ? 'on' : ''}" data-angle="${k}">${esc((all[k] || defaults[k]).name)}</button>`)
-    .join('');
+  if (!p.script) {
+    return `<section class="d-sec pitch"><h3>Message</h3>
+      <div class="skip-box"><b>Skipped: running ads</b>
+        <span class="muted">${l.kind === 'prospect' ? 'They already run Facebook and Instagram ads' : 'They run ads and have a working website'}, so they are left out of outreach.</span>
+        <button class="linkish" data-act="pitch-anyway">Pitch anyway (website script)</button></div></section>`;
+  }
+  const ch = S.pitch.channel;
   const channels = [
     ['whatsapp', 'WhatsApp'],
+    ['instagram', 'Instagram'],
     ['email', 'Email'],
-    ['dm', 'Instagram DM'],
   ]
-    .map(([k, n]) => `<button class="chip ${k === S.pitch.channel ? 'on' : ''}" data-channel="${k}">${n}</button>`)
+    .map(([k, n]) => `<button class="chip ${k === ch ? 'on' : ''}" data-channel="${k}">${n}</button>`)
     .join('');
-  const waNumbers = l.phones.map((x) => x.number);
-  const waSel = S.pitch.phone && waNumbers.includes(S.pitch.phone) ? S.pitch.phone : LH.whatsappTarget(l) || waNumbers[0] || '';
-  const body = S.pitch.channel === 'email' ? p.email : p.whatsapp;
-  let send = '';
-  if (S.pitch.channel === 'whatsapp') {
-    send = waNumbers.length
-      ? `<select class="inp" data-pitch-phone aria-label="Send to">${waNumbers.map((n) => `<option value="${esc(n)}" ${n === waSel ? 'selected' : ''}>${esc(LH.formatPhone(n))}</option>`).join('')}</select>
-         <button class="btn" data-act="send-wa" title="Opens WhatsApp Web or the WhatsApp desktop app">${ICON.wa.replace('<svg', '<svg width="16" height="16"')} WhatsApp on this computer</button>`
-      : `<span class="muted">Add a number below to send on WhatsApp.</span>`;
-  } else if (S.pitch.channel === 'email') {
-    send = (l.emails || []).length ? `<button class="btn pri" data-act="send-email">Open email to ${esc(l.emails[0])}</button>` : `<span class="muted">No email found. Copy the text instead.</span>`;
-  } else {
-    send = (l.socials || {}).instagram
-      ? `<button class="btn pri" data-act="send-dm">Copy &amp; open Instagram</button>`
-      : `<a class="btn" href="${esc(safeHref(l.pageUrl))}" target="_blank" rel="noopener noreferrer" data-act="copy-open">Copy &amp; open Facebook page</a>`;
-  }
-  return `<section class="d-sec pitch"><h3>Pitch <span class="tag">${esc((all[p.angle] || defaults[p.angle]).name)} angle</span></h3>
+  // Pitched anyway: they have a working website, so the "no website" line is not true for them.
+  const noSiteAt = S.pitch.force && l.website && !LH.siteDown(l) ? p.bubbles.findIndex((b) => b.includes(LH.scriptVars(l, S.settings).website_line)) + 1 : 0;
+  const notes = [
+    noSiteAt ? `Bubble ${noSiteAt} says they have no website. Edit that line before you send.` : '',
+    !S.pitch.force && p.tag === 'Ad check not done' ? 'The Meta ads check is not done yet, so this is the ads script for now. Check the verdict above before you send.' : '',
+  ]
+    .filter(Boolean)
+    .map((t) => `<p class="note">${esc(t)}</p>`)
+    .join('');
+  return `<section class="d-sec pitch"><h3>Message <span class="tag">${esc(LH.scriptsFor(S.settings)[p.script].name)}</span><span class="tag">${esc(p.tag)}</span></h3>
+    ${notes}
     <div class="pitch-tabs">${channels}</div>
-    <div class="pitch-tabs">${angles}</div>
-    ${S.pitch.channel === 'email' ? `<input class="inp" data-pitch-subject value="${esc(p.subject)}" aria-label="Email subject" style="margin-bottom:8px" />` : ''}
-    <textarea class="inp" data-pitch-body aria-label="Message">${esc(body)}</textarea>
-    <div class="row">${send}<button class="btn" data-act="copy-pitch">Copy</button></div>
-    ${S.pitch.channel === 'whatsapp' && waNumbers.length ? phoneBlock() : ''}
-    <p class="hint">Opening WhatsApp or email here marks the lead as contacted. Edit the message freely; edits are not saved to the template.</p>
+    ${ch === 'email' ? emailBlock(l, p) : bubblesBlock(l, p, ch === 'whatsapp')}
+    <p class="hint">Nothing is sent for you. Each button opens the message typed in and you press Send. Edits here are not saved to the script.</p>
   </section>`;
 }
 
-function phoneBlock() {
+function bubblesBlock(l, p, wa) {
+  const bubbles = pitchBubbles(p);
+  const nums = l.phones.map((x) => x.number);
+  const sel = S.pitch.phone && nums.includes(S.pitch.phone) ? S.pitch.phone : LH.whatsappTarget(l) || nums[0] || '';
+  const ig = LH.igHandle(l);
+  let top;
+  if (wa)
+    top = nums.length
+      ? `<div class="row send-to"><label class="lbl" for="d-wa">Send to</label><select id="d-wa" class="inp" data-pitch-phone>${nums.map((n) => `<option value="${esc(n)}" ${n === sel ? 'selected' : ''}>${esc(LH.formatPhone(n))}</option>`).join('')}</select></div>`
+      : `<p class="muted">Add a phone number below to open the bubbles in WhatsApp. You can still copy them.</p>`;
+  else
+    top = ig
+      ? `<div class="row send-to"><a class="btn sm" href="https://www.instagram.com/${esc(encodeURIComponent(ig))}/" target="_blank" rel="noopener noreferrer">${ICON.ig} Open Instagram @${esc(ig)}</a></div>`
+      : `<p class="muted">No Instagram found for them yet. Copy the bubbles into a DM.</p>`;
+  const canOpen = wa && nums.length;
+  const list = bubbles
+    .map((b, i) => {
+      const opened = canOpen && S.pitch.opened.has(i);
+      return `<div class="bubble${opened ? ' done' : ''}">
+        <div class="bubble-head"><span class="lbl">Bubble ${i + 1}</span>${opened ? '<span class="tick">✓ Opened</span>' : ''}</div>
+        <textarea class="inp" data-bubble="${i}" rows="${bubbleRows(b)}" aria-label="Bubble ${i + 1}">${esc(b)}</textarea>
+        <div class="row">${canOpen ? `<button class="btn sm ${opened ? '' : 'wa'}" data-act="open-bubble" data-i="${i}">${ICON.wa} ${opened ? `Open bubble ${i + 1} again` : `Open bubble ${i + 1} in WhatsApp`}</button>` : ''}<button class="btn sm" data-act="copy-bubble" data-i="${i}">Copy</button></div>
+      </div>`;
+    })
+    .join('');
   const queueOn = S.settings.queueKey && S.settings.queueSite;
+  const queue = canOpen ? (queueOn ? '<button class="btn sm" data-act="queue-one">Send to phone queue</button>' : '<button class="btn sm ghost" data-goto="settings" data-anchor="phone">Set up phone queue</button>') : '';
+  return `${top}<div class="bubbles">${list}</div>
+    <div class="row"><button class="btn sm pri" data-act="mark-sent">Mark as sent</button>${queue}</div>
+    ${canOpen ? qrBlock(bubbles.length) : ''}`;
+}
+
+function emailBlock(l, p) {
+  const to = (l.emails || [])[0];
+  return `<input class="inp" data-email-subject value="${esc(S.pitch.subject ?? p.subject)}" aria-label="Email subject" style="margin-bottom:8px" />
+    <textarea class="inp" data-email-body rows="12" aria-label="Email">${esc(S.pitch.email ?? p.email)}</textarea>
+    <div class="row">${to ? `<button class="btn sm pri" data-act="send-email">Open email to ${esc(to)}</button>` : '<span class="muted">No email found. Copy the text instead.</span>'}
+      <button class="btn sm" data-act="copy-email">Copy</button>
+      <button class="btn sm" data-act="mark-sent">Mark as sent</button></div>`;
+}
+
+function qrBlock(n) {
+  const i = Math.min(S.pitch.qr, n - 1);
+  const toggles =
+    n > 1
+      ? `<div class="qr-toggles" role="group" aria-label="Bubble in the QR code">${Array.from({ length: n }, (_, k) => `<button class="chip ${k === i ? 'on' : ''}" data-qr-i="${k}" aria-pressed="${k === i}" aria-label="Bubble ${k + 1}">${k + 1}</button>`).join('')}</div>`
+      : '';
   return `<div class="qr-wrap">
-      <canvas data-pitch-qr title="Click to enlarge" aria-label="QR code that opens this WhatsApp message on your phone"></canvas>
+      <canvas data-pitch-qr title="Click to enlarge" aria-label="QR code that opens this bubble in WhatsApp on your phone"></canvas>
       <div><b>Send from your phone</b>
-        <p>Point your phone's camera at the code. WhatsApp opens on your phone with this number and message ready; just press send. Click the code to make it bigger.</p>
-        <p class="qr-err" data-qr-err hidden>This message is too long for one QR code. Shorten it a little.</p>
-        <div class="row" style="margin-top:0">
-          <button class="btn sm pri" data-act="mark-contacted">I sent it</button>
-          ${queueOn ? '<button class="btn sm" data-act="queue-one">Send to phone queue</button>' : '<button class="btn sm ghost" data-goto="settings" data-anchor="phone">Set up phone queue</button>'}
-        </div>
+        <p>Point your phone's camera at the code. WhatsApp opens on your phone with bubble <span data-qr-n>${i + 1}</span> typed in. Press send there, then switch to the next bubble here. Click the code to make it bigger.</p>
+        ${toggles}
+        <p class="qr-err" data-qr-err hidden>This bubble is too long for one QR code. Shorten it a little.</p>
       </div>
     </div>`;
 }
@@ -611,20 +698,31 @@ async function copy(text) {
     toast('Could not copy. Select the text and copy it manually.');
   }
 }
-function markContacted(l) {
-  if (l.status !== 'new') return;
-  update(l.id, { status: 'contacted' });
-  toast(`Marked “${l.pageName}” as contacted`, () => update(l.id, { status: 'new' }));
+/** Contacted, with the script that was sent, and an undo. Returns false when the lead is past "contacted". */
+function markContacted(l, script) {
+  if (!['new', 'followup'].includes(l.status)) return false;
+  const prev = l.status;
+  update(l.id, { status: 'contacted', sentScript: script || undefined });
+  toast(`Marked “${l.pageName}” as contacted`, () => update(l.id, { status: prev }));
+  return true;
 }
 function openTab(url) {
   chrome.tabs.create({ url });
 }
+/** One WhatsApp tab per open lead: bubble 1 opens it, the next bubbles load in it (a new tab only if you closed it). */
+async function openWhatsApp(url) {
+  const pitch = S.pitch;
+  if (pitch.waTab != null) {
+    try {
+      await chrome.tabs.update(pitch.waTab, { url, active: true });
+      return;
+    } catch {}
+  }
+  pitch.waTab = (await chrome.tabs.create({ url })).id;
+}
+/** The WhatsApp icon on a row opens the lead on its bubbles (each bubble is opened and sent by hand). */
 function quickWhatsApp(l) {
-  const n = LH.whatsappTarget(l);
-  if (!n) return;
-  const p = LH.pitchFor(l, S.settings);
-  openTab(`https://wa.me/${n.replace(/\D/g, '')}?text=${encodeURIComponent(p.whatsapp)}`);
-  markContacted(l);
+  openDrawer(l.id);
 }
 
 function download(name, text, type) {
@@ -637,10 +735,11 @@ function download(name, text, type) {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
+const igUrl = (l) => (LH.igHandle(l) ? `https://www.instagram.com/${LH.igHandle(l)}/` : '');
 function exportCsv(leads) {
   if (leads.length && leads.every((l) => l.kind === 'prospect')) return exportProspectsCsv(leads);
   const now = Date.now();
-  const head = ['priority', 'heat', 'business', 'facebook_page', 'all_ads', 'keywords', 'category', 'page_likes', 'active_ads', 'days_running', 'first_ad_started', 'website', 'landing_page', 'website_score', 'website_status', 'builder', 'meta_pixel', 'top_issues', 'phone', 'whatsapp_link', 'whatsapp_message_link', 'other_phones', 'email', 'instagram', 'google_rating', 'google_reviews', 'status', 'notes', 'found_on'];
+  const head = ['priority', 'heat', 'business', 'facebook_page', 'all_ads', 'keywords', 'category', 'page_likes', 'active_ads', 'days_running', 'first_ad_started', 'website', 'landing_page', 'website_score', 'website_status', 'builder', 'meta_pixel', 'top_issues', 'tags', 'phone', 'whatsapp_link', 'whatsapp_message_link', 'other_phones', 'email', 'instagram', 'google_rating', 'google_reviews', 'status', 'notes', 'found_on'];
   const rows = leads.map((l) => {
     const p = LH.priority(l, now);
     const site = l.site || {};
@@ -665,12 +764,13 @@ function exportCsv(leads) {
       site.builder || '',
       site.state === 'ok' && !site.parked ? (site.pixel ? 'yes' : 'no') : '',
       (site.issues || []).slice(0, 4).map((i) => i.label).join('; '),
+      LH.leadTags(l).join('; '),
       best ? LH.formatPhone(best.number) : '',
       wa ? LH.waLink(wa) : '',
-      wa ? LH.waLink(wa, LH.pitchFor(l, S.settings).whatsapp) : '',
+      wa && !isSkipped(l) ? LH.waLink(wa, LH.pitchFor(l, S.settings).text) : '',
       l.phones.filter((x) => !best || x.number !== best.number).map((x) => LH.formatPhone(x.number)).join('; '),
       (l.emails || [])[0] || '',
-      (l.socials || {}).instagram || '',
+      igUrl(l),
       (l.places && l.places.rating) || '',
       (l.places && l.places.reviews) || '',
       (LH.STATUSES.find((s) => s.id === l.status) || {}).label || l.status,
@@ -683,7 +783,10 @@ function exportCsv(leads) {
 
 /* ----------------------------------------------------------------- views */
 function setView(v) {
-  if (S.view !== v) S.selected.clear();
+  if (S.view !== v) {
+    S.selected.clear();
+    scrollTo(0, 0); // a tab opens at its top, not where the last one was scrolled to
+  }
   S.view = v;
   $$('.tabs [data-view]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.view === v)));
   $$('[data-view-panel]').forEach((p) => (p.hidden = p.dataset.viewPanel !== v));
@@ -711,22 +814,29 @@ function renderLastHunt() {
     ${h.status === 'running' ? '<button class="btn sm danger" data-act="stop-hunt">Stop hunt</button>' : ''}</div>`;
 }
 
+/** Niche chips on New hunt and on the Meta ads finder: one list, edited in Settings. */
+function renderNicheChips() {
+  const niches = LH.nichesFor(S.settings);
+  const chip = (attr, n, on) => `<button type="button" class="chip ${on ? 'on' : ''}" ${attr}="${esc(n.name)}">${esc(n.name)}</button>`;
+  $('[data-presets]').innerHTML = niches.map((n) => chip('data-preset', n, n.name === S.huntNiche)).join('');
+  $('[data-ad-niches]').innerHTML = niches.map((n) => chip('data-ad-niche', n, n.name === S.finderNiche)).join('');
+}
+const nicheNamed = (name) => LH.nichesFor(S.settings).find((n) => n.name === name);
+
 function initHuntForm() {
   const form = $('[data-hunt-form]');
-  $('[data-presets]').innerHTML = Object.keys(LH.NICHES)
-    .map((n) => `<button type="button" class="chip" data-preset="${esc(n)}">${esc(n)}</button>`)
-    .join('');
+  renderNicheChips();
   $$('[data-countries]').forEach((s) => (s.innerHTML = countryOptions(S.settings.country)));
-  let preset = '';
   form.addEventListener('click', (e) => {
     const b = e.target.closest('[data-preset]');
-    if (!b) return;
-    preset = b.dataset.preset;
-    form.keywords.value = LH.NICHES[preset].join('\n');
+    const niche = b && nicheNamed(b.dataset.preset);
+    if (!niche) return;
+    S.huntNiche = niche.name;
+    form.keywords.value = niche.keywords.join('\n');
     $$('[data-preset]', form).forEach((c) => c.classList.toggle('on', c === b));
   });
   form.keywords.addEventListener('input', () => {
-    preset = '';
+    S.huntNiche = '';
     $$('[data-preset]', form).forEach((c) => c.classList.remove('on'));
   });
   form.addEventListener('submit', async (e) => {
@@ -742,7 +852,7 @@ function initHuntForm() {
     const res = await send({
       type: 'hunt:start',
       config: {
-        name: preset || keywords[0],
+        name: S.huntNiche || keywords[0],
         keywords,
         country: form.country.value,
         target: form.target.value,
@@ -762,27 +872,50 @@ function initHuntForm() {
   });
 }
 
-function templateEditor(tpls, defaults = LH.DEFAULT_TEMPLATES, attr = 'data-tpl') {
-  return Object.entries(defaults)
-    .map(([k, def]) => {
-      const t = { ...def, ...((tpls || {})[k] || {}) };
-      return `<div class="tpl"><h4>${esc(def.name)}</h4>
-      <label class="field"><span class="lbl">WhatsApp / DM</span><textarea class="inp" rows="6" ${attr}="${k}.whatsapp">${esc(t.whatsapp)}</textarea></label>
-      <label class="field"><span class="lbl">Email subject</span><input class="inp" ${attr}="${k}.subject" value="${esc(t.subject)}" /></label>
-      <label class="field"><span class="lbl">Email body</span><textarea class="inp" rows="7" ${attr}="${k}.email">${esc(t.email)}</textarea></label></div>`;
-    })
+/* Settings: niches (one list for both tabs) and the two scripts. */
+function nicheRow(n = { name: '', keywords: [] }) {
+  return `<div class="niche-row" data-niche-row>
+    <input class="inp" data-niche-name value="${esc(n.name)}" placeholder="Pet groomers" aria-label="Niche name" />
+    <textarea class="inp" data-niche-kw rows="2" placeholder="dog grooming, pet salon" aria-label="Keywords, comma or one per line">${esc(n.keywords.join(', '))}</textarea>
+    <button type="button" class="btn sm ghost danger" data-act="del-niche">Delete</button>
+  </div>`;
+}
+function renderNicheEditor(list) {
+  $('[data-niches]').innerHTML = list.map((n) => nicheRow(n)).join('');
+}
+/** null when the list is the 4 defaults (or empty), so later default changes reach it. */
+function readNiches(f) {
+  const list = $$('[data-niche-row]', f)
+    .map((r) => ({ name: $('[data-niche-name]', r).value.trim(), keywords: LH.parseKeywords($('[data-niche-kw]', r).value) }))
+    .filter((n) => n.name);
+  const D = LH.DEFAULT_NICHES;
+  const same = list.length === D.length && list.every((n, i) => n.name === D[i].name && n.keywords.join('|') === D[i].keywords.join('|'));
+  return !list.length || same ? null : list;
+}
+
+function scriptCard(key, t) {
+  const field = (part, label, rows) =>
+    `<label class="field"><span class="lbl">${label}</span><textarea class="inp" rows="${rows}" data-script="${key}.${part}">${esc(t[part])}</textarea></label>`;
+  return `<div class="tpl" data-script-card="${key}"><div class="tpl-head"><h4>${esc(t.name)}</h4><button type="button" class="btn sm ghost" data-act="reset-script" data-key="${key}">Reset to default</button></div>
+    ${field('greeting', 'Greeting <small>bubble 1</small>', 1)}${field('body', 'Body <small>bubble 2</small>', 10)}${field('closing', 'Closing <small>bubble 3</small>', 1)}</div>`;
+}
+function renderScriptsEditor(saved) {
+  const all = LH.scriptsFor({ scripts: saved });
+  $('[data-scripts]').innerHTML = Object.entries(all)
+    .map(([k, t]) => scriptCard(k, t))
     .join('');
 }
-function readTemplates(f, attr, defaults) {
+/** Only the parts that differ from the defaults are stored; null when nothing was changed. */
+function readScripts(f) {
   const out = {};
-  $$(`[${attr}]`, f).forEach((el) => {
-    const [k, field] = el.getAttribute(attr).split('.');
-    out[k] = out[k] || { name: defaults[k].name };
-    out[k][field] = el.value;
+  $$('[data-script]', f).forEach((el) => {
+    const [k, part] = el.dataset.script.split('.');
+    const v = el.value.trim();
+    if (LH.DEFAULT_SCRIPTS[k] && v !== LH.DEFAULT_SCRIPTS[k][part]) (out[k] = out[k] || {})[part] = v;
   });
-  const same = Object.entries(out).every(([k, t]) => ['whatsapp', 'subject', 'email'].every((x) => t[x] === defaults[k][x]));
-  return same ? null : out;
+  return Object.keys(out).length ? out : null;
 }
+
 function fillSettings() {
   const f = $('[data-settings-form]');
   const s = S.settings;
@@ -792,8 +925,8 @@ function fillSettings() {
     if (el.type === 'checkbox') el.checked = !!s[el.name];
     else el.value = s[el.name] ?? '';
   }
-  $('[data-templates]').innerHTML = templateEditor(s.templates);
-  $('[data-ad-templates]').innerHTML = templateEditor(s.adTemplates, LH.DEFAULT_AD_TEMPLATES, 'data-adtpl');
+  renderNicheEditor(LH.nichesFor(s));
+  renderScriptsEditor(s.scripts);
   renderPairQr();
 }
 function renderPairQr() {
@@ -814,13 +947,15 @@ async function saveSettings() {
     if (!el.name || !(el.name in LH.DEFAULT_SETTINGS)) continue;
     next[el.name] = el.type === 'checkbox' ? el.checked : el.type === 'number' ? Number(el.value) || LH.DEFAULT_SETTINGS[el.name] : el.value.trim();
   }
-  next.templates = readTemplates(f, 'data-tpl', LH.DEFAULT_TEMPLATES);
-  next.adTemplates = readTemplates(f, 'data-adtpl', LH.DEFAULT_AD_TEMPLATES);
+  next.bubbles = Number(next.bubbles) === 2 ? 2 : 3;
+  next.niches = readNiches(f);
+  next.scripts = readScripts(f);
   if (next.queueKey !== S.settings.queueKey) next.queueKeyAt = Date.now();
   if (next.queueSite && !/^https?:\/\//i.test(next.queueSite)) next.queueSite = `https://${next.queueSite}`;
   next.queueSite = (next.queueSite || '').replace(/\/+$/, '');
   await chrome.storage.local.set({ settings: next });
   S.settings = next;
+  renderNicheChips();
   renderPairQr();
   return next;
 }
@@ -841,34 +976,41 @@ async function queueLeads(ids, b) {
     toast('Set up the phone queue in Settings first (takes 2 minutes).');
     return setView('settings');
   }
-  const overrides = {};
-  for (const id of ids) {
-    const l = S.leads.get(id);
-    if (l) overrides[id] = { message: LH.pitchFor(l, pitchSettings(l)).whatsapp };
-  }
   if (b) b.disabled = true;
-  const r = await send({ type: 'queue:push', ids, overrides });
+  const r = await send({ type: 'queue:push', ids });
   if (b) b.disabled = false;
   if (r && r.error) return toast(r.error);
-  return toast(`Sent ${r.queued} to your phone${r.skipped.length ? ` · ${r.skipped.length} skipped (no phone number)` : ''}`);
+  const left = [r.skipped.length && `${r.skipped.length} without a phone number`, (r.runningAds || []).length && `${r.runningAds.length} running ads`].filter(Boolean);
+  return toast(`Sent ${r.queued} to your phone${left.length ? ` · skipped ${left.join(', ')}` : ''}`);
 }
 
 /* ------------------------------------------------------------ phone mode */
-// One lead at a time with a big QR: scan with the phone, send in WhatsApp, press Enter for the next.
-const PM = { ids: [], i: 0, sent: 0, edits: {}, phones: {} };
+// One lead at a time, one QR per bubble: scan with the phone, press Send in WhatsApp there, Enter here for the
+// next bubble. After the last bubble the lead is marked contacted and the next lead comes up.
+// Leads skipped for running ads are left out, also when an ad check finds their ads while phone mode is open.
+const PM = { ids: [], i: 0, b: 0, sent: 0, pitch: {}, phones: {} };
 const pmLead = () => S.leads.get(PM.ids[PM.i]);
-const pmText = (l) => PM.edits[l.id] ?? LH.pitchFor(l, pitchSettings(l)).whatsapp;
+/** A lead's script and bubbles, fixed when it comes up (edits go in here), so what you scan is what gets recorded. */
+function pmPitch(l) {
+  if (!PM.pitch[l.id]) {
+    const p = LH.pitchFor(l, S.settings);
+    PM.pitch[l.id] = { script: p.script, bubbles: p.bubbles };
+  }
+  return PM.pitch[l.id];
+}
+const pmBubbles = (l) => pmPitch(l).bubbles;
 function pmPhone(l) {
   const nums = l.phones.map((p) => p.number);
   return PM.phones[l.id] && nums.includes(PM.phones[l.id]) ? PM.phones[l.id] : LH.whatsappTarget(l) || nums[0];
 }
 
 function openPhoneMode(ids) {
-  const list = ids.map((id) => S.leads.get(id)).filter((l) => l && l.phones.length && !['won', 'lost', 'skip'].includes(l.status));
-  if (!list.length) return toast('None of these leads has a phone number yet.');
+  const open = ids.map((id) => S.leads.get(id)).filter((l) => l && l.phones.length && !['won', 'lost', 'skip'].includes(l.status));
+  const list = open.filter((l) => !isSkipped(l));
+  if (!list.length) return toast(open.length ? 'These leads all run ads and are skipped for outreach.' : 'None of these leads has a phone number yet.');
   // Leads you have not contacted yet come first; otherwise keep the current sort order.
   list.sort((a, b) => Number(a.status !== 'new') - Number(b.status !== 'new'));
-  Object.assign(PM, { ids: list.map((l) => l.id), i: 0, sent: 0, edits: {}, phones: {} });
+  Object.assign(PM, { ids: list.map((l) => l.id), i: 0, b: 0, sent: 0, pitch: {}, phones: {} });
   closeDrawer();
   $('[data-pm]').hidden = false;
   renderPm();
@@ -882,7 +1024,7 @@ function drawPmQr() {
   const l = pmLead();
   const c = $('[data-pm-qr]');
   if (!l || !c) return;
-  const ok = LH.drawQr(c, LH.waLink(pmPhone(l), pmText(l)), Math.max(260, Math.min(440, innerHeight - 250)));
+  const ok = LH.drawQr(c, LH.waLink(pmPhone(l), pmBubbles(l)[PM.b] || ''), Math.max(260, Math.min(440, innerHeight - 250)));
   c.hidden = !ok;
   $('[data-pm-qr-err]').hidden = ok;
 }
@@ -897,56 +1039,81 @@ function renderPm() {
     return;
   }
   const l = pmLead();
-  if (!l) {
+  // Deleted, or nothing to send any more (an ad check found their ads before they came up): left out.
+  if (!l || !pmBubbles(l).length) {
     PM.ids.splice(PM.i, 1);
+    PM.b = 0;
     return renderPm();
   }
+  const bubbles = pmBubbles(l);
+  const n = bubbles.length;
+  PM.b = Math.min(PM.b, n - 1);
+  const last = PM.b === n - 1;
   const p = LH.priority(l);
   const days = LH.daysRunning(l);
   const issues = l.kind === 'prospect' ? prospectHighlights(l) : !l.website ? [`No website: ads go to ${LH.destinationLabel(l.destinationKind)}`] : ((l.site || {}).issues || []).slice(0, 3).map((i) => i.label);
   const nums = l.phones.map((x) => x.number);
   const cur = pmPhone(l);
   const st = LH.STATUSES.find((x) => x.id === l.status);
-  box.innerHTML = `${head(`<span class="muted num">${PM.i + 1} of ${total} · ${PM.sent} sent</span><span class="pm-prog"><i style="width:${Math.round((100 * PM.i) / total)}%"></i></span>`)}
+  const steps = bubbles.map((_, k) => `<button class="chip ${k === PM.b ? 'on' : ''} ${k < PM.b ? 'done' : ''}" data-pm-b="${k}" aria-pressed="${k === PM.b}">${k < PM.b ? '✓ ' : ''}Bubble ${k + 1}</button>`).join('');
+  box.innerHTML = `${head(`<span class="muted num">Lead ${PM.i + 1} of ${total} · ${PM.sent} sent</span><span class="pm-prog"><i style="width:${Math.round((100 * PM.i) / total)}%"></i></span>`)}
     <div class="pm-body">
       <div class="pm-qr">
-        <canvas data-pm-qr title="Click to enlarge" aria-label="QR code: opens WhatsApp on your phone with this message"></canvas>
-        <p class="qr-err" data-pm-qr-err hidden>Message too long for one QR code. Shorten it a little.</p>
-        <p>Scan with your phone's camera. WhatsApp opens with the number and message ready; press send, then <b>Enter</b> here for the next lead. Click the code to make it bigger.</p>
+        <p class="pm-step" data-pm-step>Bubble ${PM.b + 1} of ${n}</p>
+        <canvas data-pm-qr title="Click to enlarge" aria-label="QR code: opens WhatsApp on your phone with bubble ${PM.b + 1}"></canvas>
+        <p class="qr-err" data-pm-qr-err hidden>This bubble is too long for one QR code. Shorten it a little.</p>
+        <p>Scan with your phone's camera. WhatsApp opens with this bubble typed in. Press send on your phone, then <b>Enter</b> here for the ${last ? 'next lead' : 'next bubble'}. Click the code to make it bigger.</p>
       </div>
       <div class="pm-info">
         <h2>${esc(l.pageName || 'Unknown page')} <span class="heat ${LH.heat(p)}">${p}</span>${l.status !== 'new' ? `<span class="tag">${esc(st ? st.label : l.status)}</span>` : ''}</h2>
-        <div class="muted">${esc(l.kind === 'prospect' ? [l.niche, l.area, LH.domainOf(l.website || '') || 'No website'].filter(Boolean).join(' · ') : [LH.domainOf(l.website || '') || 'No website', `${l.activeAdCount || 0} active ads`, days == null ? '' : `${days} days advertising`].filter(Boolean).join(' · '))}</div>
+        <div class="muted">${esc(l.kind === 'prospect' ? [LH.nicheOf(l, S.settings), l.area, LH.domainOf(l.website || '') || 'No website'].filter(Boolean).join(' · ') : [LH.domainOf(l.website || '') || 'No website', `${l.activeAdCount || 0} active ads`, days == null ? '' : `${days} days advertising`].filter(Boolean).join(' · '))}</div>
         ${issues.length ? `<ul class="issues">${issues.map((i) => `<li><span class="sev high"></span><span>${esc(i)}</span></li>`).join('')}</ul>` : ''}
         <div class="row"><label class="lbl" for="pm-phone">Send to</label>
-          <select id="pm-phone" class="inp" data-pm-phone style="width:auto">${nums.map((n) => `<option value="${esc(n)}" ${n === cur ? 'selected' : ''}>${esc(LH.formatPhone(n))}</option>`).join('')}</select></div>
-        <textarea class="inp" data-pm-msg aria-label="Message">${esc(pmText(l))}</textarea>
+          <select id="pm-phone" class="inp" data-pm-phone style="width:auto">${nums.map((x) => `<option value="${esc(x)}" ${x === cur ? 'selected' : ''}>${esc(LH.formatPhone(x))}</option>`).join('')}</select></div>
+        <div class="pm-steps" role="group" aria-label="Bubbles">${steps}</div>
+        <textarea class="inp" data-pm-msg rows="${bubbleRows(bubbles[PM.b] || '') + 1}" aria-label="Bubble ${PM.b + 1}">${esc(bubbles[PM.b] || '')}</textarea>
         <div class="row">
-          <button class="btn pri" data-pm="sent">Sent, next</button>
-          <button class="btn" data-pm="skip">Skip</button>
-          <button class="btn ghost" data-pm="back" ${PM.i === 0 ? 'disabled' : ''}>Back</button>
+          <button class="btn pri" data-pm="next">${last ? 'Sent, next lead' : 'Sent, next bubble'}</button>
+          <button class="btn ghost" data-pm="prevb" ${PM.b === 0 ? 'disabled' : ''}>Back a bubble</button>
+          <button class="btn" data-pm="skip">Skip lead</button>
+          <button class="btn ghost" data-pm="back" ${PM.i === 0 ? 'disabled' : ''}>Previous lead</button>
           <button class="btn ghost danger" data-pm="notfit">Not a fit</button>
         </div>
-        <div class="pm-keys"><kbd>Enter</kbd> sent &amp; next · <kbd>→</kbd> skip · <kbd>←</kbd> back · <kbd>Esc</kbd> close · <kbd>Ctrl</kbd>+<kbd>Enter</kbd> while typing</div>
+        <div class="pm-keys"><kbd>Enter</kbd> next bubble · <kbd>Shift</kbd>+<kbd>Enter</kbd> back a bubble · <kbd>→</kbd> skip lead · <kbd>←</kbd> previous lead · <kbd>Esc</kbd> close · <kbd>Ctrl</kbd>+<kbd>Enter</kbd> while typing</div>
       </div>
     </div>`;
   drawPmQr();
   box.focus();
 }
 
-function pmAct(act) {
+function pmAct(act, arg) {
   const l = pmLead();
   if (act === 'close') return closePhoneMode();
-  if (act === 'back') PM.i = Math.max(0, PM.i - 1);
-  else if (!l) return;
-  else if (act === 'sent') {
-    if (['new', 'followup'].includes(l.status)) update(l.id, { status: 'contacted' });
-    PM.sent++;
-    PM.i++;
-  } else if (act === 'notfit') {
+  if (act === 'back') {
+    PM.i = Math.max(0, PM.i - 1);
+    PM.b = 0;
+  } else if (!l) return;
+  else if (act === 'next') {
+    const p = pmPitch(l);
+    if (!p.bubbles.length) PM.b = 0; // nothing was sent: renderPm leaves it out
+    else if (PM.b < p.bubbles.length - 1) PM.b++;
+    else {
+      // Last bubble sent: the lead is contacted with the script its bubbles came from, on to the next one.
+      if (['new', 'followup'].includes(l.status)) update(l.id, { status: 'contacted', sentScript: p.script });
+      PM.sent++;
+      PM.i++;
+      PM.b = 0;
+    }
+  } else if (act === 'prevb') PM.b = Math.max(0, PM.b - 1);
+  else if (act === 'bubble') PM.b = Math.max(0, Math.min(pmBubbles(l).length - 1, arg));
+  else if (act === 'notfit') {
     update(l.id, { status: 'skip' });
     PM.i++;
-  } else if (act === 'skip') PM.i++;
+    PM.b = 0;
+  } else if (act === 'skip') {
+    PM.i++;
+    PM.b = 0;
+  }
   renderPm();
 }
 
@@ -958,7 +1125,8 @@ function phoneModeKey(e) {
   if (e.key === 'Enter' && /^(BUTTON|A)$/.test(tag) && !e.ctrlKey && !e.metaKey) return; // let the focused button act
   if (e.key === 'Enter' && (!typing || e.ctrlKey || e.metaKey)) {
     e.preventDefault();
-    return pmAct(PM.i >= PM.ids.length ? 'close' : 'sent');
+    if (PM.i >= PM.ids.length) return pmAct('close');
+    return pmAct(e.shiftKey ? 'prevb' : 'next');
   }
   if (typing) return;
   if (e.key === 'ArrowRight') pmAct('skip');
@@ -971,6 +1139,8 @@ function bindPhoneMode() {
   pm.addEventListener('click', (e) => {
     const b = e.target.closest('[data-pm]');
     if (b && b !== pm) return pmAct(b.dataset.pm);
+    const step = e.target.closest('[data-pm-b]');
+    if (step) return pmAct('bubble', Number(step.dataset.pmB));
     if (e.target === pm) return closePhoneMode();
     const c = e.target.closest('[data-pm-qr]');
     if (c && c.dataset.qrText) zoomQr(c.dataset.qrText);
@@ -978,7 +1148,7 @@ function bindPhoneMode() {
   pm.addEventListener('input', (e) => {
     if (!e.target.matches('[data-pm-msg]')) return;
     const l = pmLead();
-    if (l) PM.edits[l.id] = e.target.value;
+    if (l) pmBubbles(l)[PM.b] = e.target.value;
     clearTimeout(t);
     t = setTimeout(drawPmQr, 200);
   });
@@ -1022,6 +1192,7 @@ function bind() {
       return;
     }
     if (e.target.closest('[data-wa]')) return quickWhatsApp(l);
+    if (e.target.closest('[data-replied]')) return toggleReplied(l);
     if (e.target.closest('a, select, [data-stop]')) return;
     openDrawer(l.id);
   });
@@ -1045,7 +1216,7 @@ function bind() {
 
   // Global actions
   document.addEventListener('click', async (e) => {
-    const b = e.target.closest('[data-act], [data-goto], [data-angle], [data-channel], [data-copy], [data-remove-phone]');
+    const b = e.target.closest('[data-act], [data-goto], [data-qr-i], [data-channel], [data-copy], [data-remove-phone]');
     if (!b) return;
     const l = S.openId ? S.leads.get(S.openId) : null;
     if (b.dataset.goto) {
@@ -1057,23 +1228,23 @@ function bind() {
       }
       return;
     }
-    if (b.dataset.angle) {
-      S.pitch.angle = b.dataset.angle;
-      S.pitch.dirty = false;
-      return renderDrawer(true);
+    if (b.dataset.qrI) {
+      S.pitch.qr = Number(b.dataset.qrI);
+      $$('[data-qr-i]').forEach((x) => {
+        x.classList.toggle('on', x === b);
+        x.setAttribute('aria-pressed', String(x === b));
+      });
+      $('[data-qr-n]').textContent = S.pitch.qr + 1;
+      return drawPitchQr();
     }
     if (b.dataset.channel) {
       S.pitch.channel = b.dataset.channel;
-      S.pitch.dirty = false;
-      const top = $('[data-drawer]').scrollTop;
-      renderDrawer(true);
-      $('[data-drawer]').scrollTop = top;
-      return;
+      return redrawDrawer();
     }
     if (b.dataset.copy) return copy(b.dataset.copy);
     if (b.dataset.removePhone && l) return update(l.id, { removePhone: b.dataset.removePhone });
     const act = b.dataset.act;
-    const body = () => ($('[data-pitch-body]') || {}).value || '';
+    const bubbles = () => $$('[data-bubble]').map((t) => t.value);
     if (await prospectAction(act, b, l, e)) return;
     switch (act) {
       case 'close':
@@ -1126,10 +1297,21 @@ function bind() {
         const kw = f.keywords.value.split('\n')[0].trim();
         return openTab(LH.adLibraryUrl({ keyword: kw, country: f.country.value }));
       }
-      case 'reset-templates':
-        $('[data-templates]').innerHTML = templateEditor(null);
-        $('[data-ad-templates]').innerHTML = templateEditor(null, LH.DEFAULT_AD_TEMPLATES, 'data-adtpl');
-        return toast('Templates reset. Save to keep them.');
+      case 'add-niche': {
+        $('[data-niches]').insertAdjacentHTML('beforeend', nicheRow());
+        const rows = $$('[data-niche-row]');
+        return $('[data-niche-name]', rows[rows.length - 1]).focus();
+      }
+      case 'del-niche':
+        return b.closest('[data-niche-row]').remove();
+      case 'reset-niches':
+        renderNicheEditor(LH.DEFAULT_NICHES);
+        return toast('Back to the 4 default niches. Save to keep them.');
+      case 'reset-script': {
+        const card = b.closest('[data-script-card]');
+        card.outerHTML = scriptCard(b.dataset.key, LH.DEFAULT_SCRIPTS[b.dataset.key]);
+        return toast('Script reset. Save to keep it.');
+      }
       case 'backup': {
         const settings = { ...S.settings, pagespeedKey: '', placesKey: '', queueKey: '' }; // keep keys out of backups
         return download(`lead-hunter-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), settings, leads: [...S.leads.values()] }), 'application/json');
@@ -1161,44 +1343,40 @@ function bind() {
         else toast(r.places && r.places.match ? 'Found on Google Maps' : 'No confident match on Google Maps');
         return;
       }
-      case 'copy-pitch': {
-        const subj = $('[data-pitch-subject]');
-        return copy(subj ? `Subject: ${subj.value}\n\n${body()}` : body());
-      }
-      case 'send-wa': {
+      case 'pitch-anyway':
+        S.pitch = { ...S.pitch, force: 'website', bubbles: null, email: null, subject: null, qr: 0, opened: new Set() };
+        return redrawDrawer();
+      case 'open-bubble': {
+        // Opens WhatsApp with just this bubble typed in. Samil presses Send there.
         if (!l) return;
         const n = ($('[data-pitch-phone]') || {}).value;
-        if (!n) return;
-        openTab(`https://wa.me/${n.replace(/\D/g, '')}?text=${encodeURIComponent(body())}`);
-        return markContacted(l);
+        const all = bubbles();
+        const i = Number(b.dataset.i);
+        if (!n || !all[i]) return;
+        openWhatsApp(LH.waLink(n, all[i]));
+        S.pitch.opened.add(i);
+        if (i === all.length - 1) markContacted(l, currentPitch(l).script);
+        return redrawDrawer();
       }
+      case 'copy-bubble':
+        return copy(bubbles()[Number(b.dataset.i)] || '');
+      case 'copy-email':
+        return copy(`Subject: ${($('[data-email-subject]') || {}).value || ''}\n\n${($('[data-email-body]') || {}).value || ''}`);
       case 'send-email': {
         if (!l) return;
-        const subj = ($('[data-pitch-subject]') || {}).value || '';
-        openTab(`mailto:${encodeURIComponent(l.emails[0]).replace('%40', '@')}?subject=${encodeURIComponent(subj)}&body=${encodeURIComponent(body())}`);
-        return markContacted(l);
+        const subj = ($('[data-email-subject]') || {}).value || '';
+        const text = ($('[data-email-body]') || {}).value || '';
+        openTab(`mailto:${encodeURIComponent(l.emails[0]).replace('%40', '@')}?subject=${encodeURIComponent(subj)}&body=${encodeURIComponent(text)}`);
+        return markContacted(l, currentPitch(l).script);
       }
-      case 'send-dm':
+      case 'mark-sent':
         if (!l) return;
-        await copy(body());
-        openTab(l.socials.instagram);
-        toast('Message copied. Paste it into their Instagram DMs.');
-        return markContacted(l);
-      case 'copy-open':
-        e.preventDefault();
-        if (!l) return;
-        await copy(body());
-        openTab(l.pageUrl);
-        return markContacted(l);
-      case 'mark-contacted':
-        if (!l) return;
-        if (!['new', 'followup'].includes(l.status)) return toast(`Already marked as ${(LH.STATUSES.find((x) => x.id === l.status) || {}).label || l.status}`);
-        update(l.id, { status: 'contacted' });
-        return toast(`Marked “${l.pageName}” as contacted`, () => update(l.id, { status: l.status }));
+        if (!markContacted(l, currentPitch(l).script)) toast(`Already marked as ${(LH.STATUSES.find((x) => x.id === l.status) || {}).label || l.status}`);
+        return;
       case 'queue-one': {
         if (!l) return;
         const phone = ($('[data-pitch-phone]') || {}).value;
-        const r = await send({ type: 'queue:push', ids: [l.id], overrides: { [l.id]: { message: body(), phone } } });
+        const r = await send({ type: 'queue:push', ids: [l.id], overrides: { [l.id]: { parts: bubbles(), phone, script: currentPitch(l).script } } });
         return toast(r && r.error ? r.error : r.queued ? `Sent “${l.pageName}” to your phone` : 'This lead has no phone number yet');
       }
       case 'bulk-queue': {
@@ -1248,11 +1426,13 @@ function bind() {
   let notesTimer = 0;
   let qrTimer = 0;
   drawer.addEventListener('input', (e) => {
-    if (e.target.matches('[data-pitch-body], [data-pitch-subject]')) {
-      S.pitch.dirty = true;
+    if (e.target.matches('[data-bubble]')) {
+      S.pitch.bubbles = $$('[data-bubble]', drawer).map((t) => t.value);
       clearTimeout(qrTimer);
       qrTimer = setTimeout(drawPitchQr, 200);
     }
+    if (e.target.matches('[data-email-subject]')) S.pitch.subject = e.target.value;
+    if (e.target.matches('[data-email-body]')) S.pitch.email = e.target.value;
     if (e.target.matches('[data-notes]')) {
       clearTimeout(notesTimer);
       const id = S.openId;
@@ -1286,6 +1466,18 @@ function bind() {
     }
   });
   $('[data-scrim]').addEventListener('click', closeDrawer);
+  // Results panels (one per tab) open and close together, and remember it.
+  $$('[data-results]').forEach((el) => {
+    try {
+      el.open = localStorage.getItem('lh-results-open') === '1';
+    } catch {}
+    el.addEventListener('toggle', () => {
+      try {
+        localStorage.setItem('lh-results-open', el.open ? '1' : '0');
+      } catch {}
+      $$('[data-results]').forEach((x) => x.open !== el.open && (x.open = el.open));
+    });
+  });
   document.addEventListener('keydown', (e) => {
     if (!$('[data-pm]').hidden) return phoneModeKey(e);
     if (e.key === 'Escape' && S.openId) closeDrawer();
