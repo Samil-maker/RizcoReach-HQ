@@ -20,7 +20,7 @@ function locked(fn) {
 const store = chrome.storage.local;
 async function getSettings() {
   const { settings } = await store.get('settings');
-  return { ...LH.DEFAULT_SETTINGS, ...(settings || {}) };
+  return LH.withDefaults(settings);
 }
 async function getLead(id) {
   return (await store.get(leadKey(id)))[leadKey(id)] || null;
@@ -75,6 +75,26 @@ function newLead(pageId) {
     updatedAt: now(),
     lastSeenAt: now(),
   };
+}
+
+/* Statuses that mean the lead was messaged. The first one records when, with which script, and the niche (Results panel). */
+const SENT_STATUSES = ['contacted', 'followup', 'replied', 'meeting', 'won'];
+function markSent(lead, at, script, settings) {
+  if (!lead.contactedAt) lead.contactedAt = at;
+  if (script || !lead.sentScript) lead.sentScript = script || LH.sentScriptFor(lead);
+  if (!lead.niche) lead.niche = LH.nicheOf(lead, settings) || '';
+}
+/** Back to "New": the lead counts as not contacted again. */
+function unmarkSent(lead) {
+  lead.contactedAt = null;
+  lead.sentScript = null;
+  lead.repliedAt = null;
+}
+
+/** A Google Places "website" that is really an Instagram profile is saved as their Instagram. */
+function placesInstagram(lead, places) {
+  const handle = places && places.match && places.website ? LH.igFromUrl(places.website) : '';
+  if (handle && !lead.socials.instagram) lead.socials.instagram = `https://www.instagram.com/${handle}/`;
 }
 
 function addPhone(lead, number, source) {
@@ -218,6 +238,7 @@ async function ingest(ads, ctx = {}, tabId) {
       const hadSite = lead.website;
       list.forEach((ad) => mergeAd(lead, ad, ctx));
       derive(lead, country);
+      if (!lead.niche) lead.niche = LH.nicheOf(lead, settings) || ''; // from the hunt keywords, for the Results panel
       if (!prev) added++;
       if (huntTab && !lead.hunts.includes(hunt.id)) {
         lead.hunts.push(hunt.id);
@@ -585,6 +606,7 @@ async function enrichOne(id, opts = {}) {
     }
     l.site = site;
     if (places) l.places = places;
+    placesInstagram(l, places);
     contacts.whatsapp.forEach((n) => addPhone(l, n, 'whatsapp-site'));
     contacts.phones.forEach((n) => addPhone(l, n, 'website'));
     if (places && places.match && places.phone) addPhone(l, places.phone, 'google');
@@ -632,6 +654,7 @@ async function queueApi(method, body) {
 /** Mirror the server queue onto leads: "sent" on the phone marks the lead as contacted. */
 async function applyQueue(items) {
   const byId = new Map((items || []).map((i) => [i.id, i]));
+  const settings = await getSettings();
   return locked(async () => {
     const { phoneQueueIds = [] } = await store.get('phoneQueueIds');
     const ids = [...new Set([...phoneQueueIds, ...byId.keys()])];
@@ -653,13 +676,14 @@ async function applyQueue(items) {
           lead.phoneQueue.by = 'phone';
           lead.phoneQueue.from = lead.status;
           lead.status = 'contacted';
-          lead.contactedAt = lead.contactedAt || item.statusAt;
+          markSent(lead, item.statusAt, lead.queuedScript || null, settings);
           lead.statusHistory = [...(lead.statusHistory || []), { status: 'contacted', at: item.statusAt, via: 'phone' }].slice(-20);
           contacted++;
         }
         // Undo on the phone (back to "To send" or removed) reverts a "contacted" that the phone caused.
         if (!seen && item.status !== 'sent' && prev && prev.by === 'phone' && lead.status === 'contacted') {
           lead.status = prev.from || 'new';
+          if (lead.status === 'new') unmarkSent(lead);
           lead.statusHistory = [...(lead.statusHistory || []), { status: lead.status, at: now(), via: 'phone-undo' }].slice(-20);
         }
       }
@@ -709,11 +733,15 @@ async function syncQueue() {
   return result;
 }
 
+/* Each lead goes to the phone as its bubbles (`parts`) plus the whole text (`message`). The phone page only
+   prefills WhatsApp; Samil presses Send himself. Leads skipped for running ads stay off the phone. */
 async function pushToQueue(ids, overrides = {}) {
   const settings = await getSettings();
   const got = await store.get(ids.map(leadKey));
   const items = [];
   const skipped = [];
+  const runningAds = [];
+  const scripts = {};
   for (const id of ids) {
     const lead = got[leadKey(id)];
     if (!lead) continue;
@@ -723,33 +751,40 @@ async function pushToQueue(ids, overrides = {}) {
       skipped.push(lead.pageName || id);
       continue;
     }
+    const pitch = LH.pitchFor(lead, settings);
+    const given = Array.isArray(o.parts) && o.parts.length ? o.parts : o.message ? [o.message] : pitch.bubbles;
+    const parts = given.map((x) => String(x || '').trim()).filter(Boolean).slice(0, 4);
+    if (!parts.length) {
+      runningAds.push(lead.pageName || id);
+      continue;
+    }
+    scripts[lead.id] = o.script || pitch.script || LH.sentScriptFor(lead);
     const p = LH.priority(lead);
-    const site = lead.site || {};
     items.push({
       id: lead.id,
       name: lead.pageName,
       wa: number.replace(/\D/g, ''),
-      message: o.message || LH.pitchFor(lead, settings).whatsapp,
+      message: parts.join('\n\n'),
+      parts,
       domain: LH.domainOf(lead.website || ''),
-      issue:
-        lead.kind === 'prospect'
-          ? [{ none: 'Not running Meta ads', likely: 'No Meta ads found', running: 'Already running Meta ads' }[(lead.adCheck || {}).state] || '', ((lead.sources || {}).maps || {}).reviews ? `${lead.sources.maps.rating || ''}★ (${lead.sources.maps.reviews} reviews)` : ''].filter(Boolean).join(' · ')
-          : !lead.website
-            ? `No website: ads go to ${LH.destinationLabel(lead.destinationKind)}`
-            : ((site.issues || [])[0] || {}).label || '',
+      issue: LH.tagLine(lead),
       heat: LH.heat(p),
       priority: p,
       pageUrl: lead.pageUrl,
     });
   }
-  if (!items.length) return { queued: 0, skipped };
+  if (!items.length) return { queued: 0, skipped, runningAds };
   const q = await queueApi('PUT', { items });
   await locked(async () => {
     const { phoneQueueIds = [] } = await store.get('phoneQueueIds');
-    await store.set({ phoneQueueIds: [...new Set([...phoneQueueIds, ...items.map((i) => i.id)])] });
+    // Which script each lead's bubbles came from: a "sent" on the phone records that one, even if the lead changes meanwhile.
+    const fresh = await store.get(items.map((i) => leadKey(i.id)));
+    const writes = { phoneQueueIds: [...new Set([...phoneQueueIds, ...items.map((i) => i.id)])] };
+    for (const i of items) if (fresh[leadKey(i.id)]) writes[leadKey(i.id)] = { ...fresh[leadKey(i.id)], queuedScript: scripts[i.id] };
+    await store.set(writes);
   });
   await applyQueue(q.items);
-  return { queued: items.length, skipped };
+  return { queued: items.length, skipped, runningAds };
 }
 
 /* ------------------------------------------------------------------ messages */
@@ -778,12 +813,16 @@ const handlers = {
   'hunt:stop': async () => (await stopHunt('stopped'), { ok: true }),
   'open:dashboard': async (msg) => (await openDashboard(msg.hash), { ok: true }),
   'lead:update': async (msg) => {
+    const settings = await getSettings();
     const lead = await updateLead(msg.id, (l) => {
       const p = msg.patch || {};
       if (p.status && p.status !== l.status) {
         l.statusHistory = [...(l.statusHistory || []), { status: p.status, at: now() }].slice(-20);
-        if (p.status === 'contacted' && !l.contactedAt) l.contactedAt = now();
+        if (SENT_STATUSES.includes(p.status)) markSent(l, now(), p.sentScript, settings);
+        if (p.status === 'replied' && !l.repliedAt) l.repliedAt = now();
+        if (p.status === 'new') unmarkSent(l);
       }
+      if ('repliedAt' in p && !p.repliedAt) l.repliedAt = null; // "Replied" tapped again
       for (const k of ['status', 'notes', 'pageName', 'followUpAt']) if (k in p) l[k] = p[k];
       if (p.addPhone) addPhone(l, LH.normalizePhone(p.addPhone, l.countries[0] || 'AE'), 'manual');
       if (p.removePhone) l.phones = l.phones.filter((x) => x.number !== p.removePhone);
@@ -820,6 +859,7 @@ const handlers = {
     const updated = await updateLead(msg.id, (l) => {
       l.places = places;
       if (places.match && places.phone) addPhone(l, places.phone, 'google');
+      placesInstagram(l, places);
       if (places.match && places.website && !l.website && LH.linkKind(places.website) === 'website') {
         l.website = new URL(places.website).origin + '/';
         l.landingUrl = l.website;
@@ -911,6 +951,7 @@ chrome.alarms.onAlarm.addListener(async (a) => {
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   const { settings } = await store.get('settings');
   if (!settings) await store.set({ settings: LH.DEFAULT_SETTINGS });
+  else if (LH.hasOldSettings(settings)) await store.set({ settings: LH.withDefaults(settings) }); // old templates and offer
   if (reason === 'install') openDashboard('#welcome');
 });
 chrome.runtime.onStartup.addListener(() => pump());

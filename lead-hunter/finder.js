@@ -55,6 +55,9 @@ function mergeProspect(lead, item, ctx) {
       lead.landingUrl = LH.cleanUrl(u);
       lead.websiteSource = item.source;
     }
+  } else if (kind === 'instagram') {
+    // Maps lists an Instagram profile as the "website": keep it as their Instagram, not a website.
+    if (!lead.socials.instagram && LH.igFromUrl(u)) lead.socials.instagram = `https://www.instagram.com/${LH.igFromUrl(u)}/`;
   } else if (kind === 'whatsapp') {
     addPhone(lead, LH.whatsappNumber(u), item.source === 'instagram' ? 'whatsapp-ig' : 'whatsapp-site');
   } else if (kind === 'linkinbio' && !lead.socials.linkinbio) lead.socials.linkinbio = LH.cleanUrl(u);
@@ -337,9 +340,11 @@ let finderBusy = false;
 
 async function startFinder(cfg) {
   const settings = await getSettings();
-  const niche = cfg.niche || '';
-  const keywords = [...new Set((cfg.keywords || LH.AD_NICHES[niche] || []).map((k) => String(k).trim().toLowerCase()).filter(Boolean))];
+  const preset = LH.nichesFor(settings).find((n) => n.name === cfg.niche);
+  const keywords = LH.parseKeywords(cfg.keywords || (preset && preset.keywords) || []);
   if (!keywords.length) throw new Error('Pick a niche or add keywords.');
+  // Typed search terms without a niche chip: use the niche they belong to, if any.
+  const niche = cfg.niche || LH.nicheOf({ keywords }, settings) || '';
   const city = cfg.city || settings.adsCity || 'Dubai';
   const areas = (cfg.areas && cfg.areas.length ? cfg.areas : LH.AREAS[city] || [city]).slice(0, 40);
   const sources = { maps: true };

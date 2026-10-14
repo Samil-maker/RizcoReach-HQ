@@ -28,17 +28,22 @@
     <main class="view" data-view-panel="leads">
       <section class="welcome" data-welcome hidden>
         <h1>Find businesses that are already spending on ads.</h1>
-        <p>Lead Hunter pulls advertisers from the Meta Ad Library, checks the website their ads send people to, finds a phone number, and writes the pitch for you.</p>
+        <p>Lead Hunter pulls advertisers from the Meta Ad Library, looks for their website and a phone number, and fills in your website script for the ones that have no website.</p>
         <ol>
-          <li><b>Start a hunt.</b> Pick a niche (say, car detailing) and a country. A Facebook Ad Library tab opens and scrolls through the results for every keyword.</li>
-          <li><b>Leads get checked automatically.</b> Each advertiser's landing page is audited for speed, mobile, Meta Pixel, contact buttons and more. Phone numbers come from WhatsApp ads, the website, and Google.</li>
-          <li><b>Pitch the hottest ones first.</b> Sort by priority, open a lead, and send a personalised WhatsApp or email in one click.</li>
+          <li><b>Start a hunt.</b> Pick a niche (say, car detailing studios) and a country. A Facebook Ad Library tab opens and scrolls through the results for every keyword.</li>
+          <li><b>Leads get checked automatically.</b> Each advertiser's website is looked up and audited. Phone numbers come from WhatsApp ads, the website, and Google.</li>
+          <li><b>Message the ones without a website.</b> Open a lead and send the website script on WhatsApp, one bubble at a time. Advertisers that already have a website are skipped.</li>
         </ol>
         <div class="row">
           <button class="btn pri" data-goto="hunt">Start your first hunt</button>
-          <button class="btn" data-goto="settings">Add your name to the pitch</button>
+          <button class="btn" data-goto="settings">Niches and scripts</button>
         </div>
       </section>
+
+      <details class="results" data-results>
+        <summary><b>Results</b> <span class="muted" data-results-sum></span></summary>
+        <div class="results-body" data-results-body></div>
+      </details>
 
       <div class="toolbar">
         <input type="search" class="inp search" placeholder="Search name, website, phone, keyword…" data-f="q" aria-label="Search leads" />
@@ -58,6 +63,13 @@
           <option value="nopixel">No Meta Pixel</option>
           <option value="has">Has website</option>
         </select>
+        <select class="inp" data-f="tag" aria-label="Tag">
+          <option value="">Any tag</option>
+          <option>No website</option>
+          <option>Good reviews</option>
+          <option>Growing</option>
+          <option>Running ads</option>
+        </select>
         <select class="inp" data-f="contact" aria-label="Contact">
           <option value="">Any contact</option>
           <option value="phone">Has phone</option>
@@ -67,6 +79,7 @@
         </select>
         <label class="inp days">Running ≥ <input type="number" min="0" step="1" data-f="minDays" placeholder="0" aria-label="Minimum days running" /> days</label>
         <label class="chk"><input type="checkbox" data-f="hideBig" checked /> Hide big brands</label>
+        <label class="chk"><input type="checkbox" data-f="skipped" /> Show skipped (running ads)</label>
         <select class="inp" data-f="sort" aria-label="Sort">
           <option value="priority">Sort: priority</option>
           <option value="days">Sort: running longest</option>
@@ -116,6 +129,10 @@
 
     <!-- META ADS PROSPECTS -->
     <main class="view" data-view-panel="ads" hidden>
+      <details class="results" data-results>
+        <summary><b>Results</b> <span class="muted" data-results-sum></span></summary>
+        <div class="results-body" data-results-body></div>
+      </details>
       <section class="card finder" data-finder>
         <div class="finder-head">
           <div>
@@ -126,7 +143,7 @@
         </div>
         <form class="form" data-finder-form>
           <div class="field">
-            <span class="lbl">Niche</span>
+            <span class="lbl">Niche <small>edit the list in Settings</small></span>
             <div class="chips" data-ad-niches></div>
           </div>
           <label class="field">
@@ -158,13 +175,20 @@
       <div class="toolbar">
         <input type="search" class="inp search" placeholder="Search name, area, phone…" data-af="q" aria-label="Search prospects" />
         <select class="inp" data-af="ads" aria-label="Ads">
-          <option value="none">Not running ads</option>
           <option value="">Any ad status</option>
-          <option value="running">Running ads</option>
+          <option value="none">Not running ads</option>
           <option value="pending">Not checked yet</option>
           <option value="unclear">Couldn't check</option>
+          <option value="running">Running ads</option>
         </select>
         <select class="inp" data-af="niche" aria-label="Niche"></select>
+        <select class="inp" data-af="tag" aria-label="Tag">
+          <option value="">Any tag</option>
+          <option>No website</option>
+          <option>Good reviews</option>
+          <option>Growing</option>
+          <option>Running ads</option>
+        </select>
         <select class="inp" data-af="heat" aria-label="Priority">
           <option value="">Any priority</option>
           <option value="hot">Hot</option>
@@ -178,6 +202,7 @@
           <option value="wa">Has WhatsApp</option>
           <option value="nophone">No phone yet</option>
         </select>
+        <label class="chk"><input type="checkbox" data-af="skipped" /> Show skipped (running ads)</label>
         <select class="inp" data-af="sort" aria-label="Sort">
           <option value="priority">Sort: priority</option>
           <option value="reviews">Sort: most Google reviews</option>
@@ -228,7 +253,7 @@
       <p class="sub">Lead Hunter opens the Meta Ad Library, searches each keyword, and scrolls until it has collected your target number of new advertisers. Keep the tab it opens on screen while it runs.</p>
       <form class="card form" data-hunt-form>
         <div class="field">
-          <span class="lbl">Niche presets</span>
+          <span class="lbl">Niche <small>edit the list in Settings</small></span>
           <div class="chips" data-presets></div>
         </div>
         <label class="field">
@@ -280,7 +305,7 @@
     <main class="view narrow" data-view-panel="settings" hidden>
       <h1 class="h">Settings</h1>
       <form class="card form" data-settings-form>
-        <h2>You (used in pitches)</h2>
+        <h2>You (used in scripts)</h2>
         <div class="grid2">
           <label class="field"><span class="lbl">Your name</span><input class="inp" name="myName" placeholder="Samil" /></label>
           <label class="field"><span class="lbl">Agency</span><input class="inp" name="agency" /></label>
@@ -339,18 +364,31 @@
           <input class="inp" name="scrollDelayMs" type="number" min="900" step="100" />
         </label>
 
-        <h2>Meta ads offer</h2>
-        <label class="field"><span class="lbl">Main city</span><select class="inp" name="adsCity" data-ad-cities></select></label>
-        <label class="field"><span class="lbl">Your offer, as it reads in a message <small>used as {{offer}}</small></span><textarea class="inp" name="adsOffer" rows="2"></textarea></label>
-        <p class="hint">Meta-ads pitch variables: <code>{{business}}</code> <code>{{found_on}}</code> <code>{{proof_line}}</code> <code>{{ads_line}}</code> <code>{{competitor_line}}</code> <code>{{niche}}</code> <code>{{niche_plural}}</code> <code>{{city}}</code> <code>{{area}}</code> <code>{{offer}}</code> <code>{{rating}}</code> <code>{{reviews}}</code> <code>{{my_name}}</code> <code>{{agency}}</code> <code>{{my_phone}}</code></p>
-        <div data-ad-templates></div>
+        <h2 id="outreach">Outreach</h2>
+        <div class="grid2">
+          <label class="field"><span class="lbl">City <small>used as {{city}}</small></span><select class="inp" name="adsCity" data-ad-cities></select></label>
+          <label class="field">
+            <span class="lbl">Message bubbles <small>each one is its own WhatsApp message</small></span>
+            <select class="inp" name="bubbles">
+              <option value="3">3 bubbles: greeting · message · closing</option>
+              <option value="2">2 bubbles: greeting and message together · closing</option>
+            </select>
+          </label>
+        </div>
 
-        <h2>Website pitch templates</h2>
-        <p class="hint">Lead Hunter picks the template that fits each lead. Variables: <code>{{business}}</code> <code>{{domain}}</code> <code>{{issue_1}}</code> <code>{{issue_2_and}}</code> <code>{{issues}}</code> <code>{{days}}</code> <code>{{days_phrase}}</code> <code>{{ad_count}}</code> <code>{{keyword}}</code> <code>{{destination}}</code> <code>{{score}}</code> <code>{{audit_link}}</code> <code>{{my_name}}</code> <code>{{agency}}</code> <code>{{my_phone}}</code></p>
-        <div data-templates></div>
+        <h2>Niches</h2>
+        <p class="hint">Name it the way it reads in a message, e.g. 'pet groomers'. The name goes into your scripts. Keywords are what New hunt and the Meta ads search look for, separated by commas or new lines.</p>
+        <div class="niches" data-niches></div>
+        <div class="row" style="margin-top:0">
+          <button type="button" class="btn" data-act="add-niche">Add niche</button>
+          <button type="button" class="btn ghost" data-act="reset-niches">Reset to the 4 defaults</button>
+        </div>
+
+        <h2>Scripts</h2>
+        <p class="hint">Lead Hunter picks the script for each lead. No website gets the Website script. A website and no Meta ads gets the Ads script. Leads that run ads and have a website are skipped. Variables: <code>{{business}}</code> <code>{{niche}}</code> <code>{{city}}</code> <code>{{found_on}}</code> <code>{{my_name}}</code> <code>{{agency}}</code> <code>{{my_phone}}</code></p>
+        <div data-scripts></div>
         <div class="row">
           <button class="btn pri" type="submit">Save settings</button>
-          <button class="btn" type="button" data-act="reset-templates">Reset templates</button>
           <span class="saved" data-saved hidden>Saved</span>
         </div>
       </form>

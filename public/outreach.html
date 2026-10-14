@@ -48,6 +48,8 @@
       .tabs button { flex: 1; min-height: 44px; border: 0; background: none; border-bottom: 2px solid transparent; color: var(--fg-3); font-weight: 600; cursor: pointer; }
       .tabs button[aria-selected='true'] { color: var(--fg); border-bottom-color: var(--fg); }
       main { padding: 12px 16px; display: grid; gap: 12px; max-width: 640px; margin: 0 auto; }
+      /* One column that can shrink below its content, so long names and bubbles end in … instead of pushing the page sideways. */
+      main, .card, .bubbles { grid-template-columns: minmax(0, 1fr); }
       .card { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 16px; display: grid; gap: 10px; }
       .card.done { opacity: 0.6; }
       .row { display: flex; align-items: center; gap: 10px; }
@@ -64,10 +66,15 @@
       .more { background: none; border: 0; color: var(--fg-3); font-size: 13px; padding: 0; justify-self: start; cursor: pointer; min-height: 32px; }
       .btn { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; border-radius: 14px; border: 1px solid var(--line-2); background: var(--panel-2); font-weight: 650; text-decoration: none; cursor: pointer; font-size: 15px; }
       .btn.wa { background: var(--wa); color: #052e16; border-color: var(--wa); font-size: 16.5px; min-height: 54px; }
-      .btn.wa svg { width: 22px; height: 22px; }
+      .btn.wa svg { width: 22px; height: 22px; flex: none; }
       .btn.ghost { background: transparent; }
       .btn.danger { color: var(--bad); }
       .actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+      .bubbles { display: grid; gap: 8px; }
+      .bubbles .btn.wa { justify-content: flex-start; padding: 0 16px; text-align: left; }
+      .bubbles .btn.wa span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .bubbles .btn.wa.ticked { background: var(--panel-2); color: var(--wa); border-color: rgb(37 211 102 / 0.4); }
+      .bubbles .tick { width: 22px; text-align: center; font-weight: 800; flex: none; }
       .state { color: var(--fg-3); font-size: 13px; }
       .empty, .pair { text-align: center; color: var(--fg-2); padding: 48px 12px; display: grid; gap: 14px; justify-items: center; }
       .pair h2, .empty h2 { margin: 0; color: var(--fg); font-size: 20px; }
@@ -117,6 +124,7 @@
         const CACHE = 'lh-queue-cache';
         const PENDING = 'lh-queue-pending';
         const HIDDEN = 'lh-queue-hidden';
+        const TICKS = 'lh-queue-ticks'; // { [id]: { rev, done: [bubble indexes] } }: which bubbles were opened
         const $ = (s) => document.querySelector(s);
         const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
         const ls = {
@@ -161,14 +169,41 @@
           const s = Math.max(0, (Date.now() - t) / 1000);
           return s < 90 ? 'just now' : s < 5400 ? `${Math.round(s / 60)} min ago` : s < 129600 ? `${Math.round(s / 3600)} h ago` : `${Math.round(s / 86400)} days ago`;
         };
-        const waLink = (it) => {
-          const m = String(it.message || '');
+        const waText = (wa, text) => {
+          const m = String(text || '');
           try {
-            return `https://wa.me/${it.wa}?text=${encodeURIComponent(m.toWellFormed ? m.toWellFormed() : m)}`;
+            return m ? `https://wa.me/${wa}?text=${encodeURIComponent(m.toWellFormed ? m.toWellFormed() : m)}` : `https://wa.me/${wa}`;
           } catch {
-            return `https://wa.me/${it.wa}`;
+            return `https://wa.me/${wa}`;
           }
         };
+        const waLink = (it) => waText(it.wa, it.message);
+
+        // Items with 2+ bubbles get one button per bubble. Each only prefills WhatsApp: you press Send there.
+        const partsOf = (it) => (Array.isArray(it.parts) && it.parts.length > 1 ? it.parts : null);
+        // Bubble 1 and one-line bubbles show their text ("Hello Glossy PPF", "Let me know"), cut short by the CSS; longer ones read "Message".
+        const partLabel = (t, k) => {
+          const one = String(t).trim();
+          return k === 0 || !one.includes('\n') ? one.split('\n')[0] : 'Message';
+        };
+        const ticksOf = (it) => {
+          const t = ls.get(TICKS, {})[it.id];
+          return t && t.rev === it.addedAt ? t.done : [];
+        };
+        function tick(it, k) {
+          const all = ls.get(TICKS, {});
+          const done = new Set(ticksOf(it));
+          done.add(k);
+          all[it.id] = { rev: it.addedAt, done: [...done] };
+          ls.set(TICKS, all);
+        }
+        const bubbleButtons = (i) =>
+          `<div class="bubbles">${partsOf(i)
+            .map((p, k) => {
+              const done = ticksOf(i).includes(k);
+              return `<a class="btn wa ${done ? 'ticked' : ''}" href="${esc(waText(i.wa, p))}" target="_blank" rel="noopener noreferrer" data-act="part" data-k="${k}">${done ? '<span class="tick" aria-label="Opened">✓</span>' : WA_ICON}<span>${k + 1} · ${esc(partLabel(p, k))}</span></a>`;
+            })
+            .join('')}</div>`;
 
         async function api(method, body) {
           const res = await fetch('/api/lead-queue', {
@@ -233,14 +268,14 @@
                 <button class="more" data-act="more">${open.has(i.id) ? 'Show less' : 'Show full message'}</button>
                 ${
                   i.status === 'queued'
-                    ? `<a class="btn wa" href="${esc(waLink(i))}" target="_blank" rel="noopener noreferrer" data-act="wa">${WA_ICON} Open WhatsApp</a>
+                    ? `${partsOf(i) ? bubbleButtons(i) : `<a class="btn wa" href="${esc(waLink(i))}" target="_blank" rel="noopener noreferrer" data-act="wa">${WA_ICON} Open WhatsApp</a>`}
                 <div class="actions">
                   <button class="btn ghost" data-act="copy">Copy</button>
                   <a class="btn ghost" href="tel:+${esc(i.wa)}">Call</a>
                   <button class="btn ghost danger" data-act="remove">Remove</button>
                 </div>`
                     : `<div class="row"><span class="state">${i.status === 'sent' ? 'Sent' : 'Removed'} ${esc(ago(i.statusAt))}</span>
-                  <a class="btn ghost" style="margin-left:auto;padding:0 14px" href="${esc(waLink(i))}" target="_blank" rel="noopener noreferrer">Open chat</a>
+                  <a class="btn ghost" style="margin-left:auto;padding:0 14px" href="${esc(partsOf(i) ? waText(i.wa) : waLink(i))}" target="_blank" rel="noopener noreferrer">Open chat</a>
                   <button class="btn ghost" style="padding:0 14px" data-act="requeue">Move back</button></div>`
                 }
               </article>`,
@@ -293,6 +328,10 @@
         function apply(q) {
           items = Array.isArray(q.items) ? q.items : [];
           ls.set(CACHE, items);
+          // Forget bubble ticks for items that are gone.
+          const ticks = ls.get(TICKS, {});
+          for (const id of Object.keys(ticks)) if (!items.some((i) => i.id === id)) delete ticks[id];
+          ls.set(TICKS, ticks);
           render();
         }
 
@@ -348,6 +387,18 @@
           if (act === 'wa') {
             // Let the link open WhatsApp, then file the lead under "Sent".
             setTimeout(() => {
+              setStatus(item, 'sent');
+              toast(`${item.name} marked as sent`, () => setStatus(item, 'queued'));
+            }, 400);
+            return;
+          }
+          if (act === 'part') {
+            // Let the link open WhatsApp with this bubble, then tick it. The last bubble files the lead under "Sent".
+            const k = Number(t.dataset.k);
+            const last = k === (partsOf(item) || []).length - 1;
+            setTimeout(() => {
+              tick(item, k);
+              if (!last || item.status !== 'queued') return render();
               setStatus(item, 'sent');
               toast(`${item.name} marked as sent`, () => setStatus(item, 'queued'));
             }, 400);
