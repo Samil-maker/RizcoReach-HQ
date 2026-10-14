@@ -411,7 +411,7 @@
     website: {
       name: 'Website script',
       greeting: 'Hello {{business}}',
-      body: "I came across {{business}} on {{found_on}} and couldn't find a website for you.\n\nWe build simple websites for {{niche}} in {{city}} that turn visitors into WhatsApp inquiries.\n\nIf this sounds interesting I'd be happy to send you a free mockup of how yours could look.",
+      body: "I came across {{business}} on {{found_on}} and {{website_line}}.\n\nWe build simple websites for {{niche}} in {{city}} that turn visitors into WhatsApp inquiries.\n\nIf this sounds interesting I'd be happy to send you a free mockup of how yours could look.",
       closing: 'Let me know',
     },
   };
@@ -428,18 +428,20 @@
     return out;
   };
 
-  /** No website, or one that is down or parked: "couldn't find a website for you" is true for them. */
-  const noSite = (lead) => !lead || !lead.website || (lead.site || {}).state === 'error' || !!(lead.site || {}).parked;
+  /** They have a website but it is down or parked: for outreach that is no working website. */
+  LH.siteDown = (lead) => !!lead && !!lead.website && ((lead.site || {}).state === 'error' || !!(lead.site || {}).parked);
   /**
    * Which script a lead gets, plus the reason as a tag:
-   *   no website, or it's down or parked (either tab)  -> 'website'  "No website"
-   *   website, ad check found no Meta ads             -> 'ads'      "No Meta ads"
-   *   website, ad check pending or unclear            -> 'ads'      "Ad check not done"
-   *   website and running ads                         -> null       "Running ads" (skipped for outreach)
+   *   no website (either tab)                 -> 'website'  "No website"
+   *   website down or parked (either tab)     -> 'website'  "Site down"
+   *   website, ad check found no Meta ads     -> 'ads'      "No Meta ads"
+   *   website, ad check pending or unclear    -> 'ads'      "Ad check not done"
+   *   website and running ads                 -> null       "Running ads" (skipped for outreach)
    * Website leads come from the Ad Library, so they all advertise: only the ones without a working website get a script.
    */
   LH.scriptFor = (lead) => {
-    if (noSite(lead)) return { script: 'website', tag: 'No website' };
+    if (!lead || !lead.website) return { script: 'website', tag: 'No website' };
+    if (LH.siteDown(lead)) return { script: 'website', tag: 'Site down' };
     if (lead.kind !== 'prospect') return { script: null, tag: 'Running ads' };
     const ad = (lead.adCheck || {}).state;
     if (ad === 'running') return { script: null, tag: 'Running ads' };
@@ -459,7 +461,8 @@
   LH.leadTags = (lead) => {
     if (!lead) return [];
     const tags = [];
-    if (noSite(lead)) tags.push('No website');
+    if (!lead.website) tags.push('No website');
+    else if (LH.siteDown(lead)) tags.push('Site down');
     if (!LH.scriptFor(lead).script) tags.push('Running ads');
     const g = googleRating(lead);
     if (g.rating >= 4 && g.reviews >= 25) tags.push('Good reviews');
@@ -487,7 +490,7 @@
    *   "Glossy PPF | Ceramic Coating | Car Detailing Dubai" -> "Glossy PPF"
    *   "AL NOOR BEAUTY SALON L.L.C" -> "Al Noor Beauty Salon" · "Gloss Garage Dubai" -> "Gloss Garage"
    */
-  const LEGAL_END = /[\s,]+(l\.?l\.?c\.?|fz[\s-]?llc|fzco|fze|fzc|dmcc|est\.?|ltd\.?|co\.?)$/i;
+  const LEGAL_END = /[\s,]+(l\.?l\.?c\.?|fz[\s-]?llc|fzco|fze|fzc|dmcc|est\.?|ltd\.?)$/i;
   const PLACE_END = /[\s,]+(dubai|uae|abu dhabi|sharjah)$/i;
   const ACRONYM = (w) => !/[aeiouy]/i.test(w) || /^(ac|uae|ksa|vip|difc|usa|uk)$/i.test(w); // PPF, BMW, JLT stay in capitals
   LH.shortName = (name) => {
@@ -510,10 +513,12 @@
     const ig = (l.sources || {}).instagram || {};
     const niche = LH.nicheOf(l, settings);
     return {
-      business: LH.shortName(l.pageName) || LH.igHandle(l),
+      // No name: their Instagram handle or domain. pitchFor writes "Hello there" and "your business" when there is neither.
+      business: LH.shortName(l.pageName) || LH.igHandle(l) || LH.domainOf(l.website || ''),
       niche: niche ? LH.nicheText(niche) : 'businesses',
       city: settings.adsCity || 'Dubai',
       found_on: l.kind !== 'prospect' ? 'Facebook and Instagram' : ig.username && !m.placeId ? 'Instagram' : 'Google Maps',
+      website_line: LH.siteDown(l) ? "your website wasn't loading when I checked" : "couldn't find a website for you",
       my_name: settings.myName || '',
       agency: settings.agency || '',
       my_phone: settings.myPhone || '',
@@ -541,9 +546,9 @@
     if (!script) return { script: null, tag: pick.tag, bubbles: [], text: '', subject: '', email: '' };
     const t = LH.scriptsFor(settings)[script];
     const vars = LH.scriptVars(lead, settings);
-    // No name at all: the greeting is just "Hello" and the body says "I came across your business on…".
-    const bodyVars = vars.business ? vars : { ...vars, business: 'your business' };
-    const [greeting, body, closing] = LH.SCRIPT_PARTS.map((p) => LH.render(t[p], p === 'body' ? bodyVars : vars));
+    // No name at all: "Hello there", and the body says "I came across your business on…".
+    const nameless = (business) => (vars.business ? vars : { ...vars, business });
+    const [greeting, body, closing] = LH.SCRIPT_PARTS.map((p) => LH.render(t[p], nameless({ greeting: 'there', body: 'your business' }[p] || '')));
     const parts = Number(settings.bubbles) === 2 ? [[greeting, body].filter(Boolean).join('\n\n'), closing] : [greeting, body, closing];
     const bubbles = parts.filter(Boolean);
     const offer = script === 'ads' ? 'Meta ads' : 'website';

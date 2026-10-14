@@ -121,10 +121,11 @@ test('scriptFor: website script without a website, ads script without Meta ads, 
   for (const adCheck of [{ state: 'pending' }, { state: 'queued' }, { state: 'checking' }, { state: 'unclear' }, undefined]) assert.deepEqual(pick(prospect({ adCheck })), ['ads', 'Ad check not done'], JSON.stringify(adCheck));
   assert.deepEqual(pick(prospect({ adCheck: { state: 'running' } })), [null, 'Running ads']);
   assert.deepEqual(pick(prospect({ adCheck: { state: 'running', manual: true } })), [null, 'Running ads'], '"They do run ads" skips them too');
-  // A website that is down or parked counts as no website, in both tabs.
+  // A website that is down or parked counts as no working website, in both tabs.
   for (const site of [{ state: 'error' }, { state: 'ok', parked: true }]) {
-    assert.deepEqual(pick(advertiser({ website: 'https://gone.example/', site })), ['website', 'No website'], JSON.stringify(site));
-    assert.deepEqual(pick(prospect({ adCheck: { state: 'running' }, site })), ['website', 'No website'], JSON.stringify(site));
+    assert.deepEqual(pick(advertiser({ website: 'https://gone.example/', site })), ['website', 'Site down'], JSON.stringify(site));
+    assert.deepEqual(pick(prospect({ adCheck: { state: 'running' }, site })), ['website', 'Site down'], JSON.stringify(site));
+    assert.deepEqual(pick(prospect({ adCheck: { state: 'none' }, site })), ['website', 'Site down'], JSON.stringify(site));
   }
   assert.deepEqual(pick(advertiser({ website: 'https://gloss.example/', site: { state: 'blocked' } })), [null, 'Running ads'], 'a site that blocks the check is still a website');
   assert.equal(LH.sentScriptFor(prospect({ adCheck: { state: 'running' } })), 'website', 'pitching a skipped lead anyway uses the website script');
@@ -183,6 +184,22 @@ test('website script: found on, niche and subject', () => {
   assert.match(LH.pitchFor(advertiser(), { ...S, adsCity: 'Abu Dhabi' }).bubbles[1], /studios in Abu Dhabi/);
 });
 
+test('website script for a site that is down: "your website wasn\'t loading when I checked"', () => {
+  assert.equal(
+    LH.DEFAULT_SCRIPTS.website.body,
+    "I came across {{business}} on {{found_on}} and {{website_line}}.\n\nWe build simple websites for {{niche}} in {{city}} that turn visitors into WhatsApp inquiries.\n\nIf this sounds interesting I'd be happy to send you a free mockup of how yours could look.",
+  );
+  for (const site of [{ state: 'error', status: 500 }, { state: 'ok', parked: true }]) {
+    const down = LH.pitchFor(advertiser({ website: 'https://gloss.example/', site }), S);
+    assert.equal(down.script, 'website');
+    assert.equal(down.tag, 'Site down');
+    assert.match(down.bubbles[1], /^I came across Gloss Garage on Facebook and Instagram and your website wasn't loading when I checked\.\n\nWe build simple websites/);
+  }
+  assert.equal(LH.scriptVars(advertiser(), S).website_line, "couldn't find a website for you");
+  // Pitched anyway with a working website: the line still says no website (the drawer warns about it).
+  assert.match(LH.pitchFor(advertiser({ website: 'https://gloss.example/', site: { state: 'ok', score: 70 } }), S, 'website').bubbles[1], /and couldn't find a website for you\./);
+});
+
 test('business names read like typed by hand: no keyword tails, legal suffixes or capitals', () => {
   const cases = {
     'Dr. Smile Dental Clinic - Best Dentist in Dubai': 'Dr. Smile Dental Clinic',
@@ -202,6 +219,7 @@ test('business names read like typed by hand: no keyword tails, legal suffixes o
     'Al-Futtaim Auto': 'Al-Futtaim Auto',
     'Mirror Finish JLT': 'Mirror Finish JLT',
     'Shield & Shine': 'Shield & Shine',
+    'The Detailing Co': 'The Detailing Co',
     'عيادة الابتسامة': 'عيادة الابتسامة',
     '': '',
   };
@@ -212,15 +230,20 @@ test('business names read like typed by hand: no keyword tails, legal suffixes o
   assert.equal(p.subject, 'Dr. Smile Dental Clinic + website');
 });
 
-test('a lead with no name: "Hello" and "your business", or their Instagram handle', () => {
+test('a lead with no name: their Instagram handle or domain, else "Hello there" and "your business"', () => {
   const p = LH.pitchFor(advertiser({ pageName: '' }), S);
-  assert.equal(p.bubbles[0], 'Hello');
+  assert.equal(p.bubbles[0], 'Hello there');
   assert.match(p.bubbles[1], /^I came across your business on Facebook and Instagram and couldn't find a website for you\./);
   assert.equal(p.subject, 'Website');
-  assert.equal(LH.pitchFor(prospect({ pageName: '' }), S).subject, 'Meta ads');
+  assert.equal(LH.pitchFor(prospect({ pageName: '', website: null }), S).subject, 'Website');
+  assert.equal(LH.pitchFor(prospect({ pageName: '' }), S).subject, 'glossyppf.example + Meta ads', 'their domain stands in for the name');
   const ig = LH.pitchFor(prospect({ pageName: '', website: null, sources: { instagram: { username: 'glossyppf' } } }), S);
   assert.equal(ig.bubbles[0], 'Hello glossyppf');
   assert.match(ig.bubbles[1], /^I came across glossyppf on Instagram and/);
+  const site = LH.pitchFor(prospect({ pageName: '  ', website: 'https://www.glossyppf.ae/home', site: { state: 'error' } }), S);
+  assert.equal(site.bubbles[0], 'Hello glossyppf.ae');
+  assert.match(site.bubbles[1], /^I came across glossyppf\.ae on Google Maps and your website wasn't loading/);
+  assert.equal(LH.pitchFor(advertiser({ pageName: '' }), { ...S, scripts: { website: { closing: 'Thanks {{business}}' } } }).bubbles[2], 'Thanks', 'no "there" outside the greeting');
 });
 
 test('style: default scripts read like Samil typed them, with nothing invented', () => {
@@ -300,7 +323,9 @@ test('tags and priority: running-ads leads sink to the bottom', () => {
   assert.deepEqual(LH.leadTags(prospect({ sources: { maps: { placeId: 'x', rating: 3.5, reviews: 300 } } })), []);
   assert.equal(LH.tagLine(prospect({ sources: { maps: { placeId: 'x', rating: 3.5, reviews: 300 } } })), 'No Meta ads');
   assert.deepEqual(LH.leadTags(prospect({ sources: { maps: { placeId: 'x', rating: 3.2, reviews: 7 } } })), ['Growing'], 'few reviews');
-  assert.deepEqual(LH.leadTags(advertiser({ website: 'https://gone.example/', site: { state: 'error' } })), ['No website'], 'a site that is down');
+  assert.deepEqual(LH.leadTags(advertiser({ website: 'https://gone.example/', site: { state: 'error' } })), ['Site down'], 'a site that is down');
+  assert.deepEqual(LH.leadTags(prospect({ site: { state: 'ok', parked: true } })), ['Site down', 'Good reviews'], 'a parked domain');
+  assert.equal(LH.tagLine(advertiser({ website: 'https://gone.example/', site: { state: 'error' } })), 'Site down');
   assert.deepEqual(LH.leadTags(prospect({ website: null })), ['No website', 'Good reviews']);
   assert.deepEqual(LH.leadTags(prospect({ adCheck: { state: 'running' } })), ['Running ads', 'Good reviews']);
   assert.deepEqual(LH.leadTags(advertiser({ website: 'https://gloss.example/' })), ['Running ads']);

@@ -15,7 +15,8 @@ Lead Hunter never sends a message by itself. Every bubble is typed in for you
 
 | The lead | Script | Tag |
 | --- | --- | --- |
-| No website, or it is down or parked (either tab) | Website script | *No website* |
+| No website (either tab) | Website script | *No website* |
+| Website down or parked (either tab) | Website script, saying their site wasn't loading | *Site down* |
 | Website, and the Ad Library check found no Meta ads | Ads script | *No Meta ads* |
 | Website, Ad Library check not done yet | Ads script, with a note in the lead panel | *Ad check not done* |
 | Working website and running ads (every website lead with one, or a Meta ads business the check found advertising) | none: skipped | *Running ads* |
@@ -24,27 +25,30 @@ Skipped leads are not deleted. They are left out of phone mode and the phone
 queue, and hidden from the list while they are New; tick **Show skipped
 (running ads)** to see them. Leads you are already talking to (contacted,
 replied, meeting booked…) always show. In the lead panel, **Pitch anyway
-(website script)** is the one override.
+(website script)** is the one override; the panel then reminds you to edit
+the line that says they have no website.
 
 `{{business}}` is the name the way you'd type it: *Dr. Smile Dental Clinic -
 Best Dentist in Dubai* becomes *Dr. Smile Dental Clinic*, and *AL NOOR SALON
-L.L.C* becomes *Al Noor Salon*. The saved name is not changed.
+L.L.C* becomes *Al Noor Salon*. The saved name is not changed. With no name
+it uses their Instagram handle or domain, else *Hello there* and "your business".
 
 Each script has three parts, sent as three WhatsApp bubbles: greeting
 (*Hello Glossy PPF*), the message, and the closing (*Let me know*). Set
 **Settings → Message bubbles** to 2 to send the greeting and the message
 together. Edit both scripts in **Settings → Scripts**. Variables:
 `{{business}}`, `{{niche}}`, `{{city}}`, `{{found_on}}` (Google Maps,
-Instagram, or Facebook and Instagram), `{{my_name}}`, `{{agency}}`,
-`{{my_phone}}`.
+Instagram, or Facebook and Instagram), `{{website_line}}` ("couldn't find a
+website for you", or "your website wasn't loading when I checked" when it is
+down), `{{my_name}}`, `{{agency}}`, `{{my_phone}}`.
 
 **Niches** are one list for both tabs (Settings → Niches): a name and its
 search keywords. Write the name the way it reads in a message (*Car detailing
 studios* becomes "We help car detailing studios in Dubai…"). Website leads
 get their niche from the keywords they were found with.
 
-Row tags (*No website*, *Good reviews* for 4.0★ and 25+ Google reviews,
-*Growing*, *Running ads*) are for sorting and filtering; they never change the
+Row tags (*No website*, *Site down*, *Good reviews* for 4.0★ and 25+ Google
+reviews, *Growing* for fewer reviews, *Running ads*) are for sorting and filtering; they never change the
 message.
 
 ## Install (2 minutes)
@@ -87,9 +91,9 @@ is saved, with no hunt running.
   where it came from, their Instagram and email, and their live ads.
 - **WhatsApp**: one box per bubble. **Open bubble 1 in WhatsApp** opens
   WhatsApp (Web or the desktop app) with just that bubble typed in; press
-  Send there, then open bubble 2, then 3. Every bubble loads in the same
-  WhatsApp tab. After the last one the lead is
-  marked *Contacted* (with an undo). **Mark as sent** does the same by hand.
+  Send there, then open bubble 2, then 3. Every bubble of a lead loads in the
+  same WhatsApp tab. After the last one the lead is marked *Contacted* (with
+  an undo). **Mark as sent** does the same by hand.
 - **Instagram**: the same bubbles with Copy buttons, and a link to their
   profile when Lead Hunter found one. **Email**: one block with a subject.
 - When they answer, press **Replied** on the row (press again to undo). Track
@@ -178,7 +182,7 @@ just say "I already run ads". Instead it works in three steps.
 | **Running ads** | Live ads matched to them. | Skipped (hidden by default) |
 | **Couldn't check** | The Ad Library didn't load or asked you to log in. Press **Check again**, or open the search link and look. | Ads script, marked *Ad check not done* |
 
-Businesses without a website get the Website script whatever the verdict.
+Businesses without a working website get the Website script whatever the verdict.
 You can overrule any verdict in the lead panel (**They don't run ads** /
 **They do run ads**).
 

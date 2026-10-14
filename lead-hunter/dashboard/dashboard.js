@@ -32,7 +32,8 @@ const S = {
   openId: null,
   huntNiche: '',
   // force: 'website' after "Pitch anyway" · bubbles/email/subject: edits while the drawer is open · qr: bubble in the QR code
-  pitch: { id: null, channel: 'whatsapp', force: null, bubbles: null, email: null, subject: null, phone: null, qr: 0, opened: new Set() },
+  // waTab: the WhatsApp tab this lead's bubbles open in
+  pitch: { id: null, channel: 'whatsapp', force: null, bubbles: null, email: null, subject: null, phone: null, qr: 0, opened: new Set(), waTab: null },
   filters: { q: '', heat: '', status: '', keyword: '', site: '', tag: '', contact: '', minDays: 0, hideBig: true, skipped: false, sort: 'priority', hunt: '' },
 };
 
@@ -85,9 +86,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
 /* --------------------------------------------------------------- filters */
 const isSkipped = (l) => !LH.scriptFor(l).script; // running ads: left out of outreach (phone mode, phone queue)
 /** Skipped leads you have not messaged. Leads already in your pipeline (contacted, replied, meeting…) always show. */
-const skippedNew = (l) => isSkipped(l) && l.status === 'new';
-/** Show those only when asked: the checkbox, the "Running ads" tag, or a website filter that needs a working site. */
-const skipHidden = (l, f) => skippedNew(l) && !f.skipped && f.tag !== 'Running ads' && !['weak', 'nopixel', 'has'].includes(f.site);
+const skippedNew = (l) => isSkipped(l) && l.status === 'new' && !l.contactedAt;
+/** Those show only when asked for: the checkbox or the "Running ads" tag. */
+const skipHidden = (l, f) => skippedNew(l) && !f.skipped && f.tag !== 'Running ads';
 const tagMatch = (l, tag) => !tag || LH.leadTags(l).includes(tag);
 
 function filtered() {
@@ -105,12 +106,8 @@ function filtered() {
     if (f.status === '' && l.status === 'skip') continue;
     if (f.status && f.status !== 'all' && l.status !== f.status) continue;
     if (f.keyword && !(l.keywords || []).includes(f.keyword)) continue;
-    const site = l.site || {};
     if (f.site === 'none' && l.website) continue;
-    if (f.site === 'has' && !l.website) continue;
-    if (f.site === 'broken' && !(site.state === 'error' || site.parked)) continue;
-    if (f.site === 'weak' && !(typeof site.score === 'number' && site.score < 60)) continue;
-    if (f.site === 'nopixel' && !(site.state === 'ok' && !site.parked && site.pixel === false)) continue;
+    if (f.site === 'down' && !LH.siteDown(l)) continue;
     if (f.contact === 'phone' && !l.phones.length) continue;
     if (f.contact === 'wa' && !LH.whatsappTarget(l)) continue;
     if (f.contact === 'email' && !(l.emails || []).length) continue;
@@ -202,7 +199,7 @@ function contactCell(l) {
 }
 
 /* Row tags are for sorting and filtering only: the script never changes because of them. */
-const TAG_CLASS = { 'No website': 'amber', 'Running ads': 'red', 'Good reviews': 'green' };
+const TAG_CLASS = { 'No website': 'amber', 'Site down': 'amber', 'Running ads': 'red', 'Good reviews': 'green' };
 const tagsHtml = (l) => {
   const tags = LH.leadTags(l);
   return tags.length ? `<div class="tags">${tags.map((t) => `<span class="tag ${TAG_CLASS[t] || ''}">${esc(t)}</span>`).join('')}</div>` : '';
@@ -362,7 +359,7 @@ function openDrawer(id) {
   const l = S.leads.get(id);
   if (!l) return;
   S.openId = id;
-  S.pitch = { id, channel: 'whatsapp', force: null, bubbles: null, email: null, subject: null, phone: LH.whatsappTarget(l), qr: 0, opened: new Set() };
+  S.pitch = { id, channel: 'whatsapp', force: null, bubbles: null, email: null, subject: null, phone: LH.whatsappTarget(l), qr: 0, opened: new Set(), waTab: null };
   renderDrawer(true);
   $('[data-scrim]').hidden = false;
   const d = $('[data-drawer]');
@@ -547,7 +544,7 @@ function pitchSection(l) {
   if (!p.script) {
     return `<section class="d-sec pitch"><h3>Message</h3>
       <div class="skip-box"><b>Skipped: running ads</b>
-        <span class="muted">${l.kind === 'prospect' ? 'They already run Facebook and Instagram ads' : 'They run ads and already have a website'}, so they are left out of outreach.</span>
+        <span class="muted">${l.kind === 'prospect' ? 'They already run Facebook and Instagram ads' : 'They run ads and have a working website'}, so they are left out of outreach.</span>
         <button class="linkish" data-act="pitch-anyway">Pitch anyway (website script)</button></div></section>`;
   }
   const ch = S.pitch.channel;
@@ -558,9 +555,10 @@ function pitchSection(l) {
   ]
     .map(([k, n]) => `<button class="chip ${k === ch ? 'on' : ''}" data-channel="${k}">${n}</button>`)
     .join('');
+  // Pitched anyway: they have a working website, so the "no website" line is not true for them.
+  const noSiteAt = S.pitch.force && l.website && !LH.siteDown(l) ? p.bubbles.findIndex((b) => b.includes(LH.scriptVars(l, S.settings).website_line)) + 1 : 0;
   const notes = [
-    // A skipped lead has a working website, so "couldn't find a website for you" is not true for them.
-    S.pitch.force ? "Pitching anyway with the website script. They have a website but the message says you couldn't find one. Edit that line before you send." : '',
+    noSiteAt ? `Bubble ${noSiteAt} says they have no website. Edit that line before you send.` : '',
     !S.pitch.force && p.tag === 'Ad check not done' ? 'The Meta ads check is not done yet, so this is the ads script for now. Check the verdict above before you send.' : '',
   ]
     .filter(Boolean)
@@ -711,16 +709,16 @@ function markContacted(l, script) {
 function openTab(url) {
   chrome.tabs.create({ url });
 }
-/** One WhatsApp tab for every bubble: the first one opens it, the next ones load in it (a new tab only if you closed it). */
-let waTab = null;
+/** One WhatsApp tab per open lead: bubble 1 opens it, the next bubbles load in it (a new tab only if you closed it). */
 async function openWhatsApp(url) {
-  if (waTab != null) {
+  const pitch = S.pitch;
+  if (pitch.waTab != null) {
     try {
-      await chrome.tabs.update(waTab, { url, active: true });
+      await chrome.tabs.update(pitch.waTab, { url, active: true });
       return;
     } catch {}
   }
-  waTab = (await chrome.tabs.create({ url })).id;
+  pitch.waTab = (await chrome.tabs.create({ url })).id;
 }
 /** The WhatsApp icon on a row opens the lead on its bubbles (each bubble is opened and sent by hand). */
 function quickWhatsApp(l) {

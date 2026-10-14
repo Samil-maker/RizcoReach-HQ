@@ -28,11 +28,11 @@
     <main class="view" data-view-panel="leads">
       <section class="welcome" data-welcome hidden>
         <h1>Find businesses that are already spending on ads.</h1>
-        <p>Lead Hunter pulls advertisers from the Meta Ad Library, looks for their website and a phone number, and fills in your website script for the ones that have no website.</p>
+        <p>Lead Hunter pulls advertisers from the Meta Ad Library, looks for their website and a phone number, and fills in your website script for the ones with no working website.</p>
         <ol>
           <li><b>Start a hunt.</b> Pick a niche (say, car detailing studios) and a country. A Facebook Ad Library tab opens and scrolls through the results for every keyword.</li>
           <li><b>Leads get checked automatically.</b> Each advertiser's website is looked up and audited. Phone numbers come from WhatsApp ads, the website, and Google.</li>
-          <li><b>Message the ones without a website.</b> Open a lead and send the website script on WhatsApp, one bubble at a time. Advertisers that already have a website are skipped.</li>
+          <li><b>Message the ones without a website.</b> Open a lead and send the website script on WhatsApp, one bubble at a time. Advertisers with a working website are skipped.</li>
         </ol>
         <div class="row">
           <button class="btn pri" data-goto="hunt">Start your first hunt</button>
@@ -58,14 +58,12 @@
         <select class="inp" data-f="site" aria-label="Website">
           <option value="">Any website</option>
           <option value="none">No website</option>
-          <option value="broken">Broken / parked</option>
-          <option value="weak">Score under 60</option>
-          <option value="nopixel">No Meta Pixel</option>
-          <option value="has">Has website</option>
+          <option value="down">Site down</option>
         </select>
         <select class="inp" data-f="tag" aria-label="Tag">
           <option value="">Any tag</option>
           <option>No website</option>
+          <option>Site down</option>
           <option>Good reviews</option>
           <option>Growing</option>
           <option>Running ads</option>
@@ -185,6 +183,7 @@
         <select class="inp" data-af="tag" aria-label="Tag">
           <option value="">Any tag</option>
           <option>No website</option>
+          <option>Site down</option>
           <option>Good reviews</option>
           <option>Growing</option>
           <option>Running ads</option>
@@ -385,7 +384,7 @@
         </div>
 
         <h2>Scripts</h2>
-        <p class="hint">Lead Hunter picks the script for each lead. No website gets the Website script. A website and no Meta ads gets the Ads script. Leads that run ads and have a website are skipped. Variables: <code>{{business}}</code> <code>{{niche}}</code> <code>{{city}}</code> <code>{{found_on}}</code> <code>{{my_name}}</code> <code>{{agency}}</code> <code>{{my_phone}}</code></p>
+        <p class="hint">Lead Hunter picks the script for each lead. No website, or a site that is down, gets the Website script. A website and no Meta ads gets the Ads script. Leads that run ads and have a working website are skipped. Variables: <code>{{business}}</code> <code>{{niche}}</code> <code>{{city}}</code> <code>{{found_on}}</code> <code>{{website_line}}</code> <code>{{my_name}}</code> <code>{{agency}}</code> <code>{{my_phone}}</code></p>
         <div data-scripts></div>
         <div class="row">
           <button class="btn pri" type="submit">Save settings</button>

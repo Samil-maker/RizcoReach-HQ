@@ -259,6 +259,14 @@ try {
   assert.equal(await dash.$$eval('[data-niche-row]', (r) => r.length), 4, 'the 4 default niches');
   assert.equal(await dash.$$eval('[data-script-card]', (r) => r.length), 2, 'two scripts');
   assert.equal(await dash.inputValue('[name="bubbles"]'), '3');
+  // "Reset to default" brings back the default website script, with {{website_line}}.
+  const webBody = '[data-script="website.body"]';
+  await dash.fill(webBody, 'Something else');
+  await dash.click('[data-script-card="website"] [data-act="reset-script"]');
+  assert.equal(
+    await dash.inputValue(webBody),
+    "I came across {{business}} on {{found_on}} and {{website_line}}.\n\nWe build simple websites for {{niche}} in {{city}} that turn visitors into WhatsApp inquiries.\n\nIf this sounds interesting I'd be happy to send you a free mockup of how yours could look.",
+  );
   await dash.click('[data-act="add-niche"]');
   await dash.fill('[data-niche-row]:last-child [data-niche-name]', 'Pet groomers');
   await dash.fill('[data-niche-row]:last-child [data-niche-kw]', 'dog grooming, Pet Salon');
@@ -344,23 +352,50 @@ try {
   assert.equal(by('MegaMotors Official').pageLikes, 900000);
 
   // Website leads: advertisers with a working website are skipped (running ads). The 3 without one show,
-  // and so do the 6 whose website is parked or down: "couldn't find a website for you" is true for them too.
+  // and so do the 6 whose website is parked or down: they get the website script, tagged "Site down".
   await dash.click('[data-view="leads"]');
   await dash.click('[data-act="clear-hunt-filter"]').catch(() => {});
   await dash.waitForFunction(() => document.querySelectorAll('[data-rows] tr').length === 9);
   const shown = await dash.$$eval('[data-rows] tr .biz .n', (n) => n.map((x) => x.textContent).sort());
   assert.deepEqual(shown, ['Auto Aura', 'Broken Buff', 'Desert Detailers', 'Luxe Lather', 'Parked Polish', 'Prestige Paint Pros', 'Shield & Shine', 'Showroom Sheen', 'Wash Wizards']);
   assert.match(await dash.textContent('[data-count]'), /16 skipped \(running ads with a website\)/);
-  assert.match(await dash.textContent(`tr[data-id="${by('Parked Polish').id}"] .tags`), /No website/);
-  assert.doesNotMatch(await dash.textContent(`tr[data-id="${by('Broken Buff').id}"] .tags`), /Running ads/);
+  assert.equal(await dash.textContent(`tr[data-id="${by('Parked Polish').id}"] .tags`), 'Site down');
+  assert.equal(await dash.textContent(`tr[data-id="${by('Broken Buff').id}"] .tags`), 'Site down');
+  assert.equal(await dash.textContent(`tr[data-id="${wa.id}"] .tags`), 'No website');
   if (SHOTS) await dash.screenshot({ path: `${SHOTS}/3-leads.png` });
+  // The website filter: no website, or a site that is down. Nothing else (those would only match skipped leads).
+  assert.deepEqual(await dash.$$eval('[data-f="site"] option', (o) => o.map((x) => x.value)), ['', 'none', 'down']);
+  await dash.selectOption('[data-f="site"]', 'none');
+  await dash.waitForFunction(() => document.querySelectorAll('[data-rows] tr').length === 3);
+  await dash.selectOption('[data-f="site"]', 'down');
+  await dash.waitForFunction(() => document.querySelectorAll('[data-rows] tr').length === 6);
+  await dash.selectOption('[data-f="site"]', '');
+  await dash.selectOption('[data-f="tag"]', 'Site down');
+  await dash.waitForFunction(() => document.querySelectorAll('[data-rows] tr').length === 6);
+  await dash.selectOption('[data-f="tag"]', '');
+  await dash.waitForFunction(() => document.querySelectorAll('[data-rows] tr').length === 9);
+  // A site that is down: the website script says it wasn't loading.
+  await dash.click(`tr[data-id="${by('Broken Buff').id}"] [data-open]`);
+  await dash.waitForFunction(() => document.querySelectorAll('.drawer.open [data-bubble]').length === 3);
+  assert.equal(await dash.inputValue('[data-bubble="0"]'), 'Hello Broken Buff');
+  assert.match(await dash.inputValue('[data-bubble="1"]'), /^I came across Broken Buff on Facebook and Instagram and your website wasn't loading when I checked\.\n\nWe build simple websites/);
+  assert.match(await dash.textContent('.drawer .pitch h3'), /Website script\s*Site down/);
+  assert.equal(await dash.$$eval('.drawer .pitch .note', (n) => n.length), 0);
+  if (SHOTS) {
+    await dash.waitForTimeout(500); // let the drawer finish sliding in
+    await dash.screenshot({ path: `${SHOTS}/3c-site-down-drawer.png` });
+  }
+  await dash.click('[data-act="close"]');
   await dash.check('[data-f="skipped"]');
   await dash.waitForFunction(() => document.querySelectorAll('[data-rows] tr').length === 23);
   const lastRow = await dash.$eval('[data-rows] tr:last-child', (tr) => tr.querySelector('.tags').textContent);
   assert.match(lastRow, /Running ads/, 'skipped leads sink to the bottom');
   assert.match(await dash.textContent(`tr[data-id="${good.id}"]`), /@shineautospa/);
   assert.match(await dash.textContent(`tr[data-id="${good.id}"]`), /hello@shineautospa\.example/);
-  if (SHOTS) await dash.screenshot({ path: `${SHOTS}/3b-leads-skipped.png` });
+  if (SHOTS) {
+    await dash.waitForTimeout(400); // let the drawer finish sliding out
+    await dash.screenshot({ path: `${SHOTS}/3b-leads-skipped.png` });
+  }
   // CSV export of the current view (skipped shown): instagram and email columns.
   const [dl] = await Promise.all([dash.waitForEvent('download'), dash.click('[data-act="export-csv"]')]);
   const [csvHead, ...csvRows] = parseCsv(fs.readFileSync(await dl.path(), 'utf8'));
@@ -380,7 +415,9 @@ try {
   await dash.waitForFunction(() => document.querySelectorAll('.drawer [data-bubble]').length === 3);
   assert.equal(await dash.inputValue('[data-bubble="0"]'), 'Hello Gloss Garage', 'the city at the end of the page name is left out');
   assert.match(await dash.inputValue('[data-bubble="1"]'), /^I came across Gloss Garage on Facebook and Instagram/);
-  assert.match(await dash.textContent('.drawer .pitch .note'), /They have a website but the message says you couldn't find one\. Edit that line before you send\./);
+  assert.match(await dash.inputValue('[data-bubble="1"]'), /and couldn't find a website for you\./);
+  assert.equal(await dash.textContent('.drawer .pitch .note'), 'Bubble 2 says they have no website. Edit that line before you send.');
+  if (SHOTS) await dash.screenshot({ path: `${SHOTS}/3d-pitch-anyway.png` });
   await dash.click('[data-channel="email"]');
   assert.equal(await dash.inputValue('[data-email-subject]'), 'Gloss Garage + website');
   assert.match(await dash.inputValue('[data-email-body]'), /^Hello Gloss Garage\n\nI came across/);
@@ -742,12 +779,6 @@ try {
   await dash.selectOption('[data-f="status"]', 'meeting');
   await dash.waitForFunction((id) => [...document.querySelectorAll('[data-rows] tr')].map((t) => t.dataset.id).join() === id, bad.id);
   await dash.selectOption('[data-f="status"]', '');
-  // Website filters that need a working site show the skipped leads they match.
-  await dash.selectOption('[data-f="site"]', 'has');
-  await dash.waitForFunction(() => document.querySelectorAll('[data-rows] tr').length === 20);
-  await dash.selectOption('[data-f="site"]', 'broken');
-  await dash.waitForFunction(() => document.querySelectorAll('[data-rows] tr').length === 6);
-  await dash.selectOption('[data-f="site"]', '');
 
   // A "sent" from the phone records the script that was queued, even if an ad check changes the lead in between.
   const adsId = await sw.evaluate(async () =>
