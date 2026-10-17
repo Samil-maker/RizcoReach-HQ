@@ -86,7 +86,8 @@ function world({ respond = site(), gmail = true, fill = true, lockFree = true, p
     if (term === '-in:sent') return list.some((m) => !fromMe(m));
     if (term === '-in:chats') return true;
     if (term.startsWith('to:')) return list.some((m) => m.to.toLowerCase().includes(term.slice(3).toLowerCase()));
-    if (term === 'from:(mailer-daemon OR postmaster)') return list.some((m) => /mailer-daemon|postmaster/i.test(m.from));
+    const from = term.match(/^from:\((.*)\)$/); // from:(a OR b): any message from one of them
+    if (from) return list.some((m) => from[1].toLowerCase().split(' or ').some((a) => m.from.toLowerCase().includes(a)));
     const age = term.match(/^newer_than:(\d+)d$/);
     if (age) return list.some((m) => m.date > Date.now() - age[1] * DAY);
     throw new Error(`search term the fake mailbox does not know: ${term}`);
@@ -336,12 +337,18 @@ test('checkInbox reports replies, opt outs and bounces once, and ignores auto re
   const w = world({ respond: site({ items }), threads });
   w.ctx.checkInbox();
 
-  assert.deepEqual(w.log.searches, ['newer_than:3d -in:sent -in:chats', 'from:(mailer-daemon OR postmaster) newer_than:3d']);
+  const watched = ['reply', 'optout', 'auto', 'bounce', 'lostbounce', 'quoted', 'twice', 'quiet', 'done', 'cancelled'].map((id) => `${id}@biz.example`);
+  assert.deepEqual(w.log.searches, [
+    'newer_than:3d -in:sent -in:chats',
+    `newer_than:3d -in:sent -in:chats from:(${watched.join(' OR ')})`,
+    'from:(mailer-daemon OR postmaster) newer_than:3d',
+  ]);
   const sent = posts(w, 'events');
   assert.equal(sent.length, 1, 'one events call');
   const byId = (a, b) => a.id.localeCompare(b.id);
   assert.deepEqual([...sent[0].events].sort(byId), [
     { id: 'bounce', type: 'bounced' },
+    { id: 'cancelled', type: 'replied' }, // stopped by hand, but a reply is still a reply
     { id: 'done', type: 'replied' },
     { id: 'lostbounce', type: 'bounced' },
     { id: 'optout', type: 'optout' },
@@ -358,11 +365,35 @@ test('a bounce found both in its thread and by address is reported once', () => 
   assert.deepEqual(posts(w, 'events'), [{ action: 'events', events: [{ id: 'a', type: 'bounced' }] }]);
 });
 
+test('a "delivery delayed" notice is not a bounce', () => {
+  const daemon = 'Mail Delivery Subsystem <mailer-daemon@googlemail.com>';
+  const delay = mail({ from: daemon, subject: 'Delivery Status Notification (Delay)', body: 'Delivery incomplete. There was a temporary problem delivering your message to a@biz.example. Gmail will retry for 47 more hours.' });
+  const w = world({ respond: site({ items: [item('a')] }), threads: { 't-a': [mine(), delay], 't-x': [{ ...delay, subject: 'Delayed Mail (still being retried)' }] } });
+  w.ctx.checkInbox();
+  assert.deepEqual(posts(w, 'events'), [], 'nothing reported');
+});
+
+test('a reply that starts a new email still counts', () => {
+  const w = world({ respond: site({ items: [item('a')] }), threads: { 't-a': [mine()], 't-new': [mail({ from: 'Biz A <A@biz.example>', subject: 'Your ads offer', body: 'Can you call me?' })] } });
+  w.ctx.checkInbox();
+  assert.deepEqual(posts(w, 'events'), [{ action: 'events', events: [{ id: 'a', type: 'replied' }] }]);
+});
+
+test('reads ask for the light list without the email texts', () => {
+  const w = world({ respond: site({ items: [] }) });
+  w.ctx.checkInbox();
+  assert.equal(w.log.fetch[0].url, `${SITE}/api/email-queue?lite=1`);
+});
+
 test('opt out wording is read from the reply only', () => {
   const cases = [
     ['Please remove me from your list', 'optout'],
     ['unsubscribe', 'optout'],
     ['STOP', 'optout'],
+    ['Stop.', 'optout'],
+    ['Please stop emailing me', 'optout'],
+    ['Yes interested\n\nAhmed\nOne Stop Auto Care', 'replied'],
+    ['We stopped using ads last year, tell me more', 'replied'],
     ['Not interested sorry', 'optout'],
     ['Please don’t email me again', 'optout'],
     ['No thank you', 'optout'],

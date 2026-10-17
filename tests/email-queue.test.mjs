@@ -818,3 +818,13 @@ test('sent counts are kept for the last 14 days', async () => {
   assert.equal(days['2026-10-19'], 2);
   assert.equal((await t.get()).stats.today, 2);
 });
+
+test('the light list leaves out the email texts and says how many emails each lead gets', async () => {
+  const t = setup();
+  await t.put(email('a'), email('b', { steps: ['Only one'] }));
+  const res = await handle(new Request('https://site.example/api/email-queue?lite=1', { headers: { authorization: `Bearer ${KEY}` } }), t.store, KEY, () => t.clock.now);
+  const lite = await res.json();
+  assert.deepEqual(lite.items.map((x) => [x.id, x.total, 'steps' in x]), [['a', 3, false], ['b', 1, false]]);
+  assert.equal(lite.stats.queued, 2);
+  assert.equal((await t.get()).items[0].steps.length, 3, 'the full list still has them');
+});

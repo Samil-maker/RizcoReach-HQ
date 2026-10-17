@@ -60,7 +60,8 @@ function tick() {
 function api(method, body) {
   const options = { method: method, contentType: 'application/json', headers: { Authorization: 'Bearer ' + KEY }, muteHttpExceptions: true };
   if (body) options.payload = JSON.stringify(body);
-  const res = UrlFetchApp.fetch(SITE.replace(/\/+$/, '') + '/api/email-queue', options);
+  // Reads skip the email texts: the sender only needs where each email stands.
+  const res = UrlFetchApp.fetch(SITE.replace(/\/+$/, '') + '/api/email-queue' + (method === 'get' ? '?lite=1' : ''), options);
   const code = res.getResponseCode();
   let data = null;
   try {
@@ -107,7 +108,7 @@ function sendJob(job) {
   } catch (e) {
     const error = errorText_(e);
     const failure = { ok: false, error: error.slice(0, 300) };
-    if (/limit|quota|rate|too many/i.test(error)) failure.limit = true; // Gmail says slow down: wait for tomorrow
+    if (/\b(limits?|quota|rate limit|too many)\b/i.test(error)) failure.limit = true; // Gmail says slow down: wait for tomorrow
     else if (/invalid to|invalid address|recipient address rejected|invalid.*header/i.test(error)) failure.permanent = true;
     report(failure);
     Logger.log('Could not send to ' + job.to + ': ' + error);
@@ -128,7 +129,8 @@ function checkInbox() {
   (state.items || []).forEach((item) => {
     const sentAt = item.sentAt || [];
     if (!item.threadId || !sentAt.length) return;
-    if (item.status === 'active' || (item.status === 'done' && sentAt[sentAt.length - 1] > since)) {
+    // Stopped emails still count: a reply to one is still a reply.
+    if (item.status === 'active' || (['done', 'cancelled'].includes(item.status) && sentAt[sentAt.length - 1] > since)) {
       byThread[item.threadId] = item;
       byEmail[item.email] = item;
     }
@@ -141,21 +143,39 @@ function checkInbox() {
     events.push({ id: item.id, type: type });
   };
 
-  GmailApp.search('newer_than:3d -in:sent -in:chats', 0, 200).forEach((thread) => {
-    const item = byThread[thread.getId()];
-    if (!item) return;
+  const read = (thread, item) =>
     thread.getMessages().forEach((m) => {
       const from = m.getFrom();
       if (m.getDate().getTime() <= item.sentAt[0] || address_(from) === me) return;
-      if (/mailer-daemon|postmaster/i.test(from)) add(item, 'bounced'); // before the auto reply check: bounces are auto replies too
-      else if (!isAutoReply_(m)) add(item, saysNo_(m.getPlainBody()) ? 'optout' : 'replied');
+      if (/mailer-daemon|postmaster/i.test(from)) {
+        if (!isDelay_(m)) add(item, 'bounced'); // before the auto reply check: bounces are auto replies too
+      } else if (!isAutoReply_(m)) add(item, saysNo_(m.getPlainBody()) ? 'optout' : 'replied');
     });
+  const done = {};
+  GmailApp.search('newer_than:3d -in:sent -in:chats', 0, 200).forEach((thread) => {
+    const item = byThread[thread.getId()];
+    if (!item) return;
+    done[thread.getId()] = true;
+    read(thread, item);
   });
+
+  // A reply that started a new email: look for anything from the people we emailed, 20 addresses per search.
+  const emails = Object.keys(byEmail);
+  for (let i = 0; i < emails.length; i += 20) {
+    GmailApp.search('newer_than:3d -in:sent -in:chats from:(' + emails.slice(i, i + 20).join(' OR ') + ')', 0, 50).forEach((thread) => {
+      if (done[thread.getId()]) return;
+      done[thread.getId()] = true;
+      thread.getMessages().forEach((m) => {
+        const item = byEmail[address_(m.getFrom())];
+        if (item && m.getDate().getTime() > item.sentAt[0] && !isAutoReply_(m)) add(item, saysNo_(m.getPlainBody()) ? 'optout' : 'replied');
+      });
+    });
+  }
 
   // Some bounces start a thread of their own: match them by the address inside.
   GmailApp.search('from:(mailer-daemon OR postmaster) newer_than:3d', 0, 50).forEach((thread) => {
     thread.getMessages().forEach((m) => {
-      if (!/mailer-daemon|postmaster/i.test(m.getFrom())) return;
+      if (!/mailer-daemon|postmaster/i.test(m.getFrom()) || isDelay_(m)) return;
       (m.getPlainBody().match(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g) || []).forEach((email) => {
         const item = byEmail[email.toLowerCase()];
         if (item && m.getDate().getTime() > item.sentAt[0]) add(item, 'bounced');
@@ -198,12 +218,18 @@ function isAutoReply_(m) {
   return (auto !== '' && auto !== 'no') || /automatic reply|out of office|auto.?reply/i.test(m.getSubject());
 }
 
+// Gmail also writes when delivery is only delayed and it will keep trying. That is not a bounce.
+function isDelay_(m) {
+  return /\bdelay(ed)?\b|delivery incomplete/i.test(m.getSubject()) || /will (retry|keep trying)|delivery incomplete/i.test(String(m.getPlainBody() || '').slice(0, 800));
+}
+
 // True when the reply itself (not our email quoted under it) asks us to stop.
 function saysNo_(body) {
   const text = String(body || '');
   const quote = text.search(/^\s*>|^On\b[^\n]*\n?[^\n]*wrote:|^-+ ?Original Message|^From: |^_{8,}/im);
   const own = (quote >= 0 ? text.slice(0, quote) : text).slice(0, 600);
-  return /\b(unsubscribe|stop|remove me|no thanks|no thank you|not interested|don['’]?t email|do not email)\b/i.test(own);
+  if (/^\s*stop\W*$/i.test(own)) return true; // just "STOP"
+  return /\b(unsubscribe|stop (emailing|sending|contacting)|please stop|remove me|no thanks|no thank you|not interested|don['’]?t (email|contact)|do not (email|contact))\b/i.test(own);
 }
 
 // "Samil <samil@gmail.com>" -> "samil@gmail.com"

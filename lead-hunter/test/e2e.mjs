@@ -923,6 +923,36 @@ try {
   await dash.selectOption('#d-status', 'lost');
   await waitFor(async () => brokenItem().status === 'cancelled', 5000, '"Not interested" stops the emails');
   await dash.click('[data-act="close"]');
+  // A business already messaged on WhatsApp is not emailed as well: one channel per business.
+  const washed = by('Wash Wizards');
+  assert.ok((await lead(washed.id)).contactedAt, 'messaged on WhatsApp earlier');
+  await dash.evaluate((id) => update(id, { addEmail: 'team@washwizards.example' }), washed.id);
+  await waitFor(async () => (await lead(washed.id)).emails.includes('team@washwizards.example'), 5000, 'email added');
+  await dash.click(`tr[data-id="${washed.id}"] [data-sel]`);
+  await dash.click('[data-act="bulk-email"]');
+  await dash.waitForFunction(() => document.querySelector('[data-toast]').textContent === '0 added to the email queue · 1 already messaged on WhatsApp');
+  assert.ok(!emailStore.peek().items.some((i) => i.id === washed.id));
+  await dash.click('[data-bulk] [data-act="bulk-clear"]');
+
+  // "No thanks": the lead is marked not interested and never emailed again.
+  const desertLead = by('Desert Detailers');
+  await dash.evaluate((id) => update(id, { status: 'new', addEmail: 'book@desertdetailers.example' }), desertLead.id);
+  await waitFor(async () => (await lead(desertLead.id)).emails.includes('book@desertdetailers.example'), 5000, 'email added');
+  await dash.click(`tr[data-id="${desertLead.id}"] [data-sel]`);
+  await dash.click('[data-act="bulk-email"]');
+  await dash.waitForFunction(() => /^1 added to the email queue/.test(document.querySelector('[data-toast]').textContent));
+  await dash.click('[data-bulk] [data-act="bulk-clear"]');
+  const tuesday = monday + 24 * 3600e3;
+  const optJob = (await emailCall({ action: 'claim' }, tuesday)).job;
+  assert.equal(optJob.id, desertLead.id);
+  await emailCall({ action: 'report', id: optJob.id, step: 0, ok: true, threadId: 't2', messageId: '<m2@mail.gmail.com>' }, tuesday);
+  await emailCall({ action: 'events', events: [{ id: optJob.id, type: 'optout' }] }, tuesday + 3600e3);
+  await sw.evaluate(() => syncEmail());
+  const declined = await lead(desertLead.id);
+  assert.deepEqual([declined.status, declined.doNotEmail, declined.repliedAt, declined.emailQueue.state], ['lost', true, tuesday + 3600e3, 'optout']);
+  assert.ok(emailStore.peek().never.includes('book@desertdetailers.example'), 'on the never list');
+  assert.equal((await emailCall({ action: 'claim' }, tuesday + 7 * 24 * 3600e3)).job, null, 'no follow up after a no thanks');
+
   // The Meta ads tab has it too, and a business running ads is never emailed.
   await dash.evaluate((id) => update(id, { addEmail: 'hello@runsads.example' }), adsId);
   await waitFor(async () => (await lead(adsId)).emails.includes('hello@runsads.example'), 5000, 'email added');

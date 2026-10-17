@@ -245,12 +245,13 @@ function resume(s: State, now: number) {
   }
 }
 
-function view(s: State, now: number) {
+/** `lite` leaves out the email texts (the sender and the sync only need where each email stands) and says how many there are. */
+function view(s: State, now: number, lite = false) {
   resume(s, now);
   const counts = { queued: 0, active: 0, done: 0, replied: 0, bounced: 0, optout: 0, failed: 0, cancelled: 0 };
   for (const x of s.items) counts[x.status]++;
   return {
-    items: s.items,
+    items: lite ? s.items.map(({ steps, ...x }) => ({ ...x, total: steps.length || x.sent })) : s.items,
     settings: s.settings,
     stats: { today: s.sentByDay[dubaiDay(now)] || 0, cap: capFor(s.settings.maxPerDay, s.firstSendDay, now), ...counts },
     never: s.never.length,
@@ -411,7 +412,7 @@ export async function handle(req: Request, store: QueueStore, secret: string | u
 
   try {
     const now = nowFn();
-    if (req.method === 'GET') return json(view((await readState(store)).state, now));
+    if (req.method === 'GET') return json(view((await readState(store)).state, now, new URL(req.url).searchParams.get('lite') === '1'));
     if (req.method !== 'PUT' && req.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
 
     const b = await body(req);

@@ -632,7 +632,7 @@ const EMAIL_ERRORS = {
   503: 'The email sender is not switched on yet: add LEAD_QUEUE_KEY in Netlify, then redeploy.',
 };
 async function queueApi(method, body, path = '/api/lead-queue') {
-  const email = path === '/api/email-queue';
+  const email = path.startsWith('/api/email-queue');
   const s = await getSettings();
   if (!s.queueKey || !s.queueSite) throw new Error('Set up the phone queue in Settings first.');
   let url;
@@ -658,7 +658,8 @@ async function queueApi(method, body, path = '/api/lead-queue') {
   if (!res.ok || !data) throw new Error((email ? EMAIL_ERRORS : QUEUE_ERRORS)[res.status] || (data && data.error) || `${email ? 'Email sender' : 'Phone queue'} error (HTTP ${res.status}).`);
   return data;
 }
-const emailApi = (method, body) => queueApi(method, body, '/api/email-queue');
+// Reads leave out the email texts: Lead Hunter writes them itself and only needs where each one stands.
+const emailApi = (method, body) => queueApi(method, body, method === 'GET' ? '/api/email-queue?lite=1' : '/api/email-queue');
 
 /** Mirror the server queue onto leads: "sent" on the phone marks the lead as contacted. */
 async function applyQueue(items) {
@@ -817,7 +818,8 @@ async function applyEmail(items) {
       if (!lead) continue;
       const before = JSON.stringify([lead.emailQueue, lead.status, lead.badEmails, lead.doNotEmail]);
       const prev = lead.emailQueue || {};
-      lead.emailQueue = { state: item.status, sent: item.sent, total: item.steps.length || prev.total || item.sent, nextAt: item.nextAt, at: item.statusAt, email: item.email };
+      const total = (item.steps && item.steps.length) || item.total || prev.total || item.sent;
+      lead.emailQueue = { state: item.status, sent: item.sent, total, nextAt: item.nextAt, at: item.statusAt, email: item.email };
       // Each change is applied once, so later syncs never override a status set by hand.
       if (item.sent >= 1 && !(prev.sent >= 1) && ['new', 'followup'].includes(lead.status)) {
         lead.status = 'contacted';
@@ -830,7 +832,15 @@ async function applyEmail(items) {
         lead.statusHistory = [...(lead.statusHistory || []), { status: 'replied', at: item.statusAt, via: 'email' }].slice(-20);
       }
       if (item.status === 'bounced' && prev.state !== 'bounced') lead.badEmails = [...new Set([...(lead.badEmails || []), item.email])];
-      if (item.status === 'optout' && prev.state !== 'optout') lead.doNotEmail = true;
+      // "No thanks" is a reply too: the lead is not interested and is never emailed again.
+      if (item.status === 'optout' && prev.state !== 'optout') {
+        lead.doNotEmail = true;
+        if (['new', 'contacted', 'followup'].includes(lead.status)) {
+          lead.status = 'lost';
+          lead.repliedAt = lead.repliedAt || item.statusAt;
+          lead.statusHistory = [...(lead.statusHistory || []), { status: 'lost', at: item.statusAt, via: 'email' }].slice(-20);
+        }
+      }
       if (JSON.stringify([lead.emailQueue, lead.status, lead.badEmails, lead.doNotEmail]) !== before) {
         lead.updatedAt = now();
         writes[leadKey(item.id)] = lead;
@@ -873,13 +883,13 @@ async function syncEmail() {
 }
 
 /* Each lead goes in as its first email and follow ups. Leads skipped for running ads, leads without an address
-   to send to, leads emailed before and leads you are already talking to stay out. */
+   to send to, leads emailed before, leads already messaged another way and leads you are talking to stay out. */
 async function pushToEmail(ids) {
   const settings = await getSettings();
   const got = await store.get(ids.map(leadKey));
   const items = [];
   const names = {};
-  const skipped = { noEmail: [], runningAds: [], already: [], closed: [] };
+  const skipped = { noEmail: [], runningAds: [], already: [], contacted: [], closed: [] };
   for (const id of ids) {
     const lead = got[leadKey(id)];
     if (!lead) continue;
@@ -890,6 +900,7 @@ async function pushToEmail(ids) {
     else if (!mail.script) skipped.runningAds.push(name);
     else if (q && (q.sent >= 1 || q.state !== 'cancelled')) skipped.already.push(name);
     else if (STOP_EMAILS.includes(lead.status)) skipped.closed.push(name);
+    else if (lead.contactedAt) skipped.contacted.push(name); // already messaged on WhatsApp: one channel per business
     else {
       names[id] = name;
       items.push({ id, email: mail.to, business: lead.pageName, script: mail.script, fromName: settings.emailFromName, subject: mail.subject, steps: mail.steps, followupDays: [3, 4] });

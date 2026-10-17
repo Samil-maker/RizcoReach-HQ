@@ -622,6 +622,7 @@ function emailQueueRow(l, e) {
     return `<span class="tag ${cls}" data-email-state>${esc(emailState(q))}</span>${['queued', 'active'].includes(q.state) ? '<button class="btn sm" data-act="email-stop">Stop emails</button>' : ''}`;
   }
   if (!e.to || !LH.emailFor(l, S.settings).script) return ''; // skipped for running ads: pitched by hand only
+  if (l.contactedAt) return ''; // already messaged on WhatsApp: one channel per business
   if (!S.settings.queueKey) return '<button class="btn sm ghost" data-goto="settings" data-anchor="email">Set up the email sender</button>';
   return '<button class="btn sm pri" data-act="email-queue">Add to email queue</button>';
 }
@@ -1089,6 +1090,7 @@ async function emailLeads(ids, b) {
     k.runningAds.length && `${k.runningAds.length} ${k.runningAds.length === 1 ? 'runs' : 'run'} ads`,
     already && `${already} already emailed`,
     k.closed.length && `${k.closed.length} replied or closed`,
+    (k.contacted || []).length && `${k.contacted.length} already messaged on WhatsApp`,
     n(['never']) && `${n(['never'])} on the never email list`,
     other && `${other} could not be added`,
   ];
