@@ -106,6 +106,11 @@ is saved, with no hunt running.
   and by script, across every lead.
 - **Export CSV** gives you everything in the current view for Google Sheets,
   including Instagram and email.
+- **Google Contacts** saves the same leads as a Google Contacts file: the
+  business name as the contact name, the WhatsApp number first, all in a
+  *RizcoReach leads* label. Import it at contacts.google.com (Import) and
+  WhatsApp on your phone shows each business by name. Leads without a phone
+  or an email are left out.
 
 ## Sending from your phone
 
@@ -221,7 +226,10 @@ from the Ad Library on purpose: a business that is already advertising will
 just say "I already run ads". Instead it works in three steps.
 
 1. **Finds businesses on Google Maps** for a niche and the areas you tick
-   (for example "ceramic coating in Al Quoz, Dubai"):
+   (for example "ceramic coating in Al Quoz, Dubai"). Dubai has 74 areas and
+   Abu Dhabi 28, searched with the central and established areas first, and
+   each search stops at the number of new businesses you ask for (150 by
+   default):
    - with a **Places API key** (Settings) the search runs in the background,
      up to 60 businesses per search term and area;
    - **without a key**, Lead Hunter opens Google Maps in a tab, scrolls the
@@ -229,8 +237,10 @@ just say "I already run ads". Instead it works in three steps.
      website). Keep that tab open while it runs.
 2. **Checks each website** with the same audit as website leads, which also
    finds their Facebook page, WhatsApp number and email.
-3. **Checks the Meta Ad Library for each business**, in a background tab,
-   one business every few seconds:
+3. **Checks the Meta Ad Library for each business with a website**, in a
+   background tab, one business every few seconds. Businesses without a
+   website get the website script whatever their ads, so their check is
+   skipped ("Not needed"); use **Check ads again** if you want it anyway:
    1. the live ads on their Facebook page (found through the link on their
       website);
    2. a search for their website address, which catches ads run from a
@@ -343,7 +353,15 @@ out of backups.
   tabs, at a human pace. Google's and Meta's terms also restrict automated
   collection, so search a few niches and areas a day rather than whole
   cities at once, and use a separate Chrome profile (and Facebook account)
-  for it. Lead Hunter does not search Instagram automatically.
+  for it.
+- **Instagram**: Lead Hunter never crawls Instagram by itself, because
+  automated Instagram searching gets accounts blocked. Instead, open a
+  business profile on instagram.com as you normally would (from a hashtag,
+  a location or the search) and press **+ Add to Lead Hunter** at the bottom
+  right. It saves the profile you are looking at: name, bio, followers, the
+  website and WhatsApp links in the bio, and any phone or email in it. The
+  business lands in the Meta ads tab with the right script, and its ads are
+  checked if it has a website.
 - Leads are stored only in this Chrome profile. Use **Settings → Download
   backup** before removing the extension or switching computers.
 - If Meta changes the Ad Library and collection stops (the corner panel stays

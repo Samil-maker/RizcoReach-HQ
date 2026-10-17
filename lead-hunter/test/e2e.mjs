@@ -143,10 +143,28 @@ function site(b, url, res) {
   html(404, 'not found');
 }
 
+/* Instagram profile pages the way instagram.com serves them: the profile in the meta tags, bio links wrapped in l.instagram.com. */
+const IG_PROFILES = {
+  'glossy.tint_bar': { name: 'Glossy Tint Bar', bio: 'Ceramic coating and window tint in Al Quoz. Call 050 765 4321 or book@glossytint.example', links: ['https://l.instagram.com/?u=https%3A%2F%2Fglossytint.example%2Fbook&e=AT0', 'https://wa.me/971551112233'] },
+  'luxe.lash.dxb': { name: 'Luxe Lash Studio', bio: 'Lash studio in JLT. WhatsApp +971 52 444 5566', links: [] },
+};
+function instagramHtml(handle) {
+  const p = IG_PROFILES[handle];
+  if (!p) return '<html><head><title>Instagram</title></head><body><main>Explore</main></body></html>';
+  const title = `${p.name} (@${handle}) • Instagram photos and videos`;
+  const desc = `2,345 Followers, 120 Following, 310 Posts - ${p.name} (@${handle}) on Instagram: "${p.bio}"`.replace(/"/g, '&quot;');
+  return `<html><head><title>${title}</title><meta property="og:title" content="${title}"><meta name="description" content="${desc}"></head>
+    <body><main><header><h2>${handle}</h2>${p.links.map((h) => `<a href="${h}">link</a>`).join('')}<a href="https://www.instagram.com/${handle}/followers/">followers</a></header></main></body></html>`;
+}
+
 function handler(req, res) {
   const host = (req.headers.host || '').split(':')[0];
   const url = new URL(req.url, `https://${host}`);
   if (metaHandler(req, res, url, host)) return;
+  if (host === 'www.instagram.com') {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    return res.end(instagramHtml(url.pathname.split('/').filter(Boolean)[0] || ''));
+  }
   if (host === 'www.facebook.com') {
     if (url.pathname.startsWith('/ads/library')) {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
@@ -220,7 +238,7 @@ const ctx = await pw.chromium.launchPersistentContext(path.join(tmp, 'profile'),
   args: [
     `--disable-extensions-except=${EXT}`,
     `--load-extension=${EXT}`,
-    `--host-resolver-rules=MAP www.facebook.com 127.0.0.1:${PORT}, MAP *.example 127.0.0.1:${PORT}, MAP wa.me 127.0.0.1:${PORT}, MAP www.rizcoreach.ae 127.0.0.1:${PORT}, MAP www.google.com 127.0.0.1:${PORT}, MAP places.googleapis.com 127.0.0.1:${PORT}`,
+    `--host-resolver-rules=MAP www.facebook.com 127.0.0.1:${PORT}, MAP *.example 127.0.0.1:${PORT}, MAP wa.me 127.0.0.1:${PORT}, MAP www.rizcoreach.ae 127.0.0.1:${PORT}, MAP www.google.com 127.0.0.1:${PORT}, MAP places.googleapis.com 127.0.0.1:${PORT}, MAP www.instagram.com 127.0.0.1:${PORT}`,
     '--ignore-certificate-errors',
     '--no-proxy-server',
   ],
@@ -411,6 +429,16 @@ try {
   const shineRow = csvRows.find((r) => r[2] === 'Shine Auto Spa');
   assert.equal(shineRow[csvHead.indexOf('instagram')], 'https://www.instagram.com/shineautospa/');
   assert.equal(shineRow[csvHead.indexOf('email')], 'hello@shineautospa.example');
+  // Google Contacts file: the business name as the contact name, only leads you can reach.
+  const [gdl] = await Promise.all([dash.waitForEvent('download'), dash.click('[data-act="export-contacts"]')]);
+  assert.match(gdl.suggestedFilename(), /^google-contacts-\d{4}-\d{2}-\d{2}\.csv$/);
+  const [gHead, ...gRows] = parseCsv(fs.readFileSync(await gdl.path(), 'utf8'));
+  assert.deepEqual(gHead.slice(0, 2), ['Name', 'Given Name']);
+  const shineContact = gRows.find((r) => r[0] === 'Shine Auto Spa');
+  assert.ok(shineContact, 'Shine Auto Spa is a contact');
+  assert.match(shineContact[gHead.indexOf('Phone 1 - Value')] || shineContact[gHead.indexOf('E-mail 1 - Value')], /^\+971|@/);
+  assert.equal(shineContact[gHead.indexOf('Group Membership')], '* myContacts ::: RizcoReach leads');
+  assert.ok(gRows.every((r) => r[gHead.indexOf('Phone 1 - Value')] || r[gHead.indexOf('E-mail 1 - Value')]), 'every contact has a phone or an email');
 
   // A skipped lead: no message, unless you pitch it anyway with the website script.
   await dash.click(`tr[data-id="${bad.id}"] [data-open]`);
@@ -569,8 +597,8 @@ try {
     'Glossy PPF Studio': 'none', // their Facebook page: 0 live ads (confirmed)
     'Armor Shield Detailing': 'running', // their Facebook page: 3 live ads
     'Desert Ceramic Care': 'running', // found by website domain
-    'Nano Pro Tint': 'likely', // only a similar-name decoy
-    'Shiny Wheels Car Spa': 'likely',
+    'Nano Pro Tint': 'skipped', // no website: the website script either way, so no Ad Library check
+    'Shiny Wheels Car Spa': 'skipped',
     'Wrap Kings JLT': 'likely', // page unknown to the Ad Library
   });
   assert.equal(pn('Armor Shield Detailing').adCheck.activeAds, 3);
@@ -962,6 +990,41 @@ try {
   await dash.waitForFunction(() => document.querySelector('[data-toast]').textContent === '0 added to the email queue · 1 runs ads');
   assert.ok(!emailStore.peek().items.some((i) => i.id === adsId));
   await dash.click('[data-ads-bulk] [data-act="bulk-clear"]');
+
+  /* ------------------------------------- Instagram: Add to Lead Hunter on a profile */
+  const ig = await ctx.newPage();
+  await ig.goto('https://www.instagram.com/glossy.tint_bar/');
+  const igBtn = ig.locator('button'); // the only button on the page: ours
+  await ig.locator('button', { hasText: 'Add to Lead Hunter' }).waitFor();
+  await igBtn.click();
+  await ig.locator('button', { hasText: 'Added to Lead Hunter' }).waitFor();
+  const igLead = await lead('p:i:glossy.tint_bar');
+  assert.deepEqual([igLead.kind, igLead.pageName, igLead.niche, igLead.socials.instagram], ['prospect', 'Glossy Tint Bar', 'Car detailing studios', 'https://www.instagram.com/glossy.tint_bar/']);
+  assert.equal(igLead.website, 'https://glossytint.example/', 'the website from the bio link');
+  const igPhones = igLead.phones.map((x) => [x.number, x.source]);
+  assert.ok(igPhones.some(([n, src]) => n === '+971551112233' && src === 'whatsapp-ig'), 'WhatsApp from the bio link');
+  assert.ok(igPhones.some(([n]) => n === '+971507654321'), 'the phone in the bio');
+  assert.deepEqual(igLead.emails, ['book@glossytint.example']);
+  assert.equal(igLead.sources.instagram.followers, '2,345');
+  assert.notEqual(igLead.adCheck.state, 'skipped', 'it has a website, so its ads are checked');
+  await igBtn.click();
+  await ig.locator('button', { hasText: 'Already in Lead Hunter' }).waitFor();
+  // Moving to another profile inside Instagram: the button reads that profile, not the stale page details.
+  await ig.evaluate(() => {
+    history.pushState({}, '', '/luxe.lash.dxb/');
+    document.querySelector('header').innerHTML = '<h2>luxe.lash.dxb</h2>';
+  });
+  await ig.locator('button', { hasText: 'Add to Lead Hunter' }).waitFor(); // reset for the new profile
+  await igBtn.click();
+  await ig.locator('button', { hasText: 'Added to Lead Hunter' }).waitFor();
+  const lash = await lead('p:i:luxe.lash.dxb');
+  assert.deepEqual([lash.pageName, lash.niche, lash.website, lash.adCheck.state], ['Luxe Lash Studio', 'Beauty salons', null, 'skipped']);
+  assert.ok(lash.phones.some((x) => x.number === '+971524445566'));
+  // Not a profile: no button.
+  await ig.evaluate(() => history.pushState({}, '', '/explore/'));
+  await igBtn.waitFor({ state: 'detached' });
+  if (SHOTS) await ig.screenshot({ path: `${SHOTS}/16-instagram.png` });
+  await ig.close();
 
   // Popup renders stats.
   const popup = await ctx.newPage();

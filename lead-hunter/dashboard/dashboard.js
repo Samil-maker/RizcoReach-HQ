@@ -755,6 +755,14 @@ function quickWhatsApp(l) {
   openDrawer(l.id);
 }
 
+/* Google Contacts: import the file at contacts.google.com (Import), then WhatsApp shows each business by name. */
+function exportContacts(list) {
+  const rows = LH.googleContactsRows(list, S.settings);
+  if (!rows.length) return toast('None of these leads has a phone number or an email yet.');
+  download(`google-contacts-${new Date().toISOString().slice(0, 10)}.csv`, '\ufeff' + LH.toCsv([LH.GOOGLE_CONTACTS_HEAD, ...rows]), 'text/csv;charset=utf-8');
+  toast(`${rows.length} contact${rows.length === 1 ? '' : 's'} saved. Import the file at contacts.google.com`);
+}
+
 function download(name, text, type) {
   const url = URL.createObjectURL(new Blob([text], { type }));
   const a = document.createElement('a');
@@ -1366,6 +1374,10 @@ function bind() {
         return exportCsv(filtered().map((r) => r.l));
       case 'bulk-export':
         return exportCsv([...S.selected].map((id) => S.leads.get(id)).filter(Boolean));
+      case 'export-contacts':
+        return exportContacts(filtered().map((r) => r.l));
+      case 'bulk-contacts':
+        return exportContacts([...S.selected].map((id) => S.leads.get(id)).filter(Boolean));
       case 'bulk-recheck':
         await send({ type: 'lead:recheck', ids: [...S.selected] });
         return toast(`Re-checking ${S.selected.size} websites`);

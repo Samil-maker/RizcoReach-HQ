@@ -89,6 +89,7 @@
         <div class="spacer"></div>
         <button class="btn" data-act="phone-mode" title="Step through these leads with a QR code each: scan with your phone and WhatsApp opens with the message ready">Phone mode</button>
         <button class="btn" data-act="export-csv">Export CSV</button>
+        <button class="btn" data-act="export-contacts" title="A file for Google Contacts: import it at contacts.google.com and WhatsApp shows each business by name">Google Contacts</button>
         <button class="btn" data-act="enrich-pending" hidden>Check websites</button>
       </div>
 
@@ -100,6 +101,7 @@
         <button class="btn" data-act="bulk-email">Send to email queue</button>
         <button class="btn" data-act="bulk-recheck">Re-check websites</button>
         <button class="btn" data-act="bulk-export">Export selected</button>
+        <button class="btn" data-act="bulk-contacts">Google Contacts</button>
         <button class="btn danger" data-act="bulk-delete">Delete</button>
         <button class="btn ghost" data-act="bulk-clear">Clear selection</button>
       </div>
@@ -151,7 +153,7 @@
           </label>
           <div class="grid3">
             <label class="field"><span class="lbl">City</span><select class="inp" name="city" data-ad-cities></select></label>
-            <label class="field"><span class="lbl">New businesses to find</span><input class="inp" type="number" name="target" min="1" max="1000" value="100" /></label>
+            <label class="field"><span class="lbl">New businesses to find</span><input class="inp" type="number" name="target" min="1" max="1000" value="150" /></label>
             <div class="field">
               <span class="lbl">Search on</span>
               <span class="chk">Google Maps <small data-maps-mode></small></span>
@@ -161,7 +163,7 @@
             <span class="lbl">Areas <small>click to include or leave out</small></span>
             <div class="chips" data-ad-areas></div>
           </div>
-          <p class="hint">With a Google Places API key (Settings) the search runs in the background. Without one, Lead Hunter opens Google Maps in a tab and reads the results. Ad checks open the Ad Library in a background tab, one business every few seconds. Keep both tabs open while it runs.</p>
+          <p class="hint">With a Google Places API key (Settings) the search runs in the background. Without one, Lead Hunter opens Google Maps in a tab and reads the results. Ad checks open the Ad Library in a background tab, one business every few seconds, only for businesses with a website. Keep both tabs open while it runs. To add businesses from Instagram, open their profile and press <b>+ Add to Lead Hunter</b>.</p>
           <div class="row">
             <button class="btn pri" type="submit">Find businesses</button>
             <span class="err" data-finder-err hidden></span>
@@ -212,6 +214,7 @@
         <div class="spacer"></div>
         <button class="btn" data-act="ads-phone-mode">Phone mode</button>
         <button class="btn" data-act="ads-export">Export CSV</button>
+        <button class="btn" data-act="ads-contacts" title="A file for Google Contacts: import it at contacts.google.com and WhatsApp shows each business by name">Google Contacts</button>
       </div>
 
       <div class="bulk" data-ads-bulk hidden>
@@ -222,6 +225,7 @@
         <button class="btn" data-act="ads-bulk-email">Send to email queue</button>
         <button class="btn" data-act="ads-bulk-recheck">Check ads again</button>
         <button class="btn" data-act="ads-bulk-export">Export selected</button>
+        <button class="btn" data-act="ads-bulk-contacts">Google Contacts</button>
         <button class="btn danger" data-act="ads-bulk-delete">Delete</button>
         <button class="btn ghost" data-act="bulk-clear">Clear selection</button>
       </div>

@@ -455,3 +455,34 @@ test('csv escapes formulas but keeps phone numbers', () => {
   ]);
   assert.equal(csv, `a,"'=HYPERLINK(""x"")",+971 50 123 4567,"b,c","say ""hi"""`);
 });
+
+test('Google Contacts file: the business name as the contact, WhatsApp number first, one label, no phone and no email left out', () => {
+  const rows = LH.googleContactsRows(
+    [
+      prospect({ pageName: 'GLOSSY PPF | Ceramic Coating Dubai', phones: [{ number: '+97142345678', source: 'google' }, { number: '+971501234567', source: 'whatsapp-site' }], emails: ['bad@glossy.example', 'hi@glossy.example'], badEmails: ['bad@glossy.example'], area: 'Al Quoz' }),
+      prospect({ pageName: 'No Contact Spa', phones: [], emails: [] }),
+      prospect({ pageName: 'Mail Only', phones: [], emails: ['team@mailonly.example'], website: null }),
+    ],
+    S,
+  );
+  assert.equal(LH.GOOGLE_CONTACTS_HEAD.length, rows[0].length);
+  const col = (r, name) => r[LH.GOOGLE_CONTACTS_HEAD.indexOf(name)];
+  assert.equal(rows.length, 2, 'a lead with no phone and no email is left out');
+  assert.equal(col(rows[0], 'Name'), 'Glossy PPF');
+  assert.equal(col(rows[0], 'Organization 1 - Name'), 'Glossy PPF');
+  assert.deepEqual([col(rows[0], 'Phone 1 - Type'), col(rows[0], 'Phone 1 - Value')], ['Mobile', '+971501234567'], 'the WhatsApp number comes first');
+  assert.deepEqual([col(rows[0], 'Phone 2 - Type'), col(rows[0], 'Phone 2 - Value')], ['Work', '+97142345678']);
+  assert.equal(col(rows[0], 'E-mail 1 - Value'), 'hi@glossy.example', 'a bounced email is skipped');
+  assert.equal(col(rows[0], 'Website 1 - Value'), 'https://glossyppf.example/');
+  assert.match(col(rows[0], 'Notes'), /^RizcoReach lead · Car detailing studios · Al Quoz/);
+  assert.equal(col(rows[0], 'Group Membership'), '* myContacts ::: RizcoReach leads');
+  assert.deepEqual([col(rows[1], 'Name'), col(rows[1], 'Phone 1 - Value'), col(rows[1], 'E-mail 1 - Value')], ['Mail Only', '', 'team@mailonly.example']);
+  // Phone numbers stay numbers in the file (no formula guard quote).
+  assert.match(LH.toCsv([rows[0]]), /,Mobile,\+971501234567,/);
+});
+
+test('areas: Dubai and Abu Dhabi cover the whole city, no area twice', () => {
+  for (const [city, list] of Object.entries(LH.AREAS)) assert.equal(new Set(list).size, list.length, `${city} has no repeats`);
+  assert.ok(LH.AREAS.Dubai.length >= 70 && LH.AREAS['Abu Dhabi'].length >= 25);
+  assert.deepEqual(LH.AREAS.Dubai.slice(0, 3), ['Downtown Dubai', 'Business Bay', 'DIFC'], 'central areas first');
+});
