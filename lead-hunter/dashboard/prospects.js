@@ -392,6 +392,9 @@ async function prospectAction(act, b, l) {
     case 'ads-bulk-queue':
       await queueLeads(selected(), b);
       return true;
+    case 'ads-bulk-email':
+      await emailLeads(selected(), b);
+      return true;
     case 'ads-bulk-recheck':
       await send({ type: 'adcheck:recheck', ids: selected() });
       toast(`Re-checking ${S.selected.size} businesses in the Ad Library`);

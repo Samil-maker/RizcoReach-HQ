@@ -2,8 +2,8 @@
   "manifest_version": 3,
   "name": "RizcoReach Lead Hunter",
   "short_name": "Lead Hunter",
-  "version": "1.3.0",
-  "description": "Find businesses for Meta ads and websites, pick the right script for each, and open it in WhatsApp one bubble at a time.",
+  "version": "1.4.0",
+  "description": "Find businesses for Meta ads and websites, pick the right script for each, open it in WhatsApp one bubble at a time, and email it slowly from your own Gmail.",
   "minimum_chrome_version": "111",
   "icons": {
     "16": "icons/icon-16.png",

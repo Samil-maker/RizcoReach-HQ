@@ -8,8 +8,9 @@ Two lead finders in one extension:
   checked in the Meta Ad Library. The ones with a website and **no** Meta ads
   get the Ads script. See [Meta ads clients](#meta-ads-clients).
 
-Lead Hunter never sends a message by itself. Every bubble is typed in for you
-(or copied), and you press Send.
+WhatsApp is never sent for you. Every bubble is typed in for you (or copied),
+and you press Send. Email can be sent for you, from your own Gmail and slowly:
+see [Email sender](#email-sender).
 
 ## Two scripts, picked for you
 
@@ -95,7 +96,9 @@ is saved, with no hunt running.
   same WhatsApp tab. After the last one the lead is marked *Contacted* (with
   an undo). **Mark as sent** does the same by hand.
 - **Instagram**: the same bubbles with Copy buttons, and a link to their
-  profile when Lead Hunter found one. **Email**: one block with a subject.
+  profile when Lead Hunter found one. **Email**: the first email and the
+  follow ups, with **Add to email queue** (see [Email sender](#email-sender))
+  or **Open in Gmail** to send it yourself.
 - When they answer, press **Replied** on the row (press again to undo). Track
   the rest with the status column: Follow up, Meeting booked, Won, Not
   interested, Skip. Add notes in the lead panel.
@@ -149,6 +152,67 @@ your own site.
 **Tip:** if you have both WhatsApp and WhatsApp Business on your phone,
 check which one opens on your first send. Android usually asks; on iPhone
 the link may go to the app you don't send from.
+
+## Email sender
+
+Lead Hunter can send your cold emails for you, for free, from the Gmail you
+already have. It is slow on purpose so your Gmail stays in good standing.
+
+Select leads and press **Send to email queue** (or **Add to email queue** in a
+lead's Email tab). A small script in your own Google account picks them up
+from your site every 5 minutes and sends one email at a time. Chrome does not
+need to be open.
+
+Each lead gets up to 3 emails:
+
+1. The first email: the lead's script in one message.
+2. Follow up 1, three working days later, as a reply in the same thread.
+3. Follow up 2, four working days after that.
+
+Every email ends with your signature and a line saying they can reply no
+thanks. Change the subjects, the follow ups, the signature and how many follow
+ups in **Settings → Email sender**. The first email always matches the script.
+
+### Setting up the email sender (once, about 5 minutes)
+
+It uses the same key as the phone queue, so [set that up](#setting-up-the-phone-queue-once-about-2-minutes) first.
+
+1. Lead Hunter → **Settings** → **Email sender** → **Copy sender script**.
+   It has your site and key filled in, so keep it private.
+2. Open **script.google.com** and sign in with the Gmail you want to send from.
+3. Click **New project**.
+4. Delete what's there and paste the script.
+5. Click **+** next to Services, pick **Gmail API**, then **Add**.
+6. Pick **setup** at the top and press **Run**, then **Allow**. Google warns
+   the app isn't verified because it's your own script: click **Advanced**,
+   then **Go to**.
+
+The status in Settings then says *Running*. To stop sending press **Pause
+sending** in Settings, or pick **stop** in the script and press **Run**.
+
+### Limits
+
+- Only Monday to Friday, 9 to 6 Dubai time, and at least 10 minutes apart.
+- A new sender starts slow: 5 a day in the first week, 10 in the second, 20
+  in the third. After that your daily limit decides (default 30, at most 40).
+  Free Gmail allows about 500 a day. Staying far below that is the point.
+
+### Safety rules
+
+- Plain text emails with no tracking.
+- A reply stops the follow ups and marks the lead *Replied*. A reply that says
+  stop, unsubscribe, no thanks or not interested also puts them on the never
+  email list.
+- Nobody is emailed twice, and nobody on the never email list is emailed at
+  all (people who opted out, bounced addresses and leads you marked **Never
+  email**).
+- A bounced address is marked on the lead and never used again. If 3 of the
+  last 30 first emails bounce, sending pauses until you press **Resume
+  sending**.
+- If Gmail says you hit its daily limit, sending pauses until midnight Dubai time.
+- Setting a lead to Replied, Meeting booked, Won, Not interested or Skip stops
+  its follow ups. So does **Stop emails** in the lead's Email tab.
+- Leads skipped for running ads are never emailed.
 
 ## Meta ads clients
 
@@ -261,7 +325,7 @@ out of backups.
 - Send by hand, with a real edit or two per message. WhatsApp restricts
   numbers that send the same text to lots of people who haven't saved them,
   so keep the daily volume modest and vary the wording. This is also why
-  Lead Hunter has no auto-send: you press Send on every bubble.
+  WhatsApp has no auto send: you press Send on every bubble.
 - Watch **Results**: if one niche or script gets far fewer replies, change
   that script and compare.
 - Follow up once after 2 to 3 days, then move on. Set the status to *Follow up*.
@@ -303,11 +367,13 @@ out of backups.
 | `dashboard/` · `popup/` | The UI |
 | `lib/qr.js` · `lib/vendor/qrcode.js` | QR codes (vendored qrcode-generator, MIT) |
 | `../netlify/functions/lead-queue.mts` | Phone queue API on the site (`/api/lead-queue`, Netlify Blobs) |
+| `email/sender.gs` | The email sender: an Apps Script that runs in your Google account (copied from Settings) |
+| `../netlify/functions/email-queue.mts` | Email queue API on the site (`/api/email-queue`): every sending rule lives here |
 | `../public/outreach.html` | The phone page (`/outreach`) |
 
 Tests:
 
 ```bash
-node --test lead-hunter/test/*.test.mjs   # parsers, audit, scoring, scripts and bubbles, niches, results, phone queue API, Meta ads prospects
-node lead-hunter/test/e2e.mjs   # real Chromium + mock Ad Library, Google Maps, Places API, websites and phone page (needs Playwright + openssl)
+node --test lead-hunter/test/*.test.mjs   # parsers, audit, scoring, scripts, bubbles and emails, niches, results, phone queue API, Meta ads prospects
+node lead-hunter/test/e2e.mjs   # real Chromium + mock Ad Library, Google Maps, Places API, websites, phone page and email queue (needs Playwright + openssl)
 ```

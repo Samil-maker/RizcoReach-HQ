@@ -296,7 +296,10 @@ table.leads { width: 100%; border-collapse: collapse; min-width: 1100px; }
 .pitch .bubble textarea.inp { background: var(--panel); font-size: 13.5px; min-height: 40px; }
 .bubble .row { margin-top: 8px; }
 .tick { color: var(--wa); font-size: 12px; font-weight: 600; }
-.pitch textarea[data-email-body] { min-height: 220px; font-size: 13.5px; }
+.inp[readonly] { color: var(--fg-2); }
+.email-to { margin: 0 0 8px; }
+.row.email-queue { margin: 0 0 10px; }
+.email-status { display: grid; gap: 4px; margin-bottom: 12px; }
 .skip-box { display: grid; gap: 6px; justify-items: start; background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
 .linkish { all: unset; cursor: pointer; color: var(--fg); text-decoration: underline; font-weight: 600; font-size: 13px; }
 .linkish:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }

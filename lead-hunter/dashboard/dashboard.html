@@ -97,6 +97,7 @@
         <select class="inp" data-bulk-status aria-label="Set status for selected"></select>
         <button class="btn" data-act="bulk-phone-mode">Phone mode</button>
         <button class="btn" data-act="bulk-queue">Send to phone queue</button>
+        <button class="btn" data-act="bulk-email">Send to email queue</button>
         <button class="btn" data-act="bulk-recheck">Re-check websites</button>
         <button class="btn" data-act="bulk-export">Export selected</button>
         <button class="btn danger" data-act="bulk-delete">Delete</button>
@@ -218,6 +219,7 @@
         <select class="inp" data-ads-bulk-status aria-label="Set status for selected"></select>
         <button class="btn" data-act="ads-bulk-phone-mode">Phone mode</button>
         <button class="btn" data-act="ads-bulk-queue">Send to phone queue</button>
+        <button class="btn" data-act="ads-bulk-email">Send to email queue</button>
         <button class="btn" data-act="ads-bulk-recheck">Check ads again</button>
         <button class="btn" data-act="ads-bulk-export">Export selected</button>
         <button class="btn danger" data-act="ads-bulk-delete">Delete</button>
@@ -386,6 +388,41 @@
         <h2>Scripts</h2>
         <p class="hint">Lead Hunter picks the script for each lead. No website, or a site that is down, gets the Website script. A website and no Meta ads gets the Ads script. Leads that run ads and have a working website are skipped. Variables: <code>{{business}}</code> <code>{{niche}}</code> <code>{{city}}</code> <code>{{found_on}}</code> <code>{{website_line}}</code> <code>{{my_name}}</code> <code>{{agency}}</code> <code>{{my_phone}}</code></p>
         <div data-scripts></div>
+
+        <h2 id="email">Email sender</h2>
+        <p class="hint">Sends your emails from your own Gmail, even with Chrome closed. It starts with 5 a day and goes up slowly. It stops when someone replies and never emails anyone twice. WhatsApp is never sent for you.</p>
+        <p class="hint" data-email-nokey hidden>The email sender uses the same key as the phone queue. <button type="button" class="linkish" data-goto="settings" data-anchor="phone">Set up the phone queue first</button></p>
+        <div data-email-on hidden>
+          <div class="email-status" data-email-status></div>
+          <div class="row" style="margin-top:0">
+            <button type="button" class="btn" data-act="email-pause">Pause sending</button>
+            <button type="button" class="btn" data-act="copy-sender">Copy sender script</button>
+          </div>
+          <ol class="hint steps">
+            <li>Open <b>script.google.com</b> and sign in with the Gmail you want to send from.</li>
+            <li>Click <b>New project</b>.</li>
+            <li>Delete what's there and paste the script.</li>
+            <li>Click <b>+</b> next to Services, pick <b>Gmail API</b>, then <b>Add</b>.</li>
+            <li>Pick <b>setup</b> at the top and press <b>Run</b>, then <b>Allow</b>. Google warns the app isn't verified because it's your own script: click <b>Advanced</b>, then <b>Go to</b>.</li>
+            <li>Done. It checks every 5 minutes and only sends Mon to Fri 9 to 6 Dubai time.</li>
+          </ol>
+        </div>
+        <div class="grid2">
+          <label class="field"><span class="lbl">Emails a day <small>at most 40</small></span><input class="inp" name="emailMaxPerDay" type="number" min="1" max="40" /></label>
+          <label class="field">
+            <span class="lbl">Follow ups <small>sent as replies a few working days apart</small></span>
+            <select class="inp" name="emailFollowups">
+              <option value="2">2 follow ups</option>
+              <option value="1">1 follow up</option>
+              <option value="0">No follow ups</option>
+            </select>
+          </label>
+          <label class="field"><span class="lbl">From name</span><input class="inp" name="emailFromName" /></label>
+          <label class="field"><span class="lbl">Opt out line <small>at the end of every email</small></span><input class="inp" name="emailOptOut" /></label>
+        </div>
+        <label class="field"><span class="lbl">Signature</span><textarea class="inp" name="emailSignature" rows="4"></textarea></label>
+        <p class="hint">The first email is the lead's script in one message. The follow ups go as replies in the same thread. Same variables as the scripts.</p>
+        <div data-emails></div>
         <div class="row">
           <button class="btn pri" type="submit">Save settings</button>
           <span class="saved" data-saved hidden>Saved</span>
