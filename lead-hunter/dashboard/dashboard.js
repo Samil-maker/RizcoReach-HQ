@@ -31,6 +31,7 @@ const S = {
   view: 'leads',
   openId: null,
   huntNiche: '',
+  email: null, // the email sender as the site sees it (Settings)
   // force: 'website' after "Pitch anyway" · bubbles: edits while the drawer is open · qr: bubble in the QR code
   // waTab: the WhatsApp tab this lead's bubbles open in
   pitch: { id: null, channel: 'whatsapp', force: null, bubbles: null, phone: null, qr: 0, opened: new Set(), waTab: null },
@@ -608,7 +609,7 @@ function bubblesBlock(l, p, wa) {
 
 /* The emails the email sender sends (read only: the wording is edited in Settings), where they stand, and manual sending. */
 const STEP_NAMES = ['First email', 'Follow up 1', 'Follow up 2'];
-const EMAIL_STATE = { queued: 'Queued', replied: 'Replied', bounced: 'Bounced', optout: 'Asked not to be emailed', failed: 'Could not send', cancelled: 'Stopped' };
+const EMAIL_STATE = { queued: 'Queued', replied: 'Replied', bounced: 'Bounced', optout: 'On the never email list', failed: 'Could not send', cancelled: 'Stopped' };
 function emailState(q) {
   if (q.state === 'active') return `Sent ${q.sent} of ${q.total} · next follow up ${q.nextAt > Date.now() ? new Date(q.nextAt).toLocaleDateString(undefined, { weekday: 'short' }) : 'soon'}`;
   if (q.state === 'done') return `Sent ${q.sent} of ${q.total}`;
@@ -630,10 +631,11 @@ function emailBlock(l) {
     .map((t, i) => `<div class="bubble"><div class="bubble-head"><span class="lbl">${STEP_NAMES[i]}</span></div><textarea class="inp" readonly data-email-step="${i}" rows="${bubbleRows(t)}" aria-label="${STEP_NAMES[i]}">${esc(t)}</textarea></div>`)
     .join('');
   const queue = emailQueueRow(l, e);
-  return `<p class="email-to">${e.to ? `To <b>${esc(e.to)}</b>` : `<span class="muted">${l.doNotEmail ? 'Never email is on for them.' : 'No email found. Copy the text instead.'}</span>`}</p>
+  const none = l.doNotEmail ? 'Never email is on for them.' : (l.emails || []).length ? 'Their email bounced. Copy the text instead.' : 'No email found. Copy the text instead.';
+  return `<p class="email-to">${e.to ? `To <b>${esc(e.to)}</b>` : `<span class="muted">${none}</span>`}</p>
+    ${queue ? `<div class="row email-queue">${queue}</div>` : ''}
     <input class="inp" readonly data-email-subject value="${esc(e.subject)}" aria-label="Email subject" style="margin-bottom:8px" />
     <div class="bubbles">${steps}</div>
-    ${queue ? `<div class="row">${queue}</div>` : ''}
     <div class="row">${e.to ? '<button class="btn sm" data-act="send-email">Open in Gmail</button>' : ''}
       <button class="btn sm" data-act="copy-email">Copy</button>
       <button class="btn sm" data-act="mark-sent">Mark as sent</button>
@@ -980,7 +982,7 @@ function renderEmailSender() {
   const seen = new Date(e.senderSeenAt).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
   const sender = !e.senderSeenAt ? 'Not set up yet' : mins < 15 ? `Running, last check ${mins ? `${mins} min ago` : 'just now'}` : `Not running since ${seen}`;
   const s = e.stats;
-  el.innerHTML = `<b>${esc(sender)}</b>${emailPaused(e) ? ` <span class="tag amber">Paused: ${esc(PAUSED_WHY[e.pausedReason] || 'you paused it')}</span>` : ''}
+  el.innerHTML = `<div><b>${esc(sender)}</b>${emailPaused(e) ? ` <span class="tag amber">Paused: ${esc(PAUSED_WHY[e.pausedReason] || 'you paused it')}</span>` : ''}</div>
     <div class="muted">Sent today ${s.today} of ${s.cap} · ${s.queued} queued · ${s.replied} replied · ${s.bounced} bounced</div>`;
   $('[data-act="email-pause"]').textContent = emailPaused(e) ? 'Resume sending' : 'Pause sending';
 }
@@ -1084,7 +1086,7 @@ async function emailLeads(ids, b) {
   const parts = [
     `${r.queued} added to the email queue`,
     k.noEmail.length && `${k.noEmail.length} ${k.noEmail.length === 1 ? 'has' : 'have'} no email`,
-    k.runningAds.length && `${k.runningAds.length} running ads`,
+    k.runningAds.length && `${k.runningAds.length} ${k.runningAds.length === 1 ? 'runs' : 'run'} ads`,
     already && `${already} already emailed`,
     k.closed.length && `${k.closed.length} replied or closed`,
     n(['never']) && `${n(['never'])} on the never email list`,
@@ -1429,7 +1431,7 @@ function bind() {
       case 'copy-sender': {
         // The sender script with your site and key filled into its first two lines.
         const { queueSite, queueKey } = await saveSettings();
-        if (!queueKey) return toast('Set up the phone queue key first');
+        if (!queueKey || !queueSite) return toast('Add your site and key under Phone queue first');
         const text = await (await fetch(chrome.runtime.getURL('email/sender.gs'))).text();
         const js = (v) => `'${String(v).replace(/[\\']/g, '\\$&')}'`;
         return copy(text.replace(/var SITE = '__SITE__'/, () => `var SITE = ${js(queueSite)}`).replace(/var KEY = '__KEY__'/, () => `var KEY = ${js(queueKey)}`));

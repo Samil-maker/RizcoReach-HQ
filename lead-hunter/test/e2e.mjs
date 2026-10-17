@@ -923,6 +923,15 @@ try {
   await dash.selectOption('#d-status', 'lost');
   await waitFor(async () => brokenItem().status === 'cancelled', 5000, '"Not interested" stops the emails');
   await dash.click('[data-act="close"]');
+  // The Meta ads tab has it too, and a business running ads is never emailed.
+  await dash.evaluate((id) => update(id, { addEmail: 'hello@runsads.example' }), adsId);
+  await waitFor(async () => (await lead(adsId)).emails.includes('hello@runsads.example'), 5000, 'email added');
+  await dash.click('[data-view="ads"]');
+  await dash.click(`[data-ads-rows] tr[data-id="${adsId}"] [data-sel]`);
+  await dash.click('[data-act="ads-bulk-email"]');
+  await dash.waitForFunction(() => document.querySelector('[data-toast]').textContent === '0 added to the email queue · 1 runs ads');
+  assert.ok(!emailStore.peek().items.some((i) => i.id === adsId));
+  await dash.click('[data-ads-bulk] [data-act="bulk-clear"]');
 
   // Popup renders stats.
   const popup = await ctx.newPage();
