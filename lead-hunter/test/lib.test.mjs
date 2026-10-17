@@ -141,8 +141,8 @@ test('the default ads script for a car detailing studio in Dubai, in 3 bubbles',
   assert.ok(p.bubbles[1].includes('We help car detailing studios in Dubai get consistent inquiries through Facebook and Instagram ads.'), p.bubbles[1]);
   assert.match(p.bubbles[1], /^Are you dependent on word of mouth for appointments in Dubai\?/);
   assert.equal(p.text, p.bubbles.join('\n\n'));
-  assert.equal(p.subject, 'Glossy PPF + Meta ads');
-  assert.equal(p.email, `${p.bubbles[0]}\n\n${p.bubbles[1]}`);
+  assert.equal(p.subject, 'Quick question for Glossy PPF');
+  assert.equal(p.email, `${p.text}\n\n${S.emailSignature}\n\n${S.emailOptOut}`, 'the email is the whole script, signed');
 });
 
 test('bubbles: 2 joins greeting and body, empty parts are dropped, skipped leads get none', () => {
@@ -177,7 +177,7 @@ test('website script: found on, niche and subject', () => {
   assert.equal(ad.bubbles[0], 'Hello Gloss Garage', 'the city at the end of the page name is left out');
   assert.match(ad.bubbles[1], /^I came across Gloss Garage on Facebook and Instagram and couldn't find a website for you\./);
   assert.match(ad.bubbles[1], /We build simple websites for car detailing studios in Dubai that turn visitors into WhatsApp inquiries\./, 'niche from the hunt keyword');
-  assert.equal(ad.subject, 'Gloss Garage + website');
+  assert.equal(ad.subject, 'Website for Gloss Garage');
   assert.match(LH.pitchFor(prospect({ website: null }), S).bubbles[1], /on Google Maps and/);
   assert.match(LH.pitchFor(prospect({ website: null, sources: { instagram: { username: 'glossyppf' } } }), S).bubbles[1], /on Instagram and/);
   assert.match(LH.pitchFor(advertiser({ keywords: ['pest control'] }), S).bubbles[1], /websites for businesses in Dubai/, 'no matching niche');
@@ -227,16 +227,16 @@ test('business names read like typed by hand: no keyword tails, legal suffixes o
   const p = LH.pitchFor(prospect({ pageName: 'Dr. Smile Dental Clinic - Best Dentist in Dubai', niche: 'Dental clinics', website: null }), S);
   assert.equal(p.bubbles[0], 'Hello Dr. Smile Dental Clinic');
   assert.match(p.bubbles[1], /^I came across Dr\. Smile Dental Clinic on Google Maps and/);
-  assert.equal(p.subject, 'Dr. Smile Dental Clinic + website');
+  assert.equal(p.subject, 'Website for Dr. Smile Dental Clinic');
 });
 
 test('a lead with no name: their Instagram handle or domain, else "Hello there" and "your business"', () => {
   const p = LH.pitchFor(advertiser({ pageName: '' }), S);
   assert.equal(p.bubbles[0], 'Hello there');
   assert.match(p.bubbles[1], /^I came across your business on Facebook and Instagram and couldn't find a website for you\./);
-  assert.equal(p.subject, 'Website');
-  assert.equal(LH.pitchFor(prospect({ pageName: '', website: null }), S).subject, 'Website');
-  assert.equal(LH.pitchFor(prospect({ pageName: '' }), S).subject, 'glossyppf.example + Meta ads', 'their domain stands in for the name');
+  assert.equal(p.subject, 'Your website');
+  assert.equal(LH.pitchFor(prospect({ pageName: '', website: null }), S).subject, 'Your website');
+  assert.equal(LH.pitchFor(prospect({ pageName: '' }), S).subject, 'Quick question for glossyppf.example', 'their domain stands in for the name');
   const ig = LH.pitchFor(prospect({ pageName: '', website: null, sources: { instagram: { username: 'glossyppf' } } }), S);
   assert.equal(ig.bubbles[0], 'Hello glossyppf');
   assert.match(ig.bubbles[1], /^I came across glossyppf on Instagram and/);
@@ -258,6 +258,11 @@ test('style: default scripts read like Samil typed them, with nothing invented',
     assert.doesNotMatch(raw, /\b(our clients|clients like|we've helped|we have helped|case stud|guarantee|results in)\b/i, `${key}: no invented clients or results`);
   }
   assert.ok((LH.DEFAULT_SCRIPTS.ads.body.match(/,/g) || []).length <= 6, 'at most 6 commas in the ads body');
+  for (const [key, t] of Object.entries(LH.DEFAULT_EMAILS)) {
+    const raw = [...LH.EMAIL_PARTS.map((p) => t[p]), LH.DEFAULT_SETTINGS.emailOptOut].join('\n');
+    assert.doesNotMatch(raw, /[–—;]| - |\d/, `${key} emails: no dashes, semicolons or numbers`);
+    assert.ok((raw.match(/,/g) || []).length === 0, `${key} emails: no commas`);
+  }
   // Rendered with missing data, in 3 and 2 bubbles, for both scripts.
   for (const lead of empty)
     for (const bubbles of [3, 2])
@@ -270,6 +275,80 @@ test('style: default scripts read like Samil typed them, with nothing invented',
           assert.doesNotMatch(b, / {2}| ,| \./, `no gaps left by missing data: ${JSON.stringify(b)}`);
         }
       }
+});
+
+/* -------------------------------------------------------------- emails */
+const END = `${S.emailSignature}\n\n${S.emailOptOut}`;
+const mailLead = (o = {}) => prospect({ emails: ['hello@glossyppf.example'], ...o });
+
+test('emailFor: the script in one email, then two follow ups, each signed with the opt out line', () => {
+  const e = LH.emailFor(mailLead(), S);
+  const p = LH.pitchFor(mailLead(), S);
+  assert.equal(e.script, 'ads');
+  assert.equal(e.tag, 'No Meta ads');
+  assert.equal(e.to, 'hello@glossyppf.example');
+  assert.equal(e.subject, 'Quick question for Glossy PPF');
+  assert.equal(e.steps.length, 3);
+  assert.equal(e.steps[0], `${p.bubbles.join('\n\n')}\n\n${END}`, 'greeting, body and closing, then the signature');
+  assert.equal(e.steps[1], `Hello Glossy PPF\n\nJust bringing this back to the top of your inbox. Would a quick explanation of how it works be useful?\n\nLet me know\n\n${END}`);
+  assert.match(e.steps[2], /^Hello Glossy PPF\n\nI'll leave it here so I don't fill up your inbox\./);
+  assert.ok(e.steps[2].endsWith(END));
+  assert.match(e.steps[0], /\n\nSamil\nCreative Marketing Director\nRizcoReach · rizcoreach\.ae\n\+971 56 846 1835\n\nIf you'd rather not hear from me just reply no thanks and I won't email again\.$/);
+  // The manual email tab sends the same first email.
+  assert.equal(p.email, e.steps[0]);
+  assert.equal(p.subject, e.subject);
+  assert.equal(LH.emailFor(mailLead(), { ...S, bubbles: 2 }).steps[0], e.steps[0], 'bubbles only change WhatsApp');
+});
+
+test('emailFor: follow up count, edits from Settings and an empty signature', () => {
+  for (const n of [0, 1, 2]) assert.equal(LH.emailFor(mailLead(), { ...S, emailFollowups: n }).steps.length, n + 1, `${n} follow ups`);
+  assert.equal(LH.emailFor(mailLead(), { ...S, emailFollowups: '1' }).steps.length, 2, 'a select gives a string');
+  assert.equal(LH.emailFor(mailLead(), {}).steps.length, 3, 'defaults when settings are missing');
+  const edited = LH.emailFor(mailLead(), { ...S, emails: { ads: { subject: 'Hi {{business}} from {{my_name}}', followup2: '  ' } } });
+  assert.equal(edited.subject, 'Hi Glossy PPF from Samil');
+  assert.equal(edited.steps.length, 2, 'an empty follow up is left out');
+  assert.match(edited.steps[1], /^Hello Glossy PPF\n\nJust bringing this back/, 'parts not edited keep the default');
+  assert.equal(LH.emailsFor({ emails: { website: { subject: 'Hey' } } }).website.followup1, LH.DEFAULT_EMAILS.website.followup1);
+  assert.equal(LH.emailsFor({ emails: { website: { subject: 'Hey' } } }).website.subject, 'Hey');
+  const bare = LH.emailFor(mailLead(), { ...S, emailSignature: '', emailOptOut: '' });
+  assert.equal(bare.steps[0], LH.pitchFor(mailLead(), S).text, 'no signature or opt out line when both are empty');
+  const signed = LH.emailFor(mailLead(), { ...S, emailSignature: '{{my_name}}\n{{agency}}', emailOptOut: '' });
+  assert.ok(signed.steps[0].endsWith('\n\nSamil\nRizcoReach'), 'the signature takes variables too');
+});
+
+test('emailFor: who it goes to', () => {
+  assert.equal(LH.emailFor(mailLead({ emails: ['old@x.example', 'new@x.example'], badEmails: ['old@x.example'] }), S).to, 'new@x.example', 'a bounced address is skipped');
+  assert.equal(LH.emailFor(mailLead({ badEmails: ['hello@glossyppf.example'] }), S).to, '');
+  assert.equal(LH.emailFor(mailLead({ doNotEmail: true }), S).to, '', 'never email');
+  const none = LH.emailFor(mailLead({ emails: [] }), S);
+  assert.equal(none.to, '');
+  assert.equal(none.steps.length, 3, 'still written out so it can be copied');
+});
+
+test('emailFor: website script, and a lead with no name', () => {
+  const w = LH.emailFor(advertiser({ emails: ['a@gloss.example'] }), S);
+  assert.equal(w.script, 'website');
+  assert.equal(w.subject, 'Website for Gloss Garage');
+  assert.match(w.steps[0], /^Hello Gloss Garage\n\nI came across Gloss Garage on Facebook and Instagram and couldn't find a website for you\./);
+  assert.match(w.steps[0], /\n\nLet me know\n\nSamil\n/);
+  assert.match(w.steps[1], /^Hello Gloss Garage\n\nJust bringing this back to the top of your inbox\. Would you like me to send the free mockup\?/);
+  assert.match(w.steps[2], /simple website that brings in WhatsApp inquiries/);
+  const nameless = LH.emailFor(advertiser({ pageName: '' }), S);
+  assert.equal(nameless.subject, 'Your website');
+  assert.match(nameless.steps[0], /^Hello there\n\nI came across your business on/);
+  assert.match(nameless.steps[1], /^Hello there\n\nJust bringing/);
+  assert.equal(LH.emailFor({}, S, 'ads').subject, 'Quick question');
+  assert.equal(LH.emailFor(prospect({ pageName: '' }), S).subject, 'Quick question for glossyppf.example', 'their domain stands in for the name');
+});
+
+test('emailFor: running ads gives no emails, pitching anyway gives the website emails', () => {
+  const running = mailLead({ adCheck: { state: 'running' } });
+  assert.deepEqual(LH.emailFor(running, S), { script: null, tag: 'Running ads', to: 'hello@glossyppf.example', subject: '', steps: [] });
+  assert.equal(LH.pitchFor(running, S).email, '');
+  const anyway = LH.emailFor(running, S, 'website');
+  assert.equal(anyway.script, 'website');
+  assert.equal(anyway.subject, 'Website for Glossy PPF');
+  assert.equal(anyway.steps.length, 3);
 });
 
 /* -------------------------------------------------------------- niches */

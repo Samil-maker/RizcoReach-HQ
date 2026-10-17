@@ -378,8 +378,8 @@ function report(s: State, b: Record<string, unknown>, now: number) {
   return true;
 }
 
-/** Replies, bounces and opt outs the sender found in the inbox. */
 type InboxEvent = { id: string; type: 'replied' | 'bounced' | 'optout' };
+/** Replies, bounces and opt outs the sender found in the inbox. */
 function applyEvents(s: State, events: InboxEvent[], now: number) {
   let bounced = false;
   for (const e of events) {

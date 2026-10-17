@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { makeAd, searchResponse, memStore } from './fixtures.mjs';
 import { metaHandler, checkLog } from './meta-fixtures.mjs';
 import { handle as queueHandle } from '../../netlify/functions/lead-queue.mts';
+import { handle as emailHandle } from '../../netlify/functions/email-queue.mts';
 
 const require = createRequire(import.meta.url);
 let pw;
@@ -28,6 +29,7 @@ const EXT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OUTREACH = path.resolve(EXT, '../public/outreach.html');
 const QUEUE_KEY = 'test-key-' + 'x'.repeat(30);
 const queueStore = memStore();
+const emailStore = memStore();
 const shotsArg = process.argv.indexOf('--shots');
 const SHOTS = shotsArg > -1 ? process.argv[shotsArg + 1] : null;
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'lh-e2e-'));
@@ -169,12 +171,14 @@ function handler(req, res) {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       return res.end(fs.readFileSync(OUTREACH));
     }
-    if (url.pathname === '/api/lead-queue') {
+    // The real phone queue and email queue handlers, with in-memory stores.
+    const api = { '/api/lead-queue': [queueHandle, queueStore], '/api/email-queue': [emailHandle, emailStore] }[url.pathname];
+    if (api) {
       const chunks = [];
       req.on('data', (c) => chunks.push(c));
       req.on('end', async () => {
         const body = Buffer.concat(chunks);
-        const r = await queueHandle(new Request(url, { method: req.method, headers: req.headers, body: body.length ? body : undefined }), queueStore, QUEUE_KEY);
+        const r = await api[0](new Request(url, { method: req.method, headers: req.headers, body: body.length ? body : undefined }), api[1], QUEUE_KEY);
         res.writeHead(r.status, Object.fromEntries(r.headers));
         res.end(await r.text());
       });
@@ -259,6 +263,8 @@ try {
   assert.equal(await dash.$$eval('[data-niche-row]', (r) => r.length), 4, 'the 4 default niches');
   assert.equal(await dash.$$eval('[data-script-card]', (r) => r.length), 2, 'two scripts');
   assert.equal(await dash.inputValue('[name="bubbles"]'), '3');
+  assert.ok(await dash.isVisible('[data-email-nokey]'), 'the email sender needs the queue key first');
+  assert.equal(await dash.$$eval('[data-email-card]', (c) => c.length), 2, 'subject and follow ups for both scripts');
   // "Reset to default" brings back the default website script, with {{website_line}}.
   const webBody = '[data-script="website.body"]';
   await dash.fill(webBody, 'Something else');
@@ -419,8 +425,10 @@ try {
   assert.equal(await dash.textContent('.drawer .pitch .note'), 'Bubble 2 says they have no website. Edit that line before you send.');
   if (SHOTS) await dash.screenshot({ path: `${SHOTS}/3d-pitch-anyway.png` });
   await dash.click('[data-channel="email"]');
-  assert.equal(await dash.inputValue('[data-email-subject]'), 'Gloss Garage + website');
-  assert.match(await dash.inputValue('[data-email-body]'), /^Hello Gloss Garage\n\nI came across/);
+  assert.equal(await dash.inputValue('[data-email-subject]'), 'Website for Gloss Garage');
+  assert.match(await dash.inputValue('[data-email-step="0"]'), /^Hello Gloss Garage\n\nI came across/);
+  assert.equal(await dash.$$eval('.drawer [data-email-step]', (x) => x.length), 3, 'the first email and 2 follow ups');
+  assert.ok(!(await dash.$('.drawer [data-act="email-queue"]')), 'a skipped lead is only pitched by hand');
   await dash.click('[data-act="close"]');
   await dash.uncheck('[data-f="skipped"]');
   await dash.waitForFunction(() => document.querySelectorAll('[data-rows] tr').length === 9);
@@ -802,6 +810,119 @@ try {
   await dash.selectOption('[data-af="status"]', '');
   await dash.waitForSelector(`[data-ads-rows] tr[data-id="${adsId}"]`);
   assert.match(await dash.textContent(`[data-ads-rows] tr[data-id="${adsId}"] .tags`), /Running ads/);
+
+  /* ------------------------------- email queue: sent by the sender in Gmail, synced back */
+  // The sender (lead-hunter/email/sender.gs) talks to the real handler; `at` is its clock.
+  const emailCall = async (body, at = Date.now()) =>
+    (await emailHandle(new Request('https://www.rizcoreach.ae/api/email-queue', { method: 'POST', headers: { authorization: `Bearer ${QUEUE_KEY}`, 'content-type': 'application/json' }, body: JSON.stringify(body) }), emailStore, QUEUE_KEY, () => at)).json();
+  const emailStatus = () => dash.textContent('[data-email-status]');
+  await dash.click('[data-view="settings"]');
+  assert.ok(await dash.isHidden('[data-email-nokey]'));
+  await dash.waitForFunction(() => /Not set up yet/.test(document.querySelector('[data-email-status]').textContent));
+  assert.match(await emailStatus(), /Sent today 0 of 5 · 0 queued · 0 replied · 0 bounced/, 'a new sender starts at 5 a day');
+  assert.equal(await dash.$$eval('[data-email-on] .steps li', (li) => li.length), 6, 'six setup steps');
+  assert.equal((await emailCall({ action: 'claim' })).job, null, 'nothing to send yet');
+  await dash.click('[data-view="leads"]');
+  await dash.click('[data-view="settings"]');
+  await dash.waitForFunction(() => /Running, last check just now/.test(document.querySelector('[data-email-status]').textContent));
+  // Copy sender script: the site and key are filled in.
+  await dash.evaluate(() => Object.defineProperty(navigator.clipboard, 'writeText', { value: async (t) => (window.copied = t) }));
+  await dash.click('[data-act="copy-sender"]');
+  const senderScript = await (await dash.waitForFunction(() => window.copied)).jsonValue();
+  assert.match(senderScript, /^var SITE = 'https:\/\/www\.rizcoreach\.ae';/m);
+  assert.ok(senderScript.includes(`var KEY = '${QUEUE_KEY}';`));
+  assert.ok(senderScript.includes('function tick()'), 'the whole script');
+  // The daily limit goes to the site, where the sender reads it. Pause and resume.
+  await dash.fill('[name="emailMaxPerDay"]', '20');
+  await dash.click('[data-settings-form] button[type="submit"]');
+  await waitFor(async () => emailStore.peek().settings.maxPerDay === 20, 5000, 'daily limit saved on the site');
+  assert.equal((await storage('settings')).settings.emailMaxPerDay, 20);
+  await dash.click('[data-act="email-pause"]');
+  await dash.waitForFunction(() => /Paused: you paused it/.test(document.querySelector('[data-email-status]').textContent));
+  assert.equal(emailStore.peek().settings.paused, true);
+  if (SHOTS) {
+    await dash.$eval('#email', (el) => el.scrollIntoView());
+    await dash.screenshot({ path: `${SHOTS}/14-settings-email.png` });
+  }
+  await dash.click('[data-act="email-pause"]');
+  await dash.waitForFunction(() => !/Paused/.test(document.querySelector('[data-email-status]').textContent));
+  assert.equal(emailStore.peek().settings.paused, false);
+
+  // Send to email queue: only leads with an address go in, as the first email and 2 follow ups.
+  const parked = by('Parked Polish');
+  const broken = by('Broken Buff');
+  await dash.evaluate((id) => update(id, { addEmail: 'Owner@ParkedPolish.example' }), parked.id);
+  await waitFor(async () => (await lead(parked.id)).emails.length === 1, 5000, 'email added');
+  await dash.click('[data-view="leads"]');
+  for (const id of [parked.id, broken.id, desert.id]) await dash.click(`tr[data-id="${id}"] [data-sel]`);
+  await dash.click('[data-act="bulk-email"]');
+  await dash.waitForFunction(() => document.querySelector('[data-toast]').textContent === '1 added to the email queue · 2 have no email');
+  const mail = emailStore.peek().items[0];
+  assert.equal(emailStore.peek().items.length, 1);
+  assert.deepEqual([mail.id, mail.email, mail.subject, mail.script, mail.fromName, mail.status], [parked.id, 'owner@parkedpolish.example', 'Website for Parked Polish', 'website', 'Samil', 'queued']);
+  assert.equal(mail.steps.length, 3);
+  assert.match(mail.steps[0], /^Hello Parked Polish\n\nI came across Parked Polish on Facebook and Instagram and your website wasn't loading when I checked\./);
+  assert.match(mail.steps[1], /^Hello Parked Polish\n\nJust bringing this back to the top of your inbox\./);
+  assert.ok(mail.steps.every((t) => t.endsWith("\n\nIf you'd rather not hear from me just reply no thanks and I won't email again.")), 'every email has the opt out line');
+  await dash.waitForFunction((id) => (document.querySelector(`tr[data-id="${id}"] .tag.green`) || {}).textContent === 'Email queued', parked.id);
+  await dash.click('[data-act="bulk-email"]');
+  await dash.waitForFunction(() => document.querySelector('[data-toast]').textContent === '0 added to the email queue · 2 have no email · 1 already emailed');
+  await dash.click('[data-bulk] [data-act="bulk-clear"]');
+
+  // The sender sends the first email on a Monday morning in Dubai: the lead is contacted, with the script it got.
+  const dubai = new Date(Date.now() + 4 * 3600e3);
+  const monday = Date.UTC(dubai.getUTCFullYear(), dubai.getUTCMonth(), dubai.getUTCDate() + ((8 - dubai.getUTCDay()) % 7 || 7), 6); // 10:00 in Dubai
+  const { job } = await emailCall({ action: 'claim' }, monday);
+  assert.deepEqual([job.id, job.step, job.to, job.subject, job.body], [parked.id, 0, 'owner@parkedpolish.example', 'Website for Parked Polish', mail.steps[0]]);
+  assert.deepEqual(await emailCall({ action: 'report', id: job.id, step: 0, ok: true, threadId: 't1', messageId: '<m1@mail.gmail.com>' }, monday), { ok: true });
+  await sw.evaluate(() => syncEmail());
+  const emailed = await lead(parked.id);
+  assert.deepEqual([emailed.status, emailed.contactedAt, emailed.sentScript], ['contacted', monday, 'website']);
+  assert.deepEqual(emailed.statusHistory.at(-1), { status: 'contacted', at: monday, via: 'email' });
+  await dash.waitForFunction((id) => (document.querySelector(`tr[data-id="${id}"] .tag.green`) || {}).textContent === 'Emailed', parked.id);
+  // The lead panel shows every email and where they stand.
+  await dash.click(`tr[data-id="${parked.id}"] [data-open]`);
+  await dash.waitForSelector('.drawer.open [data-bubble]');
+  await dash.click('[data-channel="email"]');
+  assert.equal(await dash.textContent('.drawer .email-to'), 'To owner@parkedpolish.example');
+  assert.equal(await dash.inputValue('[data-email-subject]'), 'Website for Parked Polish');
+  assert.deepEqual(await dash.$$eval('.drawer [data-email-step]', (x) => x.map((t) => t.value)), mail.steps);
+  const nextAt = emailStore.peek().items[0].nextAt;
+  assert.equal(new Date(nextAt + 4 * 3600e3).getUTCDay(), 4, 'follow up 1 goes 3 working days later, on Thursday');
+  const thu = await dash.evaluate((t) => new Date(t).toLocaleDateString(undefined, { weekday: 'short' }), nextAt);
+  assert.equal(await dash.textContent('[data-email-state]'), `Sent 1 of 3 · next follow up ${thu}`);
+  assert.ok(await dash.$('.drawer [data-act="email-stop"]'), 'Stop emails while follow ups are due');
+  if (SHOTS) {
+    await dash.waitForTimeout(500);
+    await dash.screenshot({ path: `${SHOTS}/15-drawer-email.png` });
+  }
+  // They reply: the sender finds it in the inbox and the lead is marked replied.
+  assert.deepEqual(await emailCall({ action: 'events', events: [{ id: parked.id, type: 'replied' }] }, monday + 3600e3), { ok: true });
+  await sw.evaluate(() => syncEmail());
+  const answered = await lead(parked.id);
+  assert.deepEqual([answered.status, answered.repliedAt, answered.emailQueue.state], ['replied', monday + 3600e3, 'replied']);
+  await dash.waitForFunction(() => (document.querySelector('[data-email-state]') || {}).textContent === 'Replied');
+  assert.ok(!(await dash.$('.drawer [data-act="email-stop"]')));
+  await dash.click('[data-act="close"]');
+
+  // Add to email queue from the lead panel, Stop emails, and a status set by hand also stops them.
+  await dash.evaluate((id) => update(id, { addEmail: 'hi@brokenbuff.example' }), broken.id);
+  await waitFor(async () => (await lead(broken.id)).emails.length === 1, 5000, 'email added');
+  await dash.click(`tr[data-id="${broken.id}"] [data-open]`);
+  await dash.waitForSelector('.drawer.open [data-bubble]');
+  await dash.click('[data-channel="email"]');
+  await dash.click('.drawer [data-act="email-queue"]');
+  await dash.waitForFunction(() => (document.querySelector('[data-email-state]') || {}).textContent === 'Queued');
+  const brokenItem = () => emailStore.peek().items.find((i) => i.id === broken.id);
+  assert.equal(brokenItem().status, 'queued');
+  await dash.click('.drawer [data-act="email-stop"]');
+  await waitFor(async () => brokenItem().status === 'cancelled', 5000, 'Stop emails reaches the site');
+  await dash.waitForSelector('.drawer [data-act="email-queue"]'); // nothing went out, so it can be queued again
+  await dash.click('.drawer [data-act="email-queue"]');
+  await waitFor(async () => brokenItem().status === 'queued', 5000, 'queued again');
+  await dash.selectOption('#d-status', 'lost');
+  await waitFor(async () => brokenItem().status === 'cancelled', 5000, '"Not interested" stops the emails');
+  await dash.click('[data-act="close"]');
 
   // Popup renders stats.
   const popup = await ctx.newPage();

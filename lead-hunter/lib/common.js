@@ -143,6 +143,12 @@
     bubbles: 3, // WhatsApp messages per pitch: 3 = greeting, body, closing · 2 = greeting with body, closing
     niches: null, // null = use LH.DEFAULT_NICHES
     scripts: null, // null = use LH.DEFAULT_SCRIPTS
+    emailFromName: 'Samil',
+    emailMaxPerDay: 30, // the email sender's daily limit (1 to 40), also saved on the site where the sender reads it
+    emailFollowups: 2, // follow ups after the first email: 0, 1 or 2
+    emailSignature: 'Samil\nCreative Marketing Director\nRizcoReach · rizcoreach.ae\n+971 56 846 1835',
+    emailOptOut: "If you'd rather not hear from me just reply no thanks and I won't email again.",
+    emails: null, // null = use LH.DEFAULT_EMAILS
   };
   // Settings from earlier versions that no longer do anything.
   const OLD_SETTINGS = ['templates', 'adTemplates', 'adsOffer'];
@@ -417,16 +423,35 @@
   };
   LH.SCRIPT_PARTS = ['greeting', 'body', 'closing'];
 
-  /** The scripts in use: edits from Settings over the defaults, part by part. */
-  LH.scriptsFor = (settings) => {
-    const saved = (settings && settings.scripts) || {};
+  // The first email is the script in one block. These are its subject and the two follow ups,
+  // which go as replies in the same thread a few working days apart.
+  LH.DEFAULT_EMAILS = {
+    ads: {
+      subject: 'Quick question for {{business}}',
+      followup1: 'Hello {{business}}\n\nJust bringing this back to the top of your inbox. Would a quick explanation of how it works be useful?\n\nLet me know',
+      followup2: "Hello {{business}}\n\nI'll leave it here so I don't fill up your inbox. If more appointments from Facebook and Instagram ads is ever on your list just reply and I'll send the details.",
+    },
+    website: {
+      subject: 'Website for {{business}}',
+      followup1: 'Hello {{business}}\n\nJust bringing this back to the top of your inbox. Would you like me to send the free mockup?\n\nLet me know',
+      followup2: "Hello {{business}}\n\nI'll leave it here so I don't fill up your inbox. If you ever want a simple website that brings in WhatsApp inquiries just reply and I'll send a free mockup.",
+    },
+  };
+  LH.EMAIL_PARTS = ['subject', 'followup1', 'followup2'];
+
+  /** Edits from Settings over the defaults, part by part. */
+  const withEdits = (defaults, parts, saved) => {
     const out = {};
-    for (const [k, def] of Object.entries(LH.DEFAULT_SCRIPTS)) {
+    for (const [k, def] of Object.entries(defaults)) {
       out[k] = { ...def };
-      for (const part of LH.SCRIPT_PARTS) if (saved[k] && typeof saved[k][part] === 'string') out[k][part] = saved[k][part];
+      for (const part of parts) if (saved && saved[k] && typeof saved[k][part] === 'string') out[k][part] = saved[k][part];
     }
     return out;
   };
+  /** The scripts in use. */
+  LH.scriptsFor = (settings) => withEdits(LH.DEFAULT_SCRIPTS, LH.SCRIPT_PARTS, settings && settings.scripts);
+  /** The email subjects and follow ups in use. */
+  LH.emailsFor = (settings) => withEdits(LH.DEFAULT_EMAILS, LH.EMAIL_PARTS, settings && settings.emails);
 
   /** They have a website but it is down or parked: for outreach that is no working website. */
   LH.siteDown = (lead) => !!lead && !!lead.website && ((lead.site || {}).state === 'error' || !!(lead.site || {}).parked);
@@ -534,32 +559,55 @@
       .replace(/, \./g, '.')
       .trim();
 
-  /**
-   * The message for a lead, split into WhatsApp bubbles. Nothing is ever sent from here:
-   * every bubble is prefilled or copied, and Samil presses Send himself.
-   *   3 bubbles: [greeting] [body] [closing] · 2 bubbles: [greeting + body] [closing]. Empty bubbles are dropped.
-   * `force` = 'website' pitches a lead that is skipped for running ads anyway.
-   */
-  LH.pitchFor = (lead, settings = {}, force) => {
+  /** The lead's script (`force` = 'website' pitches a skipped lead anyway), its variables and its rendered parts. */
+  const rendered = (lead, settings, force) => {
     const pick = LH.scriptFor(lead);
     const script = force && LH.DEFAULT_SCRIPTS[force] ? force : pick.script;
-    if (!script) return { script: null, tag: pick.tag, bubbles: [], text: '', subject: '', email: '' };
+    if (!script) return { script: null, tag: pick.tag };
     const t = LH.scriptsFor(settings)[script];
     const vars = LH.scriptVars(lead, settings);
     // No name at all: "Hello there", and the body says "I came across your business on…".
     const nameless = (business) => (vars.business ? vars : { ...vars, business });
-    const [greeting, body, closing] = LH.SCRIPT_PARTS.map((p) => LH.render(t[p], nameless({ greeting: 'there', body: 'your business' }[p] || '')));
+    const parts = LH.SCRIPT_PARTS.map((p) => LH.render(t[p], nameless({ greeting: 'there', body: 'your business' }[p] || '')));
+    return { script, tag: pick.tag, vars, nameless, parts };
+  };
+
+  /**
+   * The message for a lead, split into WhatsApp bubbles. WhatsApp is never sent from here:
+   * every bubble is prefilled or copied, and Samil presses Send himself.
+   *   3 bubbles: [greeting] [body] [closing] · 2 bubbles: [greeting + body] [closing]. Empty bubbles are dropped.
+   * `subject` and `email` are the first email, the same one the email sender sends.
+   */
+  LH.pitchFor = (lead, settings = {}, force) => {
+    const r = rendered(lead, settings, force);
+    if (!r.script) return { script: null, tag: r.tag, bubbles: [], text: '', subject: '', email: '' };
+    const [greeting, body, closing] = r.parts;
     const parts = Number(settings.bubbles) === 2 ? [[greeting, body].filter(Boolean).join('\n\n'), closing] : [greeting, body, closing];
     const bubbles = parts.filter(Boolean);
-    const offer = script === 'ads' ? 'Meta ads' : 'website';
-    return {
-      script,
-      tag: pick.tag,
-      bubbles,
-      text: bubbles.join('\n\n'),
-      subject: vars.business ? `${vars.business} + ${offer}` : offer.charAt(0).toUpperCase() + offer.slice(1),
-      email: [greeting, body].filter(Boolean).join('\n\n'),
-    };
+    const mail = LH.emailFor(lead, settings, force);
+    return { script: r.script, tag: r.tag, bubbles, text: bubbles.join('\n\n'), subject: mail.subject, email: mail.steps[0] || '' };
+  };
+
+  /**
+   * The emails for a lead: the script in one email, then the follow ups (Settings says how many). Each one ends
+   * with the signature and the opt out line. `to` is their first address that has not bounced, '' when there is
+   * none or they are on the never email list. Leads skipped for running ads get no emails.
+   */
+  LH.emailFor = (lead, settings = {}, force) => {
+    const r = rendered(lead, settings, force);
+    const bad = (lead && lead.badEmails) || [];
+    const to = (lead && !lead.doNotEmail && (lead.emails || []).find((e) => !bad.includes(e))) || '';
+    if (!r.script) return { script: null, tag: r.tag, to, subject: '', steps: [] };
+    const D = LH.DEFAULT_SETTINGS;
+    const t = LH.emailsFor(settings)[r.script];
+    const end = [settings.emailSignature ?? D.emailSignature, settings.emailOptOut ?? D.emailOptOut].map((x) => LH.render(x, r.vars)).filter(Boolean);
+    const count = Math.max(0, Math.min(2, Math.round(Number(settings.emailFollowups ?? D.emailFollowups)) || 0));
+    const first = r.parts.filter(Boolean).join('\n\n');
+    const followups = [t.followup1, t.followup2].slice(0, count).map((x) => LH.render(x, r.nameless('there')));
+    const steps = first ? [first, ...followups].filter(Boolean).map((text) => [text, ...end].join('\n\n')) : [];
+    // No name: "Quick question" or "Your website" instead of a subject ending in "for".
+    const subject = (r.vars.business && LH.render(t.subject, r.vars)) || { ads: 'Quick question', website: 'Your website' }[r.script];
+    return { script: r.script, tag: r.tag, to, subject, steps };
   };
 
   /* ------------------------------------------------------------------ Results */

@@ -31,9 +31,9 @@ const S = {
   view: 'leads',
   openId: null,
   huntNiche: '',
-  // force: 'website' after "Pitch anyway" · bubbles/email/subject: edits while the drawer is open · qr: bubble in the QR code
+  // force: 'website' after "Pitch anyway" · bubbles: edits while the drawer is open · qr: bubble in the QR code
   // waTab: the WhatsApp tab this lead's bubbles open in
-  pitch: { id: null, channel: 'whatsapp', force: null, bubbles: null, email: null, subject: null, phone: null, qr: 0, opened: new Set(), waTab: null },
+  pitch: { id: null, channel: 'whatsapp', force: null, bubbles: null, phone: null, qr: 0, opened: new Set(), waTab: null },
   filters: { q: '', heat: '', status: '', keyword: '', site: '', tag: '', contact: '', minDays: 0, hideBig: true, skipped: false, sort: 'priority', hunt: '' },
 };
 
@@ -195,6 +195,8 @@ function contactCell(l) {
     return ['queued', 'running'].includes(st) ? '<span class="muted">Looking…</span>' : '<span class="muted">No contact yet</span>';
   }
   if (l.phoneQueue && l.phoneQueue.state === 'queued') parts.push('<div class="p"><span class="tag phone" title="Waiting in your phone queue">On your phone</span></div>');
+  const eq = l.emailQueue;
+  if (eq && (eq.state === 'queued' || eq.sent)) parts.push(`<div class="p"><span class="tag green" title="${eq.sent ? 'Sent by the email sender' : 'Waiting in your email queue'}">${eq.sent ? 'Emailed' : 'Email queued'}</span></div>`);
   return `<div class="contact">${parts.join('')}</div>`;
 }
 
@@ -359,7 +361,7 @@ function openDrawer(id) {
   const l = S.leads.get(id);
   if (!l) return;
   S.openId = id;
-  S.pitch = { id, channel: 'whatsapp', force: null, bubbles: null, email: null, subject: null, phone: LH.whatsappTarget(l), qr: 0, opened: new Set(), waTab: null };
+  S.pitch = { id, channel: 'whatsapp', force: null, bubbles: null, phone: LH.whatsappTarget(l), qr: 0, opened: new Set(), waTab: null };
   renderDrawer(true);
   $('[data-scrim]').hidden = false;
   const d = $('[data-drawer]');
@@ -567,8 +569,8 @@ function pitchSection(l) {
   return `<section class="d-sec pitch"><h3>Message <span class="tag">${esc(LH.scriptsFor(S.settings)[p.script].name)}</span><span class="tag">${esc(p.tag)}</span></h3>
     ${notes}
     <div class="pitch-tabs">${channels}</div>
-    ${ch === 'email' ? emailBlock(l, p) : bubblesBlock(l, p, ch === 'whatsapp')}
-    <p class="hint">Nothing is sent for you. Each button opens the message typed in and you press Send. Edits here are not saved to the script.</p>
+    ${ch === 'email' ? emailBlock(l) : bubblesBlock(l, p, ch === 'whatsapp')}
+    <p class="hint">${ch === 'email' ? 'The email queue sends these from your own Gmail slowly and stops when they reply. Change the wording in Settings.' : 'Nothing is sent for you. Each button opens the message typed in and you press Send. Edits here are not saved to the script.'}</p>
   </section>`;
 }
 
@@ -604,13 +606,38 @@ function bubblesBlock(l, p, wa) {
     ${canOpen ? qrBlock(bubbles.length) : ''}`;
 }
 
-function emailBlock(l, p) {
-  const to = (l.emails || [])[0];
-  return `<input class="inp" data-email-subject value="${esc(S.pitch.subject ?? p.subject)}" aria-label="Email subject" style="margin-bottom:8px" />
-    <textarea class="inp" data-email-body rows="12" aria-label="Email">${esc(S.pitch.email ?? p.email)}</textarea>
-    <div class="row">${to ? `<button class="btn sm pri" data-act="send-email">Open email to ${esc(to)}</button>` : '<span class="muted">No email found. Copy the text instead.</span>'}
+/* The emails the email sender sends (read only: the wording is edited in Settings), where they stand, and manual sending. */
+const STEP_NAMES = ['First email', 'Follow up 1', 'Follow up 2'];
+const EMAIL_STATE = { queued: 'Queued', replied: 'Replied', bounced: 'Bounced', optout: 'Asked not to be emailed', failed: 'Could not send', cancelled: 'Stopped' };
+function emailState(q) {
+  if (q.state === 'active') return `Sent ${q.sent} of ${q.total} · next follow up ${q.nextAt > Date.now() ? new Date(q.nextAt).toLocaleDateString(undefined, { weekday: 'short' }) : 'soon'}`;
+  if (q.state === 'done') return `Sent ${q.sent} of ${q.total}`;
+  return EMAIL_STATE[q.state] || q.state;
+}
+function emailQueueRow(l, e) {
+  const q = l.emailQueue;
+  if (q && (q.sent || q.state !== 'cancelled')) {
+    const cls = { replied: 'green', bounced: 'red', failed: 'red', optout: 'red' }[q.state] || '';
+    return `<span class="tag ${cls}" data-email-state>${esc(emailState(q))}</span>${['queued', 'active'].includes(q.state) ? '<button class="btn sm" data-act="email-stop">Stop emails</button>' : ''}`;
+  }
+  if (!e.to || !LH.emailFor(l, S.settings).script) return ''; // skipped for running ads: pitched by hand only
+  if (!S.settings.queueKey) return '<button class="btn sm ghost" data-goto="settings" data-anchor="email">Set up the email sender</button>';
+  return '<button class="btn sm pri" data-act="email-queue">Add to email queue</button>';
+}
+function emailBlock(l) {
+  const e = LH.emailFor(l, S.settings, S.pitch.force);
+  const steps = e.steps
+    .map((t, i) => `<div class="bubble"><div class="bubble-head"><span class="lbl">${STEP_NAMES[i]}</span></div><textarea class="inp" readonly data-email-step="${i}" rows="${bubbleRows(t)}" aria-label="${STEP_NAMES[i]}">${esc(t)}</textarea></div>`)
+    .join('');
+  const queue = emailQueueRow(l, e);
+  return `<p class="email-to">${e.to ? `To <b>${esc(e.to)}</b>` : `<span class="muted">${l.doNotEmail ? 'Never email is on for them.' : 'No email found. Copy the text instead.'}</span>`}</p>
+    <input class="inp" readonly data-email-subject value="${esc(e.subject)}" aria-label="Email subject" style="margin-bottom:8px" />
+    <div class="bubbles">${steps}</div>
+    ${queue ? `<div class="row">${queue}</div>` : ''}
+    <div class="row">${e.to ? '<button class="btn sm" data-act="send-email">Open in Gmail</button>' : ''}
       <button class="btn sm" data-act="copy-email">Copy</button>
-      <button class="btn sm" data-act="mark-sent">Mark as sent</button></div>`;
+      <button class="btn sm" data-act="mark-sent">Mark as sent</button>
+      ${(l.emails || []).length && !l.doNotEmail ? '<button class="linkish" data-act="email-never">Never email</button>' : ''}</div>`;
 }
 
 function qrBlock(n) {
@@ -790,7 +817,10 @@ function setView(v) {
   S.view = v;
   $$('.tabs [data-view]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.view === v)));
   $$('[data-view-panel]').forEach((p) => (p.hidden = p.dataset.viewPanel !== v));
-  if (v === 'settings') fillSettings();
+  if (v === 'settings') {
+    fillSettings();
+    loadEmailStatus();
+  }
   if (v === 'hunt') renderLastHunt();
   renderAll();
   try {
@@ -905,15 +935,60 @@ function renderScriptsEditor(saved) {
     .map(([k, t]) => scriptCard(k, t))
     .join('');
 }
+function emailCard(key, t) {
+  const field = (part, label, rows) =>
+    `<label class="field"><span class="lbl">${label}</span>${rows ? `<textarea class="inp" rows="${rows}" data-email="${key}.${part}">${esc(t[part])}</textarea>` : `<input class="inp" data-email="${key}.${part}" value="${esc(t[part])}" />`}</label>`;
+  return `<div class="tpl" data-email-card="${key}"><div class="tpl-head"><h4>${esc(LH.DEFAULT_SCRIPTS[key].name)} emails</h4><button type="button" class="btn sm ghost" data-act="reset-email" data-key="${key}">Reset to default</button></div>
+    ${field('subject', 'Subject', 0)}${field('followup1', 'Follow up 1', 5)}${field('followup2', 'Follow up 2', 5)}</div>`;
+}
+function renderEmailsEditor(saved) {
+  $('[data-emails]').innerHTML = Object.entries(LH.emailsFor({ emails: saved }))
+    .map(([k, t]) => emailCard(k, t))
+    .join('');
+}
 /** Only the parts that differ from the defaults are stored; null when nothing was changed. */
-function readScripts(f) {
+function readEdits(f, attr, defaults) {
   const out = {};
-  $$('[data-script]', f).forEach((el) => {
-    const [k, part] = el.dataset.script.split('.');
+  $$(`[data-${attr}]`, f).forEach((el) => {
+    const [k, part] = el.dataset[attr].split('.');
     const v = el.value.trim();
-    if (LH.DEFAULT_SCRIPTS[k] && v !== LH.DEFAULT_SCRIPTS[k][part]) (out[k] = out[k] || {})[part] = v;
+    if (defaults[k] && v !== defaults[k][part]) (out[k] = out[k] || {})[part] = v;
   });
   return Object.keys(out).length ? out : null;
+}
+
+/* Email sender status, as the site sees it: sent today, paused or not, and when the sender last checked in. */
+const emailPaused = (e) => !!e && !e.error && (e.settings.paused || e.pausedUntil > e.now);
+const PAUSED_WHY = { bounces: '3 emails bounced. Check your list then resume', limit: "Gmail's daily limit. It starts again tomorrow" };
+async function loadEmailStatus() {
+  if (S.settings.queueKey) {
+    const r = await send({ type: 'email:status' });
+    S.email = r && !r.error ? r : { error: (r && r.error) || 'Could not reach your site.' };
+  }
+  renderEmailSender();
+}
+function renderEmailSender() {
+  const on = !!S.settings.queueKey;
+  $('[data-email-nokey]').hidden = on;
+  $('[data-email-on]').hidden = !on;
+  const el = $('[data-email-status]');
+  const e = S.email;
+  if (!on) return;
+  if (!e) return (el.textContent = 'Checking…');
+  if (e.error) return (el.innerHTML = `<span class="err">${esc(e.error)}</span>`);
+  const mins = Math.max(0, Math.round((e.now - e.senderSeenAt) / 60000));
+  const seen = new Date(e.senderSeenAt).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+  const sender = !e.senderSeenAt ? 'Not set up yet' : mins < 15 ? `Running, last check ${mins ? `${mins} min ago` : 'just now'}` : `Not running since ${seen}`;
+  const s = e.stats;
+  el.innerHTML = `<b>${esc(sender)}</b>${emailPaused(e) ? ` <span class="tag amber">Paused: ${esc(PAUSED_WHY[e.pausedReason] || 'you paused it')}</span>` : ''}
+    <div class="muted">Sent today ${s.today} of ${s.cap} · ${s.queued} queued · ${s.replied} replied · ${s.bounced} bounced</div>`;
+  $('[data-act="email-pause"]').textContent = emailPaused(e) ? 'Resume sending' : 'Pause sending';
+}
+async function emailSettings(settings) {
+  const r = await send({ type: 'email:settings', settings });
+  if (r && r.error) return toast(r.error);
+  S.email = r;
+  renderEmailSender();
 }
 
 function fillSettings() {
@@ -927,6 +1002,8 @@ function fillSettings() {
   }
   renderNicheEditor(LH.nichesFor(s));
   renderScriptsEditor(s.scripts);
+  renderEmailsEditor(s.emails);
+  renderEmailSender();
   renderPairQr();
 }
 function renderPairQr() {
@@ -948,15 +1025,22 @@ async function saveSettings() {
     next[el.name] = el.type === 'checkbox' ? el.checked : el.type === 'number' ? Number(el.value) || LH.DEFAULT_SETTINGS[el.name] : el.value.trim();
   }
   next.bubbles = Number(next.bubbles) === 2 ? 2 : 3;
+  next.emailFollowups = Math.max(0, Math.min(2, Math.round(Number(next.emailFollowups)) || 0));
+  next.emailMaxPerDay = Math.max(1, Math.min(40, Math.round(next.emailMaxPerDay)));
   next.niches = readNiches(f);
-  next.scripts = readScripts(f);
+  next.scripts = readEdits(f, 'script', LH.DEFAULT_SCRIPTS);
+  next.emails = readEdits(f, 'email', LH.DEFAULT_EMAILS);
   if (next.queueKey !== S.settings.queueKey) next.queueKeyAt = Date.now();
   if (next.queueSite && !/^https?:\/\//i.test(next.queueSite)) next.queueSite = `https://${next.queueSite}`;
   next.queueSite = (next.queueSite || '').replace(/\/+$/, '');
+  // The daily limit lives on the site too, where the sender reads it.
+  const siteMax = S.email && S.email.settings ? S.email.settings.maxPerDay : S.settings.emailMaxPerDay;
   await chrome.storage.local.set({ settings: next });
   S.settings = next;
   renderNicheChips();
   renderPairQr();
+  renderEmailSender();
+  if (next.queueKey && next.emailMaxPerDay !== siteMax) await emailSettings({ maxPerDay: next.emailMaxPerDay });
   return next;
 }
 
@@ -982,6 +1066,31 @@ async function queueLeads(ids, b) {
   if (r && r.error) return toast(r.error);
   const left = [r.skipped.length && `${r.skipped.length} without a phone number`, (r.runningAds || []).length && `${r.runningAds.length} running ads`].filter(Boolean);
   return toast(`Sent ${r.queued} to your phone${left.length ? ` · skipped ${left.join(', ')}` : ''}`);
+}
+
+async function emailLeads(ids, b) {
+  if (!S.settings.queueKey) {
+    toast('Set up the phone queue in Settings first. The email sender uses the same key.');
+    return setView('settings');
+  }
+  if (b) b.disabled = true;
+  const r = await send({ type: 'email:push', ids });
+  if (b) b.disabled = false;
+  if (!r || r.error) return toast((r && r.error) || 'Could not reach the email queue.');
+  const k = r.skipped;
+  const n = (reasons) => r.rejected.filter((x) => reasons.includes(x.reason)).length;
+  const already = k.already.length + n(['duplicate', 'already_sent']);
+  const other = r.rejected.length - n(['duplicate', 'already_sent', 'never']);
+  const parts = [
+    `${r.queued} added to the email queue`,
+    k.noEmail.length && `${k.noEmail.length} ${k.noEmail.length === 1 ? 'has' : 'have'} no email`,
+    k.runningAds.length && `${k.runningAds.length} running ads`,
+    already && `${already} already emailed`,
+    k.closed.length && `${k.closed.length} replied or closed`,
+    n(['never']) && `${n(['never'])} on the never email list`,
+    other && `${other} could not be added`,
+  ];
+  return toast(parts.filter(Boolean).join(' · '));
 }
 
 /* ------------------------------------------------------------ phone mode */
@@ -1312,6 +1421,19 @@ function bind() {
         card.outerHTML = scriptCard(b.dataset.key, LH.DEFAULT_SCRIPTS[b.dataset.key]);
         return toast('Script reset. Save to keep it.');
       }
+      case 'reset-email':
+        b.closest('[data-email-card]').outerHTML = emailCard(b.dataset.key, LH.DEFAULT_EMAILS[b.dataset.key]);
+        return toast('Emails reset. Save to keep them.');
+      case 'email-pause':
+        return emailSettings({ paused: !emailPaused(S.email) });
+      case 'copy-sender': {
+        // The sender script with your site and key filled into its first two lines.
+        const { queueSite, queueKey } = await saveSettings();
+        if (!queueKey) return toast('Set up the phone queue key first');
+        const text = await (await fetch(chrome.runtime.getURL('email/sender.gs'))).text();
+        const js = (v) => `'${String(v).replace(/[\\']/g, '\\$&')}'`;
+        return copy(text.replace(/var SITE = '__SITE__'/, () => `var SITE = ${js(queueSite)}`).replace(/var KEY = '__KEY__'/, () => `var KEY = ${js(queueKey)}`));
+      }
       case 'backup': {
         const settings = { ...S.settings, pagespeedKey: '', placesKey: '', queueKey: '' }; // keep keys out of backups
         return download(`lead-hunter-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), settings, leads: [...S.leads.values()] }), 'application/json');
@@ -1344,7 +1466,7 @@ function bind() {
         return;
       }
       case 'pitch-anyway':
-        S.pitch = { ...S.pitch, force: 'website', bubbles: null, email: null, subject: null, qr: 0, opened: new Set() };
+        S.pitch = { ...S.pitch, force: 'website', bubbles: null, qr: 0, opened: new Set() };
         return redrawDrawer();
       case 'open-bubble': {
         // Opens WhatsApp with just this bubble typed in. Samil presses Send there.
@@ -1360,14 +1482,30 @@ function bind() {
       }
       case 'copy-bubble':
         return copy(bubbles()[Number(b.dataset.i)] || '');
-      case 'copy-email':
-        return copy(`Subject: ${($('[data-email-subject]') || {}).value || ''}\n\n${($('[data-email-body]') || {}).value || ''}`);
-      case 'send-email': {
+      case 'copy-email': {
         if (!l) return;
-        const subj = ($('[data-email-subject]') || {}).value || '';
-        const text = ($('[data-email-body]') || {}).value || '';
-        openTab(`mailto:${encodeURIComponent(l.emails[0]).replace('%40', '@')}?subject=${encodeURIComponent(subj)}&body=${encodeURIComponent(text)}`);
-        return markContacted(l, currentPitch(l).script);
+        const m = LH.emailFor(l, S.settings, S.pitch.force);
+        return copy(`Subject: ${m.subject}\n\n${m.steps[0] || ''}`);
+      }
+      case 'send-email': {
+        const m = l && LH.emailFor(l, S.settings, S.pitch.force);
+        if (!m || !m.to) return;
+        openTab(`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(m.to)}&su=${encodeURIComponent(m.subject)}&body=${encodeURIComponent(m.steps[0] || '')}`);
+        return markContacted(l, m.script);
+      }
+      case 'email-queue':
+        if (l) await emailLeads([l.id], b);
+        return;
+      case 'email-stop': {
+        if (!l) return;
+        const r = await send({ type: 'email:cancel', ids: [l.id] });
+        return toast(r && r.error ? `${r.error} Lead Hunter keeps trying.` : `No more emails to “${l.pageName}”`);
+      }
+      case 'email-never': {
+        if (!l) return;
+        const r = await send({ type: 'email:never', id: l.id });
+        if (r && r.error) return toast(r.error);
+        return toast(`Lead Hunter will never email “${l.pageName}”`, () => send({ type: 'email:never', id: l.id, remove: true }));
       }
       case 'mark-sent':
         if (!l) return;
@@ -1379,6 +1517,8 @@ function bind() {
         const r = await send({ type: 'queue:push', ids: [l.id], overrides: { [l.id]: { parts: bubbles(), phone, script: currentPitch(l).script } } });
         return toast(r && r.error ? r.error : r.queued ? `Sent “${l.pageName}” to your phone` : 'This lead has no phone number yet');
       }
+      case 'bulk-email':
+        return emailLeads(filtered().map((r) => r.l.id).filter((id) => S.selected.has(id)), b);
       case 'bulk-queue': {
         const ids = filtered().map((r) => r.l.id).filter((id) => S.selected.has(id));
         if (!S.settings.queueKey) {
@@ -1411,7 +1551,7 @@ function bind() {
         const r = await send({ type: 'queue:test' });
         out.textContent = r && r.error ? r.error : `Connected. ${r.waiting} lead${r.waiting === 1 ? '' : 's'} waiting on your phone.`;
         out.style.color = r && r.error ? 'var(--poor)' : 'var(--good)';
-        return;
+        return loadEmailStatus();
       }
       case 'delete-lead':
         if (!l || !confirm(`Delete ${l.pageName}?`)) return;
@@ -1431,8 +1571,6 @@ function bind() {
       clearTimeout(qrTimer);
       qrTimer = setTimeout(drawPitchQr, 200);
     }
-    if (e.target.matches('[data-email-subject]')) S.pitch.subject = e.target.value;
-    if (e.target.matches('[data-email-body]')) S.pitch.email = e.target.value;
     if (e.target.matches('[data-notes]')) {
       clearTimeout(notesTimer);
       const id = S.openId;

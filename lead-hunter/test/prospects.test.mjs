@@ -57,7 +57,8 @@ test('Meta ads prospects: the script follows the website and the ad check, and c
   for (const state of ['none', 'likely', 'pending', 'unclear', 'running']) {
     for (const lead of [{ ...p, adCheck: { state } }, { ...p, website: null, adCheck: { state } }]) {
       const pitch = LH.pitchFor(lead, settings);
-      const all = [...pitch.bubbles, pitch.subject, pitch.email].join('\n');
+      // The email ends with Samil's own signature (his real phone number): the rest must claim nothing.
+      const all = [...pitch.bubbles, pitch.subject, pitch.email.replace(settings.emailSignature, '')].join('\n');
       assert.doesNotMatch(all, /\{\{|undefined|null/);
       assert.doesNotMatch(all, /\b(our team|our clients|clients like|we've helped)\b|★|\d/i, `nothing invented (${state})`);
       assert.doesNotMatch(all, /&|ppf businesses/i, 'niche reads naturally');

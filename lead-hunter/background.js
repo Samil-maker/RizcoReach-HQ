@@ -2,7 +2,8 @@
    - Stores leads (one storage key per advertiser, all writes serialised here)
    - Runs hunts: walks a list of keywords through the Ad Library in one tab
    - Enriches leads: audits the landing page, finds phones/emails/socials,
-     optional Google Places + PageSpeed lookups */
+     optional Google Places + PageSpeed lookups
+   - Sends leads to the phone queue and the email queue on the user's site, and syncs them back */
 importScripts('lib/common.js', 'lib/site-audit.js', 'lib/prospects.js');
 const LH = self.LH;
 
@@ -568,8 +569,8 @@ async function enrichOne(id, opts = {}) {
       site.finalUrl = page.finalUrl;
       const first = LH.extractContacts(page.html, page.finalUrl, country);
       mergeContacts(first);
-      // No phone on the landing page: try the homepage, then any contact pages.
-      const found = () => contacts.phones.length || contacts.whatsapp.length;
+      // No phone or no email on the landing page: try the homepage, then any contact pages.
+      const found = () => (contacts.phones.length || contacts.whatsapp.length) && contacts.emails.length;
       const todo = [new URL(page.finalUrl).origin + '/', ...first.contactPages];
       const tried = new Set([LH.cleanUrl(page.finalUrl)]);
       while (todo.length && tried.size < 4 && !found()) {
@@ -618,18 +619,25 @@ async function enrichOne(id, opts = {}) {
 }
 
 /* --------------------------------------------------------------- phone queue */
-// Talks to /api/lead-queue on the user's site (netlify/functions/lead-queue.mts).
+// Talks to /api/lead-queue (netlify/functions/lead-queue.mts) or /api/email-queue (email-queue.mts) on the user's site.
+// Both use the same key.
 const QUEUE_ERRORS = {
   401: 'The queue key does not match LEAD_QUEUE_KEY on your site.',
   404: 'Your site does not have the phone queue yet. Deploy the latest site code first.',
   503: 'The phone queue is not switched on yet: add LEAD_QUEUE_KEY in Netlify, then redeploy.',
 };
-async function queueApi(method, body) {
+const EMAIL_ERRORS = {
+  ...QUEUE_ERRORS,
+  404: 'Your site does not have the email sender yet. Deploy the latest site code first.',
+  503: 'The email sender is not switched on yet: add LEAD_QUEUE_KEY in Netlify, then redeploy.',
+};
+async function queueApi(method, body, path = '/api/lead-queue') {
+  const email = path === '/api/email-queue';
   const s = await getSettings();
   if (!s.queueKey || !s.queueSite) throw new Error('Set up the phone queue in Settings first.');
   let url;
   try {
-    url = new URL('/api/lead-queue', s.queueSite).toString();
+    url = new URL(path, s.queueSite).toString();
   } catch {
     throw new Error('The site address in Settings is not a valid URL.');
   }
@@ -647,9 +655,10 @@ async function queueApi(method, body) {
     throw new Error(`Could not reach ${new URL(url).host}.`);
   }
   const data = await res.json().catch(() => null);
-  if (!res.ok || !data) throw new Error(QUEUE_ERRORS[res.status] || (data && data.error) || `Phone queue error (HTTP ${res.status}).`);
+  if (!res.ok || !data) throw new Error((email ? EMAIL_ERRORS : QUEUE_ERRORS)[res.status] || (data && data.error) || `${email ? 'Email sender' : 'Phone queue'} error (HTTP ${res.status}).`);
   return data;
 }
+const emailApi = (method, body) => queueApi(method, body, '/api/email-queue');
 
 /** Mirror the server queue onto leads: "sent" on the phone marks the lead as contacted. */
 async function applyQueue(items) {
@@ -787,6 +796,115 @@ async function pushToQueue(ids, overrides = {}) {
   return { queued: items.length, skipped, runningAds };
 }
 
+/* --------------------------------------------------------------- email queue */
+// Cold emails go out from Samil's own Gmail through lead-hunter/email/sender.gs, an Apps Script in his Google account,
+// one at a time and slowly. Every sending rule lives on the site; the extension adds emails and mirrors what happened.
+const STOP_EMAILS = ['replied', 'meeting', 'won', 'lost', 'skip']; // statuses that end a lead's follow ups
+const EMAIL_SYNC_MS = 5 * 60000;
+const EMAIL_WATCH_MS = 21 * LH.DAY; // the sender still picks up replies to finished emails this long
+const emailInfo = (q) => ({ stats: q.stats, settings: q.settings, senderSeenAt: q.senderSeenAt, pausedReason: q.pausedReason, pausedUntil: q.pausedUntil, now: q.now });
+
+/** Mirror the email queue onto leads: the first email marks the lead contacted, a reply marks it replied. */
+async function applyEmail(items) {
+  const settings = await getSettings();
+  return locked(async () => {
+    const { emailQueueIds = [] } = await store.get('emailQueueIds');
+    const list = (items || []).filter((i) => emailQueueIds.includes(i.id));
+    const got = await store.get(list.map((i) => leadKey(i.id)));
+    const writes = {};
+    for (const item of list) {
+      const lead = got[leadKey(item.id)];
+      if (!lead) continue;
+      const before = JSON.stringify([lead.emailQueue, lead.status, lead.badEmails, lead.doNotEmail]);
+      const prev = lead.emailQueue || {};
+      lead.emailQueue = { state: item.status, sent: item.sent, total: item.steps.length || prev.total || item.sent, nextAt: item.nextAt, at: item.statusAt, email: item.email };
+      // Each change is applied once, so later syncs never override a status set by hand.
+      if (item.sent >= 1 && !(prev.sent >= 1) && ['new', 'followup'].includes(lead.status)) {
+        lead.status = 'contacted';
+        markSent(lead, item.sentAt[0], item.script, settings);
+        lead.statusHistory = [...(lead.statusHistory || []), { status: 'contacted', at: item.sentAt[0], via: 'email' }].slice(-20);
+      }
+      if (item.status === 'replied' && prev.state !== 'replied' && ['new', 'contacted', 'followup'].includes(lead.status)) {
+        lead.status = 'replied';
+        lead.repliedAt = lead.repliedAt || item.statusAt;
+        lead.statusHistory = [...(lead.statusHistory || []), { status: 'replied', at: item.statusAt, via: 'email' }].slice(-20);
+      }
+      if (item.status === 'bounced' && prev.state !== 'bounced') lead.badEmails = [...new Set([...(lead.badEmails || []), item.email])];
+      if (item.status === 'optout' && prev.state !== 'optout') lead.doNotEmail = true;
+      if (JSON.stringify([lead.emailQueue, lead.status, lead.badEmails, lead.doNotEmail]) !== before) {
+        lead.updatedAt = now();
+        writes[leadKey(item.id)] = lead;
+      }
+    }
+    // Only emails still going out, or finished recently enough for a reply to come in, need watching.
+    const watch = (i) => got[leadKey(i.id)] && (['queued', 'active'].includes(i.status) || (i.status === 'done' && now() - i.statusAt < EMAIL_WATCH_MS));
+    writes.emailQueueIds = list.filter(watch).map((i) => i.id);
+    writes.emailSyncedAt = now();
+    await store.set(writes);
+    return { waiting: writes.emailQueueIds.length };
+  });
+}
+
+/* Stopping a lead's emails is kept and retried every minute until the site has it, so no follow up goes out by mistake. */
+async function cancelEmails(ids) {
+  await locked(async () => {
+    const { emailCancel = [] } = await store.get('emailCancel');
+    await store.set({ emailCancel: [...new Set([...emailCancel, ...ids])] });
+  });
+  const q = await flushEmailCancel();
+  await applyEmail(q.items);
+  return q;
+}
+async function flushEmailCancel() {
+  const { emailCancel = [] } = await store.get('emailCancel');
+  if (!emailCancel.length) return null;
+  const q = await emailApi('POST', { action: 'cancel', ids: emailCancel }); // throws: the ids stay for the next try
+  await locked(async () => {
+    const { emailCancel: cur = [] } = await store.get('emailCancel');
+    await store.set({ emailCancel: cur.filter((id) => !emailCancel.includes(id)) });
+  });
+  return q;
+}
+
+async function syncEmail() {
+  const q = (await flushEmailCancel().catch(() => null)) || (await emailApi('GET'));
+  await applyEmail(q.items);
+  return q;
+}
+
+/* Each lead goes in as its first email and follow ups. Leads skipped for running ads, leads without an address
+   to send to, leads emailed before and leads you are already talking to stay out. */
+async function pushToEmail(ids) {
+  const settings = await getSettings();
+  const got = await store.get(ids.map(leadKey));
+  const items = [];
+  const names = {};
+  const skipped = { noEmail: [], runningAds: [], already: [], closed: [] };
+  for (const id of ids) {
+    const lead = got[leadKey(id)];
+    if (!lead) continue;
+    const name = lead.pageName || id;
+    const mail = LH.emailFor(lead, settings);
+    const q = lead.emailQueue;
+    if (!mail.to) skipped.noEmail.push(name);
+    else if (!mail.script) skipped.runningAds.push(name);
+    else if (q && (q.sent >= 1 || q.state !== 'cancelled')) skipped.already.push(name);
+    else if (STOP_EMAILS.includes(lead.status)) skipped.closed.push(name);
+    else {
+      names[id] = name;
+      items.push({ id, email: mail.to, business: lead.pageName, script: mail.script, fromName: settings.emailFromName, subject: mail.subject, steps: mail.steps, followupDays: [3, 4] });
+    }
+  }
+  if (!items.length) return { queued: 0, rejected: [], skipped };
+  const q = await emailApi('PUT', { items });
+  await locked(async () => {
+    const { emailQueueIds = [] } = await store.get('emailQueueIds');
+    await store.set({ emailQueueIds: [...new Set([...emailQueueIds, ...items.map((i) => i.id)])] });
+  });
+  await applyEmail(q.items);
+  return { queued: q.accepted, rejected: q.rejected.map((r) => ({ name: names[r.id] || r.id, reason: r.reason })), skipped };
+}
+
 /* ------------------------------------------------------------------ messages */
 async function openDashboard(hash = '') {
   const tabs = await chrome.tabs.query({ url: DASHBOARD + '*' });
@@ -840,6 +958,8 @@ const handlers = {
     if (pq && pq.state === 'queued' && ['contacted', 'replied', 'meeting', 'won', 'lost', 'skip'].includes(msg.patch && msg.patch.status)) {
       mirrorToPhone({ id: msg.id, status: msg.patch.status === 'contacted' ? 'sent' : 'removed', rev: pq.rev });
     }
+    const eq = lead && lead.emailQueue;
+    if (eq && ['queued', 'active'].includes(eq.state) && STOP_EMAILS.includes(msg.patch && msg.patch.status)) cancelEmails([msg.id]).catch(() => {});
     return { lead };
   },
   'lead:delete': async (msg) => {
@@ -907,6 +1027,20 @@ const handlers = {
     if (done.length) await queueApi('DELETE', { ids: done });
     return result;
   },
+  'email:push': (msg) => pushToEmail(msg.ids || []),
+  'email:sync': async () => emailInfo(await syncEmail()),
+  'email:status': async () => emailInfo(await syncEmail()),
+  'email:settings': async (msg) => emailInfo(await emailApi('POST', { action: 'settings', settings: msg.settings || {} })),
+  'email:cancel': async (msg) => emailInfo(await cancelEmails(msg.ids || [])),
+  // Never email this lead (remove: allow it again). The site's never list also stops emails already queued.
+  'email:never': async (msg) => {
+    const lead = await updateLead(msg.id, (l) => (l.doNotEmail = !msg.remove));
+    const emails = ((lead && lead.emails) || []).filter((e) => !(msg.remove && (lead.badEmails || []).includes(e)));
+    if (!emails.length || !(await getSettings()).queueKey) return { ok: true };
+    const q = await emailApi('POST', { action: 'never', emails, remove: !!msg.remove });
+    await applyEmail(q.items);
+    return { ok: true };
+  },
   stats: async () => {
     const leads = await allLeads();
     const { hunt, enrichQueue = [] } = await store.get(['hunt', 'enrichQueue']);
@@ -944,8 +1078,9 @@ chrome.alarms.onAlarm.addListener(async (a) => {
   // Watchdog: a hunt tab that has gone quiet (login wall, crash) moves on.
   const { hunt } = await store.get('hunt');
   if (hunt && hunt.status === 'running' && now() - hunt.lastActivity > 150000) nextKeyword('stalled');
-  const { phoneQueueIds = [], queuePending = [] } = await store.get(['phoneQueueIds', 'queuePending']);
+  const { phoneQueueIds = [], queuePending = [], emailQueueIds = [], emailCancel = [], emailSyncedAt = 0 } = await store.get(['phoneQueueIds', 'queuePending', 'emailQueueIds', 'emailCancel', 'emailSyncedAt']);
   if (phoneQueueIds.length || queuePending.length) syncQueue().catch(() => {});
+  if (emailCancel.length || (emailQueueIds.length && now() - emailSyncedAt >= EMAIL_SYNC_MS)) syncEmail().catch(() => {});
 });
 
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {
