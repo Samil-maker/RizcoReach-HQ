@@ -2,8 +2,8 @@
   "manifest_version": 3,
   "name": "RizcoReach Lead Hunter",
   "short_name": "Lead Hunter",
-  "version": "1.4.0",
-  "description": "Find businesses for Meta ads and websites, pick the right script for each, open it in WhatsApp one bubble at a time, and email it slowly from your own Gmail.",
+  "version": "1.5.0",
+  "description": "Find businesses on Google Maps and Instagram, pick the right script for each, open it in WhatsApp one bubble at a time, and email it slowly from your own Gmail.",
   "minimum_chrome_version": "111",
   "icons": {
     "16": "icons/icon-16.png",
@@ -46,6 +46,11 @@
       "matches": ["https://www.google.com/maps*", "https://www.google.ae/maps*"],
       "js": ["lib/common.js", "content/maps.js"],
       "run_at": "document_start"
+    },
+    {
+      "matches": ["https://www.instagram.com/*"],
+      "js": ["content/instagram.js"],
+      "run_at": "document_idle"
     }
   ]
 }

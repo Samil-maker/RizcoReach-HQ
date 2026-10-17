@@ -78,9 +78,25 @@
     return byKeyword ? byKeyword.name : raw;
   };
 
+  // Searched in this order, so the established central and upscale areas come first.
   LH.AREAS = {
-    Dubai: ['Al Quoz', 'Dubai Investment Park', 'Al Barsha', 'Dubai Marina', 'JLT', 'JBR', 'Business Bay', 'Downtown Dubai', 'DIFC', 'Jumeirah', 'Al Wasl', 'Umm Suqeim', 'Dubai Hills', 'Arabian Ranches', 'JVC', 'Motor City', 'Al Karama', 'Deira', 'Bur Dubai', 'Mirdif', 'Al Nahda', 'Silicon Oasis', 'Palm Jumeirah', 'Ras Al Khor'],
-    'Abu Dhabi': ['Al Reem Island', 'Khalifa City', 'Al Raha', 'Corniche', 'Al Bateen', 'Saadiyat', 'Yas Island', 'Al Khalidiyah', 'Mohammed Bin Zayed City'],
+    Dubai: [
+      'Downtown Dubai', 'Business Bay', 'DIFC', 'Dubai Marina', 'JBR', 'JLT', 'Palm Jumeirah', 'Jumeirah', 'Umm Suqeim', 'Al Wasl',
+      'Al Safa', 'City Walk', 'La Mer', 'Al Barsha', 'Barsha Heights', 'Al Sufouh', 'Dubai Media City', 'Dubai Internet City',
+      'Dubai Hills', 'Emirates Hills', 'Arabian Ranches', 'The Springs', 'The Meadows', 'The Greens', 'Jumeirah Islands',
+      'Jumeirah Park', 'Jumeirah Golf Estates', 'Al Barari', 'Meydan', 'Nad Al Sheba', 'Dubai Creek Harbour', 'Dubai Festival City',
+      'Dubai Healthcare City', 'Al Jaddaf', 'Al Garhoud', 'Mirdif', 'Al Mizhar', 'Al Khawaneej', 'Al Quoz', 'Al Khail',
+      'JVC', 'JVT', 'Al Furjan', 'Discovery Gardens', 'Motor City', 'Sports City', 'Arjan', 'Damac Hills', 'Town Square',
+      'Mudon', 'Silicon Oasis', 'Academic City', 'International City', 'Dubai Investment Park', 'Jebel Ali', 'Dubai South',
+      'Al Karama', 'Oud Metha', 'Bur Dubai', 'Al Mankhool', 'Al Satwa', 'Deira', 'Al Rigga', 'Port Saeed', 'Al Muraqqabat',
+      'Hor Al Anz', 'Al Twar', 'Al Qusais', 'Al Nahda', 'Muhaisnah', 'Al Warqa', 'Al Rashidiya', 'Nad Al Hamar', 'Ras Al Khor',
+    ],
+    'Abu Dhabi': [
+      'Al Reem Island', 'Al Maryah Island', 'Saadiyat', 'Yas Island', 'Al Raha', 'Al Bateen', 'Corniche', 'Al Khalidiyah',
+      'Al Markaziyah', 'Tourist Club Area', 'Al Nahyan', 'Al Mushrif', 'Al Karamah', 'Al Manaseer', 'Al Muroor', 'Al Wahdah',
+      'Al Mina', 'Masdar City', 'Khalifa City', 'Mohammed Bin Zayed City', 'Al Shamkha', 'Al Reef', 'Al Rahba', 'Baniyas',
+      'Shakhbout City', 'Al Falah', 'Musaffah', 'Al Ain',
+    ],
     Sharjah: ['Al Majaz', 'Al Nahda Sharjah', 'Al Khan', 'Muwaileh', 'Al Taawun'],
   };
   // Long sales cycles, restricted ads, or poor fit for a lead-confirmation offer: skipped as Meta-ads prospects.
@@ -641,6 +657,28 @@
     const list = (map) => [...map.values()].sort((a, b) => b.sent - a.sent || a.label.localeCompare(b.label)).map((r) => ({ ...r, rate: LH.replyRate(r) }));
     return { total: { ...total, rate: LH.replyRate(total) }, byNiche: list(byNiche), byScript: list(byScript) };
   };
+
+  /* ---------------------------------------------------------- Google Contacts */
+  /**
+   * Leads as a Google Contacts import file (Google CSV format): the business name as the contact name, so WhatsApp
+   * on your phone shows who each chat is. Leads without a phone or an email are left out. All go in one label.
+   */
+  LH.GOOGLE_CONTACTS_HEAD = ['Name', 'Given Name', 'Family Name', 'Organization 1 - Name', 'Phone 1 - Type', 'Phone 1 - Value', 'Phone 2 - Type', 'Phone 2 - Value', 'E-mail 1 - Type', 'E-mail 1 - Value', 'Website 1 - Type', 'Website 1 - Value', 'Address 1 - Type', 'Address 1 - Formatted', 'Notes', 'Group Membership'];
+  LH.googleContactsRows = (leads, settings = {}) =>
+    (leads || [])
+      .filter(Boolean)
+      .map((l) => {
+        const main = LH.whatsappTarget(l) || (LH.bestPhone(l) || {}).number || '';
+        const other = ((l.phones || []).find((p) => p.number && p.number !== main) || {}).number || '';
+        const email = (l.emails || []).find((e) => !(l.badEmails || []).includes(e)) || '';
+        if (!main && !email) return null;
+        const name = LH.shortName(l.pageName) || LH.igHandle(l) || LH.domainOf(l.website || '') || main;
+        const status = (LH.STATUSES.find((s) => s.id === l.status) || {}).label || '';
+        const notes = ['RizcoReach lead', LH.nicheOf(l, settings), l.area, LH.tagLine(l), status].filter(Boolean).join(' · ');
+        const address = (((l.sources || {}).maps || {}).address) || '';
+        return [name, name, '', name, main ? 'Mobile' : '', main, other ? 'Work' : '', other, email ? 'Work' : '', email, l.website ? 'Work' : '', l.website || '', address ? 'Work' : '', address, notes, '* myContacts ::: RizcoReach leads'];
+      })
+      .filter(Boolean);
 
   /* ---------------------------------------------------------------------- CSV */
   LH.toCsv = (rows) =>

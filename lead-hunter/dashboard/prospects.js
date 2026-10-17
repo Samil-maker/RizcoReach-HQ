@@ -13,6 +13,7 @@ const AD_STATE = {
   checking: ['unclear', 'Checking…'],
   queued: ['unclear', 'Waiting to check'],
   pending: ['unclear', 'Not checked'],
+  skipped: ['unclear', 'Not needed'],
 };
 const compactNum = (n) => Intl.NumberFormat(undefined, { notation: 'compact' }).format(n || 0);
 
@@ -184,6 +185,7 @@ function prospectDrawerHtml(l) {
     checking: 'Checking the Ad Library now…',
     queued: 'Waiting for its turn in the Ad Library check.',
     pending: 'Not checked yet.',
+    skipped: 'Not checked: without a website they get the website script either way. Use Check ads again if you want to know.',
   }[a.state || 'pending'];
   return `
     <header class="d-head">${avatar(l)}
@@ -404,6 +406,12 @@ async function prospectAction(act, b, l) {
       return true;
     case 'ads-bulk-export':
       exportProspectsCsv(selected().map((id) => S.leads.get(id)));
+      return true;
+    case 'ads-contacts':
+      exportContacts(filteredProspects().map((r) => r.l));
+      return true;
+    case 'ads-bulk-contacts':
+      exportContacts(selected().map((id) => S.leads.get(id)));
       return true;
     case 'ads-bulk-delete': {
       const ids = selected();

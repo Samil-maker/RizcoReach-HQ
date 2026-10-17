@@ -104,15 +104,17 @@ async function ingestProspects(items, ctx = {}) {
       finder.lastActivity = now();
       writes.finder = finder;
     }
+    // Without a website they get the website script whatever their ads, so their Ad Library check is skipped.
     for (const id of counted) {
       const l = touched.get(id);
-      l.adCheck = { state: 'queued' };
+      l.adCheck = { state: l.website ? 'queued' : 'skipped' };
       if (l.website) l.site = { state: 'queued' };
     }
     await store.set(writes);
-    return { added: counted.length, ids: counted, websites: counted.filter((id) => touched.get(id).website) };
+    const websites = counted.filter((id) => touched.get(id).website);
+    return { added: counted.length, ids: counted, websites };
   });
-  if (result.ids.length) queueAdChecks(result.ids);
+  if (result.websites.length) queueAdChecks(result.websites);
   if (result.websites.length) enqueue(result.websites);
   return result;
 }
@@ -346,7 +348,7 @@ async function startFinder(cfg) {
   // Typed search terms without a niche chip: use the niche they belong to, if any.
   const niche = cfg.niche || LH.nicheOf({ keywords }, settings) || '';
   const city = cfg.city || settings.adsCity || 'Dubai';
-  const areas = (cfg.areas && cfg.areas.length ? cfg.areas : LH.AREAS[city] || [city]).slice(0, 40);
+  const areas = (cfg.areas && cfg.areas.length ? cfg.areas : LH.AREAS[city] || [city]).slice(0, 150);
   const sources = { maps: true };
   const mapsMode = settings.placesKey ? 'api' : 'browser';
   const mapsQ = [];
@@ -358,7 +360,7 @@ async function startFinder(cfg) {
     keywords,
     city,
     country: 'AE',
-    target: Math.max(1, Math.min(1000, Number(cfg.target) || 100)),
+    target: Math.max(1, Math.min(1000, Number(cfg.target) || 150)),
     sources,
     mapsMode,
     mapsQ,
@@ -462,8 +464,36 @@ async function mapsBrowserSearch(query) {
   return (res.items || []).map((x) => ({ ...x, source: 'maps' }));
 }
 
+/* ---------------------------------------------------------- Instagram */
+/* A profile saved with the "Add to Lead Hunter" button on instagram.com. The page is read only when Samil presses
+   the button, so nothing crawls Instagram. Phones, WhatsApp and emails come from the bio and its links. */
+const escHtml = (s) => String(s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+async function addFromInstagram(p) {
+  const username = String((p && p.username) || '').replace(/^@/, '');
+  if (!/^[A-Za-z0-9._]{1,30}$/.test(username)) return { error: 'This is not an Instagram profile' };
+  const bio = String(p.bio || '').slice(0, 1000);
+  const links = (Array.isArray(p.links) ? p.links : []).map(String).slice(0, 10);
+  const contacts = LH.extractContacts(`<p>${escHtml(bio)}</p>${links.map((h) => `<a href="${escHtml(h)}">link</a>`).join('')}`, `https://www.instagram.com/${username}/`, 'AE');
+  const site = links.map((h) => LH.unwrapLink(h)).find((u) => u && LH.linkKind(u) === 'website');
+  const name = String(p.name || '').trim().slice(0, 160) || username;
+  const item = {
+    name,
+    source: 'instagram',
+    instagram: { username, fullName: name, bio, followers: String(p.followers || '').slice(0, 20) },
+    website: site ? site.toString() : (links.map((h) => LH.unwrapLink(h)).find((u) => u && ['whatsapp', 'linkinbio'].includes(LH.linkKind(u))) || '').toString(),
+    phones: contacts.phones,
+    whatsapp: contacts.whatsapp,
+    emails: contacts.emails,
+  };
+  const settings = await getSettings();
+  const niche = LH.nicheOf({ keywords: [`${name} ${bio}`.toLowerCase()] }, settings);
+  const r = await ingestProspects([item], { niche, country: 'AE' });
+  return { added: r.added, ids: r.ids };
+}
+
 /* ------------------------------------------------------------- messages */
 Object.assign(handlers, {
+  'instagram:add': (msg) => addFromInstagram(msg.profile),
   'finder:start': async (msg) => ({ finder: await startFinder(msg.config || {}) }),
   'finder:stop': async () => {
     const f = await currentFinder();
