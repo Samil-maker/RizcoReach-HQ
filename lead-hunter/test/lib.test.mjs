@@ -486,3 +486,16 @@ test('areas: Dubai and Abu Dhabi cover the whole city, no area twice', () => {
   assert.ok(LH.AREAS.Dubai.length >= 70 && LH.AREAS['Abu Dhabi'].length >= 25);
   assert.deepEqual(LH.AREAS.Dubai.slice(0, 3), ['Downtown Dubai', 'Business Bay', 'DIFC'], 'central areas first');
 });
+
+test('template placeholder emails are never used: GoDaddy filler and the like', () => {
+  for (const e of ['filler@godaddy.com', 'info@example.com', 'email@domain.com', 'you@yourdomain.ae', 'name@company.ae', 'abc123@sentry.io', 'x@sentry-next.wixpress.com', 'noreply@clinic.ae', 'logo@2x.png'])
+    assert.equal(LH.isJunkEmail(e), true, e);
+  for (const e of ['info@glossy.ae', 'hello@shineautospa.example', 'bookings@eyelashsecret.com', 'salon123@gmail.com']) assert.equal(LH.isJunkEmail(e), false, e);
+  const html = '<a href="mailto:filler@godaddy.com">Email us</a><p>Write to filler@godaddy.com or book@eyelashsecret.com</p>';
+  assert.deepEqual(LH.extractContacts(html, 'https://eyelashsecret.com/', 'AE').emails, ['book@eyelashsecret.com']);
+  // Leads saved before this: the placeholder is skipped when emailing and in the Google Contacts file.
+  const old = mailLead({ emails: ['filler@godaddy.com', 'book@eyelashsecret.com'] });
+  assert.equal(LH.emailFor(old, S).to, 'book@eyelashsecret.com');
+  assert.equal(LH.emailFor(mailLead({ emails: ['filler@godaddy.com'] }), S).to, '', 'only a placeholder: nothing to email');
+  assert.deepEqual(LH.goodEmails(old), ['book@eyelashsecret.com']);
+});

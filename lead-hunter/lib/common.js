@@ -606,13 +606,12 @@
 
   /**
    * The emails for a lead: the script in one email, then the follow ups (Settings says how many). Each one ends
-   * with the signature and the opt out line. `to` is their first address that has not bounced, '' when there is
-   * none or they are on the never email list. Leads skipped for running ads get no emails.
+   * with the signature and the opt out line. `to` is their first address that has not bounced and is not a
+   * template placeholder, '' when there is none or they are on the never email list. Leads skipped for running ads get no emails.
    */
   LH.emailFor = (lead, settings = {}, force) => {
     const r = rendered(lead, settings, force);
-    const bad = (lead && lead.badEmails) || [];
-    const to = (lead && !lead.doNotEmail && (lead.emails || []).find((e) => !bad.includes(e))) || '';
+    const to = (lead && !lead.doNotEmail && LH.goodEmails(lead)[0]) || '';
     if (!r.script) return { script: null, tag: r.tag, to, subject: '', steps: [] };
     const D = LH.DEFAULT_SETTINGS;
     const t = LH.emailsFor(settings)[r.script];
@@ -658,6 +657,18 @@
     return { total: { ...total, rate: LH.replyRate(total) }, byNiche: list(byNiche), byScript: list(byScript) };
   };
 
+  /* ------------------------------------------------------------ Email addresses */
+  // Addresses website builders put in their templates (GoDaddy's filler@godaddy.com and the like) and other
+  // placeholders. They are never a real inbox, and an email to one bounces, which hurts the Gmail that sent it.
+  const JUNK_DOMAIN = /(^|\.)(example\.(com|org|net)|domain\.com|email\.com|yourdomain\.\w+|yoursite\.\w+|mysite\.com|website\.com|test\.com|sentry\.io|wixpress\.com|wix\.com|godaddy\.com|secureserver\.net|squarespace\.com|weebly\.com|jimdo\.com|shopify\.com|wordpress\.(com|org)|mailchimp\.com)$/;
+  const JUNK_USER = /^(filler|name|your|yourname|you|user|username|email|e-?mail|test|example|sample|someone|john\.?doe|jane\.?doe|no-?reply|do-?not-?reply|donotreply)$/;
+  LH.isJunkEmail = (email) => {
+    const [user, domain, extra] = String(email || '').trim().toLowerCase().split('@');
+    return !user || !domain || extra !== undefined || /\.(png|jpe?g|gif|webp|svg|css|js)$/.test(domain) || JUNK_DOMAIN.test(domain) || JUNK_USER.test(user);
+  };
+  /** The addresses worth emailing: not bounced before, not a placeholder. */
+  LH.goodEmails = (lead) => ((lead && lead.emails) || []).filter((e) => !((lead.badEmails || []).includes(e) || LH.isJunkEmail(e)));
+
   /* ---------------------------------------------------------- Google Contacts */
   /**
    * Leads as a Google Contacts import file (Google CSV format): the business name as the contact name, so WhatsApp
@@ -670,7 +681,7 @@
       .map((l) => {
         const main = LH.whatsappTarget(l) || (LH.bestPhone(l) || {}).number || '';
         const other = ((l.phones || []).find((p) => p.number && p.number !== main) || {}).number || '';
-        const email = (l.emails || []).find((e) => !(l.badEmails || []).includes(e)) || '';
+        const email = LH.goodEmails(l)[0] || '';
         if (!main && !email) return null;
         const name = LH.shortName(l.pageName) || LH.igHandle(l) || LH.domainOf(l.website || '') || main;
         const status = (LH.STATUSES.find((s) => s.id === l.status) || {}).label || '';

@@ -879,7 +879,9 @@ async function flushEmailCancel() {
 async function syncEmail() {
   const q = (await flushEmailCancel().catch(() => null)) || (await emailApi('GET'));
   await applyEmail(q.items);
-  return q;
+  // Emails queued before Lead Hunter knew an address was a template placeholder: stop them before they bounce.
+  const junk = q.items.filter((i) => i.status === 'queued' && LH.isJunkEmail(i.email)).map((i) => i.id);
+  return junk.length ? cancelEmails(junk) : q;
 }
 
 /* Each lead goes in as its first email and follow ups. Leads skipped for running ads, leads without an address
