@@ -88,7 +88,7 @@
       }
       if (/^mailto:/i.test(raw)) {
         const e = raw.replace(/^mailto:/i, '').split('?')[0].trim().toLowerCase();
-        if (/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(e)) emails.add(e);
+        if (/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(e) && !LH.isJunkEmail(e)) emails.add(e);
         continue;
       }
       const u = LH.unwrapLink(raw.startsWith('whatsapp:') ? raw : LH.safeUrl(raw, base) && LH.safeUrl(raw, base).toString());
@@ -110,7 +110,7 @@
     LH.phonesInText(text, countryCode).forEach((n) => phones.add(n));
     for (const m of text.matchAll(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi)) {
       const e = m[0].toLowerCase();
-      if (/\.(png|jpe?g|gif|webp|svg|css|js)$/.test(e) || /(example|sentry|wixpress|domain|email)\.(com|io)$|^(name|your|you|user)@/.test(e)) continue;
+      if (LH.isJunkEmail(e)) continue;
       emails.add(e);
     }
     wa.forEach((n) => phones.delete(n));

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "RizcoReach Lead Hunter",
   "short_name": "Lead Hunter",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "Find businesses on Google Maps and Instagram, pick the right script for each, open it in WhatsApp one bubble at a time, and email it slowly from your own Gmail.",
   "minimum_chrome_version": "111",
   "icons": {
