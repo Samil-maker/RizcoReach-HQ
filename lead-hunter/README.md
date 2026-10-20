@@ -198,8 +198,9 @@ sending** in Settings, or pick **stop** in the script and press **Run**.
 ### Limits
 
 - Only Monday to Friday, 9 to 6 Dubai time, and at least 10 minutes apart.
-- A new sender starts slow: 5 a day in the first week, 10 in the second, 20
-  in the third. After that your daily limit decides (default 30, at most 40).
+- It starts at 15 a day in the first week and 25 in the second. After that
+  your daily limit decides (default 30, at most 40). This pace suits a Gmail
+  account that has been in normal use for a while.
   Free Gmail allows about 500 a day. Staying far below that is the point.
 
 ### Safety rules

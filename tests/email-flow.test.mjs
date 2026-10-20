@@ -181,20 +181,20 @@ test('one lead from queue to reply: first email, a threaded follow up, then the 
   }
 });
 
-test('a new sender sends 5 a day, 10 minutes apart at least, only Monday to Friday 9 to 6 in Dubai', () => {
+test('a new sender sends 15 a day, 10 minutes apart at least, only Monday to Friday 9 to 6 in Dubai', () => {
   const clock = { now: at('2026-10-23 07:00') }; // a Friday
   const server = site();
   try {
     const g = gmail(server, clock);
-    const items = Array.from({ length: 12 }, (_, i) => queueItem(prospect(i + 1)));
-    assert.equal(server.call(`${SITE}/api/email-queue`, 'put', JSON.stringify({ items }), clock.now).data.accepted, 12);
+    const items = Array.from({ length: 20 }, (_, i) => queueItem(prospect(i + 1)));
+    assert.equal(server.call(`${SITE}/api/email-queue`, 'put', JSON.stringify({ items }), clock.now).data.accepted, 20);
     // A tick every 5 minutes from Friday 07:00 to Monday 20:00.
     for (; clock.now <= at('2026-10-26 20:00'); clock.now += 5 * MIN) g.ctx.tick();
     const firsts = g.sends.filter((s) => !s.inReplyTo);
     const day = (t) => new Date(t + 4 * 60 * MIN).toISOString().slice(0, 10);
     const perDay = {};
     for (const s of firsts) perDay[day(s.date)] = (perDay[day(s.date)] || 0) + 1;
-    assert.deepEqual(perDay, { '2026-10-23': 5, '2026-10-26': 5 }, 'nothing on the weekend');
+    assert.deepEqual(perDay, { '2026-10-23': 15, '2026-10-26': 5 }, 'nothing on the weekend');
     for (const s of g.sends) {
       const h = new Date(s.date + 4 * 60 * MIN).getUTCHours();
       assert.ok(h >= 9 && h < 18, `sent at ${h}:00 Dubai time`);

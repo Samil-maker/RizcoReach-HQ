@@ -847,7 +847,7 @@ try {
   await dash.click('[data-view="settings"]');
   assert.ok(await dash.isHidden('[data-email-nokey]'));
   await dash.waitForFunction(() => /Not set up yet/.test(document.querySelector('[data-email-status]').textContent));
-  assert.match(await emailStatus(), /Sent today 0 of 5 · 0 queued · 0 replied · 0 bounced/, 'a new sender starts at 5 a day');
+  assert.match(await emailStatus(), /Sent today 0 of 15 · 0 queued · 0 replied · 0 bounced/, 'a new sender starts at 15 a day');
   assert.equal(await dash.$$eval('[data-email-on] .steps li', (li) => li.length), 6, 'six setup steps');
   assert.equal((await emailCall({ action: 'claim' })).job, null, 'nothing to send yet');
   await dash.click('[data-view="leads"]');
