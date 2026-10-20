@@ -113,7 +113,7 @@ test('is off until LEAD_QUEUE_KEY is set, and needs the right key', async () => 
   assert.deepEqual(r.data, {
     items: [],
     settings: DEFAULT_SETTINGS,
-    stats: { today: 0, cap: 5, queued: 0, active: 0, done: 0, replied: 0, bounced: 0, optout: 0, failed: 0, cancelled: 0 },
+    stats: { today: 0, cap: 15, queued: 0, active: 0, done: 0, replied: 0, bounced: 0, optout: 0, failed: 0, cancelled: 0 },
     never: 0,
     pausedReason: '',
     pausedUntil: 0,
@@ -391,7 +391,7 @@ test('claim checks paused, the sending window in Dubai time, the daily cap and t
   assert.equal(await reason(), 'outside_hours');
 
   // The window beats the cap, the cap beats the gap, the gap beats nothing to send.
-  const day = { sentByDay: { '2026-10-19': 5 }, lastSendAt: MON - MIN, firstSendDay: '2026-10-19' };
+  const day = { sentByDay: { '2026-10-19': 15 }, lastSendAt: MON - MIN, firstSendDay: '2026-10-19' };
   await t.seed({ items: [stored('q', { status: 'queued', sent: 0, sentAt: [] })], ...day });
   t.clock.now = at('2026-10-24 10:00');
   assert.equal(await reason(), 'outside_hours');
@@ -405,35 +405,33 @@ test('claim checks paused, the sending window in Dubai time, the daily cap and t
   assert.equal(await reason(), 'spacing', 'the gap follows the setting');
 });
 
-test('the daily cap ramps up 5, 10, 20, then follows the daily limit', async () => {
+test('the daily cap ramps up 15, 25, then follows the daily limit', async () => {
   const first = '2026-10-01';
-  assert.equal(capFor(30, '', MON), 5, 'no send yet counts as day 0');
-  assert.equal(capFor(30, first, at('2026-10-01 10:00')), 5);
-  assert.equal(capFor(30, first, at('2026-10-07 23:59')), 5, 'day 6');
-  assert.equal(capFor(30, first, at('2026-10-08 00:00')), 10, 'day 7 starts at midnight in Dubai');
-  assert.equal(capFor(30, first, at('2026-10-14 18:00')), 10, 'day 13');
-  assert.equal(capFor(30, first, at('2026-10-15 09:00')), 20, 'day 14');
-  assert.equal(capFor(30, first, at('2026-10-21 09:00')), 20, 'day 20');
-  assert.equal(capFor(30, first, at('2026-10-22 09:00')), 30, 'day 21: the daily limit decides');
+  assert.equal(capFor(30, '', MON), 15, 'no send yet counts as day 0');
+  assert.equal(capFor(30, first, at('2026-10-01 10:00')), 15);
+  assert.equal(capFor(30, first, at('2026-10-07 23:59')), 15, 'day 6');
+  assert.equal(capFor(30, first, at('2026-10-08 00:00')), 25, 'day 7 starts at midnight in Dubai');
+  assert.equal(capFor(30, first, at('2026-10-14 18:00')), 25, 'day 13');
+  assert.equal(capFor(30, first, at('2026-10-15 09:00')), 30, 'day 14: the daily limit decides');
   assert.equal(capFor(40, first, at('2026-12-01 09:00')), 40);
   assert.equal(capFor(3, first, at('2026-10-01 09:00')), 3, 'a lower limit always wins');
   assert.equal(capFor(8, first, at('2026-10-09 09:00')), 8);
 
-  // Through the API: 5 on the first day, then the cap stops it until tomorrow.
+  // Through the API: 15 on the first day, then the cap stops it until tomorrow.
   const t = setup();
-  await t.put(...'abcdefg'.split('').map((id) => email(id)));
-  for (let i = 0; i < 5; i++) await t.send();
+  await t.put(...'abcdefghijklmnopq'.split('').map((id) => email(id)));
+  for (let i = 0; i < 15; i++) await t.send();
   assert.equal((await t.claim()).reason, 'daily_cap');
   let g = await t.get();
-  assert.deepEqual([g.stats.today, g.stats.cap, g.firstSendDay], [5, 5, '2026-10-19']);
+  assert.deepEqual([g.stats.today, g.stats.cap, g.firstSendDay], [15, 15, '2026-10-19']);
   t.clock.now = at('2026-10-20 09:00');
-  assert.equal((await t.claim()).job.id, 'f');
+  assert.equal((await t.claim()).job.id, 'p');
   g = await t.get();
-  assert.deepEqual([g.stats.today, g.stats.cap], [0, 5]);
+  assert.deepEqual([g.stats.today, g.stats.cap], [0, 15]);
 
-  // A week later the cap is 10, three weeks later the daily limit.
+  // A week later the cap is 25, two weeks later the daily limit.
   await t.seed({ ...t.store.peek(), firstSendDay: '2026-10-13' });
-  assert.equal((await t.get()).stats.cap, 10);
+  assert.equal((await t.get()).stats.cap, 25);
   await t.seed({ ...t.store.peek(), firstSendDay: '2026-09-01' });
   assert.equal((await t.get()).stats.cap, 30);
   await t.post('settings', { settings: { maxPerDay: 12 } });

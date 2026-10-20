@@ -126,10 +126,10 @@ export function addBusinessDays(t: number, n: number, days: number[]) {
   return t;
 }
 
-/** Today's cap: a new sender ramps up slowly (5, 10, 20 a day for a week each), then `maxPerDay` decides. */
+/** Today's cap: the sender (an established Gmail) starts at 15 a day, then 25 in its second week, then `maxPerDay` decides. */
 export function capFor(maxPerDay: number, firstSendDay: string, now: number) {
   const age = firstSendDay ? Math.round((Date.parse(dubaiDay(now)) - Date.parse(firstSendDay)) / DAY) : 0;
-  return Math.min(maxPerDay, age < 7 ? 5 : age < 14 ? 10 : age < 21 ? 20 : 40);
+  return Math.min(maxPerDay, age < 7 ? 15 : age < 14 ? 25 : 40);
 }
 
 function cleanItem(raw: unknown, now: number): Item | null {
