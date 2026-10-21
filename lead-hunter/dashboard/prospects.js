@@ -1,7 +1,7 @@
 /* Lead Hunter dashboard: the Meta ads tab (businesses found on Google Maps).
    Loaded after dashboard.js and shares its helpers ($, esc, S, send, toast, openDrawer…). */
 
-S.af = { q: '', ads: '', niche: '', tag: '', heat: '', status: '', contact: '', skipped: false, sort: 'priority' };
+S.af = { q: '', ads: '', niche: '', tag: '', heat: '', status: '', contact: '', skipped: false, mobile: false, chains: false, sort: 'priority' };
 S.areasOff = new Set();
 S.finderNiche = '';
 
@@ -40,6 +40,8 @@ function filteredProspects() {
     if (f.contact === 'phone' && !l.phones.length) continue;
     if (f.contact === 'wa' && !LH.whatsappTarget(l)) continue;
     if (f.contact === 'nophone' && l.phones.length) continue;
+    if (f.mobile && LH.leadPhoneType(l) !== 'mobile') continue;
+    if (f.chains && leadTags(l).includes('Chain')) continue;
     if (q) {
       const hay = [l.pageName, l.area, l.niche, l.website, LH.igHandle(l), ...(l.emails || []), ...l.phones.map((x) => x.number), l.notes].join(' ').toLowerCase();
       if (!hay.includes(q)) continue;
@@ -102,7 +104,21 @@ function renderProspectKpis() {
     (waiting ? `<span class="kpi"><span class="spin"></span> checking ads <b>${waiting}</b></span>` : '');
 }
 
-const finderWhat = (f) => (f.niche ? LH.nicheText(LH.LEGACY_NICHES[f.niche] || f.niche) : `“${f.keywords[0]}” businesses`);
+const finderWhat = (f) => (f.niche ? LH.nicheText(LH.LEGACY_NICHES[f.niche] || f.niche, S.settings) : `“${f.keywords[0]}” businesses`);
+/** Before and after the filters: "87 found → 31 kept · 22 too many reviews · 9 already saved…". */
+function runStats(f) {
+  const st = f.stats;
+  if (!st || !st.found) return '';
+  const parts = [
+    `<b>${st.found}</b> found → <b>${st.kept}</b> kept`,
+    st.duplicate && `${st.duplicate} already saved`,
+    st.fewReviews && `${st.fewReviews} under ${esc(presetNamed(f.niche) ? presetNamed(f.niche).minReviews : '')} reviews`,
+    st.manyReviews && `${st.manyReviews} over ${esc(presetNamed(f.niche) ? presetNamed(f.niche).maxReviews : '')} reviews`,
+    st.excluded && `${st.excluded} excluded words`,
+  ];
+  return `<span class="run-stats m">${parts.filter(Boolean).join(' · ')}</span>`;
+}
+const presetNamed = (name) => LH.presetsFor(S.settings).find((n) => n.name === name);
 
 function renderFinderStatus() {
   const el = $('[data-finder-status]');
@@ -111,13 +127,16 @@ function renderFinderStatus() {
   if (!f && !waiting) return (el.hidden = true);
   el.hidden = false;
   const parts = [];
-  if (f && f.status === 'running') {
-    const pct = Math.min(100, Math.round((100 * f.added) / f.target));
-    parts.push(`<span class="pulse"></span><span class="t">Finding ${esc(finderWhat(f))} in ${esc(f.city)}</span>
-      <span class="m"><b class="num">${f.added}</b> / ${f.target} new · search ${Math.min(f.mapsI + 1, f.mapsQ.length)} of ${f.mapsQ.length}</span>
-      <span class="bar"><i style="width:${pct}%"></i></span><button class="btn sm danger" data-act="finder-stop">Stop</button>`);
+  if (f && ['running', 'paused'].includes(f.status)) {
+    const total = f.mapsQ.length || 1;
+    const pct = Math.min(100, Math.round((100 * f.mapsI) / total));
+    const q = f.mapsQ[Math.min(f.mapsI, total - 1)];
+    parts.push(`${f.status === 'running' ? '<span class="pulse"></span>' : ''}<span class="t">${f.status === 'paused' ? 'Paused: ' : ''}${esc(f.niche)} · search ${Math.min(f.mapsI + 1, total)} of ${total}${q ? ` <span class="muted">“${esc(q.q)}”</span>` : ''}</span>
+      <span class="bar"><i style="width:${pct}%"></i></span>
+      <button class="btn sm" data-act="${f.status === 'running' ? 'finder-pause' : 'finder-resume'}">${f.status === 'running' ? 'Pause' : 'Resume'}</button>
+      <button class="btn sm danger" data-act="finder-stop">Stop</button>${runStats(f)}`);
   } else if (f) {
-    parts.push(`<span class="t">Last search: ${esc(finderWhat(f))}, ${esc(f.city)}</span><span class="m">${f.added} new businesses · ${esc(f.status)}</span>`);
+    parts.push(`<span class="t">Last run: ${esc(f.niche || finderWhat(f))} · ${f.mapsI || 0} searches · ${esc(f.status)}</span>${runStats(f) || `<span class="m">${f.added} new businesses</span>`}`);
   }
   const notes = f && f.mapsNote ? [`Google Maps: ${f.mapsNote}`] : [];
   if (notes.length) parts.push(`<span class="err" style="margin:0">${esc(notes.join(' · '))}</span>`);
@@ -267,26 +286,45 @@ function exportProspectsCsv(list) {
 
 /* ------------------------------------------------------------------ finder */
 function renderAreas() {
-  const city = $('[data-finder-form] [name="city"]').value;
-  $('[data-ad-areas]').innerHTML = (LH.AREAS[city] || [])
+  const preset = presetNamed(S.finderNiche);
+  $('[data-ad-areas]').innerHTML = ((preset && preset.areas) || [])
     .map((a) => `<button type="button" class="chip ${S.areasOff.has(a) ? 'off' : 'on'}" data-area="${esc(a)}" aria-pressed="${!S.areasOff.has(a)}">${esc(a)}</button>`)
     .join('');
+}
+/** "Car: 120 of 588 searches done. The next run carries on from there." */
+async function renderPresetProgress() {
+  const el = $('[data-preset-progress]');
+  const r = await send({ type: 'finder:progress' });
+  const p = r && r.progress && r.progress[S.finderNiche];
+  if (!p) return (el.textContent = '');
+  el.innerHTML = p.done
+    ? `${esc(S.finderNiche)}: <b>${p.done}</b> of ${p.total} searches done. The next run carries on from there. <button type="button" class="linkish" data-act="finder-reset">Start over</button>`
+    : `${esc(S.finderNiche)}: ${p.total} searches (keywords × areas), none run yet.`;
+}
+function pickPreset(name) {
+  const preset = presetNamed(name) || LH.presetsFor(S.settings)[0];
+  S.finderNiche = preset.name;
+  const form = $('[data-finder-form]');
+  form.keywords.value = preset.keywords.join('\n');
+  $$('[data-ad-niche]', form).forEach((c) => c.classList.toggle('on', c.dataset.adNiche === preset.name));
+  S.areasOff.clear();
+  renderAreas();
+  renderPresetProgress();
 }
 
 function initProspects() {
   const form = $('[data-finder-form]');
   renderNicheChips();
-  $$('[data-ad-cities]').forEach((el) => (el.innerHTML = Object.keys(LH.AREAS).map((c) => `<option ${c === S.settings.adsCity ? 'selected' : ''}>${esc(c)}</option>`).join('')));
-  renderAreas();
+  pickPreset(S.finderNiche);
   $('[data-maps-mode]').textContent = S.settings.placesKey ? '(Places API)' : '(in a tab)';
 
-  form.addEventListener('click', (e) => {
+  form.addEventListener('click', async (e) => {
     const n = e.target.closest('[data-ad-niche]');
-    const niche = n && nicheNamed(n.dataset.adNiche);
-    if (niche) {
-      S.finderNiche = niche.name;
-      form.keywords.value = niche.keywords.join('\n');
-      $$('[data-ad-niche]', form).forEach((c) => c.classList.toggle('on', c === n));
+    if (n) pickPreset(n.dataset.adNiche);
+    if (e.target.closest('[data-act="finder-reset"]')) {
+      if (!confirm(`Forget which ${S.finderNiche} searches have run? The next run starts from its first keyword again.`)) return;
+      await send({ type: 'finder:reset', preset: S.finderNiche });
+      renderPresetProgress();
     }
     const a = e.target.closest('[data-area]');
     if (a) {
@@ -294,29 +332,20 @@ function initProspects() {
       renderAreas();
     }
   });
-  form.keywords.addEventListener('input', () => {
-    S.finderNiche = '';
-    $$('[data-ad-niche]', form).forEach((c) => c.classList.remove('on'));
-  });
-  form.city.addEventListener('change', () => {
-    S.areasOff.clear();
-    renderAreas();
-  });
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const err = $('[data-finder-err]');
     err.hidden = true;
     const keywords = form.keywords.value.split('\n').map((k) => k.trim()).filter(Boolean);
-    const areas = (LH.AREAS[form.city.value] || []).filter((a) => !S.areasOff.has(a));
+    const areas = ((presetNamed(S.finderNiche) || {}).areas || []).filter((a) => !S.areasOff.has(a));
     const fail = (t) => ((err.textContent = t), (err.hidden = false));
-    if (!keywords.length) return fail('Pick a niche or type a search term.');
+    if (!keywords.length) return fail('Pick a preset or type a search term.');
     if (!areas.length) return fail('Leave at least one area switched on.');
-    const res = await send({
-      type: 'finder:start',
-      config: { niche: S.finderNiche, keywords, city: form.city.value, areas, target: form.target.value },
-    });
+    const res = await send({ type: 'finder:start', config: { niche: S.finderNiche, keywords, areas, cap: form.cap.value } });
     if (!res || res.error) return fail((res && res.error) || 'Could not start the search.');
-    toast('Searching. Businesses appear below as they are found, and each one is checked in the Ad Library.');
+    toast(`Searching ${res.finder.mapsQ.length} keyword and area pairs. Businesses appear below as they are found.`);
+    renderPresetProgress();
   });
 
   // Filters, table and bulk actions.
@@ -370,7 +399,15 @@ async function prospectAction(act, b, l) {
     }
     case 'finder-stop':
       await send({ type: 'finder:stop' });
-      toast('Search stopped. Ad checks for what was found keep going.');
+      toast('Search stopped. The searches that ran are remembered, so the next run carries on from there.');
+      renderPresetProgress();
+      return true;
+    case 'finder-pause':
+      await send({ type: 'finder:pause' });
+      toast('Paused after the current search. Press Resume to carry on.');
+      return true;
+    case 'finder-resume':
+      await send({ type: 'finder:resume' });
       return true;
     case 'adcheck-pause':
     case 'adcheck-resume':

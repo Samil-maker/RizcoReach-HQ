@@ -65,6 +65,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   for (const [k, { newValue }] of Object.entries(changes)) {
     if (k.startsWith('lead:')) {
       const id = k.slice(5);
+      S.chains = null; // names seen more than once, worked out again on the next render
       if (newValue) S.leads.set(id, newValue);
       else {
         S.leads.delete(id);
@@ -90,7 +91,7 @@ const isSkipped = (l) => !LH.scriptFor(l).script; // running ads: left out of ou
 const skippedNew = (l) => isSkipped(l) && l.status === 'new' && !l.contactedAt;
 /** Those show only when asked for: the checkbox or the "Running ads" tag. */
 const skipHidden = (l, f) => skippedNew(l) && !f.skipped && f.tag !== 'Running ads';
-const tagMatch = (l, tag) => !tag || LH.leadTags(l).includes(tag);
+const tagMatch = (l, tag) => !tag || leadTags(l).includes(tag);
 
 function filtered() {
   const f = S.filters;
@@ -202,9 +203,11 @@ function contactCell(l) {
 }
 
 /* Row tags are for sorting and filtering only: the script never changes because of them. */
-const TAG_CLASS = { 'No website': 'amber', 'Site down': 'amber', 'Running ads': 'red', 'Good reviews': 'green' };
+const TAG_CLASS = { 'No website': 'amber', 'Site down': 'amber', 'Running ads': 'red', 'Good reviews': 'green', Mobile: 'green', Landline: 'amber', Corporate: 'red', Chain: 'red' };
+/** Tags need to know which business names appear more than once (chains). */
+const leadTags = (l) => LH.leadTags(l, { chains: S.chains || (S.chains = LH.chainNames([...S.leads.values()].filter((x) => x.kind === 'prospect'))) });
 const tagsHtml = (l) => {
-  const tags = LH.leadTags(l);
+  const tags = leadTags(l);
   return tags.length ? `<div class="tags">${tags.map((t) => `<span class="tag ${TAG_CLASS[t] || ''}">${esc(t)}</span>`).join('')}</div>` : '';
 };
 /** One tap: they replied. Tap again to undo (back to contacted). Meeting booked and Won are past it. */
@@ -913,25 +916,45 @@ function initHuntForm() {
   });
 }
 
-/* Settings: niches (one list for both tabs) and the two scripts. */
-function nicheRow(n = { name: '', keywords: [] }) {
-  return `<div class="niche-row" data-niche-row>
-    <input class="inp" data-niche-name value="${esc(n.name)}" placeholder="Pet groomers" aria-label="Niche name" />
-    <textarea class="inp" data-niche-kw rows="2" placeholder="dog grooming, pet salon" aria-label="Keywords, comma or one per line">${esc(n.keywords.join(', '))}</textarea>
-    <button type="button" class="btn sm ghost danger" data-act="del-niche">Delete</button>
-  </div>`;
+/* Settings: presets (one list for both tabs) and the two scripts. */
+function nicheRow(n = LH.cleanPreset({})) {
+  const list = (attr, label, items, rows) =>
+    `<label class="field"><span class="lbl">${label} <small>${items.length} · one per line</small></span><textarea class="inp" ${attr} rows="${rows}">${esc(items.join('\n'))}</textarea></label>`;
+  return `<details class="tpl preset" data-niche-row ${n.name ? '' : 'open'}>
+    <summary><b>${esc(n.name || 'New preset')}</b> <span class="muted">${n.keywords.length} keywords · ${n.areas.length} areas · ${n.minReviews} to ${n.maxReviews >= 100000 ? 'any' : n.maxReviews} reviews</span></summary>
+    <div class="grid2">
+      <label class="field"><span class="lbl">Name</span><input class="inp" data-niche-name value="${esc(n.name)}" placeholder="Pets" /></label>
+      <label class="field"><span class="lbl">In your messages <small>{{niche}}: "We help ___ in Dubai"</small></span><input class="inp" data-niche-label value="${esc(n.label)}" placeholder="pet care businesses" /></label>
+      <label class="field"><span class="lbl">Min Google reviews</span><input class="inp" type="number" min="0" data-niche-min value="${esc(n.minReviews)}" /></label>
+      <label class="field"><span class="lbl">Max Google reviews</span><input class="inp" type="number" min="0" data-niche-max value="${n.maxReviews >= 100000 ? '' : esc(n.maxReviews)}" placeholder="no limit" /></label>
+    </div>
+    <div class="grid3">${list('data-niche-kw', 'Keywords', n.keywords, 8)}${list('data-niche-ex', 'Exclude words', n.exclude, 8)}${list('data-niche-areas', 'Areas', n.areas, 8)}</div>
+    <div class="row" style="margin:0"><button type="button" class="btn sm ghost danger" data-act="del-niche">Delete preset</button></div>
+  </details>`;
 }
 function renderNicheEditor(list) {
   $('[data-niches]').innerHTML = list.map((n) => nicheRow(n)).join('');
 }
-/** null when the list is the 4 defaults (or empty), so later default changes reach it. */
-function readNiches(f) {
-  const list = $$('[data-niche-row]', f)
-    .map((r) => ({ name: $('[data-niche-name]', r).value.trim(), keywords: LH.parseKeywords($('[data-niche-kw]', r).value) }))
+function readPresetRows(f) {
+  return $$('[data-niche-row]', f)
+    .map((r) =>
+      LH.cleanPreset({
+        name: $('[data-niche-name]', r).value,
+        label: $('[data-niche-label]', r).value,
+        minReviews: $('[data-niche-min]', r).value,
+        maxReviews: $('[data-niche-max]', r).value,
+        keywords: $('[data-niche-kw]', r).value,
+        exclude: $('[data-niche-ex]', r).value,
+        areas: $('[data-niche-areas]', r).value,
+      }),
+    )
     .filter((n) => n.name);
-  const D = LH.DEFAULT_NICHES;
-  const same = list.length === D.length && list.every((n, i) => n.name === D[i].name && n.keywords.join('|') === D[i].keywords.join('|'));
-  return !list.length || same ? null : list;
+}
+/** null when the list is the defaults (or empty), so later default changes reach it. */
+function readNiches(f) {
+  const list = readPresetRows(f);
+  const D = LH.DEFAULT_PRESETS.map(LH.cleanPreset);
+  return !list.length || JSON.stringify(list) === JSON.stringify(D) ? null : list;
 }
 
 function scriptCard(key, t) {
@@ -1063,6 +1086,20 @@ function initSettings() {
     const ok = $('[data-saved]');
     ok.hidden = false;
     setTimeout(() => (ok.hidden = true), 1800);
+  });
+  // Import presets: same name replaces a preset, new names are added. Nothing is kept until Save.
+  $('[data-import-presets]').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      const { presets, skipped } = LH.presetsFromJson(await file.text());
+      const names = new Set(presets.map((p) => p.name.toLowerCase()));
+      renderNicheEditor([...readPresetRows(f).filter((p) => !names.has(p.name.toLowerCase())), ...presets]);
+      toast(`Imported ${presets.length} preset${presets.length === 1 ? '' : 's'}${skipped ? `, skipped ${skipped} without a name or keywords` : ''}. Press Save settings to keep them.`);
+    } catch (err) {
+      toast(err.message);
+    }
   });
 }
 
@@ -1429,9 +1466,11 @@ function bind() {
       }
       case 'del-niche':
         return b.closest('[data-niche-row]').remove();
+      case 'export-presets':
+        return download(`lead-hunter-presets-${new Date().toISOString().slice(0, 10)}.json`, LH.presetsToJson(readPresetRows($('[data-settings-form]'))), 'application/json');
       case 'reset-niches':
-        renderNicheEditor(LH.DEFAULT_NICHES);
-        return toast('Back to the 4 default niches. Save to keep them.');
+        renderNicheEditor(LH.DEFAULT_PRESETS.map(LH.cleanPreset));
+        return toast('Back to the 5 default presets. Save to keep them.');
       case 'reset-script': {
         const card = b.closest('[data-script-card]');
         card.outerHTML = scriptCard(b.dataset.key, LH.DEFAULT_SCRIPTS[b.dataset.key]);

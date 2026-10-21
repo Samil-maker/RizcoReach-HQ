@@ -23,20 +23,325 @@
   ];
   LH.country = (code) => LH.COUNTRIES.find((c) => c.code === code) || LH.COUNTRIES[0];
 
-  /* ------------------------------------------------------------------ Niches */
-  // One list for both tabs: Ad Library hunts (New hunt) and Google Maps searches (Meta ads).
-  // The name is written the way it reads in a message: it becomes {{niche}} in the scripts.
-  LH.DEFAULT_NICHES = [
-    { name: 'Car detailing studios', keywords: ['ceramic coating', 'paint protection film', 'car detailing', 'window tinting', 'car polishing'] },
-    { name: 'Aesthetic clinics', keywords: ['aesthetic clinic', 'laser hair removal', 'skin clinic', 'hydrafacial', 'botox clinic'] },
-    { name: 'Dental clinics', keywords: ['cosmetic dentist', 'teeth whitening', 'dental clinic', 'invisalign', 'dental veneers'] },
-    { name: 'Beauty salons', keywords: ['beauty salon', 'hair salon', 'ladies salon', 'nail salon', 'lash studio'] },
+  /* ----------------------------------------------------------------- Presets */
+  // One preset per kind of business: what to search for, what to leave out, how many Google reviews a small
+  // owner run business has, and where to look. Searches run as "{keyword} {area}". Used by both tabs.
+  // `label` is how the preset reads mid-sentence in the scripts ({{niche}}).
+  const lines = (s) => s.trim().split('\n').map((x) => x.trim()).filter(Boolean);
+  LH.AREA_LISTS = {
+    industrial: lines(`Al Quoz Industrial Area 1, Dubai
+Al Quoz Industrial Area 2, Dubai
+Al Quoz Industrial Area 3, Dubai
+Al Quoz Industrial Area 4, Dubai
+Ras Al Khor Industrial Area, Dubai
+Al Qusais Industrial Area, Dubai
+Umm Ramool, Dubai
+Dubai Investments Park, Dubai
+Jebel Ali Industrial Area, Dubai
+Al Barsha, Dubai
+Dubai Silicon Oasis, Dubai
+Sharjah Industrial Area, Sharjah
+Al Sajaa Industrial Area, Sharjah
+Muwaileh, Sharjah
+Ajman Industrial Area, Ajman
+Al Jurf, Ajman
+Mussafah, Abu Dhabi
+Mohammed Bin Zayed City, Abu Dhabi
+Ras Al Khaimah
+Umm Al Quwain
+Fujairah`),
+    residential: lines(`Dubai Marina, Dubai
+JLT, Dubai
+Business Bay, Dubai
+Downtown Dubai, Dubai
+DIFC, Dubai
+Al Barsha, Dubai
+Barsha Heights, Dubai
+Jumeirah, Dubai
+Umm Suqeim, Dubai
+Al Wasl, Dubai
+Al Safa, Dubai
+Al Quoz, Dubai
+Dubai Hills, Dubai
+Arabian Ranches, Dubai
+Motor City, Dubai
+Dubai Sports City, Dubai
+JVC, Dubai
+Al Furjan, Dubai
+Damac Hills, Dubai
+Town Square, Dubai
+Dubai Silicon Oasis, Dubai
+Mirdif, Dubai
+Al Warqa, Dubai
+Al Nahda, Dubai
+Al Qusais, Dubai
+Al Karama, Dubai
+Al Majaz, Sharjah
+Al Khan, Sharjah
+Al Nahda, Sharjah
+Al Taawun, Sharjah
+Muwaileh, Sharjah
+Aljada, Sharjah
+Al Nuaimiya, Ajman
+Al Rashidiya, Ajman
+Al Reem Island, Abu Dhabi
+Saadiyat Island, Abu Dhabi
+Yas Island, Abu Dhabi
+Al Raha, Abu Dhabi
+Khalifa City, Abu Dhabi
+Al Khalidiyah, Abu Dhabi
+Al Mushrif, Abu Dhabi
+Ras Al Khaimah
+Fujairah`),
+    business: lines(`Business Bay, Dubai
+Deira, Dubai
+Bur Dubai, Dubai
+Al Karama, Dubai
+Port Saeed, Dubai
+Al Garhoud, Dubai
+Oud Metha, Dubai
+Al Barsha, Dubai
+Barsha Heights, Dubai
+JLT, Dubai
+Al Qusais, Dubai
+Dubai Silicon Oasis, Dubai
+Al Majaz, Sharjah
+Al Qasimia, Sharjah
+Al Taawun, Sharjah
+Al Khan, Sharjah
+SAIF Zone, Sharjah
+Al Nuaimiya, Ajman
+Al Khalidiyah, Abu Dhabi
+Al Zahiyah, Abu Dhabi
+Hamdan Street, Abu Dhabi
+Khalifa City, Abu Dhabi
+Mussafah, Abu Dhabi
+Ras Al Khaimah
+Fujairah`),
+  };
+  LH.DEFAULT_PRESETS = [
+    {
+      name: 'Car',
+      label: 'car detailing and protection studios',
+      minReviews: 5,
+      maxReviews: 150,
+      keywords: lines(`ppf
+paint protection film
+ppf installation
+ceramic coating
+nano ceramic coating
+graphene coating
+car detailing studio
+car detailing
+auto detailing
+paint correction
+car polishing
+window tinting
+car tinting
+window film
+car wrap
+vehicle wrapping
+vinyl wrap
+color change wrap
+chrome delete
+starlight headliner
+ambient lighting car
+car interior customization
+car upholstery
+custom car interior
+car modification
+off road modification
+car audio installation
+body kit installation`),
+      // "category:" words are checked against the Google category only: many real studios are called "... Garage".
+      exclude: lines(`car wash
+hand wash
+steam wash
+laundry
+tyre
+tire
+category: garage
+mechanic
+auto repair
+spare parts
+rent a car
+car rental
+recovery
+towing
+battery
+oil change
+petrol station
+used cars
+category: showroom`),
+      areas: LH.AREA_LISTS.industrial,
+    },
+    {
+      name: 'Fitness',
+      label: 'gyms and fitness studios',
+      minReviews: 5,
+      maxReviews: 50,
+      keywords: lines(`boxing gym
+boxing club
+kickboxing gym
+muay thai gym
+mma gym
+martial arts gym
+martial arts school
+jiu jitsu gym
+bjj academy
+brazilian jiu jitsu
+krav maga
+self defense classes
+crossfit gym
+crossfit box
+hyrox gym
+functional training gym
+strength and conditioning gym
+personal training studio
+private gym
+ladies gym
+women only gym
+pilates studio
+reformer pilates
+yoga studio
+hot yoga
+aerial yoga
+barre studio
+spin studio
+indoor cycling studio
+bootcamp fitness`),
+      exclude: lines(`Fitness First
+GymNation
+Gold's Gym
+UFC Gym
+Barry's
+1Rebel
+hotel
+resort
+spa
+swimming
+football
+tennis
+padel
+physiotherapy
+clinic
+nursery`),
+      areas: LH.AREA_LISTS.residential,
+    },
+    {
+      name: 'Pets',
+      label: 'pet care businesses',
+      minReviews: 5,
+      maxReviews: 50,
+      keywords: lines(`dog trainer
+dog training
+puppy training
+dog behaviourist
+obedience training
+pet boarding
+dog boarding
+cat boarding
+pet hotel
+dog hotel
+dog daycare
+pet daycare
+pet grooming
+mobile pet grooming
+dog grooming
+cat grooming
+pet spa
+pet relocation
+pet transport
+pet taxi`),
+      exclude: lines(`veterinary
+vet clinic
+animal hospital
+pet clinic
+pet shop
+pet store
+pet food
+pet supplies
+aquarium`),
+      areas: [...LH.AREA_LISTS.residential, 'Umm Ramool, Dubai', 'Dubai Investments Park, Dubai', 'Mussafah, Abu Dhabi'],
+    },
+    {
+      name: 'Accountants',
+      label: 'accounting firms',
+      minReviews: 0, // small firms get few reviews
+      maxReviews: 50,
+      keywords: lines(`accounting firm
+accounting services
+accountant
+chartered accountants
+bookkeeping services
+bookkeeping company
+accounting and bookkeeping
+audit firm
+auditors
+tax consultant
+tax agent
+FTA tax agent
+VAT consultant
+VAT registration
+corporate tax consultant
+corporate tax registration
+e-invoicing consultant
+e-invoicing services
+payroll services
+virtual CFO
+CFO services`),
+      exclude: lines(`Deloitte
+PwC
+EY
+KPMG
+Grant Thornton
+BDO
+RSM
+Crowe
+Baker Tilly
+Mazars
+business setup
+company formation
+typing
+bank
+exchange
+insurance
+real estate`),
+      areas: LH.AREA_LISTS.business,
+    },
+    {
+      name: 'Used Cars',
+      label: 'used car showrooms',
+      minReviews: 5,
+      maxReviews: 150,
+      keywords: lines(`used car showroom
+used car dealer
+used cars trading
+motors trading
+pre owned cars
+second hand cars
+luxury used cars
+car showroom`),
+      exclude: lines(`rent a car
+rental
+leasing
+garage
+spare parts
+wash`),
+      areas: lines(`Souq Al Haraj, Sharjah
+Al Aweer, Dubai
+Ras Al Khor, Dubai
+Sheikh Zayed Road, Dubai
+Mussafah, Abu Dhabi`),
+    },
   ];
-  // Niche names stored on prospects by earlier versions.
+  LH.DEFAULT_NICHES = LH.DEFAULT_PRESETS;
+  // Niche names stored on leads by earlier versions.
   LH.LEGACY_NICHES = {
-    'Car detailing & PPF': 'Car detailing studios',
-    'Aesthetic clinics': 'Aesthetic clinics',
-    'Boutique fitness (Oct–Jan)': 'Fitness studios',
+    'Car detailing & PPF': 'Car',
+    'Car detailing studios': 'Car',
+    'Boutique fitness (Oct–Jan)': 'Fitness',
+    'Fitness studios': 'Fitness',
     'AC servicing (from late Jan)': 'AC service companies',
   };
 
@@ -49,29 +354,112 @@
     ),
   ];
 
-  /** The niches in use: the ones edited in Settings, or the four defaults. */
+  /** Lines from a textarea (or a list): trimmed, empty ones and repeats dropped, order kept. */
+  LH.parseLines = (v) => [...new Set((Array.isArray(v) ? v : String(v || '').split('\n')).map((x) => String(x).trim()).filter(Boolean))];
+  const reviewBound = (v, d) => (v === '' || v == null || !Number.isFinite(Number(v)) ? d : Math.max(0, Math.round(Number(v))));
+  /** One preset with every field in shape. Presets saved by older versions (name and keywords only) get no areas. */
+  LH.cleanPreset = (n) => ({
+    name: String((n && n.name) || '').trim().slice(0, 80),
+    label: String((n && n.label) || '').trim().slice(0, 120),
+    minReviews: reviewBound(n && n.minReviews, 0),
+    maxReviews: reviewBound(n && n.maxReviews, 100000),
+    keywords: LH.parseKeywords(n && n.keywords),
+    exclude: LH.parseLines(n && n.exclude).slice(0, 200),
+    areas: LH.parseLines(n && n.areas).slice(0, 300),
+  });
+  /** The presets in use: the ones edited in Settings, or the defaults. Lists saved before presets had areas are replaced by the defaults. */
   LH.nichesFor = (settings) => {
-    const list = ((settings && Array.isArray(settings.niches) && settings.niches) || [])
-      .map((n) => ({ name: String((n && n.name) || '').trim().slice(0, 80), keywords: LH.parseKeywords(n && n.keywords) }))
-      .filter((n) => n.name);
-    return list.length ? list : LH.DEFAULT_NICHES;
+    const saved = (settings && Array.isArray(settings.niches) && settings.niches) || [];
+    const list = saved.filter((n) => n && n.areas != null).map(LH.cleanPreset).filter((n) => n.name);
+    return list.length ? list : LH.DEFAULT_PRESETS.map(LH.cleanPreset);
   };
+  LH.presetsFor = LH.nichesFor;
 
-  /** How a niche name reads mid-sentence: "Car detailing studios" -> "car detailing studios", "AC companies" stays. */
-  LH.nicheText = (name) => {
-    const s = String(name || '').trim();
+  /** How a preset reads mid-sentence: its label, else its name in lower case ("AC companies" stays). */
+  LH.nicheText = (name, settings) => {
+    const preset = LH.nichesFor(settings || {}).find((n) => n.name === name);
+    const s = String((preset && preset.label) || name || '').trim();
     const first = s.split(/\s+/)[0];
     if (!s || (first.length > 1 && first === first.toUpperCase() && /[A-Z]/.test(first))) return s;
     return s.charAt(0).toLowerCase() + s.slice(1);
+  };
+
+  /* Exclude words match whole words, ignoring capitals: "EY" never drops "Key Motors", "spa" never drops "Spartan Gym". */
+  const plain = (s) => String(s || '').replace(/[’‘`´]/g, "'");
+  const wordRe = (w) => new RegExp(`(^|[^\\p{L}\\p{N}])${plain(w).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=$|[^\\p{L}\\p{N}])`, 'iu');
+  /** The exclude word that drops a business, or ''. A "category: word" line only looks at the Google category. */
+  LH.excludeHit = (preset, name, category) => {
+    for (const raw of (preset && preset.exclude) || []) {
+      const only = raw.match(/^category\s*:\s*(.+)$/i);
+      const word = (only ? only[1] : raw).trim();
+      if (!word) continue;
+      const re = wordRe(word);
+      if (re.test(plain(category)) || (!only && re.test(plain(name)))) return raw;
+    }
+    return '';
+  };
+  /** Within the preset's review range? Listings with no reviews count as 0. */
+  LH.reviewsOk = (preset, reviews) => {
+    const n = Number(reviews) || 0;
+    return !preset || (n >= (preset.minReviews || 0) && n <= (preset.maxReviews ?? Infinity));
+  };
+
+  const EMIRATES = ['Dubai', 'Abu Dhabi', 'Sharjah', 'Ajman', 'Umm Al Quwain', 'Ras Al Khaimah', 'Fujairah', 'Al Ain'];
+  /** "Al Nahda, Sharjah" -> "Sharjah", "Fujairah" -> "Fujairah", "Al Quoz" (older leads) -> the fallback. */
+  LH.cityOf = (area, fallback = 'Dubai') => {
+    const a = String(area || '').trim();
+    const last = (a.includes(',') ? a.split(',').pop() : a).trim().toLowerCase();
+    return EMIRATES.find((e) => e.toLowerCase() === last) || fallback;
+  };
+
+  /** The name a business has in every branch: "Gloss Garage - JLT Branch" and "Gloss Garage Al Quoz" both -> "gloss garage". */
+  const PLACE_WORDS = () =>
+    (LH._placeWords =
+      LH._placeWords ||
+      [...new Set([...Object.values(LH.AREA_LISTS).flat().map((a) => a.split(',')[0]), ...Object.values(LH.AREAS || {}).flat(), ...EMIRATES, 'UAE', 'branch', 'br'])]
+        .map((w) => w.toLowerCase())
+        .sort((a, b) => b.length - a.length));
+  LH.chainKey = (name) => {
+    let s = ` ${LH.shortName(name).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ')} `;
+    for (const w of PLACE_WORDS()) s = s.split(` ${w.replace(/[^\p{L}\p{N}]+/gu, ' ')} `).join(' ');
+    return s.replace(/\s+/g, ' ').trim();
+  };
+  /** Names that appear on more than one lead, as chain keys. */
+  LH.chainNames = (leads) => {
+    const count = new Map();
+    for (const l of leads || []) {
+      const k = l && LH.chainKey(l.pageName);
+      if (k && k.length > 2) count.set(k, (count.get(k) || 0) + 1);
+    }
+    return new Set([...count].filter(([, n]) => n > 1).map(([k]) => k));
+  };
+  /** A chain: the same name more than once, "branch" in the name, or several Maps listings merged into it. */
+  LH.isChain = (lead, chains) =>
+    !!lead && (/\bbranch\b|فرع/i.test(lead.pageName || '') || (((lead.sources || {}).maps || {}).otherListings || []).length > 0 || (lead.branchCount || 0) > 1 || !!(chains && chains.has(LH.chainKey(lead.pageName))));
+
+  /** Presets as a JSON file and back. Import keeps only well formed presets and says how many it skipped. */
+  LH.presetsToJson = (list) => JSON.stringify({ app: 'lead-hunter', kind: 'presets', version: 1, presets: list.map(LH.cleanPreset) }, null, 2);
+  LH.presetsFromJson = (text) => {
+    let data;
+    try {
+      data = JSON.parse(String(text || ''));
+    } catch {
+      throw new Error('That file is not valid JSON.');
+    }
+    const raw = Array.isArray(data) ? data : data && Array.isArray(data.presets) ? data.presets : null;
+    if (!raw) throw new Error('No presets in that file.');
+    const presets = raw.map((n) => LH.cleanPreset({ areas: [], ...n })).filter((n) => n.name && n.keywords.length);
+    if (!presets.length) throw new Error('No presets with a name and keywords in that file.');
+    return { presets, skipped: raw.length - presets.length };
   };
 
   /** A lead's niche name: its stored niche (old names mapped), else the niche its keywords belong to, else ''. */
   LH.nicheOf = (lead, settings) => {
     const niches = LH.nichesFor(settings);
     const raw = String((lead && lead.niche) || '').trim();
-    if (LH.LEGACY_NICHES[raw]) return LH.LEGACY_NICHES[raw];
     const named = raw && niches.find((n) => n.name.toLowerCase() === raw.toLowerCase());
-    if (named) return named.name;
+    if (named) return named.name; // a preset of that name wins over an old name it was renamed from
+    if (LH.LEGACY_NICHES[raw]) return LH.LEGACY_NICHES[raw];
     const kws = LH.parseKeywords([...((lead && lead.keywords) || []), raw]);
     const byKeyword =
       niches.find((n) => n.keywords.some((k) => kws.includes(k))) || niches.find((n) => n.keywords.some((k) => kws.some((x) => x.includes(k))));
@@ -297,11 +685,26 @@
         /* already has the country code, just without a plus */
       } else if (d.startsWith('0') && dial) d = dial + d.slice(1);
       else if (dial === '971' && /^800\d{3,8}$/.test(d)) return d; // UAE toll-free stays local
+      else if (dial === '971' && /^600\d{6}$/.test(d)) d = '971' + d; // UAE 600 numbers (company call centres)
       else if (dial === '971' && /^5\d{8}$/.test(d)) d = '971' + d;
     }
     if (d.length < 8 || d.length > 15) return null;
     if (/^(\d)\1+$/.test(d)) return null;
     return '+' + d;
+  };
+
+  /** UAE numbers: 05x mobile, 02 03 04 06 07 09 landline, 600 and 800 corporate. '' when it is not a UAE number. */
+  LH.phoneType = (number) => {
+    const d = String(number || '').replace(/\D/g, '');
+    if (/^9715\d{8}$/.test(d)) return 'mobile';
+    if (/^971600\d{6}$/.test(d) || /^800\d{3,8}$/.test(d) || /^971800\d+$/.test(d)) return 'corporate';
+    if (/^971[234679]\d{7}$/.test(d)) return 'landline';
+    return '';
+  };
+  /** A lead's phone type: mobile when it has a mobile number at all, else landline, else corporate. */
+  LH.leadPhoneType = (lead) => {
+    const types = ((lead && lead.phones) || []).map((p) => LH.phoneType(p.number));
+    return ['mobile', 'landline', 'corporate'].find((t) => types.includes(t)) || '';
   };
 
   LH.isLikelyMobile = (e164) => {
@@ -499,9 +902,12 @@
     return { rating: m.rating || pl.rating || 0, reviews: m.reviews || pl.reviews || 0, known: !!(m.placeId || pl.match) };
   };
   /** Row tags, for sorting and filtering only (they never change the message). */
-  LH.leadTags = (lead) => {
+  LH.leadTags = (lead, ctx = {}) => {
     if (!lead) return [];
     const tags = [];
+    const phone = LH.leadPhoneType(lead);
+    if (phone) tags.push(phone.charAt(0).toUpperCase() + phone.slice(1));
+    if (lead.kind === 'prospect' && LH.isChain(lead, ctx.chains)) tags.push('Chain');
     if (!lead.website) tags.push('No website');
     else if (LH.siteDown(lead)) tags.push('Site down');
     if (!LH.scriptFor(lead).script) tags.push('Running ads');
@@ -556,8 +962,8 @@
     return {
       // No name: their Instagram handle or domain. pitchFor writes "Hello there" and "your business" when there is neither.
       business: LH.shortName(l.pageName) || LH.igHandle(l) || LH.domainOf(l.website || ''),
-      niche: niche ? LH.nicheText(niche) : 'businesses',
-      city: settings.adsCity || 'Dubai',
+      niche: niche ? LH.nicheText(niche, settings) : 'businesses',
+      city: LH.cityOf(l.area, settings.adsCity || 'Dubai'),
       found_on: l.kind !== 'prospect' ? 'Facebook and Instagram' : ig.username && !m.placeId ? 'Instagram' : 'Google Maps',
       website_line: LH.siteDown(l) ? "your website wasn't loading when I checked" : "couldn't find a website for you",
       my_name: settings.myName || '',

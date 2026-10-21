@@ -34,8 +34,8 @@ export const PLACES_PAGE_2 = [
 /* -------------------------------------------- Google Maps page (Aesthetic clinics) */
 const card = (dataId, name, o = {}) => `<div class="Nv2PK" role="article" aria-label="${name}">
   <a class="hfpxzc" aria-label="${name}" href="/maps/place/${encodeURIComponent(name)}/data=!4m7!3m6!1s${dataId}!8m2!3d25.07!4d55.14!16s%2Fg%2F11x!19sChIJ${dataId.slice(-3)}?authuser=0&amp;hl=en"></a>
-  <div class="qBF1Pd">${name}</div><span class="MW4etd">${o.rating || '4.8'}</span><span class="UY7F9">(${o.reviews || 210})</span>
-  <div class="W4Efsd"><span>Medical spa</span> · <span>Cluster X, JLT</span></div>
+  <div class="qBF1Pd">${name}</div><span class="MW4etd">${o.rating || '4.8'}</span><span class="UY7F9">(${o.reviews ?? 210})</span>
+  <div class="W4Efsd"><span>${o.category || 'Medical spa'}</span> · <span>${o.street || 'Cluster X, JLT'}</span></div>
   <div class="W4Efsd">Open · Closes 9 pm${o.phone ? ` · <span class="UsdlK">${o.phone}</span>` : ''}</div>
   ${o.website ? `<a data-value="Website" href="${o.website}">Website</a>` : ''}
 </div>`;
@@ -51,7 +51,50 @@ function placeArray(dataId, name, o) {
   a[178] = o.phone ? [[o.phone, []]] : null;
   return a;
 }
+/* The four searches from the brief, each with businesses every filter should keep or drop. */
+export const PRESET_SEARCHES = {
+  'ppf Al Quoz Industrial Area 3, Dubai': [
+    ['Gloss Garage', { category: 'Car detailing service', reviews: 42, phone: '050 111 2201' }], // kept · mobile · chain
+    ['Gloss Garage - JLT Branch', { category: 'Car detailing service', reviews: 18, phone: '04 111 2202' }], // kept · landline · chain
+    ['Speedy Car Wash & Polish', { category: 'Car wash', reviews: 60 }], // excluded: car wash
+    ['Al Quoz Tyres', { category: 'Tire shop', reviews: 30 }], // excluded: tyre
+    ['Joe Auto Garage', { category: 'Garage', reviews: 25 }], // excluded: category garage
+    ['Mega Detailing Hub', { category: 'Car detailing service', reviews: 980 }], // too many reviews
+    ['New Tint Studio', { category: 'Window tinting service', reviews: 2 }], // too few
+    ['Shield PPF Center', { category: 'Car detailing service', reviews: 150, phone: '600 52 2222' }], // kept · corporate
+  ],
+  'boxing gym Al Nahda, Sharjah': [
+    ['Iron Fist Boxing', { category: 'Boxing gym', reviews: 23, phone: '052 222 3301' }], // kept
+    ['Fitness First Sahara Centre', { category: 'Gym', reviews: 40 }], // excluded: brand
+    ['Knockout Club', { category: 'Boxing gym', reviews: 310 }], // too many
+    ['Spartan Boxing Sharjah', { category: 'Gym', reviews: 12, phone: '06 555 1234' }], // kept: "spa" is not "Spartan"
+    ['Al Nahda Swimming Academy', { category: 'Swimming school', reviews: 15 }], // excluded: swimming
+  ],
+  'dog trainer Al Barsha, Dubai': [
+    ['Happy Paws Training', { category: 'Dog trainer', reviews: 14, phone: '055 333 4401' }], // kept
+    ['Barsha Vet Clinic', { category: 'Veterinarian', reviews: 40 }], // excluded: vet clinic
+    ['Pet Corner Pet Shop', { category: 'Pet store', reviews: 25 }], // excluded: pet shop
+    ['K9 Academy', { category: 'Dog trainer', reviews: 3 }], // too few
+  ],
+  'accounting firm Business Bay, Dubai': [
+    ['Al Noor Accounting', { category: 'Accountant', reviews: 0, phone: '058 444 5501' }], // kept: no minimum
+    ['KPMG Lower Gulf', { category: 'Accountant', reviews: 45 }], // excluded: brand
+    ['Key Ledger Bookkeeping', { category: 'Bookkeeping service', reviews: 12, phone: '04 444 5502' }], // kept: "EY" is not "Key"
+    ['Swift Business Setup', { category: 'Business management consultant', reviews: 30 }], // excluded: business setup
+    ['Prime Audit Partners', { category: 'Accountant', reviews: 120 }], // too many
+  ],
+};
+function presetMapsPage(query) {
+  const list = PRESET_SEARCHES[query];
+  const id = (i) => `0x${(Object.keys(PRESET_SEARCHES).indexOf(query) + 7).toString(16)}${i}:0xb${i}`;
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${query} - Google Maps</title></head><body>
+<div role="feed" aria-label="Results for ${query}" style="height:500px;overflow:auto"><div id="cards">
+${list.map(([name, o], i) => card(id(i), name, { street: query.split(' ').slice(-3).join(' '), ...o })).join('\n')}
+</div><span class="HlvSq">You\u2019ve reached the end of the list.</span></div></body></html>`;
+}
+
 export function mapsPage(query) {
+  if (PRESET_SEARCHES[query]) return presetMapsPage(query);
   return `<!doctype html><html><head><meta charset="utf-8"><title>${query} - Google Maps</title></head><body>
 <div role="feed" aria-label="Results for ${query}" style="height:500px;overflow:auto">
   <div id="cards">

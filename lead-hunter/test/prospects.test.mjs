@@ -66,7 +66,7 @@ test('Meta ads prospects: the script follows the website and the ad check, and c
   }
   const none = LH.pitchFor({ ...p, adCheck: { state: 'none' } }, settings);
   assert.equal(none.script, 'ads');
-  assert.match(none.bubbles[1], /We help car detailing studios in Dubai/);
+  assert.match(none.bubbles[1], /We help car detailing and protection studios in Dubai/);
   assert.equal(LH.pitchFor({ ...p, adCheck: { state: 'unclear' } }, settings).tag, 'Ad check not done');
   assert.equal(LH.pitchFor({ ...p, adCheck: { state: 'running' } }, settings).script, null, 'running ads with a website: skipped');
   const noSite = LH.pitchFor({ ...p, website: null, adCheck: { state: 'running' } }, settings);

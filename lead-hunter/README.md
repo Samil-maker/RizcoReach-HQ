@@ -226,11 +226,30 @@ The **Meta ads** tab finds businesses to sell Meta ads to. It does not start
 from the Ad Library on purpose: a business that is already advertising will
 just say "I already run ads". Instead it works in three steps.
 
-1. **Finds businesses on Google Maps** for a niche and the areas you tick
-   (for example "ceramic coating in Al Quoz, Dubai"). Dubai has 74 areas and
-   Abu Dhabi 28, searched with the central and established areas first, and
-   each search stops at the number of new businesses you ask for (150 by
-   default):
+1. **Finds businesses on Google Maps** for a **preset** (Car, Fitness, Pets,
+   Accountants, Used Cars, or your own). Each preset has keywords, exclude
+   words, a Google review range and an area list, all edited in Settings (one
+   item per line) and importable or exportable as JSON. A run works through
+   every keyword × area pair in order, searched as "{keyword} {area}" (for
+   example "ppf Al Quoz Industrial Area 3, Dubai"), one at a time:
+   - **Searches this run** caps a run (100 by default). Pause, Resume and
+     Stop are on the progress bar. Finished pairs are remembered per preset,
+     so the next run carries on where the last one stopped (**Start over**
+     forgets them).
+   - **Filters while it searches:** the review count is read from the results
+     list, so a listing outside the preset's range is never opened or saved.
+     A business whose name or Google category has an exclude word is dropped
+     too (whole words only; a `category: word` line only checks the
+     category). The progress bar shows the before and after of every run:
+     *"8 found → 3 kept · 1 under 5 reviews · 1 over 150 reviews · 3 excluded
+     words"*.
+   - **Tags on every lead:** Mobile, Landline or Corporate (600 and 800
+     numbers) from its phone, and Chain when the same name appears more than
+     once, the name says "branch", or Maps lists it more than once. **Mobile
+     only** and **Hide chains** filter them.
+   - The script's `{{niche}}` is the preset's "In your messages" wording and
+     `{{city}}` comes from the lead's area ("Al Nahda, Sharjah" reads as
+     Sharjah).
    - with a **Places API key** (Settings) the search runs in the background,
      up to 60 businesses per search term and area;
    - **without a key**, Lead Hunter opens Google Maps in a tab, scrolls the

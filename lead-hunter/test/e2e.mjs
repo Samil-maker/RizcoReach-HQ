@@ -14,7 +14,7 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { makeAd, searchResponse, memStore } from './fixtures.mjs';
-import { metaHandler, checkLog } from './meta-fixtures.mjs';
+import { metaHandler, checkLog, PRESET_SEARCHES } from './meta-fixtures.mjs';
 import { handle as queueHandle } from '../../netlify/functions/lead-queue.mts';
 import { handle as emailHandle } from '../../netlify/functions/email-queue.mts';
 
@@ -278,7 +278,7 @@ try {
   await dash.click('[data-view="settings"]');
   await dash.fill('[name="myName"]', 'Samil');
   await dash.fill('[name="scrollDelayMs"]', '900');
-  assert.equal(await dash.$$eval('[data-niche-row]', (r) => r.length), 4, 'the 4 default niches');
+  assert.equal(await dash.$$eval('[data-niche-row]', (r) => r.length), 5, 'the 5 default presets');
   assert.equal(await dash.$$eval('[data-script-card]', (r) => r.length), 2, 'two scripts');
   assert.equal(await dash.inputValue('[name="bubbles"]'), '3');
   assert.ok(await dash.isVisible('[data-email-nokey]'), 'the email sender needs the queue key first');
@@ -292,12 +292,22 @@ try {
     "I came across {{business}} on {{found_on}} and {{website_line}}.\n\nWe build simple websites for {{niche}} in {{city}} that turn visitors into WhatsApp inquiries.\n\nIf this sounds interesting I'd be happy to send you a free mockup of how yours could look.",
   );
   await dash.click('[data-act="add-niche"]');
-  await dash.fill('[data-niche-row]:last-child [data-niche-name]', 'Pet groomers');
-  await dash.fill('[data-niche-row]:last-child [data-niche-kw]', 'dog grooming, Pet Salon');
+  const newPreset = '[data-niche-row]:last-child';
+  await dash.fill(`${newPreset} [data-niche-name]`, 'Pet groomers');
+  await dash.fill(`${newPreset} [data-niche-label]`, 'pet groomers');
+  await dash.fill(`${newPreset} [data-niche-min]`, '3');
+  await dash.fill(`${newPreset} [data-niche-kw]`, 'dog grooming\nPet Salon\n\n');
+  await dash.fill(`${newPreset} [data-niche-ex]`, 'vet clinic');
+  await dash.fill(`${newPreset} [data-niche-areas]`, 'Al Barsha, Dubai\nJLT, Dubai');
   await dash.click('[data-settings-form] button[type="submit"]');
   await waitFor(async () => (await storage('settings')).settings.myName === 'Samil', 5000, 'settings saved');
   const saved = (await storage('settings')).settings;
-  assert.deepEqual(saved.niches[4], { name: 'Pet groomers', keywords: ['dog grooming', 'pet salon'] });
+  assert.equal(saved.niches.length, 6, 'the 5 presets and the new one');
+  assert.deepEqual(saved.niches[5], { name: 'Pet groomers', label: 'pet groomers', minReviews: 3, maxReviews: 100000, keywords: ['dog grooming', 'pet salon'], exclude: ['vet clinic'], areas: ['Al Barsha, Dubai', 'JLT, Dubai'] });
+  // Export presets: the same list as a JSON file.
+  const [presetsDl] = await Promise.all([dash.waitForEvent('download'), dash.click('[data-act="export-presets"]')]);
+  const exported = JSON.parse(fs.readFileSync(await presetsDl.path(), 'utf8'));
+  assert.deepEqual(exported.presets.map((x) => x.name), ['Car', 'Fitness', 'Pets', 'Accountants', 'Used Cars', 'Pet groomers']);
   assert.ok(!('adsOffer' in saved) && !('templates' in saved) && !('adTemplates' in saved), 'old settings are gone');
   if (SHOTS) {
     await dash.$eval('#outreach', (el) => el.scrollIntoView());
@@ -307,11 +317,22 @@ try {
   await dash.click('[data-view="ads"]');
   await dash.click('[data-ad-niche="Pet groomers"]');
   assert.equal(await dash.inputValue('[data-finder-form] [name="keywords"]'), 'dog grooming\npet salon');
-  assert.deepEqual(await dash.$$eval('[data-ad-niche]', (c) => c.map((x) => x.textContent)), ['Car detailing studios', 'Aesthetic clinics', 'Dental clinics', 'Beauty salons', 'Pet groomers']);
+  assert.deepEqual(await dash.$$eval('[data-ad-niche]', (c) => c.map((x) => x.textContent)), ['Car', 'Fitness', 'Pets', 'Accountants', 'Used Cars', 'Pet groomers']);
+  assert.deepEqual(await dash.$$eval('[data-ad-areas] [data-area]', (c) => c.map((x) => x.textContent)), ['Al Barsha, Dubai', 'JLT, Dubai'], 'the preset areas');
   await dash.click('[data-view="hunt"]');
   assert.ok(await dash.$('[data-preset="Pet groomers"]'), 'New hunt chips too');
-  await dash.click('[data-preset="Dental clinics"]');
-  assert.match(await dash.inputValue('[data-hunt-form] [name="keywords"]'), /^cosmetic dentist\nteeth whitening/);
+  // The rest of this test was written for two filter free niches: put them first, ahead of the 5 presets.
+  const open = { exclude: [], minReviews: 0, maxReviews: 100000 };
+  await sw.evaluate(async (extra) => {
+    const { settings } = await chrome.storage.local.get('settings');
+    await chrome.storage.local.set({ settings: { ...settings, niches: [...extra, ...settings.niches] } });
+  }, [
+    { name: 'Car detailing studios', label: 'car detailing studios', keywords: ['ceramic coating', 'paint protection film', 'car detailing', 'window tinting', 'car polishing'], areas: ['Al Quoz'], ...open },
+    { name: 'Aesthetic clinics', label: 'aesthetic clinics', keywords: ['aesthetic clinic', 'laser hair removal'], areas: ['JLT'], ...open },
+  ]);
+  await dash.waitForSelector('[data-preset="Accountants"]');
+  await dash.click('[data-preset="Accountants"]');
+  assert.match(await dash.inputValue('[data-hunt-form] [name="keywords"]'), /^accounting firm\naccounting services/);
 
   // Start a hunt from the dashboard.
   await dash.fill('[data-hunt-form] [name="keywords"]', 'car detailing\nceramic coating');
@@ -385,7 +406,7 @@ try {
   assert.match(await dash.textContent('[data-count]'), /16 skipped \(running ads with a website\)/);
   assert.equal(await dash.textContent(`tr[data-id="${by('Parked Polish').id}"] .tags`), 'Site down');
   assert.equal(await dash.textContent(`tr[data-id="${by('Broken Buff').id}"] .tags`), 'Site down');
-  assert.equal(await dash.textContent(`tr[data-id="${wa.id}"] .tags`), 'No website');
+  assert.deepEqual(await dash.$$eval(`tr[data-id="${wa.id}"] .tags .tag`, (t) => t.map((x) => x.textContent)), ['Mobile', 'No website'], 'phone type first');
   if (SHOTS) await dash.screenshot({ path: `${SHOTS}/3-leads.png` });
   // The website filter: no website, or a site that is down. Nothing else (those would only match skipped leads).
   assert.deepEqual(await dash.$$eval('[data-f="site"] option', (o) => o.map((x) => x.value)), ['', 'none', 'down']);
@@ -991,6 +1012,71 @@ try {
   assert.ok(!emailStore.peek().items.some((i) => i.id === adsId));
   await dash.click('[data-ads-bulk] [data-act="bulk-clear"]');
 
+  /* ----------------------- Presets: the four searches from the brief, before and after the filters */
+  // Meta ads tab, no Places key: each search reads the Maps results list only; failing listings are never opened.
+  const runPreset = async (niche, keyword, area, cap = 100) => {
+    const r = await sw.evaluate((c) => startFinder(c).then((f) => ({ id: f.id })).catch((e) => ({ error: e.message })), { niche, keywords: [keyword], areas: [area], cap });
+    if (r.error) return r;
+    return waitFor(async () => {
+      const { finder } = await storage('finder');
+      return finder && finder.id === r.id && !['running', 'paused'].includes(finder.status) ? finder : null;
+    }, 90000, `${niche} search`);
+  };
+  const briefStats = {};
+  const briefRuns = [['Car', 'ppf', 'Al Quoz Industrial Area 3, Dubai'], ['Fitness', 'boxing gym', 'Al Nahda, Sharjah'], ['Pets', 'dog trainer', 'Al Barsha, Dubai'], ['Accountants', 'accounting firm', 'Business Bay, Dubai']];
+  for (const [niche, kw, area] of briefRuns) {
+    const f = await runPreset(niche, kw, area);
+    const { found, kept, fewReviews, manyReviews, excluded, duplicate } = f.stats;
+    briefStats[`${kw} ${area}`] = { found, kept, fewReviews, manyReviews, excluded, duplicate };
+  }
+  console.log('preset searches (found -> kept):', JSON.stringify(briefStats));
+  assert.deepEqual(briefStats, {
+    'ppf Al Quoz Industrial Area 3, Dubai': { found: 8, kept: 3, fewReviews: 1, manyReviews: 1, excluded: 3, duplicate: 0 },
+    'boxing gym Al Nahda, Sharjah': { found: 5, kept: 2, fewReviews: 0, manyReviews: 1, excluded: 2, duplicate: 0 },
+    'dog trainer Al Barsha, Dubai': { found: 4, kept: 1, fewReviews: 1, manyReviews: 0, excluded: 2, duplicate: 0 },
+    'accounting firm Business Bay, Dubai': { found: 5, kept: 2, fewReviews: 0, manyReviews: 1, excluded: 2, duplicate: 0 },
+  });
+  const keptNames = (await prospectsNow()).filter((l) => ['Car', 'Fitness', 'Pets', 'Accountants'].includes(l.niche)).map((l) => l.pageName).sort();
+  assert.deepEqual(keptNames, ['Al Noor Accounting', 'Gloss Garage', 'Gloss Garage - JLT Branch', 'Happy Paws Training', 'Iron Fist Boxing', 'Key Ledger Bookkeeping', 'Shield PPF Center', 'Spartan Boxing Sharjah']);
+  for (const kept of keptNames) assert.ok(Object.values(PRESET_SEARCHES).flat().some(([n]) => n === kept));
+  const gp = (await prospectsNow()).find((l) => l.pageName === 'Gloss Garage');
+  assert.deepEqual([gp.area, gp.sources.maps.reviews, gp.adCheck.state], ['Al Quoz Industrial Area 3, Dubai', 42, 'skipped']);
+  // Tags on the Meta ads tab: phone type and chains. Mobile only and Hide chains filter them.
+  await dash.bringToFront();
+  await dash.click('[data-view="ads"]');
+  await dash.selectOption('[data-af="niche"]', 'Car');
+  await dash.waitForFunction(() => document.querySelectorAll('[data-ads-rows] tr').length === 3);
+  const tagsOf = (name) => dash.$$eval('[data-ads-rows] tr', (rows, n) => [...rows.find((r) => r.querySelector('.n').textContent === n).querySelectorAll('.tag')].map((t) => t.textContent), name);
+  assert.deepEqual((await tagsOf('Gloss Garage')).slice(0, 2), ['Mobile', 'Chain']);
+  assert.deepEqual((await tagsOf('Gloss Garage - JLT Branch')).slice(0, 2), ['Landline', 'Chain']);
+  assert.deepEqual((await tagsOf('Shield PPF Center')).slice(0, 1), ['Corporate']);
+  assert.match(await dash.textContent('[data-ads-rows]'), /\(150\)/, 'the review count shows on the lead');
+  await dash.check('[data-af="mobile"]');
+  await dash.waitForFunction(() => document.querySelectorAll('[data-ads-rows] tr').length === 1);
+  await dash.uncheck('[data-af="mobile"]');
+  await dash.check('[data-af="chains"]');
+  await dash.waitForFunction(() => document.querySelectorAll('[data-ads-rows] tr').length === 1);
+  assert.match(await dash.textContent('[data-ads-rows]'), /Shield PPF Center/);
+  await dash.uncheck('[data-af="chains"]');
+  await dash.selectOption('[data-af="niche"]', '');
+  // The finder panel shows the last run's before and after.
+  assert.match(await dash.textContent('[data-finder-status]'), /5 found → 2 kept · 1 over 50 reviews · 2 excluded words/);
+  if (SHOTS) await dash.screenshot({ path: `${SHOTS}/17-presets-run.png` });
+  // Finished searches are remembered: running the same one again says so, a new pair runs, and Start over forgets.
+  assert.match((await runPreset('Car', 'ppf', 'Al Quoz Industrial Area 3, Dubai')).error, /Every search of Car has been run/);
+  const progress = await sw.evaluate(() => handlers['finder:progress']({}));
+  assert.deepEqual(progress.progress.Car, { total: 588, done: 1 });
+  // A capped run: 2 pairs left, cap 1, so it runs 1 and the next run carries on with the other.
+  const pausedRun = await sw.evaluate(() => startFinder({ niche: 'Car', keywords: ['ppf', 'ceramic coating'], areas: ['Al Quoz Industrial Area 3, Dubai', 'Al Barsha, Dubai'], cap: 1 }));
+  assert.deepEqual(pausedRun.mapsQ.map((q) => q.q), ['ppf Al Barsha, Dubai'], 'finished pairs are skipped, keywords first, then areas, up to the cap');
+  await sw.evaluate(() => handlers['finder:pause']({}));
+  assert.equal((await storage('finder')).finder.status, 'paused');
+  await sw.evaluate(() => handlers['finder:resume']({}));
+  await waitFor(async () => (await storage('finder')).finder.status === 'done', 90000, 'capped run');
+  assert.deepEqual((await sw.evaluate(() => handlers['finder:progress']({}))).progress.Car, { total: 588, done: 2 });
+  await sw.evaluate(() => handlers['finder:reset']({ preset: 'Car' }));
+  assert.deepEqual((await sw.evaluate(() => handlers['finder:progress']({}))).progress.Car, { total: 588, done: 0 });
+
   /* ------------------------------------- Instagram: Add to Lead Hunter on a profile */
   const ig = await ctx.newPage();
   await ig.goto('https://www.instagram.com/glossy.tint_bar/');
@@ -1018,7 +1104,7 @@ try {
   await igBtn.click();
   await ig.locator('button', { hasText: 'Added to Lead Hunter' }).waitFor();
   const lash = await lead('p:i:luxe.lash.dxb');
-  assert.deepEqual([lash.pageName, lash.niche, lash.website, lash.adCheck.state], ['Luxe Lash Studio', 'Beauty salons', null, 'skipped']);
+  assert.deepEqual([lash.pageName, lash.niche, lash.website, lash.adCheck.state], ['Luxe Lash Studio', '', null, 'skipped'], 'no preset covers lash studios');
   assert.ok(lash.phones.some((x) => x.number === '+971524445566'));
   // Not a profile: no button.
   await ig.evaluate(() => history.pushState({}, '', '/explore/'));

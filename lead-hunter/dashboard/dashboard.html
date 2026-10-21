@@ -144,16 +144,16 @@
         </div>
         <form class="form" data-finder-form>
           <div class="field">
-            <span class="lbl">Niche <small>edit the list in Settings</small></span>
+            <span class="lbl">Preset <small>edit them in Settings</small></span>
             <div class="chips" data-ad-niches></div>
+            <p class="hint" data-preset-progress style="margin:6px 0 0"></p>
           </div>
           <label class="field">
             <span class="lbl">Search terms <small>one per line</small></span>
             <textarea class="inp" name="keywords" rows="4" placeholder="aesthetic clinic&#10;laser hair removal"></textarea>
           </label>
           <div class="grid3">
-            <label class="field"><span class="lbl">City</span><select class="inp" name="city" data-ad-cities></select></label>
-            <label class="field"><span class="lbl">New businesses to find</span><input class="inp" type="number" name="target" min="1" max="1000" value="150" /></label>
+            <label class="field"><span class="lbl">Searches this run <small>one keyword and area each</small></span><input class="inp" type="number" name="cap" min="1" max="1000" value="100" /></label>
             <div class="field">
               <span class="lbl">Search on</span>
               <span class="chk">Google Maps <small data-maps-mode></small></span>
@@ -185,6 +185,10 @@
         <select class="inp" data-af="niche" aria-label="Niche"></select>
         <select class="inp" data-af="tag" aria-label="Tag">
           <option value="">Any tag</option>
+          <option>Mobile</option>
+          <option>Landline</option>
+          <option>Corporate</option>
+          <option>Chain</option>
           <option>No website</option>
           <option>Site down</option>
           <option>Good reviews</option>
@@ -204,6 +208,8 @@
           <option value="wa">Has WhatsApp</option>
           <option value="nophone">No phone yet</option>
         </select>
+        <label class="chk"><input type="checkbox" data-af="mobile" /> Mobile only</label>
+        <label class="chk"><input type="checkbox" data-af="chains" /> Hide chains</label>
         <label class="chk"><input type="checkbox" data-af="skipped" /> Show skipped (running ads)</label>
         <select class="inp" data-af="sort" aria-label="Sort">
           <option value="priority">Sort: priority</option>
@@ -381,12 +387,14 @@
           </label>
         </div>
 
-        <h2>Niches</h2>
-        <p class="hint">Name it the way it reads in a message, e.g. 'pet groomers'. The name goes into your scripts. Keywords are what New hunt and the Meta ads search look for, separated by commas or new lines.</p>
+        <h2 id="presets">Presets</h2>
+        <p class="hint">One per kind of business. Searches run as "keyword area", one keyword at a time across every area, in the order you list them. Paste lists one item per line. An exclude word drops any business with it in its name or Google category. Start a line with <b>category:</b> to only check the category. The review range keeps small, owner run businesses: listings outside it are never opened or saved.</p>
         <div class="niches" data-niches></div>
         <div class="row" style="margin-top:0">
-          <button type="button" class="btn" data-act="add-niche">Add niche</button>
-          <button type="button" class="btn ghost" data-act="reset-niches">Reset to the 4 defaults</button>
+          <button type="button" class="btn" data-act="add-niche">Add preset</button>
+          <button type="button" class="btn" data-act="export-presets">Export presets</button>
+          <label class="btn">Import presets<input type="file" accept=".json,application/json" data-import-presets hidden /></label>
+          <button type="button" class="btn ghost" data-act="reset-niches">Reset to the 5 defaults</button>
         </div>
 
         <h2>Scripts</h2>

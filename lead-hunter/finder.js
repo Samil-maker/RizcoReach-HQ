@@ -73,10 +73,19 @@ function mergeProspect(lead, item, ctx) {
   lead.updatedAt = now();
 }
 
-/** Add or merge found businesses. Returns ids of new prospects (worth an ad check). */
+/**
+ * Add or merge found businesses. Returns ids of new prospects (worth an ad check).
+ * In a preset search a new business must pass the preset first: its Google review count (read from the results
+ * list, so a listing that fails is never opened or checked) and its exclude words. What was dropped and why is
+ * counted on the run, so every run shows its before and after.
+ */
 async function ingestProspects(items, ctx = {}) {
+  const settings = await getSettings();
+  const preset = ctx.finderId ? LH.presetsFor(settings).find((n) => n.name === ctx.niche) : null;
   const result = await locked(async () => {
     const { prospectIndex = {}, finder } = await store.get(['prospectIndex', 'finder']);
+    const run = finder && ctx.finderId === finder.id ? finder : null;
+    const stats = run ? (run.stats = { found: 0, duplicate: 0, fewReviews: 0, manyReviews: 0, excluded: 0, kept: 0, ...(run.stats || {}) }) : null;
     const touched = new Map();
     const fresh = [];
     for (const item of items || []) {
@@ -86,6 +95,16 @@ async function ingestProspects(items, ctx = {}) {
       let id = keys.map((k) => prospectIndex[k]).find(Boolean);
       let lead = id ? touched.get(id) || (await getLead(id)) : null;
       const isNew = !lead;
+      if (stats) stats.found++;
+      if (!isNew && stats) stats.duplicate++;
+      if (isNew && preset) {
+        const reviews = (item.maps && item.maps.reviews) || 0;
+        const why = reviews < preset.minReviews ? 'fewReviews' : reviews > preset.maxReviews ? 'manyReviews' : LH.excludeHit(preset, item.name, item.category) ? 'excluded' : '';
+        if (why) {
+          stats[why]++;
+          continue;
+        }
+      }
       if (isNew) {
         id = item.maps && item.maps.placeId ? `p:m:${item.maps.placeId}` : `p:i:${item.instagram.username.toLowerCase()}`;
         lead = touched.get(id) || (await getLead(id)) || newProspect(id);
@@ -98,11 +117,13 @@ async function ingestProspects(items, ctx = {}) {
     const writes = { prospectIndex };
     for (const [id, l] of touched) writes[leadKey(id)] = l;
     const counted = fresh.filter((id) => !touched.get(id).avoid);
-    if (finder && finder.status === 'running' && ctx.finderId === finder.id) {
-      finder.added += counted.length;
-      finder.found += (items || []).length;
-      finder.lastActivity = now();
-      writes.finder = finder;
+    if (run && ['running', 'paused'].includes(run.status)) {
+      run.added += counted.length;
+      run.found += (items || []).length;
+      stats.kept += counted.length;
+      stats.excluded += fresh.length - counted.length; // the built in "long sales cycle" words
+      run.lastActivity = now();
+      writes.finder = run;
     }
     // Without a website they get the website script whatever their ads, so their Ad Library check is skipped.
     for (const id of counted) {
@@ -340,36 +361,61 @@ async function placesSearch(query, key, pageToken) {
 /* ------------------------------------------------------------- the finder */
 let finderBusy = false;
 
+/* A run works through a preset's keyword x area searches in order ("ppf Al Quoz Industrial Area 3, Dubai"), at most
+   `cap` searches per run. Finished searches are remembered per preset (`searchDone`), so the next run carries on
+   where the last one stopped. */
+const comboKey = (keyword, area) => `${keyword.toLowerCase()}|${area.toLowerCase()}`;
+async function searchesDone(preset) {
+  const { searchDone = {} } = await store.get('searchDone');
+  return searchDone[preset] || {};
+}
+async function markSearchDone(preset, q) {
+  if (!preset) return;
+  await locked(async () => {
+    const { searchDone = {} } = await store.get('searchDone');
+    searchDone[preset] = { ...(searchDone[preset] || {}), [comboKey(q.keyword, q.area)]: now() };
+    await store.set({ searchDone });
+  });
+}
+/** What is left of a preset: its searches in order, minus the finished ones. */
+async function presetQueue(preset, keywords, areas) {
+  const done = await searchesDone(preset.name);
+  const all = keywords.flatMap((keyword) => areas.map((area) => ({ q: `${keyword} ${area}`, keyword, area })));
+  return { all: all.length, left: all.filter((x) => !done[comboKey(x.keyword, x.area)]) };
+}
+
 async function startFinder(cfg) {
   const settings = await getSettings();
-  const preset = LH.nichesFor(settings).find((n) => n.name === cfg.niche);
-  const keywords = LH.parseKeywords(cfg.keywords || (preset && preset.keywords) || []);
-  if (!keywords.length) throw new Error('Pick a niche or add keywords.');
-  // Typed search terms without a niche chip: use the niche they belong to, if any.
-  const niche = cfg.niche || LH.nicheOf({ keywords }, settings) || '';
-  const city = cfg.city || settings.adsCity || 'Dubai';
-  const areas = (cfg.areas && cfg.areas.length ? cfg.areas : LH.AREAS[city] || [city]).slice(0, 150);
-  const sources = { maps: true };
-  const mapsMode = settings.placesKey ? 'api' : 'browser';
-  const mapsQ = [];
-  for (const area of areas) for (const keyword of keywords) mapsQ.push({ q: `${keyword} in ${area}, ${city}`, keyword, area });
+  const presets = LH.presetsFor(settings);
+  const preset = presets.find((n) => n.name === cfg.niche) || presets[0];
+  const keywords = LH.parseKeywords(cfg.keywords && cfg.keywords.length ? cfg.keywords : preset.keywords);
+  if (!keywords.length) throw new Error('Pick a preset or add keywords.');
+  const areas = LH.parseLines(cfg.areas && cfg.areas.length ? cfg.areas : preset.areas).slice(0, 300);
+  if (!areas.length) throw new Error('This preset has no areas. Add some in Settings.');
+  const { all, left } = await presetQueue(preset, keywords, areas);
+  if (!left.length) throw new Error(`Every search of ${preset.name} has been run. Press Start over to run them again.`);
+  const cap = Math.max(1, Math.min(1000, Math.round(Number(cfg.cap)) || 100));
   const finder = {
     id: `f${now().toString(36)}`,
     status: 'running',
-    niche,
+    niche: preset.name,
     keywords,
-    city,
+    city: LH.cityOf(areas[0], settings.adsCity || 'Dubai'),
     country: 'AE',
-    target: Math.max(1, Math.min(1000, Number(cfg.target) || 150)),
-    sources,
-    mapsMode,
-    mapsQ,
+    cap,
+    sources: { maps: true },
+    mapsMode: settings.placesKey ? 'api' : 'browser',
+    mapsQ: left.slice(0, cap),
     mapsI: 0,
     mapsToken: null,
     mapsDone: false,
     mapsNote: '',
+    planned: all,
+    leftBefore: left.length,
     found: 0,
     added: 0,
+    // What happened to everything found: the before and after of the filters.
+    stats: { found: 0, duplicate: 0, fewReviews: 0, manyReviews: 0, excluded: 0, kept: 0 },
     startedAt: now(),
     lastActivity: now(),
   };
@@ -378,16 +424,25 @@ async function startFinder(cfg) {
   return finder;
 }
 
+/** Forget a preset's finished searches, so the next run starts from its first keyword again. */
+async function resetPreset(name) {
+  await locked(async () => {
+    const { searchDone = {} } = await store.get('searchDone');
+    delete searchDone[name];
+    await store.set({ searchDone });
+  });
+}
+
 async function patchFinder(id, patch) {
   return locked(async () => {
     const { finder } = await store.get('finder');
     if (!finder || finder.id !== id) return null;
     Object.assign(finder, typeof patch === 'function' ? patch(finder) || {} : patch);
     finder.lastActivity = now();
-    if (finder.status === 'running' && (finder.mapsDone || finder.added >= finder.target)) {
+    if (finder.status === 'running' && (finder.mapsDone || (finder.target && finder.added >= finder.target))) {
       finder.status = 'done';
       finder.finishedAt = now();
-      notify('Business search finished', `${finder.added} new businesses found. Ad checks continue in the background.`);
+      notify('Business search finished', `${finder.added} new businesses kept from ${(finder.stats || {}).found || finder.found} found. Ad checks continue in the background.`);
     }
     await store.set({ finder });
     return finder;
@@ -414,7 +469,7 @@ async function runFinder() {
 async function runMaps(fid) {
   for (;;) {
     const f = await currentFinder();
-    if (!f || f.id !== fid || f.mapsDone || f.added >= f.target) return;
+    if (!f || f.id !== fid || f.mapsDone || (f.target && f.added >= f.target)) return;
     const q = f.mapsQ[f.mapsI];
     if (!q) return patchFinder(fid, { mapsDone: true });
     const ctx = { finderId: fid, niche: f.niche, keyword: q.keyword, area: q.area, country: f.country };
@@ -423,13 +478,15 @@ async function runMaps(fid) {
         const settings = await getSettings();
         const data = await placesSearch(q.q, settings.placesKey, f.mapsToken);
         await ingestProspects((data.places || []).map((p) => placeToItem(p, f.country)).filter(Boolean), ctx);
+        if (!data.nextPageToken) await markSearchDone(f.niche, q);
         await patchFinder(fid, (x) => (data.nextPageToken ? { mapsToken: data.nextPageToken } : { mapsToken: null, mapsI: x.mapsI + 1 }));
         await sleep(data.nextPageToken ? 1200 : 400);
       } else {
         const items = await mapsBrowserSearch(q.q);
         await ingestProspects(items, ctx);
+        await markSearchDone(f.niche, q);
         await patchFinder(fid, (x) => ({ mapsI: x.mapsI + 1 }));
-        await sleep(jitter(2000, 4000));
+        await sleep(jitter(2500, 5000)); // one search at a time, a human pace between them
       }
     } catch (e) {
       await patchFinder(fid, { mapsDone: true, mapsNote: String(e.message || e) });
@@ -496,9 +553,33 @@ Object.assign(handlers, {
   'instagram:add': (msg) => addFromInstagram(msg.profile),
   'finder:start': async (msg) => ({ finder: await startFinder(msg.config || {}) }),
   'finder:stop': async () => {
-    const f = await currentFinder();
-    if (f) await patchFinder(f.id, { status: 'stopped', finishedAt: now() });
+    const { finder: f } = await store.get('finder');
+    if (f && ['running', 'paused'].includes(f.status)) await patchFinder(f.id, { status: 'stopped', finishedAt: now() });
     return { ok: true };
+  },
+  'finder:pause': async () => {
+    const f = await currentFinder();
+    if (f) await patchFinder(f.id, { status: 'paused' });
+    return { ok: true };
+  },
+  'finder:resume': async () => {
+    const { finder: f } = await store.get('finder');
+    if (f && f.status === 'paused') {
+      await patchFinder(f.id, { status: 'running' });
+      runFinder();
+    }
+    return { ok: true };
+  },
+  'finder:reset': async (msg) => (await resetPreset(String(msg.preset || '')), { ok: true }),
+  /** How far each preset has got: searches in total and finished. */
+  'finder:progress': async () => {
+    const settings = await getSettings();
+    const out = {};
+    for (const p of LH.presetsFor(settings)) {
+      const { all, left } = await presetQueue(p, p.keywords, p.areas);
+      out[p.name] = { total: all, done: all - left.length };
+    }
+    return { progress: out };
   },
   'adcheck:result': async (msg, sender) => {
     if (pendingCheck && sender.tab && sender.tab.id === pendingCheck.tabId && msg.id === pendingCheck.id) pendingCheck.resolve(msg);
