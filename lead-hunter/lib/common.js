@@ -544,6 +544,7 @@ Mussafah, Abu Dhabi`),
     queueKey: '',
     queueKeyAt: 0,
     adsCity: 'Dubai',
+    nameMatch: 0.92, // how close two names in the same area must be to count as one business (Jaro-Winkler, 0.8 to 1)
     bubbles: 3, // WhatsApp messages per pitch: 3 = greeting, body, closing · 2 = greeting with body, closing
     niches: null, // null = use LH.DEFAULT_NICHES
     scripts: null, // null = use LH.DEFAULT_SCRIPTS
@@ -905,6 +906,7 @@ Mussafah, Abu Dhabi`),
   LH.leadTags = (lead, ctx = {}) => {
     if (!lead) return [];
     const tags = [];
+    if (ctx.history && lead.status === 'new' && LH.historyHit(lead, ctx.history)) tags.push('Contacted before');
     const phone = LH.leadPhoneType(lead);
     if (phone) tags.push(phone.charAt(0).toUpperCase() + phone.slice(1));
     if (lead.kind === 'prospect' && LH.isChain(lead, ctx.chains)) tags.push('Chain');
@@ -1074,6 +1076,158 @@ Mussafah, Abu Dhabi`),
   };
   /** The addresses worth emailing: not bounced before, not a placeholder. */
   LH.goodEmails = (lead) => ((lead && lead.emails) || []).filter((e) => !((lead.badEmails || []).includes(e) || LH.isJunkEmail(e)));
+
+  /* ------------------------------------------------------- One business, one record */
+  // How two finds are recognised as the same business: same phone, same website (root domain), same Instagram
+  // handle, or nearly the same name (Jaro-Winkler, 0.92 by default) in the same area.
+  const NAME_SUFFIX = /\b(l\s*l\s*c|fz\s*llc|fzllc|fze|fzco|fzc|fz|llc|trading|est|establishment|co|company|services?|dubai|uae|and)\b/g;
+  /** "Gloss Garage L.L.C - Dubai" -> "gloss garage" */
+  LH.normName = (name) =>
+    String(name || '')
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .replace(NAME_SUFFIX, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  /** Jaro-Winkler similarity, 0 to 1. */
+  LH.jaroWinkler = (a, b) => {
+    a = String(a || '');
+    b = String(b || '');
+    if (!a || !b) return 0;
+    if (a === b) return 1;
+    const range = Math.max(0, Math.floor(Math.max(a.length, b.length) / 2) - 1);
+    const am = new Array(a.length).fill(false);
+    const bm = new Array(b.length).fill(false);
+    let m = 0;
+    for (let i = 0; i < a.length; i++) {
+      for (let j = Math.max(0, i - range); j < Math.min(b.length, i + range + 1); j++) {
+        if (bm[j] || a[i] !== b[j]) continue;
+        am[i] = bm[j] = true;
+        m++;
+        break;
+      }
+    }
+    if (!m) return 0;
+    let t = 0;
+    for (let i = 0, k = 0; i < a.length; i++) {
+      if (!am[i]) continue;
+      while (!bm[k]) k++;
+      if (a[i] !== b[k]) t++;
+      k++;
+    }
+    const jaro = (m / a.length + m / b.length + (m - t / 2) / m) / 3;
+    let prefix = 0;
+    while (prefix < 4 && a[prefix] === b[prefix]) prefix++;
+    return jaro + prefix * 0.1 * (1 - jaro);
+  };
+
+  // Free website builders: the subdomain is the business, so "gloss.wixsite.com" is not "wixsite.com".
+  LH.FREE_BUILDERS = ['wixsite.com', 'godaddysites.com', 'square.site', 'webflow.io', 'wordpress.com', 'weebly.com', 'site123.me', 'carrd.co', 'blogspot.com', 'myshopify.com', 'business.site', 'mystrikingly.com', 'odoo.com', 'netlify.app', 'vercel.app'];
+  const SECOND_LEVEL = /^(co|net|org|ac|gov|sch|mil|com|edu)\.(ae|uk|sa|qa|om|bh|kw|in|pk|au|nz|za|jp)$/;
+  /** The registrable domain: "shop.gloss.ae" -> "gloss.ae", "gloss.co.ae" stays, "gloss.wixsite.com" stays. */
+  LH.rootDomain = (url) => {
+    const host = LH.domainOf(url);
+    if (!host || LH.FREE_BUILDERS.some((b) => host === b || host.endsWith(`.${b}`))) return host;
+    const parts = host.split('.');
+    const n = parts.length >= 3 && SECOND_LEVEL.test(parts.slice(-2).join('.')) ? 3 : 2;
+    return parts.slice(-n).join('.');
+  };
+
+  /* ------------------------------------------------------------ Contacted memory */
+  /**
+   * Everything that identifies a business you have contacted, as history keys: its phones, website, Instagram
+   * handle, and its name in its area. A business found later with any of them is not added again.
+   */
+  LH.historyKeys = (lead) => {
+    const l = lead || {};
+    const keys = [];
+    for (const p of l.phones || []) {
+      // A number found in a website's text can be someone else's (the web designer, the mall): its domain matches instead.
+      const n = typeof p === 'string' ? p : p && p.source !== 'website' && p.number;
+      if (n) keys.push(`p:${n}`);
+    }
+    for (const n of l.whatsapp || []) if (n) keys.push(`p:${n}`);
+    if (l.website && LH.linkKind(l.website) === 'website') keys.push(`d:${LH.rootDomain(l.website)}`);
+    const ig = (((l.instagram || (l.sources || {}).instagram) || {}).username || LH.igHandle(l) || '').replace(/^@/, '').toLowerCase();
+    if (ig) keys.push(`i:${ig}`);
+    const name = LH.normName(l.pageName || l.name);
+    if (name.length > 2 && l.area) keys.push(`n:${name}@${String(l.area).toLowerCase()}`);
+    return [...new Set(keys)];
+  };
+  /** The history entry that matches this business, or null. An entry made from the same lead never hides it. */
+  LH.historyHit = (lead, history) => {
+    if (!history) return null;
+    for (const key of LH.historyKeys(lead)) {
+      const e = history[key];
+      if (e && !(lead.id && e[2] === lead.id)) return { key, at: e[0], via: e[1] };
+    }
+    return null;
+  };
+
+  /* Fuzzy names, per area: { 'jlt': [['gloss garage', 'p:m:…'], …] }. */
+  LH.addName = (index, lead) => {
+    const name = LH.normName(lead.pageName);
+    const area = String(lead.area || '').toLowerCase();
+    if (name.length < 4 || !area) return;
+    const list = (index[area] = index[area] || []);
+    if (!list.some(([n, id]) => n === name && id === lead.id)) list.push([name, lead.id]);
+  };
+  /** The lead with nearly the same name in the same area (Jaro-Winkler at or above the threshold), or null. */
+  LH.findByName = (index, name, area, threshold = 0.92) => {
+    const n = LH.normName(name);
+    const list = index && area ? index[String(area).toLowerCase()] : null;
+    if (n.length < 4 || !list) return null;
+    let best = null;
+    let top = threshold;
+    for (const [m, id] of list) {
+      const score = LH.jaroWinkler(n, m);
+      if (score >= top) (best = id), (top = score);
+    }
+    return best;
+  };
+
+  /** A CSV file as rows of cells (quotes, commas and line breaks inside quotes, a BOM at the start). */
+  LH.parseCsv = (text) => {
+    const rows = [];
+    let row = [];
+    let cell = '';
+    let quoted = false;
+    const s = String(text || '').replace(/^﻿/, '');
+    for (let i = 0; i < s.length; i++) {
+      const c = s[i];
+      if (quoted) {
+        if (c === '"' && s[i + 1] === '"') (cell += '"'), i++;
+        else if (c === '"') quoted = false;
+        else cell += c;
+      } else if (c === '"' && !cell) quoted = true;
+      else if (c === ',' || c === ';' || c === '\t') row.push(cell), (cell = '');
+      else if (c === '\n' || c === '\r') {
+        if (c === '\r' && s[i + 1] === '\n') i++;
+        row.push(cell);
+        if (row.some((x) => x.trim())) rows.push(row);
+        row = [];
+        cell = '';
+      } else cell += c;
+    }
+    row.push(cell);
+    if (row.some((x) => x.trim())) rows.push(row);
+    return rows;
+  };
+  /** Every UAE phone number in a CSV (your CRM sheet or a Google Contacts export), in +971 format. */
+  LH.phonesInCsv = (text, country = 'AE') => {
+    const out = new Set();
+    for (const row of LH.parseCsv(text))
+      for (const cell of row) {
+        if (!/\d{6,}|\d[\d\s().+-]{7,}\d/.test(cell)) continue;
+        // Google Contacts puts several numbers in one cell: "+971 50 123 4567 ::: 04 123 4567"
+        for (const part of cell.split(/:::|\/|,|;|\|/)) {
+          const n = LH.normalizePhone(part.trim(), country);
+          if (n && /^\+\d{9,15}$/.test(n)) out.add(n);
+        }
+      }
+    return [...out];
+  };
 
   /* ---------------------------------------------------------- Google Contacts */
   /**

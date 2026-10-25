@@ -6,6 +6,7 @@ import { SAMPLE_ADS, searchResponse, makeAd } from './fixtures.mjs';
 await import('../lib/common.js');
 await import('../lib/extract-ads.js');
 await import('../lib/site-audit.js');
+await import('../lib/prospects.js');
 const LH = globalThis.LH;
 
 test('extracts ads from a GraphQL response with for(;;) prefix and multiple JSON lines', () => {
@@ -558,4 +559,66 @@ test('presets JSON: export and import round trip, bad files explain themselves',
   assert.deepEqual([mixed.presets.map((p) => p.name), mixed.presets[0].areas, mixed.skipped], [['Yachts'], ['Dubai Marina, Dubai'], 1]);
   assert.throws(() => LH.presetsFromJson('{oops'), /not valid JSON/);
   assert.throws(() => LH.presetsFromJson('{"a":1}'), /No presets/);
+});
+
+test('business names are cleaned before they are compared', () => {
+  assert.deepEqual(
+    ['Gloss Garage L.L.C - Dubai', 'AL NOOR TRADING EST.', 'Prime FZ-LLC Services', 'Spartan & Co.', 'Spartan and Co', 'Fit Hub FZCO', 'Fit Hub FZE UAE', 'مطعم الريم'].map(LH.normName),
+    ['gloss garage', 'al noor', 'prime', 'spartan', 'spartan', 'fit hub', 'fit hub', 'مطعم الريم'],
+  );
+});
+
+test('Jaro-Winkler: near spellings match at 0.92, different businesses do not', () => {
+  assert.equal(LH.jaroWinkler('martha', 'marhta').toFixed(4), '0.9611'); // the textbook value
+  assert.equal(LH.jaroWinkler('abc', 'abc'), 1);
+  assert.equal(LH.jaroWinkler('', 'abc'), 0);
+  assert.ok(LH.jaroWinkler('gloss garage', 'glos garage') >= 0.92);
+  assert.ok(LH.jaroWinkler('iron fist boxing', 'iron box') < 0.92);
+  assert.ok(LH.jaroWinkler('paws and claws', 'pure pets') < 0.92);
+});
+
+test('root domains: subdomains fold, free builders and two part endings stay', () => {
+  assert.deepEqual(
+    ['https://shop.gloss.ae/x', 'https://www.gloss.co.ae', 'https://book.gloss.co.ae/', 'https://gloss.wixsite.com/home', 'https://other.wixsite.com/', 'http://www.example.com', 'https://my-shop.myshopify.com'].map(LH.rootDomain),
+    ['gloss.ae', 'gloss.co.ae', 'gloss.co.ae', 'gloss.wixsite.com', 'other.wixsite.com', 'example.com', 'my-shop.myshopify.com'],
+  );
+  assert.equal(LH.prospectKeys({ website: 'https://booking.gloss.ae/' }).join(), LH.prospectKeys({ website: 'https://gloss.ae/' }).join());
+});
+
+test('fuzzy names only match inside the same area', () => {
+  const index = {};
+  LH.addName(index, { id: 'a', pageName: 'Gloss Garage LLC', area: 'Al Quoz' });
+  LH.addName(index, { id: 'b', pageName: 'Iron Fist Boxing', area: 'JLT' });
+  LH.addName(index, { id: 'a', pageName: 'Gloss Garage LLC', area: 'Al Quoz' }); // once
+  assert.equal(index['al quoz'].length, 1);
+  assert.equal(LH.findByName(index, 'Glos Garage', 'Al Quoz'), 'a');
+  assert.equal(LH.findByName(index, 'Gloss Garage', 'JLT'), null);
+  assert.equal(LH.findByName(index, 'Iron Box', 'JLT'), null);
+  assert.equal(LH.findByName(index, 'Glos Garage', 'Al Quoz', 1), null); // threshold 1: exact names only
+  assert.equal(LH.findByName(index, 'Gloss Garage', ''), null);
+});
+
+test('contacted memory: keys, hits, and a lead never hides itself', () => {
+  const lead = { id: 'p:m:1', pageName: 'Gloss Garage', area: 'JLT', phones: [{ number: '+971501234567' }], website: 'https://www.gloss.ae/', socials: { instagram: 'https://www.instagram.com/Gloss.Dxb/' } };
+  assert.deepEqual(LH.historyKeys(lead), ['p:+971501234567', 'd:gloss.ae', 'i:gloss.dxb', 'n:gloss garage@jlt']);
+  assert.deepEqual(LH.historyKeys({ website: 'https://linktr.ee/gloss', phones: [] }), []); // a link page is not their website
+  assert.deepEqual(LH.historyKeys({ phones: [{ number: '+97147000000', source: 'website' }, { number: '+971557000001', source: 'whatsapp-site' }] }), ['p:+971557000001']);
+  const history = { 'p:+971501234567': [1000, 'whatsapp', 'p:m:1', 'Gloss Garage'] };
+  assert.equal(LH.historyHit(lead, history), null);
+  assert.deepEqual(LH.historyHit({ ...lead, id: 'p:m:2' }, history), { key: 'p:+971501234567', at: 1000, via: 'whatsapp' });
+  assert.deepEqual(LH.historyHit({ pageName: 'Gloss Garage LLC', area: 'jlt', phones: ['+97143334444'] }, { 'n:gloss garage@jlt': [5, 'export', 'x', ''] }).via, 'export');
+  assert.equal(LH.historyHit(lead, null), null);
+  // Tagged only while the lead is still new: a lead you are working stays in view.
+  const other = { ...lead, id: 'p:m:2', status: 'new', kind: 'prospect' };
+  assert.ok(LH.leadTags(other, { history }).includes('Contacted before'));
+  assert.ok(!LH.leadTags({ ...other, status: 'contacted' }, { history }).includes('Contacted before'));
+});
+
+test('phone numbers from a contacted sheet or a Google Contacts export', () => {
+  const sheet = 'Name,Phone,Notes\nA,050 123 4567,"called, no answer"\nB,"+971 4 333 4444 ::: 055-765-4321",\nC,(04) 222 1111,\nD,not a number,\n';
+  assert.deepEqual(LH.phonesInCsv(sheet), ['+971501234567', '+97143334444', '+971557654321', '+97142221111']);
+  const google = '﻿Name,Given Name,Group Membership,Phone 1 - Type,Phone 1 - Value\r\nGloss Garage,Gloss Garage,* myContacts ::: LF-2026-10-20,Mobile,+971 56 846 1835\r\n';
+  assert.deepEqual(LH.phonesInCsv(google), ['+971568461835']);
+  assert.deepEqual(LH.parseCsv('a,"b ""q"" c",d\n\n"multi\nline",x'), [['a', 'b "q" c', 'd'], ['multi\nline', 'x']]);
+  assert.deepEqual(LH.phonesInCsv('2026-10-20,LF-2026-10-20'), []); // dates are not phones
 });

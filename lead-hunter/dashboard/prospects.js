@@ -1,7 +1,7 @@
 /* Lead Hunter dashboard: the Meta ads tab (businesses found on Google Maps).
    Loaded after dashboard.js and shares its helpers ($, esc, S, send, toast, openDrawer…). */
 
-S.af = { q: '', ads: '', niche: '', tag: '', heat: '', status: '', contact: '', skipped: false, mobile: false, chains: false, sort: 'priority' };
+S.af = { q: '', ads: '', niche: '', tag: '', heat: '', status: '', contact: '', skipped: false, mobile: false, chains: false, contactedBefore: false, sort: 'priority' };
 S.areasOff = new Set();
 S.finderNiche = '';
 
@@ -31,7 +31,7 @@ function filteredProspects() {
     if (l.avoid && f.niche !== '__avoid') continue;
     // Running ads with a website and not messaged yet: skipped for outreach, shown only when asked for.
     if (skippedNew(l) && !f.skipped && f.ads !== 'running' && f.tag !== 'Running ads') continue;
-    if (!tagMatch(l, f.tag)) continue;
+    if (hideContacted(l, f) || !tagMatch(l, f.tag)) continue;
     if (f.ads === 'pending' ? !['pending', 'queued', 'checking'].includes(ad) : f.ads === 'none' ? !['none', 'likely'].includes(ad) : f.ads && ad !== f.ads) continue;
     if (f.niche && f.niche !== '__avoid' && LH.nicheOf(l, S.settings) !== f.niche) continue;
     if (f.heat && LH.heat(p) !== f.heat) continue;
@@ -112,6 +112,7 @@ function runStats(f) {
   const parts = [
     `<b>${st.found}</b> found → <b>${st.kept}</b> kept`,
     st.duplicate && `${st.duplicate} already saved`,
+    st.contacted && `${st.contacted} contacted before`,
     st.fewReviews && `${st.fewReviews} under ${esc(presetNamed(f.niche) ? presetNamed(f.niche).minReviews : '')} reviews`,
     st.manyReviews && `${st.manyReviews} over ${esc(presetNamed(f.niche) ? presetNamed(f.niche).maxReviews : '')} reviews`,
     st.excluded && `${st.excluded} excluded words`,
@@ -160,7 +161,8 @@ function renderProspectsView() {
   const empty = $('[data-ads-empty]');
   empty.hidden = rows.length > 0;
   empty.textContent = total ? 'No businesses match these filters.' : 'No businesses yet. Pick a niche above and press Find businesses.';
-  $('[data-ads-count]').textContent = total ? `Showing ${rows.length} of ${total} businesses.${skipped ? ` ${skipped} skipped (running ads).` : ''}` : '';
+  const before = S.af.contactedBefore ? 0 : prospects().filter((l) => contactedBefore(l)).length;
+  $('[data-ads-count]').textContent = total ? `Showing ${rows.length} of ${total} businesses.${skipped ? ` ${skipped} skipped (running ads).` : ''}${before ? ` ${before} contacted before (hidden).` : ''}` : '';
   const ids = rows.map((r) => r.l.id);
   const all = $('[data-ads-sel-all]');
   all.checked = ids.length > 0 && ids.every((id) => S.selected.has(id));
@@ -222,9 +224,9 @@ function prospectDrawerHtml(l) {
       <div class="row" style="margin-top:12px">
         <label class="lbl" for="d-status">Status</label>
         <select id="d-status" class="status-sel" data-status>${statusOptions(l.status)}</select>
-        ${l.contactedAt ? `<span class="muted">Contacted ${esc(fmtDate(l.contactedAt))}</span>` : ''}
         <span class="muted">Found ${esc(fmtDate(l.createdAt))}${l.area ? ` in ${esc(l.area)}` : ''}</span>
       </div>
+      ${contactedRow(l)}
     </section>
     <section class="d-sec"><h3>Meta Ad Library check</h3>
       <p>${esc(adText)}</p>

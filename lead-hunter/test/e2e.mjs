@@ -1077,6 +1077,88 @@ try {
   await sw.evaluate(() => handlers['finder:reset']({ preset: 'Car' }));
   assert.deepEqual((await sw.evaluate(() => handlers['finder:progress']({}))).progress.Car, { total: 588, done: 0 });
 
+  /* ------------------------- One record per business, and a memory of everyone you contacted */
+  // Exports to Google Contacts were remembered earlier on.
+  const memory = async () => (await storage('contactHistory')).contactHistory || {};
+  assert.deepEqual((await memory())['d:shineautospa.example'].slice(1, 3), ['export', '9000'], 'Shine Auto Spa went to Google Contacts');
+  // Import a sheet of numbers you already messaged (any CSV with phones, like a Google Contacts export).
+  await dash.click('[data-view="settings"]');
+  const sheet = 'Name,Phone 1 - Value\nWax Lab,050 777 8801\nIron Fist,"+971 52 222 3301 ::: 04 999 0000"\n';
+  await dash.setInputFiles('[data-import-history]', { name: 'contacted.csv', mimeType: 'text/csv', buffer: Buffer.from(sheet) });
+  await dash.waitForFunction(() => document.querySelector('[data-toast]').textContent === '3 phone numbers found, 3 new. Future searches skip them.');
+  assert.match(await dash.textContent('[data-history-count]'), /^Remembering \d+ phone numbers and \d+ websites/);
+  // A search: "Glos Garage LLC" is Gloss Garage (same area, Jaro-Winkler 0.98) and Wax Lab is in the imported contacts.
+  const memRun = await runPreset('Car', 'ceramic coating', 'Al Quoz Industrial Area 3, Dubai');
+  const pick = ({ found, kept, duplicate, contacted }) => ({ found, kept, duplicate, contacted });
+  console.log('contacted memory search:', JSON.stringify(pick(memRun.stats)));
+  assert.deepEqual(pick(memRun.stats), { found: 3, kept: 1, duplicate: 1, contacted: 1 });
+  const gloss = await lead(gp.id);
+  assert.deepEqual([gloss.pageName, gloss.sources.maps.otherListings.length], ['Gloss Garage', 1], 'one record, both listings');
+  assert.ok(gloss.phones.some((x) => x.number === '+971501112299'), 'with the second listing phone');
+  const names = (await prospectsNow()).map((l) => l.pageName);
+  assert.ok(names.includes('Shine Bay Detailing') && !names.includes('Glos Garage LLC') && !names.includes('Wax Lab Detailing'));
+  await dash.click('[data-view="ads"]');
+  await dash.waitForFunction(() => /3 found → 1 kept · 1 already saved · 1 contacted before/.test(document.querySelector('[data-finder-status]').textContent));
+  // Iron Fist Boxing was already saved, and its number is in the sheet: hidden until you ask for it.
+  await dash.selectOption('[data-af="status"]', '');
+  await dash.selectOption('[data-af="niche"]', 'Fitness');
+  await dash.waitForFunction(() => document.querySelectorAll('[data-ads-rows] tr').length === 1);
+  await dash.check('[data-af="contactedBefore"]');
+  await dash.waitForFunction(() => document.querySelectorAll('[data-ads-rows] tr').length === 2);
+  assert.deepEqual((await tagsOf('Iron Fist Boxing')).slice(0, 1), ['Contacted before']);
+  const iron = (await prospectsNow()).find((l) => l.pageName === 'Iron Fist Boxing');
+  await dash.click(`[data-ads-rows] tr[data-id="${iron.id}"] [data-open]`);
+  await dash.waitForSelector('.drawer.open .contacted-row .tag');
+  assert.match(await dash.textContent('.drawer .contacted-row'), /Contacted before .*· your imported contacts/);
+  if (SHOTS) await dash.screenshot({ path: `${SHOTS}/18-contacted-before.png` });
+  // Reset: new again and findable. The sheet's other numbers stay remembered.
+  await dash.click('.drawer [data-act="reset-contacted"]');
+  await waitFor(async () => !(await memory())['p:+971522223301'], 5000, 'reset forgets the business');
+  assert.ok((await memory())['p:+971507778801'] && (await memory())['p:+97149990000']);
+  await dash.click('[data-act="close"]');
+  await dash.uncheck('[data-af="contactedBefore"]');
+  await dash.waitForFunction(() => document.querySelectorAll('[data-ads-rows] tr').length === 2);
+  // Mark contacted with the channel, change the channel, then delete the lead: searches still skip it.
+  await dash.selectOption('[data-af="niche"]', 'Car');
+  const shine = (await prospectsNow()).find((l) => l.pageName === 'Shine Bay Detailing');
+  await dash.click(`[data-ads-rows] tr[data-id="${shine.id}"] [data-open]`);
+  await dash.click('.drawer.open [data-act="mark-via"][data-via="whatsapp"]');
+  await waitFor(async () => (await lead(shine.id)).contactedVia === 'whatsapp', 5000, 'marked contacted on WhatsApp');
+  assert.equal((await lead(shine.id)).status, 'contacted');
+  await waitFor(async () => ((await memory())['p:+971567778802'] || [])[1] === 'whatsapp', 5000, 'remembered');
+  assert.deepEqual((await memory())['n:shine bay detailing@al quoz industrial area 3, dubai'].slice(1, 3), ['whatsapp', shine.id]);
+  await dash.waitForSelector('.drawer.open [data-act="mark-via"][data-via="whatsapp"].on');
+  await dash.click('.drawer.open [data-act="mark-via"][data-via="instagram"]');
+  await waitFor(async () => (await lead(shine.id)).contactedVia === 'instagram', 5000, 'channel changed');
+  assert.equal((await lead(shine.id)).status, 'contacted');
+  await dash.waitForFunction(() => / on Instagram\. Channel:/.test(document.querySelector('.drawer .contacted-row').textContent));
+  if (SHOTS) await dash.screenshot({ path: `${SHOTS}/19-mark-contacted.png` });
+  await dash.click('[data-act="close"]');
+  await sw.evaluate((id) => handlers['lead:delete']({ ids: [id] }), shine.id);
+  await sw.evaluate(() => handlers['finder:reset']({ preset: 'Car' }));
+  const again = await runPreset('Car', 'ceramic coating', 'Al Quoz Industrial Area 3, Dubai');
+  assert.deepEqual(pick(again.stats), { found: 3, kept: 0, duplicate: 1, contacted: 2 }, 'deleted, still remembered');
+  assert.ok(!(await lead(shine.id)), 'not added back');
+  // Reset on a contacted lead: back to New, and its own memory goes.
+  const paws = (await prospectsNow()).find((l) => l.pageName === 'Happy Paws Training');
+  await sw.evaluate((id) => handlers['lead:update']({ id, patch: { status: 'contacted', via: 'email' } }), paws.id);
+  await waitFor(async () => ((await memory())['p:+971553334401'] || [])[1] === 'email', 5000, 'remembered by email');
+  await sw.evaluate((id) => handlers['lead:reset']({ id }), paws.id);
+  const pawsNow = await lead(paws.id);
+  assert.deepEqual([pawsNow.status, pawsNow.contactedAt, pawsNow.contactedVia], ['new', null, null]);
+  await waitFor(async () => !Object.values(await memory()).some((e) => e[2] === paws.id), 5000, 'its memory is gone');
+  // Ad Library hunts skip a new page whose website you contacted (Shine Auto Spa went to Google Contacts).
+  await sw.evaluate(() => store.remove('lead:9000'));
+  const adIn = await sw.evaluate(() => ingest([{ id: '99001', pageId: '99000', pageName: 'Shine Auto Spa Two', active: true, links: ['https://shineautospa.example/offer'] }], { keyword: 'car wash' }));
+  assert.equal(adIn.added, 0);
+  assert.ok(!(await lead('99000')), 'not saved');
+  // Leads contacted before the memory existed are added once, when the extension updates.
+  await sw.evaluate(() => store.set({ contactHistory: {}, memoryVersion: 0 }));
+  await sw.evaluate(() => seedMemory());
+  assert.ok(Object.values(await memory()).some((e) => e[2] === by('Wash Wizards').id), 'contacted leads are seeded');
+  assert.ok((await storage('prospectNames')).prospectNames['al quoz industrial area 3, dubai'].some(([n]) => n === 'gloss garage'));
+  await dash.selectOption('[data-af="niche"]', '');
+
   /* ------------------------------------- Instagram: Add to Lead Hunter on a profile */
   const ig = await ctx.newPage();
   await ig.goto('https://www.instagram.com/glossy.tint_bar/');

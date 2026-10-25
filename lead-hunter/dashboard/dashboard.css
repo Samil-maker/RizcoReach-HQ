@@ -285,6 +285,8 @@ details.preset[open] > summary { margin-bottom: 10px; }
 .tag.green { color: var(--good); background: rgb(126 224 138 / 0.1); }
 .status-cell { display: flex; gap: 6px; align-items: center; }
 .btn.reply { min-height: 26px; padding: 0 8px; font-size: 11.5px; color: var(--fg-2); }
+.contacted-row { margin-top: 8px; gap: 6px; }
+.contacted-row .btn.on { color: var(--good); border-color: rgb(126 224 138 / 0.45); background: rgb(126 224 138 / 0.1); }
 .btn.reply.on { color: var(--good); border-color: rgb(126 224 138 / 0.45); background: rgb(126 224 138 / 0.1); }
 .trunc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 170px; }
 .contact .p svg { width: 13px; height: 13px; flex: none; }

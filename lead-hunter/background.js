@@ -80,16 +80,70 @@ function newLead(pageId) {
 
 /* Statuses that mean the lead was messaged. The first one records when, with which script, and the niche (Results panel). */
 const SENT_STATUSES = ['contacted', 'followup', 'replied', 'meeting', 'won'];
-function markSent(lead, at, script, settings) {
+function markSent(lead, at, script, settings, via) {
   if (!lead.contactedAt) lead.contactedAt = at;
+  if (via) lead.contactedVia = via;
   if (script || !lead.sentScript) lead.sentScript = script || LH.sentScriptFor(lead);
   if (!lead.niche) lead.niche = LH.nicheOf(lead, settings) || '';
+  remember(lead, lead.contactedVia || 'status', lead.contactedAt);
 }
 /** Back to "New": the lead counts as not contacted again. */
 function unmarkSent(lead) {
   lead.contactedAt = null;
+  lead.contactedVia = null;
   lead.sentScript = null;
   lead.repliedAt = null;
+  forget(lead.id);
+}
+
+/* ------------------------------------------------------------ contacted memory */
+/* Every business you contacted, exported or imported, kept even after its lead is deleted, so future searches
+   never bring it back: { 'p:+97150…' | 'd:gloss.ae' | 'i:handle' | 'n:name@area': [at, via, leadId, name] }.
+   Changes are queued and written in one go after the current storage operation. */
+let historyOps = [];
+let historyFlush = null;
+function remember(lead, via, at = now()) {
+  historyOps.push({ keys: LH.historyKeys(lead), entry: [at || now(), via, lead.id || '', String(lead.pageName || '').slice(0, 80)] });
+  return flushHistory();
+}
+/** Forget what this lead added (and, on a reset, everything that matches the business). */
+function forget(id, keys = []) {
+  historyOps.push({ forget: id, keys });
+  return flushHistory();
+}
+function flushHistory() {
+  if (!historyFlush)
+    historyFlush = Promise.resolve().then(() =>
+      locked(async () => {
+        historyFlush = null;
+        const ops = historyOps;
+        historyOps = [];
+        const { contactHistory = {} } = await store.get('contactHistory');
+        for (const op of ops) {
+          if (op.entry) {
+            // A lead's own entry keeps its first date. Imports only fill gaps.
+            for (const k of op.keys) if (!contactHistory[k] || (op.entry[2] && contactHistory[k][2] !== op.entry[2])) contactHistory[k] = op.entry;
+          } else {
+            for (const [k, e] of Object.entries(contactHistory)) if ((op.forget && e[2] === op.forget) || op.keys.includes(k)) delete contactHistory[k];
+          }
+        }
+        await store.set({ contactHistory });
+      }),
+    );
+  return historyFlush;
+}
+/** Once per version of the memory: what was contacted before it existed, and the name index for fuzzy matching. */
+async function seedMemory() {
+  const { memoryVersion } = await store.get('memoryVersion');
+  if (memoryVersion >= 1) return;
+  const leads = await allLeads();
+  for (const l of leads) if (l.contactedAt) remember(l, l.contactedVia || 'status', l.contactedAt);
+  await flushHistory();
+  await locked(async () => {
+    const prospectNames = {};
+    for (const l of leads) if (l.kind === 'prospect') LH.addName(prospectNames, l);
+    await store.set({ prospectNames, memoryVersion: 1 });
+  });
 }
 
 /** A Google Places "website" that is really an Instagram profile is saved as their Instagram. */
@@ -227,7 +281,7 @@ async function ingest(ads, ctx = {}, tabId) {
     }
     if (!byPage.size) return { added: 0 };
     const existing = await store.get([...byPage.keys()].map(leadKey));
-    const { hunt } = await store.get('hunt');
+    const { hunt, contactHistory } = await store.get(['hunt', 'contactHistory']);
     const huntTab = !!(hunt && hunt.status === 'running' && hunt.tabId === tabId);
     const writes = {};
     const enrich = [];
@@ -239,6 +293,7 @@ async function ingest(ads, ctx = {}, tabId) {
       const hadSite = lead.website;
       list.forEach((ad) => mergeAd(lead, ad, ctx));
       derive(lead, country);
+      if (!prev && LH.historyHit(lead, contactHistory)) continue; // contacted before: never added again
       if (!lead.niche) lead.niche = LH.nicheOf(lead, settings) || ''; // from the hunt keywords, for the Results panel
       if (!prev) added++;
       if (huntTab && !lead.hunts.includes(hunt.id)) {
@@ -686,7 +741,7 @@ async function applyQueue(items) {
           lead.phoneQueue.by = 'phone';
           lead.phoneQueue.from = lead.status;
           lead.status = 'contacted';
-          markSent(lead, item.statusAt, lead.queuedScript || null, settings);
+          markSent(lead, item.statusAt, lead.queuedScript || null, settings, 'whatsapp');
           lead.statusHistory = [...(lead.statusHistory || []), { status: 'contacted', at: item.statusAt, via: 'phone' }].slice(-20);
           contacted++;
         }
@@ -823,7 +878,7 @@ async function applyEmail(items) {
       // Each change is applied once, so later syncs never override a status set by hand.
       if (item.sent >= 1 && !(prev.sent >= 1) && ['new', 'followup'].includes(lead.status)) {
         lead.status = 'contacted';
-        markSent(lead, item.sentAt[0], item.script, settings);
+        markSent(lead, item.sentAt[0], item.script, settings, 'email');
         lead.statusHistory = [...(lead.statusHistory || []), { status: 'contacted', at: item.sentAt[0], via: 'email' }].slice(-20);
       }
       if (item.status === 'replied' && prev.state !== 'replied' && ['new', 'contacted', 'followup'].includes(lead.status)) {
@@ -949,10 +1004,11 @@ const handlers = {
       const p = msg.patch || {};
       if (p.status && p.status !== l.status) {
         l.statusHistory = [...(l.statusHistory || []), { status: p.status, at: now() }].slice(-20);
-        if (SENT_STATUSES.includes(p.status)) markSent(l, now(), p.sentScript, settings);
+        if (SENT_STATUSES.includes(p.status)) markSent(l, now(), p.sentScript, settings, p.via);
         if (p.status === 'replied' && !l.repliedAt) l.repliedAt = now();
         if (p.status === 'new') unmarkSent(l);
       }
+      else if (p.via && SENT_STATUSES.includes(l.status)) markSent(l, l.contactedAt, null, settings, p.via); // the channel, set afterwards
       if ('repliedAt' in p && !p.repliedAt) l.repliedAt = null; // "Replied" tapped again
       for (const k of ['status', 'notes', 'pageName', 'followUpAt']) if (k in p) l[k] = p[k];
       if (p.addPhone) addPhone(l, LH.normalizePhone(p.addPhone, l.countries[0] || 'AE'), 'manual');
@@ -974,6 +1030,37 @@ const handlers = {
     const eq = lead && lead.emailQueue;
     if (eq && ['queued', 'active'].includes(eq.state) && STOP_EMAILS.includes(msg.patch && msg.patch.status)) cancelEmails([msg.id]).catch(() => {});
     return { lead };
+  },
+  /* Contacted memory. Reset: the business is new again and future searches can find it. */
+  'lead:reset': async (msg) => {
+    const lead = await updateLead(msg.id, (l) => {
+      if (l.status !== 'new') l.statusHistory = [...(l.statusHistory || []), { status: 'new', at: now(), via: 'reset' }].slice(-20);
+      l.status = 'new';
+      unmarkSent(l);
+    });
+    if (lead) await forget(lead.id, LH.historyKeys(lead));
+    return { lead };
+  },
+  /** Exported to Google Contacts: saved on your phone, so treated as contacted from now on. */
+  'history:add': async (msg) => {
+    const got = await store.get((msg.ids || []).map(leadKey));
+    for (const l of Object.values(got)) remember(l, msg.via || 'export');
+    await flushHistory();
+    return { ok: true };
+  },
+  /** Phone numbers from a CSV (your sheet of contacted numbers, or a Google Contacts export). */
+  'history:import': async (msg) => {
+    const settings = await getSettings();
+    const phones = LH.phonesInCsv(msg.text, settings.country || 'AE');
+    const { contactHistory = {} } = await store.get('contactHistory');
+    const fresh = phones.filter((n) => !contactHistory[`p:${n}`]);
+    for (const n of fresh) remember({ phones: [n] }, msg.via || 'import');
+    await flushHistory();
+    return { found: phones.length, added: fresh.length };
+  },
+  'history:clear': async () => {
+    await locked(() => store.set({ contactHistory: {} }));
+    return { ok: true };
   },
   'lead:delete': async (msg) => {
     await locked(() => store.remove((msg.ids || []).map(leadKey)));
@@ -1101,6 +1188,7 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   if (!settings) await store.set({ settings: LH.DEFAULT_SETTINGS });
   else if (LH.hasOldSettings(settings)) await store.set({ settings: LH.withDefaults(settings) }); // old templates and offer
   if (reason === 'install') openDashboard('#welcome');
+  await seedMemory();
 });
 chrome.runtime.onStartup.addListener(() => pump());
 pump();

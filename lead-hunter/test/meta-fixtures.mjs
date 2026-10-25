@@ -76,6 +76,12 @@ export const PRESET_SEARCHES = {
     ['Pet Corner Pet Shop', { category: 'Pet store', reviews: 25 }], // excluded: pet shop
     ['K9 Academy', { category: 'Dog trainer', reviews: 3 }], // too few
   ],
+  // Phase 1: the same business under another spelling, someone in your imported contacts, and one new business.
+  'ceramic coating Al Quoz Industrial Area 3, Dubai': [
+    ['Glos Garage LLC', { category: 'Car detailing service', reviews: 40, phone: '050 111 2299' }], // the same as Gloss Garage
+    ['Wax Lab Detailing', { category: 'Car detailing service', reviews: 20, phone: '050 777 8801' }], // in the imported contacts
+    ['Shine Bay Detailing', { category: 'Car detailing service', reviews: 20, phone: '056 777 8802' }], // new
+  ],
   'accounting firm Business Bay, Dubai': [
     ['Al Noor Accounting', { category: 'Accountant', reviews: 0, phone: '058 444 5501' }], // kept: no minimum
     ['KPMG Lower Gulf', { category: 'Accountant', reviews: 45 }], // excluded: brand

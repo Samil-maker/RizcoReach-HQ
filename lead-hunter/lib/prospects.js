@@ -7,7 +7,7 @@
     const keys = [];
     if (item.maps && item.maps.placeId) keys.push(`m:${item.maps.placeId}`);
     if (item.instagram && item.instagram.username) keys.push(`i:${item.instagram.username.toLowerCase()}`);
-    if (item.website && LH.linkKind(item.website) === 'website') keys.push(`d:${LH.domainOf(item.website)}`);
+    if (item.website && LH.linkKind(item.website) === 'website') keys.push(`d:${LH.rootDomain(item.website)}`);
     for (const n of [...(item.phones || []), ...(item.whatsapp || [])]) if (n) keys.push(`p:${n}`);
     return keys;
   };

@@ -35,7 +35,8 @@ const S = {
   // force: 'website' after "Pitch anyway" · bubbles: edits while the drawer is open · qr: bubble in the QR code
   // waTab: the WhatsApp tab this lead's bubbles open in
   pitch: { id: null, channel: 'whatsapp', force: null, bubbles: null, phone: null, qr: 0, opened: new Set(), waTab: null },
-  filters: { q: '', heat: '', status: '', keyword: '', site: '', tag: '', contact: '', minDays: 0, hideBig: true, skipped: false, sort: 'priority', hunt: '' },
+  filters: { q: '', heat: '', status: '', keyword: '', site: '', tag: '', contact: '', minDays: 0, hideBig: true, skipped: false, contactedBefore: false, sort: 'priority', hunt: '' },
+  history: {}, // contacted memory: phones, websites, handles and names you contacted, exported or imported
 };
 
 /* ------------------------------------------------------------------ data */
@@ -52,6 +53,7 @@ async function load() {
   S.adQueue = all.adCheckQueue || [];
   S.adPaused = !!all.adCheckPaused;
   S.queue = all.enrichQueue || [];
+  S.history = all.contactHistory || {};
 }
 
 let renderTimer = 0;
@@ -79,6 +81,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
     else if (k === 'finder') S.finder = newValue || null;
     else if (k === 'adCheckQueue') S.adQueue = newValue || [];
     else if (k === 'adCheckPaused') S.adPaused = !!newValue;
+    else if (k === 'contactHistory') {
+      S.history = newValue || {};
+      renderHistory();
+    }
   }
   if (settingsChanged && S.view !== 'settings') fillSettings();
   if (settingsChanged) renderNicheChips();
@@ -89,6 +95,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
 const isSkipped = (l) => !LH.scriptFor(l).script; // running ads: left out of outreach (phone mode, phone queue)
 /** Skipped leads you have not messaged. Leads already in your pipeline (contacted, replied, meeting…) always show. */
 const skippedNew = (l) => isSkipped(l) && l.status === 'new' && !l.contactedAt;
+/** New leads that match someone you contacted, exported or imported before: hidden unless asked for. */
+const contactedBefore = (l) => l.status === 'new' && LH.historyHit(l, S.history);
+const hideContacted = (l, f) => !f.contactedBefore && f.tag !== 'Contacted before' && !!contactedBefore(l);
 /** Those show only when asked for: the checkbox or the "Running ads" tag. */
 const skipHidden = (l, f) => skippedNew(l) && !f.skipped && f.tag !== 'Running ads';
 const tagMatch = (l, tag) => !tag || leadTags(l).includes(tag);
@@ -103,7 +112,7 @@ function filtered() {
     const p = LH.priority(l, now);
     if (f.hunt && !(l.hunts || []).includes(f.hunt)) continue;
     if (f.hideBig && (l.pageLikes || 0) > BIG_BRAND) continue;
-    if (skipHidden(l, f) || !tagMatch(l, f.tag)) continue;
+    if (skipHidden(l, f) || hideContacted(l, f) || !tagMatch(l, f.tag)) continue;
     if (f.heat && LH.heat(p) !== f.heat) continue;
     if (f.status === '' && l.status === 'skip') continue;
     if (f.status && f.status !== 'all' && l.status !== f.status) continue;
@@ -203,9 +212,9 @@ function contactCell(l) {
 }
 
 /* Row tags are for sorting and filtering only: the script never changes because of them. */
-const TAG_CLASS = { 'No website': 'amber', 'Site down': 'amber', 'Running ads': 'red', 'Good reviews': 'green', Mobile: 'green', Landline: 'amber', Corporate: 'red', Chain: 'red' };
+const TAG_CLASS = { 'Contacted before': 'red', 'No website': 'amber', 'Site down': 'amber', 'Running ads': 'red', 'Good reviews': 'green', Mobile: 'green', Landline: 'amber', Corporate: 'red', Chain: 'red' };
 /** Tags need to know which business names appear more than once (chains). */
-const leadTags = (l) => LH.leadTags(l, { chains: S.chains || (S.chains = LH.chainNames([...S.leads.values()].filter((x) => x.kind === 'prospect'))) });
+const leadTags = (l) => LH.leadTags(l, { history: S.history, chains: S.chains || (S.chains = LH.chainNames([...S.leads.values()].filter((x) => x.kind === 'prospect'))) });
 const tagsHtml = (l) => {
   const tags = leadTags(l);
   return tags.length ? `<div class="tags">${tags.map((t) => `<span class="tag ${TAG_CLASS[t] || ''}">${esc(t)}</span>`).join('')}</div>` : '';
@@ -687,9 +696,9 @@ function drawerHtml(l) {
       <div class="row" style="margin-top:12px">
         <label class="lbl" for="d-status">Status</label>
         <select id="d-status" class="status-sel" data-status>${statusOptions(l.status)}</select>
-        ${l.contactedAt ? `<span class="muted">Contacted ${esc(fmtDate(l.contactedAt))}</span>` : ''}
         <span class="muted">Found ${esc(fmtDate(l.createdAt))} via ${esc((l.keywords || []).join(', ') || 'browsing')}</span>
       </div>
+      ${contactedRow(l)}
     </section>
     ${pitchSection(l)}
     ${siteSection(l)}
@@ -731,13 +740,23 @@ async function copy(text) {
     toast('Could not copy. Select the text and copy it manually.');
   }
 }
-/** Contacted, with the script that was sent, and an undo. Returns false when the lead is past "contacted". */
-function markContacted(l, script) {
+/** Contacted, with the script that was sent and the channel, and an undo. Returns false when the lead is past "contacted". */
+function markContacted(l, script, via) {
   if (!['new', 'followup'].includes(l.status)) return false;
   const prev = l.status;
-  update(l.id, { status: 'contacted', sentScript: script || undefined });
-  toast(`Marked “${l.pageName}” as contacted`, () => update(l.id, { status: prev }));
+  update(l.id, { status: 'contacted', sentScript: script || undefined, via: via || undefined });
+  toast(`Marked “${l.pageName}” as contacted${via ? ` on ${VIA[via]}` : ''}`, () => update(l.id, { status: prev }));
   return true;
+}
+const VIA = { whatsapp: 'WhatsApp', instagram: 'Instagram', email: 'Email', export: 'Google Contacts export', import: 'your imported contacts' };
+/** In the drawer: when and how they were contacted, Mark contacted with the channel, and Reset. */
+function contactedRow(l) {
+  const reset = `<button class="btn sm ghost" data-act="reset-contacted" title="Make this business new again, so future searches can find it">Reset</button>`;
+  const mark = ['whatsapp', 'instagram', 'email'].map((v) => `<button class="btn sm ${l.contactedVia === v ? 'on' : ''}" data-act="mark-via" data-via="${v}">${VIA[v]}</button>`).join('');
+  if (l.contactedAt) return `<div class="row contacted-row"><span class="muted">Contacted ${esc(fmtDate(l.contactedAt))}${VIA[l.contactedVia] ? ` on ${esc(VIA[l.contactedVia])}` : ''}. Channel:</span>${mark}${reset}</div>`;
+  const hit = contactedBefore(l);
+  const before = hit ? `<span class="tag red">Contacted before${hit.at ? ` ${esc(fmtDate(hit.at))}` : ''}${VIA[hit.via] ? ` · ${esc(VIA[hit.via])}` : ''}</span>${reset}` : '';
+  return `<div class="row contacted-row">${before}<span class="muted">Mark contacted:</span>${mark}</div>`;
 }
 function openTab(url) {
   chrome.tabs.create({ url });
@@ -763,6 +782,8 @@ function exportContacts(list) {
   const rows = LH.googleContactsRows(list, S.settings);
   if (!rows.length) return toast('None of these leads has a phone number or an email yet.');
   download(`google-contacts-${new Date().toISOString().slice(0, 10)}.csv`, '\ufeff' + LH.toCsv([LH.GOOGLE_CONTACTS_HEAD, ...rows]), 'text/csv;charset=utf-8');
+  // Saved on your phone from now on: future searches skip these businesses.
+  send({ type: 'history:add', ids: list.filter((l) => l.phones.length || (l.emails || []).length).map((l) => l.id), via: 'export' });
   toast(`${rows.length} contact${rows.length === 1 ? '' : 's'} saved. Import the file at contacts.google.com`);
 }
 
@@ -1039,6 +1060,15 @@ function fillSettings() {
   renderEmailsEditor(s.emails);
   renderEmailSender();
   renderPairQr();
+  renderHistory();
+}
+/** Settings > Your data: how much the contacted memory holds. */
+function renderHistory() {
+  const el = $('[data-history-count]');
+  if (!el) return;
+  const keys = Object.keys(S.history);
+  const phones = keys.filter((k) => k.startsWith('p:')).length;
+  el.textContent = keys.length ? `Remembering ${phones} phone number${phones === 1 ? '' : 's'} and ${keys.length - phones} websites, Instagram handles and names.` : 'Nothing remembered yet.';
 }
 function renderPairQr() {
   const box = $('[data-pair]');
@@ -1061,6 +1091,7 @@ async function saveSettings() {
   next.bubbles = Number(next.bubbles) === 2 ? 2 : 3;
   next.emailFollowups = Math.max(0, Math.min(2, Math.round(Number(next.emailFollowups)) || 0));
   next.emailMaxPerDay = Math.max(1, Math.min(40, Math.round(next.emailMaxPerDay)));
+  next.nameMatch = Math.max(0.8, Math.min(1, Number(next.nameMatch) || LH.DEFAULT_SETTINGS.nameMatch));
   next.niches = readNiches(f);
   next.scripts = readEdits(f, 'script', LH.DEFAULT_SCRIPTS);
   next.emails = readEdits(f, 'email', LH.DEFAULT_EMAILS);
@@ -1086,6 +1117,15 @@ function initSettings() {
     const ok = $('[data-saved]');
     ok.hidden = false;
     setTimeout(() => (ok.hidden = true), 1800);
+  });
+  // Contacted memory: any CSV with phone numbers (your sheet, or Google Contacts > Export > Google CSV).
+  $('[data-import-history]').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    const r = await send({ type: 'history:import', text: await file.text(), via: 'import' });
+    if (!r || r.error) return toast((r && r.error) || 'Could not read that file.');
+    toast(r.found ? `${r.found} phone numbers found, ${r.added} new. Future searches skip them.` : 'No UAE phone numbers found in that file.');
   });
   // Import presets: same name replaces a preset, new names are added. Nothing is kept until Save.
   $('[data-import-presets]').addEventListener('change', async (e) => {
@@ -1562,9 +1602,26 @@ function bind() {
         if (r && r.error) return toast(r.error);
         return toast(`Lead Hunter will never email “${l.pageName}”`, () => send({ type: 'email:never', id: l.id, remove: true }));
       }
+      case 'mark-via':
+        if (!l) return;
+        if (!markContacted(l, null, b.dataset.via)) {
+          update(l.id, { via: b.dataset.via });
+          toast(`Saved: contacted on ${VIA[b.dataset.via]}`);
+        }
+        return;
+      case 'reset-contacted':
+        if (!l) return;
+        await send({ type: 'lead:reset', id: l.id });
+        return toast(`“${l.pageName}” is new again. Future searches can find it.`);
+      case 'history-clear': {
+        const n = Object.keys(S.history).length;
+        if (!n || !confirm(`Forget all ${n} remembered contacts? Searches can then find businesses you already contacted.`)) return;
+        await send({ type: 'history:clear' });
+        return toast('Contacted memory cleared.');
+      }
       case 'mark-sent':
         if (!l) return;
-        if (!markContacted(l, currentPitch(l).script)) toast(`Already marked as ${(LH.STATUSES.find((x) => x.id === l.status) || {}).label || l.status}`);
+        if (!markContacted(l, currentPitch(l).script, ['whatsapp', 'instagram', 'email'].includes(S.pitch.channel) ? S.pitch.channel : 'whatsapp')) toast(`Already marked as ${(LH.STATUSES.find((x) => x.id === l.status) || {}).label || l.status}`);
         return;
       case 'queue-one': {
         if (!l) return;

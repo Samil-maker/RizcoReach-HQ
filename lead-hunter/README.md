@@ -305,6 +305,15 @@ businesses. Lead Hunter counts requests and stops at the monthly limit in
 Settings (default 950). After that, remove the key to search in a tab
 instead, or raise the limit.
 
+## One record per business, and who you already contacted
+
+- **No duplicates.** Two finds count as one business when they share a phone number, a website (`shop.gloss.ae` and `gloss.ae` are the same site; `gloss.wixsite.com` and `other.wixsite.com` are not), an Instagram handle, or a name that is nearly the same in the same area. Names are compared without LLC, FZE, FZCO, FZ-LLC, Trading, Est, Co, Services, Dubai and UAE, using Jaro-Winkler at 0.92 (Settings > Collecting). The second listing is added to the first record, so nothing is lost.
+- **Mark contacted** in a lead's panel, with the channel: WhatsApp, Instagram or Email. Tap another channel to change it, or **Reset** to make the business new again.
+- **Contacted memory.** Everyone you mark contacted, send from the phone queue, email, or export to Google Contacts is remembered, even after you delete the lead. Searches skip them and the run shows how many ("2 contacted before").
+- **Import your own list** in Settings > Your data: any CSV with phone numbers, like your sheet of contacted numbers or Google Contacts > Export > Google CSV. Leads already saved that match are tagged **Contacted before** and hidden until you tick **Show contacted before**.
+- A number found in a website's text is not used for this (it can be the web designer's or the mall's); the website itself is.
+- The Facebook advertisers list and the Meta ads list stay separate records, because each list works differently. The memory covers both: contact a business in one and it shows as contacted before in the other.
+
 ## Where phone numbers come from
 
 In order of how reliable they are:

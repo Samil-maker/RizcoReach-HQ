@@ -83,20 +83,28 @@ async function ingestProspects(items, ctx = {}) {
   const settings = await getSettings();
   const preset = ctx.finderId ? LH.presetsFor(settings).find((n) => n.name === ctx.niche) : null;
   const result = await locked(async () => {
-    const { prospectIndex = {}, finder } = await store.get(['prospectIndex', 'finder']);
+    const { prospectIndex = {}, prospectNames = {}, contactHistory = {}, finder } = await store.get(['prospectIndex', 'prospectNames', 'contactHistory', 'finder']);
     const run = finder && ctx.finderId === finder.id ? finder : null;
-    const stats = run ? (run.stats = { found: 0, duplicate: 0, fewReviews: 0, manyReviews: 0, excluded: 0, kept: 0, ...(run.stats || {}) }) : null;
+    const stats = run ? (run.stats = { found: 0, duplicate: 0, contacted: 0, fewReviews: 0, manyReviews: 0, excluded: 0, kept: 0, ...(run.stats || {}) }) : null;
     const touched = new Map();
     const fresh = [];
+    let contacted = 0;
     for (const item of items || []) {
       if (!item || !item.name) continue;
       const keys = prospectKeys(item);
       if (!keys.length) continue;
-      let id = keys.map((k) => prospectIndex[k]).find(Boolean);
+      // Same phone, website, Instagram or Maps listing, else nearly the same name in the same area.
+      let id = keys.map((k) => prospectIndex[k]).find(Boolean) || LH.findByName(prospectNames, item.name, ctx.area, settings.nameMatch);
       let lead = id ? touched.get(id) || (await getLead(id)) : null;
       const isNew = !lead;
       if (stats) stats.found++;
       if (!isNew && stats) stats.duplicate++;
+      // Contacted, exported or in your imported contacts before: never added again (Reset on the lead undoes it).
+      if (isNew && LH.historyHit({ pageName: item.name, area: ctx.area, phones: [...(item.phones || []), ...(item.whatsapp || [])], website: item.website, sources: item.instagram ? { instagram: item.instagram } : {} }, contactHistory)) {
+        if (stats) stats.contacted++;
+        contacted++;
+        continue;
+      }
       if (isNew && preset) {
         const reviews = (item.maps && item.maps.reviews) || 0;
         const why = reviews < preset.minReviews ? 'fewReviews' : reviews > preset.maxReviews ? 'manyReviews' : LH.excludeHit(preset, item.name, item.category) ? 'excluded' : '';
@@ -111,10 +119,11 @@ async function ingestProspects(items, ctx = {}) {
       }
       mergeProspect(lead, item, ctx);
       for (const k of prospectKeys({ ...item, website: lead.website, phones: lead.phones.map((p) => p.number) })) prospectIndex[k] = id;
+      LH.addName(prospectNames, lead);
       touched.set(id, lead);
       if (isNew && !fresh.includes(id)) fresh.push(id);
     }
-    const writes = { prospectIndex };
+    const writes = { prospectIndex, prospectNames };
     for (const [id, l] of touched) writes[leadKey(id)] = l;
     const counted = fresh.filter((id) => !touched.get(id).avoid);
     if (run && ['running', 'paused'].includes(run.status)) {
@@ -133,7 +142,7 @@ async function ingestProspects(items, ctx = {}) {
     }
     await store.set(writes);
     const websites = counted.filter((id) => touched.get(id).website);
-    return { added: counted.length, ids: counted, websites };
+    return { added: counted.length, ids: counted, websites, contacted };
   });
   if (result.websites.length) queueAdChecks(result.websites);
   if (result.websites.length) enqueue(result.websites);
@@ -545,7 +554,7 @@ async function addFromInstagram(p) {
   const settings = await getSettings();
   const niche = LH.nicheOf({ keywords: [`${name} ${bio}`.toLowerCase()] }, settings);
   const r = await ingestProspects([item], { niche, country: 'AE' });
-  return { added: r.added, ids: r.ids };
+  return { added: r.added, ids: r.ids, contacted: r.contacted };
 }
 
 /* ------------------------------------------------------------- messages */

@@ -67,6 +67,7 @@
           <option>Good reviews</option>
           <option>Growing</option>
           <option>Running ads</option>
+          <option>Contacted before</option>
         </select>
         <select class="inp" data-f="contact" aria-label="Contact">
           <option value="">Any contact</option>
@@ -78,6 +79,7 @@
         <label class="inp days">Running ≥ <input type="number" min="0" step="1" data-f="minDays" placeholder="0" aria-label="Minimum days running" /> days</label>
         <label class="chk"><input type="checkbox" data-f="hideBig" checked /> Hide big brands</label>
         <label class="chk"><input type="checkbox" data-f="skipped" /> Show skipped (running ads)</label>
+        <label class="chk"><input type="checkbox" data-f="contactedBefore" /> Show contacted before</label>
         <select class="inp" data-f="sort" aria-label="Sort">
           <option value="priority">Sort: priority</option>
           <option value="days">Sort: running longest</option>
@@ -194,6 +196,7 @@
           <option>Good reviews</option>
           <option>Growing</option>
           <option>Running ads</option>
+          <option>Contacted before</option>
         </select>
         <select class="inp" data-af="heat" aria-label="Priority">
           <option value="">Any priority</option>
@@ -211,6 +214,7 @@
         <label class="chk"><input type="checkbox" data-af="mobile" /> Mobile only</label>
         <label class="chk"><input type="checkbox" data-af="chains" /> Hide chains</label>
         <label class="chk"><input type="checkbox" data-af="skipped" /> Show skipped (running ads)</label>
+        <label class="chk"><input type="checkbox" data-af="contactedBefore" /> Show contacted before</label>
         <select class="inp" data-af="sort" aria-label="Sort">
           <option value="priority">Sort: priority</option>
           <option value="reviews">Sort: most Google reviews</option>
@@ -374,6 +378,10 @@
           <span class="lbl">Delay between scrolls <small>milliseconds; higher is gentler on Facebook</small></span>
           <input class="inp" name="scrollDelayMs" type="number" min="900" step="100" />
         </label>
+        <label class="field">
+          <span class="lbl">Same business name match <small>0.8 to 1. Two names in the same area this close count as one business. 0.92 is a good start, 1 means exactly the same</small></span>
+          <input class="inp" name="nameMatch" type="number" min="0.8" max="1" step="0.01" />
+        </label>
 
         <h2 id="outreach">Outreach</h2>
         <div class="grid2">
@@ -448,6 +456,13 @@
           <button class="btn" data-act="backup">Download backup (JSON)</button>
           <label class="btn file">Restore backup<input type="file" accept="application/json" data-import hidden /></label>
           <button class="btn danger" data-act="wipe">Delete all leads</button>
+        </div>
+        <h2 id="memory">Contacted memory</h2>
+        <p class="hint">Everyone you mark contacted, message from the phone queue, email or export to Google Contacts is remembered here, even after you delete the lead. Searches skip them and matching leads are hidden (tick Show contacted before to see them). Import your own list too: any CSV with phone numbers, like your sheet of contacted numbers or Google Contacts &gt; Export &gt; Google CSV.</p>
+        <p class="hint" data-history-count></p>
+        <div class="row">
+          <label class="btn file">Import contacted numbers (CSV)<input type="file" accept=".csv,text/csv,text/plain" data-import-history hidden /></label>
+          <button class="btn danger" data-act="history-clear">Forget all</button>
         </div>
       </section>
     </main>
