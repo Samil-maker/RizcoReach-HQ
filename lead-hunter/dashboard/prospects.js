@@ -97,7 +97,7 @@ function prospectRow({ l, h }) {
     <td>${l.website ? siteCell(l) : '<span class="muted">No website</span>'}</td>
     <td>${contactCell(l)}</td>
     <td>${statusCell(l)}</td>
-    <td><button class="btn sm" data-open>Pitch</button></td>
+    <td><button class="btn sm" data-open>Open</button></td>
   </tr>`;
 }
 
@@ -192,18 +192,6 @@ function renderProspectsView() {
   $('[data-ads-bulk-count]').textContent = `${S.selected.size} selected`;
 }
 
-/** Short facts for phone mode and the phone queue. */
-function prospectHighlights(l) {
-  const m = (l.sources || {}).maps || {};
-  const ig = (l.sources || {}).instagram || {};
-  const a = (l.adCheck || {}).state;
-  return [
-    a === 'past' ? 'Ran Meta ads before, none live now' : a === 'none' ? 'Never ran Meta ads' : a === 'likely' ? 'No Meta ads found' : a === 'running' ? 'Already running Meta ads' : 'Meta ads not checked yet',
-    m.reviews ? `${m.rating ? `${m.rating}★ · ` : ''}${m.reviews} Google reviews` : '',
-    ig.followers ? `${compactNum(ig.followers)} Instagram followers` : '',
-  ].filter(Boolean);
-}
-
 /* ------------------------------------------------------------------ drawer */
 function prospectDrawerHtml(l) {
   const p = LH.priority(l);
@@ -229,7 +217,7 @@ function prospectDrawerHtml(l) {
     checking: 'Checking the Ad Library now…',
     queued: 'Waiting for its turn in the Ad Library check.',
     pending: 'Not checked yet.',
-    skipped: 'Not checked: without a website they get the website script either way. Use Check ads again if you want to know.',
+    skipped: 'Not checked: without a website they get the website offer either way. Use Check ads again if you want to know.',
   }[a.state || 'pending'];
   const adNote = LH.oldAdCheck(a) ? 'Checked before version 1.8, when only live ads were looked at. Press Check again to see whether they ran ads before.' : adText;
   return `
@@ -262,8 +250,8 @@ function prospectDrawerHtml(l) {
         <button class="btn sm ghost" data-act="adcheck-set" data-state="running">They do run ads</button>
       </div>
     </section>
-    ${pitchSection(l)}
     ${qualitySection(l)}
+    ${emailSection(l)}
     ${l.website ? siteSection(l) : `<section class="d-sec" data-site-sec><h3>Website</h3><p class="muted">No website listed on Google Maps.</p>
       <form class="inline-form" data-set-website><input class="inp" name="website" placeholder="Know their website? Paste it here" /><button class="btn sm" type="submit">Check it</button></form></section>`}
     ${contactSection(l)}
@@ -278,7 +266,7 @@ function prospectDrawerHtml(l) {
 
 /* --------------------------------------------------------------------- csv */
 function exportProspectsCsv(list) {
-  const head = ['priority', 'business', 'niche', 'area', 'meta_ads', 'meta_ad_status', 'active_ads', 'last_ad_date', 'website_weakness', 'weakness_reasons', 'instagram_followers', 'followers_in_range', 'new_business', 'pitch_line', 'ad_library_search', 'google_rating', 'google_reviews', 'google_maps', 'website', 'website_score', 'tags', 'phone', 'whatsapp_link', 'whatsapp_message_link', 'email', 'instagram', 'address', 'status', 'notes', 'found_on'];
+  const head = ['priority', 'business', 'niche', 'area', 'meta_ads', 'meta_ad_status', 'active_ads', 'last_ad_date', 'website_weakness', 'weakness_reasons', 'instagram_followers', 'followers_in_range', 'new_business', 'top_reason', 'ad_library_search', 'google_rating', 'google_reviews', 'google_maps', 'website', 'website_score', 'tags', 'phone', 'whatsapp_link', 'email', 'instagram', 'address', 'status', 'notes', 'found_on'];
   const rows = list.map((l) => {
     const m = (l.sources || {}).maps || {};
     const a = l.adCheck || {};
@@ -299,7 +287,7 @@ function exportProspectsCsv(list) {
       q.followers ?? '',
       q.inBand == null ? '' : q.inBand ? 'yes' : 'no',
       q.newBusiness == null ? '' : q.newBusiness ? 'yes' : 'no',
-      q.pitch,
+      q.topReason,
       a.searchUrl || '',
       m.rating || '',
       m.reviews || '',
@@ -309,7 +297,6 @@ function exportProspectsCsv(list) {
       LH.leadTags(l).join('; '),
       best ? LH.formatPhone(best.number) : '',
       wa ? LH.waLink(wa) : '',
-      wa && !isSkipped(l) ? LH.waLink(wa, LH.pitchFor(l, S.settings).text) : '',
       (l.emails || [])[0] || '',
       igUrl(l),
       m.address || '',
@@ -401,7 +388,6 @@ function initProspects() {
       e.target.checked ? S.selected.add(l.id) : S.selected.delete(l.id);
       return renderProspectsView();
     }
-    if (e.target.closest('[data-wa]')) return quickWhatsApp(l);
     if (e.target.closest('[data-replied]')) return toggleReplied(l);
     if (e.target.closest('a, select, [data-stop]')) return;
     openDrawer(l.id);
@@ -463,15 +449,6 @@ async function prospectAction(act, b, l) {
     case 'adcheck-set':
       if (!l) return true;
       await send({ type: 'adcheck:set', id: l.id, state: b.dataset.state });
-      return true;
-    case 'ads-phone-mode':
-      openPhoneMode(filteredProspects().map((r) => r.l.id));
-      return true;
-    case 'ads-bulk-phone-mode':
-      openPhoneMode(selected());
-      return true;
-    case 'ads-bulk-queue':
-      await queueLeads(selected(), b);
       return true;
     case 'ads-bulk-email':
       await emailLeads(selected(), b);

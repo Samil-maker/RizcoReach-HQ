@@ -231,7 +231,7 @@ for hire
 
   /**
    * Rules score from 0 to 100: what kind of intent, how fresh, in the UAE, asking a question.
-   * Without the AI (Phase 6) every post is marked unverified.
+   * Until the AI check (LH.aiRequest below) reads it, a post is marked unverified.
    */
   LH.intentScore = (post, now = Date.now()) => {
     const c = post.categories || [];
@@ -242,24 +242,6 @@ for hire
     if (post.uae) s += 10;
     if (/\?|recommend|anyone know|suggest|looking for|need/i.test(`${post.title || ''} ${post.text || ''}`)) s += 10;
     return Math.max(0, Math.min(100, s));
-  };
-
-  /* Openers in Samil's voice: casual, few commas, no semicolons, no dashes. {name} is the poster, {topic} what they asked about. */
-  LH.INTENT_OPENERS = {
-    website: 'Hey {name} saw your post about the website. I build sites for small businesses here in the UAE and happy to send you a few examples if that helps',
-    marketing: 'Hey {name} saw your post about marketing. We run Meta ads for small businesses here in the UAE so happy to share what works if that helps',
-    pain: "Hey {name} saw your post and I get it, slow months are rough. I help businesses here get more inquiries through ads so happy to share a couple of ideas if you're open to it",
-    hiring: "Hey {name} saw you're hiring for marketing. Before you take someone on full time happy to show you how we run this for other businesses here, might save you the hire",
-  };
-  LH.intentOpener = (post, settings = {}) => {
-    const own = settings.intentOpeners || {};
-    const c = post.categories || [];
-    const kind = ['hiring', 'website', 'marketing', 'pain'].find((k) => c.includes(k)) || 'marketing';
-    const tpl = own[kind] || LH.INTENT_OPENERS[kind];
-    // A job ad's "author" is the company, not a person to greet.
-    const name = post.job ? '' : String(post.author || '').replace(/^u\//, '').split(/[\s_]+/)[0];
-    const first = /^[A-Za-z؀-ۿ]{2,}$/.test(name) && !/\d/.test(name) ? name.charAt(0).toUpperCase() + name.slice(1) : '';
-    return tpl.replace('{name}', first).replace('{topic}', LH.INTENT_LABELS[kind].toLowerCase()).replace(/\s{2,}/g, ' ').replace(/^Hey\s+saw/, 'Hey saw').trim();
   };
 
   /**
@@ -283,11 +265,114 @@ for hire
     if (post.createdAt && now - post.createdAt > s.intentMaxDays * 864e5) return { keep: false, why: 'old', post };
     if (needUae && !LH.mentionsUAE(text)) return { keep: false, why: 'foreign', post };
     post.score = LH.intentScore(post, now);
-    post.verified = false; // rules only until the AI checks it (Phase 6)
+    post.verified = false; // rules only until the AI checks it
     post.summary = String(raw.title || raw.text || '').replace(/\s+/g, ' ').trim().slice(0, 220);
-    post.opener = LH.intentOpener(post, s);
     post.keys = LH.intentKeys(post);
     return { keep: true, why: '', post };
+  };
+
+  /* ------------------------------------------------------------- AI check */
+  /*
+   * Claude reads a post the rules kept and says whether the person is really a buyer for what you sell. The answer
+   * is JSON in a fixed shape (structured outputs), so it can be read without guessing.
+   */
+  LH.AI_SCHEMA = {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      is_buyer: { type: 'boolean' },
+      service_needed: { type: 'string', enum: ['website', 'seo', 'marketing', 'website_and_marketing', 'other', 'none'] },
+      business_type: { type: 'string' },
+      location: { type: 'string' },
+      urgency: { type: 'string', enum: ['high', 'medium', 'low'] },
+      summary: { type: 'string' },
+      intent_score: { type: 'integer' },
+    },
+    required: ['is_buyer', 'service_needed', 'business_type', 'location', 'urgency', 'summary', 'intent_score'],
+  };
+  LH.AI_SYSTEM = `You screen social media posts for a one person marketing agency in the UAE. It sells Meta ads management (Facebook and Instagram ads), websites, and SEO for websites, to small owner run businesses.
+
+For each post decide whether the person posting is a potential buyer of those services:
+- A buyer is a business owner, manager or someone acting for a business who wants a website, SEO, social media or paid ads help, or more customers for their business. A company hiring a marketing or social media person counts as a buyer too, since they need marketing.
+- Not a buyer: anyone selling or advertising these services (agencies, freelancers, people sharing their portfolio), job seekers, people asking for consumer recommendations (a good restaurant, a mechanic for their own car), students, spam, or posts with nothing to do with buying these services.
+- The business should be in the UAE. If the post does not say where, judge from the group or subreddit it was posted in.
+
+Fill in every field:
+- service_needed: what they need, or "none" when they are not a buyer.
+- business_type: the kind of business, for example "bakery" or "car detailing studio", or "unknown".
+- location: the city or area in the UAE if mentioned, else "unknown".
+- urgency: high when they need it now or soon, medium when they are looking around, low otherwise.
+- summary: one plain sentence saying who they are and what they want.
+- intent_score: 0 to 100, how likely they are to pay for these services soon. Under 30 when they are not a buyer.`;
+
+  /** The request for one post: Claude's Messages API, called straight from the extension with your key. */
+  LH.aiRequest = (post, settings = {}) => {
+    const lines = [
+      `Source: ${post.source}${post.place ? ` (${post.place})` : ''}`,
+      post.job ? `Job ad: ${post.title} at ${post.company || 'a company'}` : '',
+      post.author ? `Posted by: ${post.author}${post.headline ? `, ${post.headline}` : ''}` : '',
+      post.title && !post.job ? `Title: ${post.title}` : '',
+      `Text: ${String(post.text || '').slice(0, 3000) || '(no text)'}`,
+    ].filter(Boolean);
+    return {
+      url: 'https://api.anthropic.com/v1/messages',
+      init: {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': settings.anthropicKey || '',
+          'anthropic-version': '2026-10-21',
+          'anthropic-dangerous-direct-browser-access': 'true', // a key you entered yourself, kept in this browser
+        },
+        body: JSON.stringify({
+          model: settings.aiModel || 'claude-haiku-5-5',
+          max_tokens: 2048,
+          system: LH.AI_SYSTEM,
+          output_config: { effort: 'low', format: { type: 'json_schema', schema: LH.AI_SCHEMA } },
+          messages: [{ role: 'user', content: lines.join('\n') }],
+        }),
+      },
+    };
+  };
+
+  /**
+   * The answer: { result } or { error, retry, stop }. retry: try again later (busy, rate limited);
+   * stop: nothing will work until you fix it (wrong key, no credit), so the checks pause.
+   */
+  LH.aiParse = (status, data, retryAfter) => {
+    const message = (data && data.error && data.error.message) || '';
+    if (status === 401 || status === 403) return { error: `Claude did not accept your API key (${status})${message ? `: ${message}` : ''}`, stop: true };
+    if (status === 400 && /credit|billing|balance/i.test(message)) return { error: `Claude says: ${message}`, stop: true };
+    if (status === 429 || status === 529 || status >= 500) return { error: status === 429 ? 'Claude rate limit, trying again later' : `Claude is busy (${status}), trying again later`, retry: true, wait: Math.max(30, Number(retryAfter) || 60) * 1000 };
+    if (status !== 200 || !data) return { error: `Claude answered ${status}${message ? `: ${message}` : ''}` };
+    if (data.stop_reason === 'refusal') return { error: 'Claude declined to read this post' };
+    if (data.stop_reason === 'max_tokens') return { error: 'Claude ran out of room answering' };
+    const text = ((data.content || []).find((b) => b && b.type === 'text') || {}).text || '';
+    let result;
+    try {
+      result = JSON.parse(text);
+    } catch {
+      return { error: 'Claude did not answer in the expected shape' };
+    }
+    if (typeof result.is_buyer !== 'boolean') return { error: 'Claude did not answer in the expected shape' };
+    result.intent_score = Math.max(0, Math.min(100, Math.round(Number(result.intent_score) || 0)));
+    return { result };
+  };
+
+  /** A post with Claude's verdict on it. Its kinds follow what Claude says they need; hiring and owner pain stay. */
+  LH.aiApply = (post, result, now = Date.now()) => {
+    const need = { website: ['website'], seo: ['website'], marketing: ['marketing'], website_and_marketing: ['website', 'marketing'] }[result.service_needed] || [];
+    const keep = (post.categories || []).filter((c) => c === 'hiring' || c === 'pain');
+    return {
+      ...post,
+      verified: true,
+      checkedAt: now,
+      ai: result,
+      notBuyer: !result.is_buyer,
+      score: result.intent_score,
+      summary: result.summary || post.summary,
+      categories: result.is_buyer && (need.length || keep.length) ? [...new Set([...need, ...keep])] : post.categories,
+    };
   };
 
   /** Reddit's listing JSON (official API or the public .json) as posts. */

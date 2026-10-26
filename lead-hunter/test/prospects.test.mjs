@@ -51,27 +51,27 @@ test('prospect priority: confirmed no-ads > unconfirmed > running', () => {
   assert.equal(LH.heat(none), 'hot');
 });
 
-test('Meta ads prospects: the script follows the website and the ad check, and claims nothing', () => {
+test('Meta ads prospects: the email follows the website and the ad check, and claims nothing', () => {
   const settings = { ...LH.DEFAULT_SETTINGS, myName: 'Samil', adsCity: 'Dubai' };
   const p = prospect({ name: 'Shine PPF', website: 'https://shine.example/', phones: ['+971501234567'], sources: { maps: { placeId: 'x', reviews: 120, rating: 4.7 } }, extra: { niche: 'Car detailing & PPF' } });
   for (const state of ['none', 'likely', 'pending', 'unclear', 'running']) {
     for (const lead of [{ ...p, adCheck: { state } }, { ...p, website: null, adCheck: { state } }]) {
-      const pitch = LH.pitchFor(lead, settings);
-      // The email ends with Samil's own signature (his real phone number): the rest must claim nothing.
-      const all = [...pitch.bubbles, pitch.subject, pitch.email.replace(settings.emailSignature, '')].join('\n');
+      const e = LH.emailFor(lead, settings);
+      // Each email ends with Samil's own signature (his real phone number): the rest must claim nothing.
+      const all = [e.subject, ...e.steps.map((x) => x.replace(settings.emailSignature, ''))].join('\n');
       assert.doesNotMatch(all, /\{\{|undefined|null/);
       assert.doesNotMatch(all, /\b(our team|our clients|clients like|we've helped)\b|★|\d/i, `nothing invented (${state})`);
       assert.doesNotMatch(all, /&|ppf businesses/i, 'niche reads naturally');
     }
   }
-  const none = LH.pitchFor({ ...p, adCheck: { state: 'none' } }, settings);
+  const none = LH.emailFor({ ...p, adCheck: { state: 'none' } }, settings);
   assert.equal(none.script, 'ads');
-  assert.match(none.bubbles[1], /We help car detailing and protection studios in Dubai/);
-  assert.equal(LH.pitchFor({ ...p, adCheck: { state: 'unclear' } }, settings).tag, 'Ad check not done');
-  assert.equal(LH.pitchFor({ ...p, adCheck: { state: 'running' } }, settings).script, null, 'running ads with a website: skipped');
-  const noSite = LH.pitchFor({ ...p, website: null, adCheck: { state: 'running' } }, settings);
+  assert.match(none.steps[0], /We help car detailing and protection studios in Dubai/);
+  assert.equal(LH.emailFor({ ...p, adCheck: { state: 'unclear' } }, settings).tag, 'Ad check not done');
+  assert.equal(LH.emailFor({ ...p, adCheck: { state: 'running' } }, settings).script, null, 'running ads with a website: skipped');
+  const noSite = LH.emailFor({ ...p, website: null, adCheck: { state: 'running' } }, settings);
   assert.equal(noSite.script, 'website');
-  assert.match(noSite.bubbles[1], /^I came across Shine PPF on Google Maps and couldn't find a website for you\./);
+  assert.match(noSite.steps[0], /^Hello Shine PPF\n\nI came across Shine PPF on Google Maps and couldn't find a website for you\./);
 });
 
 test('a website Google Maps lists that is really an Instagram profile is not a website', () => {

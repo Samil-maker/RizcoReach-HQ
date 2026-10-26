@@ -544,7 +544,7 @@ Mussafah, Abu Dhabi`),
     queueKey: '',
     queueKeyAt: 0,
     adsCity: 'Dubai',
-    // Quality signals (Phase 3). Points and pitch lines for each website check are in weakChecks (null = defaults).
+    // Quality signals (Phase 3). Points for each website check are in weakChecks (null = defaults).
     followerMin: 500,
     followerMax: 10000,
     newBusinessReviews: 10, // fewer Google reviews than this = new business
@@ -563,7 +563,7 @@ Mussafah, Abu Dhabi`),
     igToken: '',
     igApiVersion: 'v23.0',
     igAuto: true, // look up followers for new businesses with an Instagram handle
-    adCheckAll: false,
+    adCheckAll: false, // also check the Ad Library for businesses without a website (one name search each, slower)
     // Intent Radar (Phase 5)
     radarEveryHours: 3, // scan Reddit every this many hours, 0 = only when you press Scan now
     intentMaxDays: 14, // only posts this new
@@ -574,11 +574,12 @@ Mussafah, Abu Dhabi`),
     redditSecret: '',
     intentKeywords: null, // { website, marketing, pain, hiring, arabic } as text, null = defaults (LH.INTENT_KEYWORDS)
     sellerWords: null, // null = LH.SELLER_WORDS
-    intentOpeners: null, // { website, marketing, pain, hiring }, null = LH.INTENT_OPENERS // also check the Ad Library for businesses without a website (one name search each, slower)
+    // Intent AI check (Phase 6): Claude reads each new post and says whether it is a real buyer.
+    anthropicKey: '', // your Claude API key, kept in this browser only
+    aiModel: 'claude-haiku-5-5',
+    aiAuto: true, // check new posts as they come in
     nameMatch: 0.92, // how close two names in the same area must be to count as one business (Jaro-Winkler, 0.8 to 1)
-    bubbles: 3, // WhatsApp messages per pitch: 3 = greeting, body, closing · 2 = greeting with body, closing
     niches: null, // null = use LH.DEFAULT_NICHES
-    scripts: null, // null = use LH.DEFAULT_SCRIPTS
     emailFromName: 'Samil',
     emailMaxPerDay: 30, // the email sender's daily limit (1 to 40), also saved on the site where the sender reads it
     emailFollowups: 2, // follow ups after the first email: 0, 1 or 2
@@ -587,10 +588,12 @@ Mussafah, Abu Dhabi`),
     emails: null, // null = use LH.DEFAULT_EMAILS
   };
   // Settings from earlier versions that no longer do anything.
-  const OLD_SETTINGS = ['templates', 'adTemplates', 'adsOffer'];
+  // (1.12: pitching from the dashboard and the phone queue were removed; script edits move into the first email.)
+  const OLD_SETTINGS = ['templates', 'adTemplates', 'adsOffer', 'scripts', 'bubbles', 'intentOpeners'];
   /** Stored settings over the defaults, without the old keys. */
   LH.withDefaults = (stored) => {
     const s = { ...LH.DEFAULT_SETTINGS, ...(stored || {}) };
+    if (stored && stored.scripts) s.emails = LH.foldScripts(s.emails, stored.scripts);
     for (const k of OLD_SETTINGS) delete s[k];
     return s;
   };
@@ -855,40 +858,26 @@ Mussafah, Abu Dhabi`),
   };
   LH.heat = (p) => (p >= 70 ? 'hot' : p >= 48 ? 'warm' : 'cold');
 
-  /* ------------------------------------------------------------------ Scripts */
-  // Two scripts, picked per lead by LH.scriptFor. Written the way Samil types on his phone:
-  // short lines, few commas, no dashes. Each part goes out as its own WhatsApp bubble.
-  LH.DEFAULT_SCRIPTS = {
-    ads: {
-      name: 'Ads script',
-      greeting: 'Hello {{business}}',
-      body: "Are you dependent on word of mouth for appointments in {{city}}?\n\nWe help {{niche}} in {{city}} get consistent inquiries through Facebook and Instagram ads.\n\nWe personally screen each and every lead so the ones that reach you are genuine people with real interest.\n\nThere's no big setup fee. Just one flat monthly rate so there's minimal risk on your end.\n\nIf this sounds interesting I'd be happy to send you a quick explanation of how it works.",
-      closing: 'Let me know',
-    },
-    website: {
-      name: 'Website script',
-      greeting: 'Hello {{business}}',
-      body: "I came across {{business}} on {{found_on}} and {{website_line}}.\n\nWe build simple websites for {{niche}} in {{city}} that turn visitors into WhatsApp inquiries.\n\nIf this sounds interesting I'd be happy to send you a free mockup of how yours could look.",
-      closing: 'Let me know',
-    },
-  };
-  LH.SCRIPT_PARTS = ['greeting', 'body', 'closing'];
-
-  // The first email is the script in one block. These are its subject and the two follow ups,
-  // which go as replies in the same thread a few working days apart.
+  /* ------------------------------------------------------------------- Emails */
+  // Two offers, picked per lead by LH.scriptFor: the Ads offer and the Website offer. The email sender sends the
+  // first email, then the follow ups as replies in the same thread a few working days apart. Written the way
+  // Samil writes: short lines, few commas, no dashes.
+  LH.OFFER_NAMES = { ads: 'Ads offer', website: 'Website offer' };
   LH.DEFAULT_EMAILS = {
     ads: {
       subject: 'Quick question for {{business}}',
+      body: "Hello {{business}}\n\nAre you dependent on word of mouth for appointments in {{city}}?\n\nWe help {{niche}} in {{city}} get consistent inquiries through Facebook and Instagram ads.\n\nWe personally screen each and every lead so the ones that reach you are genuine people with real interest.\n\nThere's no big setup fee. Just one flat monthly rate so there's minimal risk on your end.\n\nIf this sounds interesting I'd be happy to send you a quick explanation of how it works.\n\nLet me know",
       followup1: 'Hello {{business}}\n\nJust bringing this back to the top of your inbox. Would a quick explanation of how it works be useful?\n\nLet me know',
       followup2: "Hello {{business}}\n\nI'll leave it here so I don't fill up your inbox. If more appointments from Facebook and Instagram ads is ever on your list just reply and I'll send the details.",
     },
     website: {
       subject: 'Website for {{business}}',
+      body: "Hello {{business}}\n\nI came across {{business}} on {{found_on}} and {{website_line}}.\n\nWe build simple websites for {{niche}} in {{city}} that turn visitors into WhatsApp inquiries.\n\nIf this sounds interesting I'd be happy to send you a free mockup of how yours could look.\n\nLet me know",
       followup1: 'Hello {{business}}\n\nJust bringing this back to the top of your inbox. Would you like me to send the free mockup?\n\nLet me know',
       followup2: "Hello {{business}}\n\nI'll leave it here so I don't fill up your inbox. If you ever want a simple website that brings in WhatsApp inquiries just reply and I'll send a free mockup.",
     },
   };
-  LH.EMAIL_PARTS = ['subject', 'followup1', 'followup2'];
+  LH.EMAIL_PARTS = ['subject', 'body', 'followup1', 'followup2'];
 
   /** Edits from Settings over the defaults, part by part. */
   const withEdits = (defaults, parts, saved) => {
@@ -899,10 +888,25 @@ Mussafah, Abu Dhabi`),
     }
     return out;
   };
-  /** The scripts in use. */
-  LH.scriptsFor = (settings) => withEdits(LH.DEFAULT_SCRIPTS, LH.SCRIPT_PARTS, settings && settings.scripts);
-  /** The email subjects and follow ups in use. */
+  /** The emails in use: your edits from Settings over the defaults. */
   LH.emailsFor = (settings) => withEdits(LH.DEFAULT_EMAILS, LH.EMAIL_PARTS, settings && settings.emails);
+  /**
+   * Before 1.12 the first email was the WhatsApp script (greeting, body, closing, edited under Scripts). Those edits
+   * become the first email, so nothing you wrote is lost.
+   */
+  LH.foldScripts = (emails, scripts) => {
+    const out = { ...(emails || {}) };
+    for (const k of Object.keys(LH.DEFAULT_EMAILS)) {
+      const t = scripts && scripts[k];
+      if (!t || (out[k] && typeof out[k].body === 'string')) continue;
+      const parts = ['greeting', 'body', 'closing'].map((p) => (typeof t[p] === 'string' ? t[p] : null));
+      if (parts.every((x) => x === null)) continue;
+      const def = LH.DEFAULT_EMAILS[k].body.split('\n\n');
+      const body = [parts[0] ?? def[0], parts[1] ?? def.slice(1, -1).join('\n\n'), parts[2] ?? def[def.length - 1]].filter(Boolean).join('\n\n');
+      out[k] = { ...(out[k] || {}), body };
+    }
+    return out;
+  };
 
   /** They have a website but it is down or parked: for outreach that is no working website. */
   LH.siteDown = (lead) => !!lead && !!lead.website && ((lead.site || {}).state === 'error' || !!(lead.site || {}).parked);
@@ -925,7 +929,7 @@ Mussafah, Abu Dhabi`),
     if (ad === 'none' || ad === 'likely') return { script: 'ads', tag: 'No Meta ads' };
     return { script: 'ads', tag: 'Ad check not done' };
   };
-  /** The script a contacted lead got. "Pitch anyway" on a skipped lead uses the website script. */
+  /** The offer a contacted lead got (the website offer for one skipped for running ads). */
   LH.sentScriptFor = (lead) => LH.scriptFor(lead).script || 'website';
 
   /** Google rating from Maps (Meta ads tab) or a Places lookup (website leads). */
@@ -954,8 +958,6 @@ Mussafah, Abu Dhabi`),
     if (q.inBand) tags.push('Followers in range');
     return tags;
   };
-  /** The one-line summary the phone queue shows: "No website", "No Meta ads · Good reviews". */
-  LH.tagLine = (lead) => [...new Set([LH.scriptFor(lead).tag, ...LH.leadTags(lead)])].join(' · ');
 
   /** Instagram username (no @) from where the lead was found or the profile link on their website. */
   LH.igFromUrl = (url) => {
@@ -998,13 +1000,12 @@ Mussafah, Abu Dhabi`),
     const ig = (l.sources || {}).instagram || {};
     const niche = LH.nicheOf(l, settings);
     return {
-      // No name: their Instagram handle or domain. pitchFor writes "Hello there" and "your business" when there is neither.
+      // No name: their Instagram handle or domain. The emails say "Hello there" and "your business" when there is neither.
       business: LH.shortName(l.pageName) || LH.igHandle(l) || LH.domainOf(l.website || ''),
       niche: niche ? LH.nicheText(niche, settings) : 'businesses',
       city: LH.cityOf(l.area, settings.adsCity || 'Dubai'),
       found_on: l.kind !== 'prospect' ? 'Facebook and Instagram' : ig.username && !m.placeId ? 'Instagram' : 'Google Maps',
       website_line: LH.siteDown(l) ? "your website wasn't loading when I checked" : "couldn't find a website for you",
-      pitch: LH.quality(l, settings).pitch,
       my_name: settings.myName || '',
       agency: settings.agency || '',
       my_phone: settings.myPhone || '',
@@ -1020,49 +1021,33 @@ Mussafah, Abu Dhabi`),
       .replace(/, \./g, '.')
       .trim();
 
-  /** The lead's script (`force` = 'website' pitches a skipped lead anyway), its variables and its rendered parts. */
-  const rendered = (lead, settings, force) => {
+  /** The lead's offer, its variables, and its first email rendered. */
+  const rendered = (lead, settings) => {
     const pick = LH.scriptFor(lead);
-    const script = force && LH.DEFAULT_SCRIPTS[force] ? force : pick.script;
-    if (!script) return { script: null, tag: pick.tag };
-    const t = LH.scriptsFor(settings)[script];
+    if (!pick.script) return { script: null, tag: pick.tag };
+    const t = LH.emailsFor(settings)[pick.script];
     const vars = LH.scriptVars(lead, settings);
-    // No name at all: "Hello there", and the body says "I came across your business on…".
+    // No name at all: "Hello there", and the rest says "I came across your business on…".
     const nameless = (business) => (vars.business ? vars : { ...vars, business });
-    const parts = LH.SCRIPT_PARTS.map((p) => LH.render(t[p], nameless({ greeting: 'there', body: 'your business' }[p] || '')));
-    return { script, tag: pick.tag, vars, nameless, parts };
+    const [greeting, ...rest] = String(t.body || '').split('\n\n');
+    const first = [LH.render(greeting, nameless('there')), LH.render(rest.join('\n\n'), nameless('your business'))].filter(Boolean).join('\n\n');
+    return { script: pick.script, tag: pick.tag, vars, nameless, first };
   };
 
   /**
-   * The message for a lead, split into WhatsApp bubbles. WhatsApp is never sent from here:
-   * every bubble is prefilled or copied, and Samil presses Send himself.
-   *   3 bubbles: [greeting] [body] [closing] · 2 bubbles: [greeting + body] [closing]. Empty bubbles are dropped.
-   * `subject` and `email` are the first email, the same one the email sender sends.
-   */
-  LH.pitchFor = (lead, settings = {}, force) => {
-    const r = rendered(lead, settings, force);
-    if (!r.script) return { script: null, tag: r.tag, bubbles: [], text: '', subject: '', email: '' };
-    const [greeting, body, closing] = r.parts;
-    const parts = Number(settings.bubbles) === 2 ? [[greeting, body].filter(Boolean).join('\n\n'), closing] : [greeting, body, closing];
-    const bubbles = parts.filter(Boolean);
-    const mail = LH.emailFor(lead, settings, force);
-    return { script: r.script, tag: r.tag, bubbles, text: bubbles.join('\n\n'), subject: mail.subject, email: mail.steps[0] || '' };
-  };
-
-  /**
-   * The emails for a lead: the script in one email, then the follow ups (Settings says how many). Each one ends
+   * The emails for a lead: the first email for its offer, then the follow ups (Settings says how many). Each one ends
    * with the signature and the opt out line. `to` is their first address that has not bounced and is not a
    * template placeholder, '' when there is none or they are on the never email list. Leads skipped for running ads get no emails.
    */
-  LH.emailFor = (lead, settings = {}, force) => {
-    const r = rendered(lead, settings, force);
+  LH.emailFor = (lead, settings = {}) => {
+    const r = rendered(lead, settings);
     const to = (lead && !lead.doNotEmail && LH.goodEmails(lead)[0]) || '';
     if (!r.script) return { script: null, tag: r.tag, to, subject: '', steps: [] };
     const D = LH.DEFAULT_SETTINGS;
     const t = LH.emailsFor(settings)[r.script];
     const end = [settings.emailSignature ?? D.emailSignature, settings.emailOptOut ?? D.emailOptOut].map((x) => LH.render(x, r.vars)).filter(Boolean);
     const count = Math.max(0, Math.min(2, Math.round(Number(settings.emailFollowups ?? D.emailFollowups)) || 0));
-    const first = r.parts.filter(Boolean).join('\n\n');
+    const first = r.first;
     const followups = [t.followup1, t.followup2].slice(0, count).map((x) => LH.render(x, r.nameless('there')));
     const steps = first ? [first, ...followups].filter(Boolean).map((text) => [text, ...end].join('\n\n')) : [];
     // No name: "Quick question" or "Your website" instead of a subject ending in "for".
@@ -1075,11 +1060,10 @@ Mussafah, Abu Dhabi`),
   LH.hasReplied = (l) => !!l && (REPLIED.includes(l.status) || !!l.repliedAt);
   LH.replyRate = (r) => (r.sent ? `${Math.round((100 * r.replied) / r.sent)}%` : '–');
   /**
-   * Reply rates across all leads (both tabs), by niche and by script.
+   * Reply rates across all leads (both tabs), by niche and by offer.
    * Sent = has contactedAt (a lead that replied was sent something too). Replied = replied, meeting, won or a recorded reply.
    */
   LH.results = (leads, settings) => {
-    const scripts = LH.scriptsFor(settings);
     const total = { sent: 0, replied: 0 };
     const byNiche = new Map();
     const byScript = new Map();
@@ -1096,7 +1080,7 @@ Mussafah, Abu Dhabi`),
       if (replied) total.replied++;
       const niche = LH.nicheOf(l, settings);
       add(byNiche, niche || '', niche || 'No niche', replied);
-      add(byScript, l.sentScript || '', l.sentScript && scripts[l.sentScript] ? scripts[l.sentScript].name : 'Not recorded', replied);
+      add(byScript, l.sentScript || '', LH.OFFER_NAMES[l.sentScript] || 'Not recorded', replied);
     }
     const list = (map) => [...map.values()].sort((a, b) => b.sent - a.sent || a.label.localeCompare(b.label)).map((r) => ({ ...r, rate: LH.replyRate(r) }));
     return { total: { ...total, rate: LH.replyRate(total) }, byNiche: list(byNiche), byScript: list(byScript) };
@@ -1190,30 +1174,24 @@ Mussafah, Abu Dhabi`),
 
   /*
    * The website checks from the brief. Each failed check is saved as a reason with its points (the weakness score
-   * adds them up, at most 100) and a pitch line. The strongest reason gives the lead its pitch line.
-   * Lines are written the way Samil writes: casual, few commas, no semicolons, no dashes.
+   * adds them up, at most 100). The reason with the most points is the lead's top reason.
    */
   LH.WEAK_CHECKS = [
-    { id: 'site_down', label: 'Site down, 404 or parked', points: 40, pitch: "I noticed your website isn't loading right now so anyone who looks you up hits a dead end" },
-    { id: 'no_https', label: 'No HTTPS or an SSL error', points: 15, pitch: 'I noticed your site shows a Not secure warning in the browser and that puts people off before they even look' },
-    { id: 'slow_mobile', label: 'PageSpeed mobile score under the limit', points: 15, pitch: 'I noticed your site takes a while to open on phones and most people leave before it loads' },
-    { id: 'no_viewport', label: 'Not set up for phones (no viewport tag)', points: 15, pitch: "I noticed your site doesn't fit phone screens so people have to pinch and zoom to read it" },
-    { id: 'no_contact', label: 'No WhatsApp button and no contact form', points: 15, pitch: "I noticed there's no WhatsApp button or contact form on your site so people have no quick way to reach you" },
-    { id: 'free_builder', label: 'On a free builder address', points: 15, pitch: "I noticed your site is on a free builder address and that makes it harder for people to trust it" },
-    { id: 'old_copyright', label: 'Copyright year is old', points: 10, pitch: 'I noticed your site still says © {year} at the bottom so it looks like nobody is running it' },
+    { id: 'site_down', label: 'Site down, 404 or parked', points: 40 },
+    { id: 'no_https', label: 'No HTTPS or an SSL error', points: 15 },
+    { id: 'slow_mobile', label: 'PageSpeed mobile score under the limit', points: 15 },
+    { id: 'no_viewport', label: 'Not set up for phones (no viewport tag)', points: 15 },
+    { id: 'no_contact', label: 'No WhatsApp button and no contact form', points: 15 },
+    { id: 'free_builder', label: 'On a free builder address', points: 15 },
+    { id: 'old_copyright', label: 'Copyright year is old', points: 10 },
   ];
-  const NO_SITE = {
-    id: 'no_website',
-    label: 'No website',
-    pitch: { instagram: "I couldn't find a website for you, just your Instagram", facebook: "I couldn't find a website for you, just your Facebook page", linkinbio: "I couldn't find a website for you, just a link page", none: "I couldn't find a website for you" },
-  };
-  const AD_PITCH = { past: "I noticed you ran Meta ads before but nothing is running right now", none: "I noticed you're not running any Meta ads right now" };
-  /** The checks with your edits from Settings (points and pitch lines). */
+  const AD_REASON = { past: 'Ran Meta ads before, none live', none: 'Not running Meta ads' };
+  /** The checks with your points from Settings. */
   LH.weakChecksFor = (settings = {}) => {
     const mine = new Map((Array.isArray(settings.weakChecks) ? settings.weakChecks : []).map((c) => [c.id, c]));
     return LH.WEAK_CHECKS.map((c) => {
       const m = mine.get(c.id) || {};
-      return { ...c, points: Number.isFinite(Number(m.points)) && m.points !== '' ? Math.max(0, Math.min(100, Number(m.points))) : c.points, pitch: m.pitch ? String(m.pitch) : c.pitch };
+      return { ...c, points: Number.isFinite(Number(m.points)) && m.points !== '' ? Math.max(0, Math.min(100, Number(m.points))) : c.points };
     });
   };
 
@@ -1250,17 +1228,17 @@ Mussafah, Abu Dhabi`),
 
   /**
    * Phase 3 signals for one lead: the website weakness score and its reasons, Instagram followers and the band,
-   * the new business flag, the pitch line, and a short list of signal ids for scoring and chips.
+   * the new business flag, the top reason, and a short list of signal ids for scoring and chips.
    */
   LH.quality = (lead, settings = {}) => {
     const s = { ...LH.DEFAULT_SETTINGS, ...settings };
     const l = lead || {};
     const checks = LH.weakChecksFor(s);
-    const out = { website: null, weak: false, followers: null, inBand: null, newBusiness: null, reviews: null, pitch: '', signals: [] };
+    const out = { website: null, weak: false, followers: null, inBand: null, newBusiness: null, reviews: null, topReason: '', signals: [] };
 
     if (!l.website) {
       const only = l.socials && (l.socials.instagram || LH.igHandle(l)) ? 'instagram' : l.socials && l.socials.facebook ? 'facebook' : l.socials && l.socials.linkinbio ? 'linkinbio' : 'none';
-      out.website = { score: null, noSite: true, only, reasons: [{ id: NO_SITE.id, label: only === 'none' ? 'No website' : `No website, only ${only === 'linkinbio' ? 'a link page' : only === 'instagram' ? 'Instagram' : 'Facebook'}`, points: 0, pitch: NO_SITE.pitch[only] }], passed: [], unknown: [] };
+      out.website = { score: null, noSite: true, only, reasons: [{ id: 'no_website', label: only === 'none' ? 'No website' : `No website, only ${only === 'linkinbio' ? 'a link page' : only === 'instagram' ? 'Instagram' : 'Facebook'}`, points: 0 }], passed: [], unknown: [] };
       out.signals.push('no_website');
     } else {
       const { fail, pass } = websiteChecks(l, s);
@@ -1269,7 +1247,7 @@ Mussafah, Abu Dhabi`),
         .map((c) => {
           const v = fail.get(c.id);
           const label = c.id === 'slow_mobile' && v != null ? `PageSpeed mobile ${v}/100 (under ${s.psiMin})` : c.id === 'old_copyright' && v ? `Copyright still says © ${v}` : c.label;
-          return { id: c.id, label, points: c.points, pitch: c.pitch.replace('{year}', v || '') };
+          return { id: c.id, label, points: c.points };
         })
         .sort((a, b) => b.points - a.points);
       const checked = ['ok', 'error'].includes((l.site || {}).state);
@@ -1293,9 +1271,9 @@ Mussafah, Abu Dhabi`),
     const ad = l.kind === 'prospect' && !LH.oldAdCheck((l.adCheck || {})) ? (l.adCheck || {}).state : null;
     if (ad === 'past') out.signals.push('ran_ads_before');
 
-    // The strongest reason gives the pitch line. A good website: the ad history speaks instead.
+    // The strongest reason; for a good website, the ad history.
     const top = out.website.reasons[0];
-    out.pitch = top ? top.pitch : AD_PITCH[ad === 'likely' ? 'none' : ad] || '';
+    out.topReason = top ? top.label : AD_REASON[ad === 'likely' ? 'none' : ad] || '';
     return out;
   };
 
@@ -1477,11 +1455,11 @@ Mussafah, Abu Dhabi`),
   LH.GOOGLE_CONTACTS_HEAD = ['Name', 'Given Name', 'Family Name', 'Organization 1 - Name', 'Phone 1 - Type', 'Phone 1 - Value', 'Phone 2 - Type', 'Phone 2 - Value', 'E-mail 1 - Type', 'E-mail 1 - Value', 'Website 1 - Type', 'Website 1 - Value', 'Address 1 - Type', 'Address 1 - Formatted', 'Notes', 'Group Membership'];
   /** "LF-2026-10-26": the label each export gets in Google Contacts, so one batch is easy to find and to delete. */
   LH.contactsLabel = (date = new Date()) => `LF-${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-  /** Notes for a contact: the heat score, its signals and the pitch line. */
+  /** Notes for a contact: the heat score, its signals and the top reason. */
   LH.contactNotes = (l, settings = {}) => {
     const h = LH.heatScore(l, settings);
     const signals = h.parts.filter((x) => x.points > 0).map((x) => x.label);
-    return [`Heat ${h.score} (${h.profile} offer)`, signals.join(', '), LH.quality(l, settings).pitch, LH.nicheOf(l, settings), l.area].filter(Boolean).join(' · ');
+    return [`Heat ${h.score} (${h.profile} offer)`, signals.join(', '), LH.quality(l, settings).topReason, LH.nicheOf(l, settings), l.area].filter(Boolean).join(' · ');
   };
   LH.googleContactsRows = (leads, settings = {}, date = new Date()) =>
     (leads || [])
@@ -1499,7 +1477,7 @@ Mussafah, Abu Dhabi`),
 
   /* ------------------------------------------------------------------ Full CSV */
   /** Every field of every lead, one row each: the record from the brief plus the scores behind it. */
-  LH.FULL_CSV_HEAD = ['id', 'kind', 'business', 'normalized_name', 'phone_e164', 'all_phones', 'whatsapp_link', 'email', 'website', 'root_domain', 'instagram_handle', 'instagram_followers', 'instagram_last_post', 'facebook_page_id', 'area', 'emirate', 'niche', 'sources', 'google_rating', 'google_reviews', 'maps_url', 'ad_status', 'ad_status_certain', 'last_ad_date', 'live_ads', 'signals', 'heat_score', 'heat_class', 'heat_offer', 'heat_reasons', 'pitch_line', 'website_weakness', 'weakness_reasons', 'status', 'contacted_channel', 'contacted_date', 'contacted_before', 'first_seen', 'last_updated', 'notes'];
+  LH.FULL_CSV_HEAD = ['id', 'kind', 'business', 'normalized_name', 'phone_e164', 'all_phones', 'whatsapp_link', 'email', 'website', 'root_domain', 'instagram_handle', 'instagram_followers', 'instagram_last_post', 'facebook_page_id', 'area', 'emirate', 'niche', 'sources', 'google_rating', 'google_reviews', 'maps_url', 'ad_status', 'ad_status_certain', 'last_ad_date', 'live_ads', 'signals', 'heat_score', 'heat_class', 'heat_offer', 'heat_reasons', 'top_reason', 'website_weakness', 'weakness_reasons', 'status', 'contacted_channel', 'contacted_date', 'contacted_before', 'first_seen', 'last_updated', 'notes'];
   LH.fullCsvRows = (leads, settings = {}, history = null) => {
     const day = (t) => (t ? new Date(t).toISOString().slice(0, 10) : '');
     return (leads || []).filter(Boolean).map((l) => {
@@ -1543,7 +1521,7 @@ Mussafah, Abu Dhabi`),
         LH.heatClass(h.score, settings),
         h.profile,
         h.parts.map((x) => `${x.label} ${x.points > 0 ? '+' : ''}${x.points}`).join('; '),
-        q.pitch,
+        q.topReason,
         q.website.score ?? '',
         q.website.reasons.map((r) => r.label).join('; '),
         (LH.STATUSES.find((x) => x.id === l.status) || {}).label || l.status || '',

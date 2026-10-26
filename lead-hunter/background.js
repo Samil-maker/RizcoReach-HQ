@@ -3,7 +3,7 @@
    - Runs hunts: walks a list of keywords through the Ad Library in one tab
    - Enriches leads: audits the landing page, finds phones/emails/socials,
      optional Google Places + PageSpeed lookups
-   - Sends leads to the phone queue and the email queue on the user's site, and syncs them back */
+   - Sends leads to the email queue on the user's site, and syncs them back */
 importScripts('lib/common.js', 'lib/site-audit.js', 'lib/prospects.js', 'lib/intent.js', 'lib/intent-db.js');
 const LH = self.LH;
 
@@ -674,23 +674,16 @@ async function enrichOne(id, opts = {}) {
   igAuto([await getLead(id)], settings); // the website may have linked their Instagram
 }
 
-/* --------------------------------------------------------------- phone queue */
-// Talks to /api/lead-queue (netlify/functions/lead-queue.mts) or /api/email-queue (email-queue.mts) on the user's site.
-// Both use the same key.
-const QUEUE_ERRORS = {
-  401: 'The queue key does not match LEAD_QUEUE_KEY on your site.',
-  404: 'Your site does not have the phone queue yet. Deploy the latest site code first.',
-  503: 'The phone queue is not switched on yet: add LEAD_QUEUE_KEY in Netlify, then redeploy.',
-};
+/* ------------------------------------------------------------- your site */
+// Talks to /api/email-queue (netlify/functions/email-queue.mts) on the user's site, with the LEAD_QUEUE_KEY.
 const EMAIL_ERRORS = {
-  ...QUEUE_ERRORS,
+  401: 'The key does not match LEAD_QUEUE_KEY on your site.',
   404: 'Your site does not have the email sender yet. Deploy the latest site code first.',
   503: 'The email sender is not switched on yet: add LEAD_QUEUE_KEY in Netlify, then redeploy.',
 };
-async function queueApi(method, body, path = '/api/lead-queue') {
-  const email = path.startsWith('/api/email-queue');
+async function queueApi(method, body, path) {
   const s = await getSettings();
-  if (!s.queueKey || !s.queueSite) throw new Error('Set up the phone queue in Settings first.');
+  if (!s.queueKey || !s.queueSite) throw new Error('Add your site address and key in Settings > Your site first.');
   let url;
   try {
     url = new URL(path, s.queueSite).toString();
@@ -711,147 +704,11 @@ async function queueApi(method, body, path = '/api/lead-queue') {
     throw new Error(`Could not reach ${new URL(url).host}.`);
   }
   const data = await res.json().catch(() => null);
-  if (!res.ok || !data) throw new Error((email ? EMAIL_ERRORS : QUEUE_ERRORS)[res.status] || (data && data.error) || `${email ? 'Email sender' : 'Phone queue'} error (HTTP ${res.status}).`);
+  if (!res.ok || !data) throw new Error(EMAIL_ERRORS[res.status] || (data && data.error) || `Email sender error (HTTP ${res.status}).`);
   return data;
 }
 // Reads leave out the email texts: Lead Hunter writes them itself and only needs where each one stands.
 const emailApi = (method, body) => queueApi(method, body, method === 'GET' ? '/api/email-queue?lite=1' : '/api/email-queue');
-
-/** Mirror the server queue onto leads: "sent" on the phone marks the lead as contacted. */
-async function applyQueue(items) {
-  const byId = new Map((items || []).map((i) => [i.id, i]));
-  const settings = await getSettings();
-  return locked(async () => {
-    const { phoneQueueIds = [] } = await store.get('phoneQueueIds');
-    const ids = [...new Set([...phoneQueueIds, ...byId.keys()])];
-    const got = await store.get(ids.map(leadKey));
-    const writes = {};
-    let contacted = 0;
-    for (const id of ids) {
-      const lead = got[leadKey(id)];
-      if (!lead) continue;
-      const item = byId.get(id);
-      const before = JSON.stringify([lead.phoneQueue, lead.status]);
-      const prev = lead.phoneQueue || null;
-      if (!item) lead.phoneQueue = null;
-      else {
-        // Each phone "sent" is applied once, so later syncs never override a status set by hand.
-        const seen = prev && prev.state === item.status && prev.at === item.statusAt && prev.rev === item.addedAt;
-        lead.phoneQueue = { state: item.status, at: item.statusAt, rev: item.addedAt, by: seen ? prev.by : undefined, from: seen ? prev.from : undefined };
-        if (!seen && item.status === 'sent' && ['new', 'followup'].includes(lead.status)) {
-          lead.phoneQueue.by = 'phone';
-          lead.phoneQueue.from = lead.status;
-          lead.status = 'contacted';
-          markSent(lead, item.statusAt, lead.queuedScript || null, settings, 'whatsapp');
-          lead.statusHistory = [...(lead.statusHistory || []), { status: 'contacted', at: item.statusAt, via: 'phone' }].slice(-20);
-          contacted++;
-        }
-        // Undo on the phone (back to "To send" or removed) reverts a "contacted" that the phone caused.
-        if (!seen && item.status !== 'sent' && prev && prev.by === 'phone' && lead.status === 'contacted') {
-          lead.status = prev.from || 'new';
-          if (lead.status === 'new') unmarkSent(lead);
-          lead.statusHistory = [...(lead.statusHistory || []), { status: lead.status, at: now(), via: 'phone-undo' }].slice(-20);
-        }
-      }
-      if (JSON.stringify([lead.phoneQueue, lead.status]) !== before) {
-        lead.updatedAt = now();
-        writes[leadKey(id)] = lead;
-      }
-    }
-    // Only leads still waiting on the phone need watching.
-    writes.phoneQueueIds = ids.filter((id) => byId.get(id) && byId.get(id).status === 'queued');
-    writes.phoneQueueSyncedAt = now();
-    await store.set(writes);
-    return { contacted, waiting: writes.phoneQueueIds.length };
-  });
-}
-
-/* Status changes made on the computer for leads waiting on the phone are batched and retried until they land. */
-let mirrorTimer = 0;
-async function mirrorToPhone(update) {
-  await locked(async () => {
-    const { queuePending = [] } = await store.get('queuePending');
-    await store.set({ queuePending: [...queuePending.filter((u) => u.id !== update.id), update] });
-  });
-  clearTimeout(mirrorTimer);
-  mirrorTimer = setTimeout(() => flushMirror().catch(() => {}), 400);
-}
-async function flushMirror() {
-  const { queuePending = [] } = await store.get('queuePending');
-  if (!queuePending.length) return null;
-  const q = await queueApi('POST', { updates: queuePending }); // throws: entries stay for the next try
-  await locked(async () => {
-    const { queuePending: now_ = [] } = await store.get('queuePending');
-    const sent = (u) => queuePending.some((x) => x.id === u.id && x.status === u.status && x.rev === u.rev);
-    await store.set({ queuePending: now_.filter((u) => !sent(u)) });
-  });
-  return q;
-}
-
-const FINISHED_KEEP_MS = 3 * LH.DAY;
-async function syncQueue() {
-  await flushMirror().catch(() => {});
-  const q = await queueApi('GET');
-  const result = await applyQueue(q.items);
-  // Only the extension cleans up the server, and only items it has just applied, so no "sent" is ever lost.
-  const old = q.items.filter((i) => i.status !== 'queued' && now() - i.statusAt > FINISHED_KEEP_MS).map((i) => i.id);
-  if (old.length) await queueApi('DELETE', { ids: old }).catch(() => {});
-  return result;
-}
-
-/* Each lead goes to the phone as its bubbles (`parts`) plus the whole text (`message`). The phone page only
-   prefills WhatsApp; Samil presses Send himself. Leads skipped for running ads stay off the phone. */
-async function pushToQueue(ids, overrides = {}) {
-  const settings = await getSettings();
-  const got = await store.get(ids.map(leadKey));
-  const items = [];
-  const skipped = [];
-  const runningAds = [];
-  const scripts = {};
-  for (const id of ids) {
-    const lead = got[leadKey(id)];
-    if (!lead) continue;
-    const o = overrides[id] || {};
-    const number = o.phone || LH.whatsappTarget(lead) || (LH.bestPhone(lead) || {}).number;
-    if (!number) {
-      skipped.push(lead.pageName || id);
-      continue;
-    }
-    const pitch = LH.pitchFor(lead, settings);
-    const given = Array.isArray(o.parts) && o.parts.length ? o.parts : o.message ? [o.message] : pitch.bubbles;
-    const parts = given.map((x) => String(x || '').trim()).filter(Boolean).slice(0, 4);
-    if (!parts.length) {
-      runningAds.push(lead.pageName || id);
-      continue;
-    }
-    scripts[lead.id] = o.script || pitch.script || LH.sentScriptFor(lead);
-    const p = LH.priority(lead);
-    items.push({
-      id: lead.id,
-      name: lead.pageName,
-      wa: number.replace(/\D/g, ''),
-      message: parts.join('\n\n'),
-      parts,
-      domain: LH.domainOf(lead.website || ''),
-      issue: LH.tagLine(lead),
-      heat: LH.heat(p),
-      priority: p,
-      pageUrl: lead.pageUrl,
-    });
-  }
-  if (!items.length) return { queued: 0, skipped, runningAds };
-  const q = await queueApi('PUT', { items });
-  await locked(async () => {
-    const { phoneQueueIds = [] } = await store.get('phoneQueueIds');
-    // Which script each lead's bubbles came from: a "sent" on the phone records that one, even if the lead changes meanwhile.
-    const fresh = await store.get(items.map((i) => leadKey(i.id)));
-    const writes = { phoneQueueIds: [...new Set([...phoneQueueIds, ...items.map((i) => i.id)])] };
-    for (const i of items) if (fresh[leadKey(i.id)]) writes[leadKey(i.id)] = { ...fresh[leadKey(i.id)], queuedScript: scripts[i.id] };
-    await store.set(writes);
-  });
-  await applyQueue(q.items);
-  return { queued: items.length, skipped, runningAds };
-}
 
 /* --------------------------------------------------------------- email queue */
 // Cold emails go out from Samil's own Gmail through lead-hunter/email/sender.gs, an Apps Script in his Google account,
@@ -958,7 +815,7 @@ async function pushToEmail(ids) {
     else if (!mail.script) skipped.runningAds.push(name);
     else if (q && (q.sent >= 1 || q.state !== 'cancelled')) skipped.already.push(name);
     else if (STOP_EMAILS.includes(lead.status)) skipped.closed.push(name);
-    else if (lead.contactedAt) skipped.contacted.push(name); // already messaged on WhatsApp: one channel per business
+    else if (lead.contactedAt) skipped.contacted.push(name); // already contacted another way: one channel per business
     else {
       names[id] = name;
       items.push({ id, email: mail.to, business: lead.pageName, script: mail.script, fromName: settings.emailFromName, subject: mail.subject, steps: mail.steps, followupDays: [3, 4] });
@@ -1024,10 +881,6 @@ const handlers = {
       }
     });
     if (msg.patch && 'website' in msg.patch) enqueue([msg.id], true);
-    const pq = lead && lead.phoneQueue;
-    if (pq && pq.state === 'queued' && ['contacted', 'replied', 'meeting', 'won', 'lost', 'skip'].includes(msg.patch && msg.patch.status)) {
-      mirrorToPhone({ id: msg.id, status: msg.patch.status === 'contacted' ? 'sent' : 'removed', rev: pq.rev });
-    }
     const eq = lead && lead.emailQueue;
     if (eq && ['queued', 'active'].includes(eq.state) && STOP_EMAILS.includes(msg.patch && msg.patch.status)) cancelEmails([msg.id]).catch(() => {});
     return { lead };
@@ -1113,21 +966,6 @@ const handlers = {
     });
     return { imported: n };
   },
-  'queue:push': (msg) => pushToQueue(msg.ids || [], msg.overrides || {}),
-  'queue:sync': () => syncQueue(),
-  'queue:test': async () => {
-    const q = await queueApi('GET');
-    await applyQueue(q.items);
-    return { ok: true, total: q.items.length, waiting: q.items.filter((i) => i.status === 'queued').length };
-  },
-  'queue:clear': async () => {
-    await flushMirror().catch(() => {});
-    const q = await queueApi('GET');
-    const result = await applyQueue(q.items);
-    const done = q.items.filter((i) => i.status !== 'queued').map((i) => i.id);
-    if (done.length) await queueApi('DELETE', { ids: done });
-    return result;
-  },
   'email:push': (msg) => pushToEmail(msg.ids || []),
   'email:sync': async () => emailInfo(await syncEmail()),
   'email:status': async () => emailInfo(await syncEmail()),
@@ -1144,10 +982,11 @@ const handlers = {
   },
   stats: async () => {
     const leads = await allLeads();
+    const settings = await getSettings();
     const { hunt, enrichQueue = [] } = await store.get(['hunt', 'enrichQueue']);
     return {
       total: leads.length,
-      hot: leads.filter((l) => LH.heat(LH.priority(l)) === 'hot' && l.status === 'new').length,
+      hot: leads.filter((l) => l.status === 'new' && LH.heatClass(LH.heatScore(l, settings).score, settings) === 'hot').length,
       withPhone: leads.filter((l) => l.phones.length).length,
       queued: enrichQueue.length,
       hunt,
@@ -1179,8 +1018,7 @@ chrome.alarms.onAlarm.addListener(async (a) => {
   // Watchdog: a hunt tab that has gone quiet (login wall, crash) moves on.
   const { hunt } = await store.get('hunt');
   if (hunt && hunt.status === 'running' && now() - hunt.lastActivity > 150000) nextKeyword('stalled');
-  const { phoneQueueIds = [], queuePending = [], emailQueueIds = [], emailCancel = [], emailSyncedAt = 0 } = await store.get(['phoneQueueIds', 'queuePending', 'emailQueueIds', 'emailCancel', 'emailSyncedAt']);
-  if (phoneQueueIds.length || queuePending.length) syncQueue().catch(() => {});
+  const { emailQueueIds = [], emailCancel = [], emailSyncedAt = 0 } = await store.get(['emailQueueIds', 'emailCancel', 'emailSyncedAt']);
   if (emailCancel.length || (emailQueueIds.length && now() - emailSyncedAt >= EMAIL_SYNC_MS)) syncEmail().catch(() => {});
 });
 
@@ -1189,6 +1027,7 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   if (!settings) await store.set({ settings: LH.DEFAULT_SETTINGS });
   else if (LH.hasOldSettings(settings)) await store.set({ settings: LH.withDefaults(settings) }); // old templates and offer
   if (reason === 'install') openDashboard('#welcome');
+  await store.remove(['phoneQueueIds', 'queuePending', 'phoneQueueSyncedAt']); // the phone queue is gone (1.12)
   await seedMemory();
 });
 chrome.runtime.onStartup.addListener(() => pump());

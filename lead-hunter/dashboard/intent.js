@@ -1,9 +1,10 @@
-/* Lead Hunter dashboard: the Intent tab (people asking for help on Reddit, Facebook groups and LinkedIn).
+/* Lead Hunter dashboard: the Intent tab (people asking for help on Reddit, Facebook groups and LinkedIn), each post
+   confirmed or ruled out by the AI check when your Claude API key is set.
    Loaded after dashboard.js and prospects.js and shares their helpers ($, esc, S, send, toast, copy…).
    Posts live in IndexedDB (lib/intent-db.js); the background bumps intentState.rev when they change. */
 
-S.intent = { posts: [], f: { kind: '', source: '', status: 'new' }, state: {} };
-const INTENT_SOURCES = { reddit: 'Reddit', facebook: 'Facebook group', linkedin: 'LinkedIn' };
+S.intent = { posts: [], f: { kind: '', source: '', status: 'new', notBuyers: false }, state: {} };
+const INTENT_SOURCES = { reddit: 'Reddit', facebook: 'Facebook group', linkedin: 'LinkedIn', ai: 'AI check' };
 const INTENT_STATUS = { new: 'New', contacted: 'Contacted', dismissed: 'Dismissed' };
 
 async function loadIntent() {
@@ -32,6 +33,7 @@ function filteredIntent() {
     .filter((p) => (f.status === 'all' ? true : (p.status || 'new') === f.status))
     .filter((p) => !f.kind || (p.categories || []).includes(f.kind))
     .filter((p) => !f.source || p.source === f.source)
+    .filter((p) => f.notBuyers || !p.notBuyer) // the AI said not a buyer: hidden unless asked for
     .sort((a, b) => postTime(b) - postTime(a)); // newest first
 }
 
@@ -53,16 +55,17 @@ function intentCard(p) {
       <span class="src">${esc(INTENT_SOURCES[p.source] || p.source)}${p.place ? ` · ${esc(p.place)}` : ''}</span>
       <span class="muted">${esc(ago(p.createdAt))}${p.author ? ` · ${esc(p.author)}` : ''}</span>
       ${kinds.map((k) => `<span class="tag ${k === 'hiring' ? 'amber' : 'green'}">${esc(LH.INTENT_LABELS[k] || k)}</span>`).join('')}
-      ${p.verified ? '' : '<span class="tag" title="Matched by keywords only. The AI check (Phase 6) confirms it is a real buyer">unverified</span>'}
+      ${p.verified ? (p.notBuyer ? '<span class="tag red" title="The AI check read it">AI: not a buyer</span>' : `<span class="tag green" title="The AI check read it">AI: buyer${p.ai && p.ai.urgency === 'high' ? ', urgent' : ''}</span>`) : `<span class="tag" title="${esc(p.aiError ? `The AI check failed: ${p.aiError}` : 'Matched by keywords only, not checked by the AI yet')}">unverified</span>`}
       ${status !== 'new' ? `<span class="tag">${esc(INTENT_STATUS[status])}</span>` : ''}
     </header>
     <p class="sum">${esc(p.summary || p.title || '')}</p>
+    ${p.ai ? `<p class="muted hits">${esc([p.ai.business_type, p.ai.location].filter((x) => x && x !== 'unknown').join(' · ') || 'Business and place not said')}${p.ai.service_needed && p.ai.service_needed !== 'none' ? ` · needs ${esc(p.ai.service_needed.replace(/_/g, ' '))}` : ''}</p>` : ''}
     ${p.hits && p.hits.length ? `<p class="muted hits">Matched: ${esc(p.hits.slice(0, 4).join(', '))}</p>` : ''}
+    ${p.text && p.summary !== p.text ? `<details class="post-text"><summary>The post</summary><p>${esc(String(p.title && !p.job ? `${p.title}\n\n${p.text}` : p.text).slice(0, 1500))}</p></details>` : ''}
     ${lead ? `<p class="muted">Linked to your lead <button class="linkish" data-act="intent-lead" data-id="${esc(lead.id)}">${esc(lead.pageName)}</button>, which gets the heat bonus</p>` : ''}
-    <label class="opener"><span class="lbl">Opener</span><textarea class="inp" rows="2" data-intent-opener>${esc(p.opener || '')}</textarea></label>
     <div class="row">
       ${p.url ? `<a class="btn sm" href="${esc(safeHref(p.url))}" target="_blank" rel="noopener noreferrer">Open post</a>` : '<span class="muted">No link to this post</span>'}
-      <button class="btn sm" data-act="intent-copy">Copy opener</button>
+      ${!p.verified && S.settings.anthropicKey ? '<button class="btn sm" data-act="intent-ai">Check with AI</button>' : ''}
       ${status === 'contacted' ? '' : '<button class="btn sm pri" data-act="intent-contacted">Mark contacted</button>'}
       ${status === 'dismissed' ? '<button class="btn sm ghost" data-act="intent-restore">Restore</button>' : '<button class="btn sm ghost" data-act="intent-dismiss">Dismiss</button>'}
     </div>
@@ -74,7 +77,7 @@ function renderIntentStatus() {
   const st = S.intent.state || {};
   const runs = st.runs || [];
   const parts = [];
-  for (const src of ['reddit', 'facebook', 'linkedin']) {
+  for (const src of ['reddit', 'facebook', 'linkedin', 'ai']) {
     const a = S.alerts[src];
     if (a) parts.push(`<span class="err alert" style="margin:0" data-alert="${src}"><b>${esc(INTENT_SOURCES[src])} paused:</b> ${esc(a.text)}. ${a.url ? `<a href="${esc(safeHref(a.url))}" target="_blank" rel="noopener noreferrer">Open it</a>, sort` : 'Sort'} it out, then press Resume. Nothing tries to get past it.</span><button class="btn sm" data-act="intent-resume" data-source="${src}">Resume</button>`);
   }
@@ -84,6 +87,12 @@ function renderIntentStatus() {
     parts.push(`<span class="m">Last scan: ${esc(INTENT_SOURCES[last.source] || last.source)} ${esc(ago(last.at))} · read ${esc(last.seen)} · saved ${esc(last.saved)}${skipped.length ? ` · ${esc(skipped.join(' · '))}` : ''}</span>`);
   }
   const every = S.settings.radarEveryHours;
+  const unchecked = S.intent.posts.filter((p) => !p.verified).length;
+  parts.push(
+    S.settings.anthropicKey
+      ? `<span class="m">AI check is on${unchecked ? `: ${unchecked} post${unchecked === 1 ? '' : 's'} not checked yet` : ', every post checked'}.</span>${unchecked ? '<button class="btn sm" data-act="intent-ai-all">Check them now</button>' : ''}`
+      : '<span class="m">AI check is off: add your Claude API key in Settings > Intent Radar to have each post read and confirmed.</span>',
+  );
   parts.push(`<span class="m">${every > 0 ? `Reddit is scanned every ${esc(every)} hour${every === 1 ? '' : 's'}${st.lastRedditAt ? `, last ${esc(ago(st.lastRedditAt))}` : ''}.` : 'Automatic Reddit scans are off (Settings > Intent Radar).'} Facebook groups and LinkedIn: open one and press Scan for leads.</span>`);
   el.innerHTML = parts.join('');
 }
@@ -127,11 +136,14 @@ async function intentAction(act, b) {
       else toast(`Read ${r.stats.seen} Reddit posts, ${r.stats.saved} new for you`);
       return true;
     }
-    case 'intent-copy':
-      if (card) await copy($('[data-intent-opener]', card).value);
+    case 'intent-ai':
+    case 'intent-ai-all': {
+      const r = await send({ type: 'ai:check', ids: act === 'intent-ai' && id ? [id] : [] });
+      toast(!r || r.error ? (r && r.error) || 'Lead Hunter did not answer. Reload the extension.' : r.queued ? `The AI is reading ${r.queued} post${r.queued === 1 ? '' : 's'}` : 'Every post has been checked already');
       return true;
+    }
     case 'intent-contacted':
-      if (post) await setIntent(id, { status: 'contacted', contactedAt: Date.now(), opener: $('[data-intent-opener]', card).value }, post.status || 'new');
+      if (post) await setIntent(id, { status: 'contacted', contactedAt: Date.now() }, post.status || 'new');
       return true;
     case 'intent-dismiss':
       if (post) await setIntent(id, { status: 'dismissed' }, post.status || 'new');
@@ -153,7 +165,7 @@ async function intentAction(act, b) {
 function initIntent() {
   $$('[data-intent-f]').forEach((el) =>
     el.addEventListener('change', () => {
-      S.intent.f[el.dataset.intentF] = el.value;
+      S.intent.f[el.dataset.intentF] = el.type === 'checkbox' ? el.checked : el.value;
       renderIntentView();
     }),
   );

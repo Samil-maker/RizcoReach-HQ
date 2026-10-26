@@ -2,8 +2,8 @@
    1. FIND businesses on Google Maps (Places API, or the Maps page in a tab)
    2. CHECK each one in the Meta Ad Library (in a background tab)
    3. Businesses that are NOT running ads become prospects for the Meta-ads offer.
-   Prospects are stored like leads (`lead:p:…`, kind: 'prospect') so the dashboard, pitches,
-   phone mode, phone queue and CSV export all work on them too. */
+   Prospects are stored like leads (`lead:p:…`, kind: 'prospect') so the dashboard, scoring, the email sender
+   and the exports all work on them too. */
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const jitter = (min, max) => min + Math.random() * (max - min);
@@ -134,7 +134,7 @@ async function ingestProspects(items, ctx = {}) {
       run.lastActivity = now();
       writes.finder = run;
     }
-    // Without a website they get the website script whatever their ads, so their Ad Library check is skipped
+    // Without a website they get the website offer whatever their ads, so their Ad Library check is skipped
     // unless Settings asks for it (Phase 4 scores "running ads" on website leads too).
     for (const id of counted) {
       const l = touched.get(id);

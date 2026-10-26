@@ -129,76 +129,57 @@ test('scriptFor: website script without a website, ads script without Meta ads, 
     assert.deepEqual(pick(prospect({ adCheck: { state: 'none' }, site })), ['website', 'Site down'], JSON.stringify(site));
   }
   assert.deepEqual(pick(advertiser({ website: 'https://gloss.example/', site: { state: 'blocked' } })), [null, 'Running ads'], 'a site that blocks the check is still a website');
-  assert.equal(LH.sentScriptFor(prospect({ adCheck: { state: 'running' } })), 'website', 'pitching a skipped lead anyway uses the website script');
+  assert.equal(LH.sentScriptFor(prospect({ adCheck: { state: 'running' } })), 'website', 'a skipped lead contacted anyway counts under the website offer');
 });
 
-test('the default ads script for a car detailing studio in Dubai, in 3 bubbles', () => {
-  const p = LH.pitchFor(prospect(), S);
-  assert.equal(p.script, 'ads');
-  assert.equal(p.tag, 'No Meta ads');
-  assert.equal(p.bubbles.length, 3);
-  assert.equal(p.bubbles[0], 'Hello Glossy PPF');
-  assert.equal(p.bubbles[2], 'Let me know');
-  assert.ok(p.bubbles[1].includes('We help car detailing and protection studios in Dubai get consistent inquiries through Facebook and Instagram ads.'), p.bubbles[1]);
-  assert.match(p.bubbles[1], /^Are you dependent on word of mouth for appointments in Dubai\?/);
-  assert.equal(p.text, p.bubbles.join('\n\n'));
-  assert.equal(p.subject, 'Quick question for Glossy PPF');
-  assert.equal(p.email, `${p.text}\n\n${S.emailSignature}\n\n${S.emailOptOut}`, 'the email is the whole script, signed');
+const first = (lead, settings = S) => LH.emailFor(lead, settings).steps[0] || '';
+const paras = (lead, settings = S) => first(lead, settings).split('\n\n');
+
+test('the default ads email for a car detailing studio in Dubai', () => {
+  const e = LH.emailFor(prospect(), S);
+  assert.deepEqual([e.script, e.tag, e.subject], ['ads', 'No Meta ads', 'Quick question for Glossy PPF']);
+  const p = paras(prospect());
+  assert.equal(p[0], 'Hello Glossy PPF');
+  assert.equal(p[1], 'Are you dependent on word of mouth for appointments in Dubai?');
+  assert.ok(first(prospect()).includes('We help car detailing and protection studios in Dubai get consistent inquiries through Facebook and Instagram ads.'));
+  assert.ok(first(prospect()).includes('\n\nLet me know\n\nSamil\n'), 'closing, then the signature');
 });
 
-test('bubbles: 2 joins greeting and body, empty parts are dropped, skipped leads get none', () => {
-  const two = LH.pitchFor(prospect(), { ...S, bubbles: 2 });
-  assert.equal(two.bubbles.length, 2);
-  assert.match(two.bubbles[0], /^Hello Glossy PPF\n\nAre you dependent/);
-  assert.equal(two.bubbles[1], 'Let me know');
-  const three = LH.pitchFor(prospect(), S);
-  assert.equal(two.text, three.text, 'same words either way');
-
-  const noGreeting = LH.pitchFor(prospect(), { ...S, scripts: { ads: { greeting: '' } } });
-  assert.equal(noGreeting.bubbles.length, 2);
-  assert.match(noGreeting.bubbles[0], /^Are you dependent/);
-  assert.equal(LH.pitchFor(prospect(), { ...S, bubbles: 2, scripts: { ads: { greeting: '', closing: '  ' } } }).bubbles.length, 1);
-
-  const custom = LH.pitchFor(prospect(), { ...S, scripts: { ads: { closing: 'Talk soon {{my_name}}' } } });
-  assert.equal(custom.bubbles[2], 'Talk soon Samil', 'edited parts replace the default, the rest stays');
-  assert.match(custom.bubbles[1], /We help car detailing and protection studios/);
-
-  const skipped = LH.pitchFor(prospect({ adCheck: { state: 'running' } }), S);
-  assert.equal(skipped.script, null);
-  assert.deepEqual(skipped.bubbles, []);
-  assert.equal(skipped.text, '');
-  const anyway = LH.pitchFor(prospect({ adCheck: { state: 'running' } }), S, 'website');
-  assert.equal(anyway.script, 'website');
-  assert.equal(anyway.bubbles.length, 3);
+test('your email edits, and script edits from before 1.12 carried into the first email', () => {
+  const custom = { ...S, emails: { ads: { body: 'Hello {{business}}\n\nShort one from {{my_name}}\n\nTalk soon' } } };
+  assert.deepEqual(paras(prospect(), custom).slice(0, 3), ['Hello Glossy PPF', 'Short one from Samil', 'Talk soon']);
+  // Old WhatsApp script edits become the first email, part by part.
+  const old = LH.withDefaults({ myName: 'Samil', scripts: { ads: { closing: 'Talk soon {{my_name}}' }, website: { greeting: '' } }, bubbles: 2 });
+  assert.ok(!('scripts' in old) && !('bubbles' in old));
+  assert.match(old.emails.ads.body, /^Hello \{\{business\}\}\n\nAre you dependent/);
+  assert.ok(old.emails.ads.body.endsWith('\n\nTalk soon {{my_name}}'));
+  assert.ok(first(prospect(), old).includes('\n\nTalk soon Samil\n\n'));
+  assert.match(old.emails.website.body, /^I came across \{\{business\}\}/, 'an empty greeting is dropped');
+  // A body you already edited is not overwritten by old script edits.
+  assert.equal(LH.foldScripts({ ads: { body: 'Mine' } }, { ads: { closing: 'x' } }).ads.body, 'Mine');
 });
 
-test('website script: found on, niche and subject', () => {
-  const ad = LH.pitchFor(advertiser({ niche: '' }), S);
+test('website email: found on, niche and subject', () => {
+  const ad = LH.emailFor(advertiser({ niche: '' }), S);
   assert.equal(ad.script, 'website');
-  assert.equal(ad.bubbles[0], 'Hello Gloss Garage', 'the city at the end of the page name is left out');
-  assert.match(ad.bubbles[1], /^I came across Gloss Garage on Facebook and Instagram and couldn't find a website for you\./);
-  assert.match(ad.bubbles[1], /We build simple websites for car detailing and protection studios in Dubai that turn visitors into WhatsApp inquiries\./, 'niche from the hunt keyword');
+  const p = paras(advertiser({ niche: '' }));
+  assert.equal(p[0], 'Hello Gloss Garage', 'the city at the end of the page name is left out');
+  assert.equal(p[1], "I came across Gloss Garage on Facebook and Instagram and couldn't find a website for you.");
+  assert.equal(p[2], 'We build simple websites for car detailing and protection studios in Dubai that turn visitors into WhatsApp inquiries.', 'niche from the hunt keyword');
   assert.equal(ad.subject, 'Website for Gloss Garage');
-  assert.match(LH.pitchFor(prospect({ website: null }), S).bubbles[1], /on Google Maps and/);
-  assert.match(LH.pitchFor(prospect({ website: null, sources: { instagram: { username: 'glossyppf' } } }), S).bubbles[1], /on Instagram and/);
-  assert.match(LH.pitchFor(advertiser({ keywords: ['pest control'] }), S).bubbles[1], /websites for businesses in Dubai/, 'no matching niche');
-  assert.match(LH.pitchFor(advertiser(), { ...S, adsCity: 'Abu Dhabi' }).bubbles[1], /studios in Abu Dhabi/);
+  assert.match(first(prospect({ website: null })), /on Google Maps and/);
+  assert.match(first(prospect({ website: null, sources: { instagram: { username: 'glossyppf' } } })), /on Instagram and/);
+  assert.match(first(advertiser({ keywords: ['pest control'] })), /websites for businesses in Dubai/, 'no matching niche');
+  assert.match(first(advertiser(), { ...S, adsCity: 'Abu Dhabi' }), /studios in Abu Dhabi/);
 });
 
-test('website script for a site that is down: "your website wasn\'t loading when I checked"', () => {
-  assert.equal(
-    LH.DEFAULT_SCRIPTS.website.body,
-    "I came across {{business}} on {{found_on}} and {{website_line}}.\n\nWe build simple websites for {{niche}} in {{city}} that turn visitors into WhatsApp inquiries.\n\nIf this sounds interesting I'd be happy to send you a free mockup of how yours could look.",
-  );
+test('website email for a site that is down: "your website wasn\'t loading when I checked"', () => {
   for (const site of [{ state: 'error', status: 500 }, { state: 'ok', parked: true }]) {
-    const down = LH.pitchFor(advertiser({ website: 'https://gloss.example/', site }), S);
-    assert.equal(down.script, 'website');
-    assert.equal(down.tag, 'Site down');
-    assert.match(down.bubbles[1], /^I came across Gloss Garage on Facebook and Instagram and your website wasn't loading when I checked\.\n\nWe build simple websites/);
+    const down = LH.emailFor(advertiser({ website: 'https://gloss.example/', site }), S);
+    assert.deepEqual([down.script, down.tag], ['website', 'Site down']);
+    assert.match(down.steps[0], /^Hello Gloss Garage\n\nI came across Gloss Garage on Facebook and Instagram and your website wasn't loading when I checked\.\n\nWe build simple websites/);
   }
   assert.equal(LH.scriptVars(advertiser(), S).website_line, "couldn't find a website for you");
-  // Pitched anyway with a working website: the line still says no website (the drawer warns about it).
-  assert.match(LH.pitchFor(advertiser({ website: 'https://gloss.example/', site: { state: 'ok', score: 70 } }), S, 'website').bubbles[1], /and couldn't find a website for you\./);
 });
 
 test('business names read like typed by hand: no keyword tails, legal suffixes or capitals', () => {
@@ -225,80 +206,59 @@ test('business names read like typed by hand: no keyword tails, legal suffixes o
     '': '',
   };
   for (const [raw, short] of Object.entries(cases)) assert.equal(LH.shortName(raw), short, raw);
-  const p = LH.pitchFor(prospect({ pageName: 'Dr. Smile Dental Clinic - Best Dentist in Dubai', niche: 'Dental clinics', website: null }), S);
-  assert.equal(p.bubbles[0], 'Hello Dr. Smile Dental Clinic');
-  assert.match(p.bubbles[1], /^I came across Dr\. Smile Dental Clinic on Google Maps and/);
-  assert.equal(p.subject, 'Website for Dr. Smile Dental Clinic');
+  const lead = prospect({ pageName: 'Dr. Smile Dental Clinic - Best Dentist in Dubai', niche: 'Dental clinics', website: null });
+  assert.deepEqual(paras(lead).slice(0, 2), ['Hello Dr. Smile Dental Clinic', "I came across Dr. Smile Dental Clinic on Google Maps and couldn't find a website for you."]);
+  assert.equal(LH.emailFor(lead, S).subject, 'Website for Dr. Smile Dental Clinic');
 });
 
 test('a lead with no name: their Instagram handle or domain, else "Hello there" and "your business"', () => {
-  const p = LH.pitchFor(advertiser({ pageName: '' }), S);
-  assert.equal(p.bubbles[0], 'Hello there');
-  assert.match(p.bubbles[1], /^I came across your business on Facebook and Instagram and couldn't find a website for you\./);
-  assert.equal(p.subject, 'Your website');
-  assert.equal(LH.pitchFor(prospect({ pageName: '', website: null }), S).subject, 'Your website');
-  assert.equal(LH.pitchFor(prospect({ pageName: '' }), S).subject, 'Quick question for glossyppf.example', 'their domain stands in for the name');
-  const ig = LH.pitchFor(prospect({ pageName: '', website: null, sources: { instagram: { username: 'glossyppf' } } }), S);
-  assert.equal(ig.bubbles[0], 'Hello glossyppf');
-  assert.match(ig.bubbles[1], /^I came across glossyppf on Instagram and/);
-  const site = LH.pitchFor(prospect({ pageName: '  ', website: 'https://www.glossyppf.ae/home', site: { state: 'error' } }), S);
-  assert.equal(site.bubbles[0], 'Hello glossyppf.ae');
-  assert.match(site.bubbles[1], /^I came across glossyppf\.ae on Google Maps and your website wasn't loading/);
-  assert.equal(LH.pitchFor(advertiser({ pageName: '' }), { ...S, scripts: { website: { closing: 'Thanks {{business}}' } } }).bubbles[2], 'Thanks', 'no "there" outside the greeting');
+  assert.deepEqual(paras(advertiser({ pageName: '' })).slice(0, 2), ['Hello there', "I came across your business on Facebook and Instagram and couldn't find a website for you."]);
+  assert.equal(LH.emailFor(advertiser({ pageName: '' }), S).subject, 'Your website');
+  assert.equal(LH.emailFor(prospect({ pageName: '', website: null }), S).subject, 'Your website');
+  assert.equal(LH.emailFor(prospect({ pageName: '' }), S).subject, 'Quick question for glossyppf.example', 'their domain stands in for the name');
+  assert.deepEqual(paras(prospect({ pageName: '', website: null, sources: { instagram: { username: 'glossyppf' } } })).slice(0, 2), ['Hello glossyppf', "I came across glossyppf on Instagram and couldn't find a website for you."]);
+  assert.match(first(prospect({ pageName: '  ', website: 'https://www.glossyppf.ae/home', site: { state: 'error' } })), /^Hello glossyppf\.ae\n\nI came across glossyppf\.ae on Google Maps and your website wasn't loading/);
+  const thanks = { ...S, emails: { website: { body: 'Hello {{business}}\n\nThanks {{business}}' } } };
+  assert.match(first(advertiser({ pageName: '' }), thanks), /^Hello there\n\nThanks your business/, 'only the greeting says "there"');
 });
 
-test('style: default scripts read like Samil typed them, with nothing invented', () => {
-  const empty = [{}, { kind: 'prospect', website: 'https://x.example/', adCheck: { state: 'none' } }, { kind: 'prospect' }];
-  for (const [key, t] of Object.entries(LH.DEFAULT_SCRIPTS)) {
-    const raw = LH.SCRIPT_PARTS.map((p) => t[p]).join('\n');
-    assert.doesNotMatch(raw, /[\u2013\u2014]/, `${key}: no en or em dash`);
-    assert.doesNotMatch(raw, / - /, `${key}: no hyphen used as a dash`);
-    assert.doesNotMatch(raw, /;/, `${key}: no semicolons`);
-    assert.doesNotMatch(raw, /google ads/i, `${key}: no Google Ads`);
-    assert.doesNotMatch(raw, /\d/, `${key}: no invented numbers`);
-    assert.doesNotMatch(raw, /\b(our clients|clients like|we've helped|we have helped|case stud|guarantee|results in)\b/i, `${key}: no invented clients or results`);
-  }
-  assert.ok((LH.DEFAULT_SCRIPTS.ads.body.match(/,/g) || []).length <= 6, 'at most 6 commas in the ads body');
+test('style: the default emails read like Samil wrote them, with nothing invented', () => {
   for (const [key, t] of Object.entries(LH.DEFAULT_EMAILS)) {
     const raw = [...LH.EMAIL_PARTS.map((p) => t[p]), LH.DEFAULT_SETTINGS.emailOptOut].join('\n');
     assert.doesNotMatch(raw, /[–—;]| - |\d/, `${key} emails: no dashes, semicolons or numbers`);
-    assert.ok((raw.match(/,/g) || []).length === 0, `${key} emails: no commas`);
+    assert.doesNotMatch(raw, /google ads/i, `${key}: no Google Ads`);
+    assert.doesNotMatch(raw, /\b(our clients|clients like|we've helped|we have helped|case stud|guarantee|results in)\b/i, `${key}: no invented clients or results`);
+    const followups = [t.subject, t.followup1, t.followup2, LH.DEFAULT_SETTINGS.emailOptOut].join('\n');
+    assert.ok((followups.match(/,/g) || []).length === 0, `${key} follow ups: no commas`);
   }
-  // Rendered with missing data, in 3 and 2 bubbles, for both scripts.
-  for (const lead of empty)
-    for (const bubbles of [3, 2])
-      for (const force of [undefined, 'website', 'ads']) {
-        const p = LH.pitchFor(lead, { ...LH.DEFAULT_SETTINGS, bubbles, adsCity: '' }, force);
-        assert.equal(p.bubbles.length, bubbles);
-        for (const b of [...p.bubbles, p.subject, p.email]) {
-          assert.doesNotMatch(b, /\{\{|\}\}|undefined|null|NaN/, b);
-          assert.doesNotMatch(b, /[\u2013\u2014;]/, b);
-          assert.doesNotMatch(b, / {2}| ,| \./, `no gaps left by missing data: ${JSON.stringify(b)}`);
-        }
-      }
+  assert.ok((LH.DEFAULT_EMAILS.ads.body.match(/,/g) || []).length <= 6, 'at most 6 commas in the ads email');
+  // Rendered with missing data, for both offers.
+  for (const lead of [{}, { kind: 'prospect', website: 'https://x.example/', adCheck: { state: 'none' } }, { kind: 'prospect' }]) {
+    const e = LH.emailFor(lead, { ...LH.DEFAULT_SETTINGS, adsCity: '' });
+    for (const b of [e.subject, ...e.steps]) {
+      assert.doesNotMatch(b, /\{\{|\}\}|undefined|null|NaN/, b);
+      assert.doesNotMatch(b, /[–—;]/, b);
+      assert.doesNotMatch(b, / {2}| ,| \./, `no gaps left by missing data: ${JSON.stringify(b)}`);
+    }
+  }
 });
 
 /* -------------------------------------------------------------- emails */
 const END = `${S.emailSignature}\n\n${S.emailOptOut}`;
 const mailLead = (o = {}) => prospect({ emails: ['hello@glossyppf.example'], ...o });
 
-test('emailFor: the script in one email, then two follow ups, each signed with the opt out line', () => {
+test('emailFor: the first email, then two follow ups, each signed with the opt out line', () => {
   const e = LH.emailFor(mailLead(), S);
-  const p = LH.pitchFor(mailLead(), S);
   assert.equal(e.script, 'ads');
   assert.equal(e.tag, 'No Meta ads');
   assert.equal(e.to, 'hello@glossyppf.example');
   assert.equal(e.subject, 'Quick question for Glossy PPF');
   assert.equal(e.steps.length, 3);
-  assert.equal(e.steps[0], `${p.bubbles.join('\n\n')}\n\n${END}`, 'greeting, body and closing, then the signature');
+  assert.equal(e.steps[0], `${LH.render(LH.DEFAULT_EMAILS.ads.body, LH.scriptVars(mailLead(), S))}\n\n${END}`, 'the first email, then the signature');
   assert.equal(e.steps[1], `Hello Glossy PPF\n\nJust bringing this back to the top of your inbox. Would a quick explanation of how it works be useful?\n\nLet me know\n\n${END}`);
   assert.match(e.steps[2], /^Hello Glossy PPF\n\nI'll leave it here so I don't fill up your inbox\./);
   assert.ok(e.steps[2].endsWith(END));
   assert.match(e.steps[0], /\n\nSamil\nCreative Marketing Director\nRizcoReach · rizcoreach\.ae\n\+971 56 846 1835\n\nIf you'd rather not hear from me just reply no thanks and I won't email again\.$/);
-  // The manual email tab sends the same first email.
-  assert.equal(p.email, e.steps[0]);
-  assert.equal(p.subject, e.subject);
-  assert.equal(LH.emailFor(mailLead(), { ...S, bubbles: 2 }).steps[0], e.steps[0], 'bubbles only change WhatsApp');
 });
 
 test('emailFor: follow up count, edits from Settings and an empty signature', () => {
@@ -312,7 +272,7 @@ test('emailFor: follow up count, edits from Settings and an empty signature', ()
   assert.equal(LH.emailsFor({ emails: { website: { subject: 'Hey' } } }).website.followup1, LH.DEFAULT_EMAILS.website.followup1);
   assert.equal(LH.emailsFor({ emails: { website: { subject: 'Hey' } } }).website.subject, 'Hey');
   const bare = LH.emailFor(mailLead(), { ...S, emailSignature: '', emailOptOut: '' });
-  assert.equal(bare.steps[0], LH.pitchFor(mailLead(), S).text, 'no signature or opt out line when both are empty');
+  assert.ok(bare.steps[0].endsWith('it works.\n\nLet me know'), 'no signature or opt out line when both are empty');
   const signed = LH.emailFor(mailLead(), { ...S, emailSignature: '{{my_name}}\n{{agency}}', emailOptOut: '' });
   assert.ok(signed.steps[0].endsWith('\n\nSamil\nRizcoReach'), 'the signature takes variables too');
 });
@@ -323,10 +283,10 @@ test('emailFor: who it goes to', () => {
   assert.equal(LH.emailFor(mailLead({ doNotEmail: true }), S).to, '', 'never email');
   const none = LH.emailFor(mailLead({ emails: [] }), S);
   assert.equal(none.to, '');
-  assert.equal(none.steps.length, 3, 'still written out so it can be copied');
+  assert.equal(none.steps.length, 3, 'still written out, to show what they would get');
 });
 
-test('emailFor: website script, and a lead with no name', () => {
+test('emailFor: the website offer, and a lead with no name', () => {
   const w = LH.emailFor(advertiser({ emails: ['a@gloss.example'] }), S);
   assert.equal(w.script, 'website');
   assert.equal(w.subject, 'Website for Gloss Garage');
@@ -338,18 +298,13 @@ test('emailFor: website script, and a lead with no name', () => {
   assert.equal(nameless.subject, 'Your website');
   assert.match(nameless.steps[0], /^Hello there\n\nI came across your business on/);
   assert.match(nameless.steps[1], /^Hello there\n\nJust bringing/);
-  assert.equal(LH.emailFor({}, S, 'ads').subject, 'Quick question');
+  assert.equal(LH.emailFor({ kind: 'prospect', website: 'https://x.example/', adCheck: { state: 'none' } }, S).subject, 'Quick question for x.example');
   assert.equal(LH.emailFor(prospect({ pageName: '' }), S).subject, 'Quick question for glossyppf.example', 'their domain stands in for the name');
 });
 
-test('emailFor: running ads gives no emails, pitching anyway gives the website emails', () => {
+test('emailFor: running ads with a working website gives no emails', () => {
   const running = mailLead({ adCheck: { state: 'running' } });
   assert.deepEqual(LH.emailFor(running, S), { script: null, tag: 'Running ads', to: 'hello@glossyppf.example', subject: '', steps: [] });
-  assert.equal(LH.pitchFor(running, S).email, '');
-  const anyway = LH.emailFor(running, S, 'website');
-  assert.equal(anyway.script, 'website');
-  assert.equal(anyway.subject, 'Website for Glossy PPF');
-  assert.equal(anyway.steps.length, 3);
 });
 
 /* -------------------------------------------------------------- niches */
@@ -390,10 +345,10 @@ test('presets: five defaults, or the list from Settings; website leads get their
 });
 
 test('old settings keys are dropped', () => {
-  const s = LH.withDefaults({ templates: { x: 1 }, adTemplates: {}, adsOffer: 'AED 600', myName: 'Samil' });
+  const s = LH.withDefaults({ templates: { x: 1 }, adTemplates: {}, adsOffer: 'AED 600', myName: 'Samil', bubbles: 3, scripts: null, intentOpeners: {} });
   assert.equal(s.myName, 'Samil');
-  assert.equal(s.bubbles, 3);
-  for (const k of ['templates', 'adTemplates', 'adsOffer']) assert.ok(!(k in s), k);
+  for (const k of ['templates', 'adTemplates', 'adsOffer', 'bubbles', 'scripts', 'intentOpeners']) assert.ok(!(k in s), k);
+  assert.ok(LH.hasOldSettings({ bubbles: 3 }));
   assert.ok(LH.hasOldSettings({ adsOffer: '' }));
   assert.ok(!LH.hasOldSettings(s));
 });
@@ -404,18 +359,13 @@ test('tags and priority: running-ads leads sink to the bottom', () => {
   assert.deepEqual(LH.leadTags(prospect({ sources: { maps: { placeId: 'x', rating: 4.8, reviews: 12 } } })), ['Growing']);
   assert.deepEqual(LH.leadTags(prospect({ sources: { maps: { placeId: 'x', rating: 3.6, reviews: 90 } } })), [], 'many reviews, low rating: not growing');
   assert.deepEqual(LH.leadTags(prospect({ sources: { maps: { placeId: 'x', rating: 3.5, reviews: 300 } } })), []);
-  assert.equal(LH.tagLine(prospect({ sources: { maps: { placeId: 'x', rating: 3.5, reviews: 300 } } })), 'No Meta ads');
   assert.deepEqual(LH.leadTags(prospect({ sources: { maps: { placeId: 'x', rating: 3.2, reviews: 7 } } })), ['New business'], 'under 10 reviews');
   assert.deepEqual(LH.leadTags(advertiser({ website: 'https://gone.example/', site: { state: 'error' } })), ['Site down'], 'a site that is down');
   assert.deepEqual(LH.leadTags(prospect({ site: { state: 'ok', parked: true } })), ['Site down', 'Good reviews'], 'a parked domain');
-  assert.equal(LH.tagLine(advertiser({ website: 'https://gone.example/', site: { state: 'error' } })), 'Site down');
   assert.deepEqual(LH.leadTags(prospect({ website: null })), ['No website', 'Good reviews']);
   assert.deepEqual(LH.leadTags(prospect({ adCheck: { state: 'running' } })), ['Running ads', 'Good reviews']);
   assert.deepEqual(LH.leadTags(advertiser({ website: 'https://gloss.example/' })), ['Running ads']);
   assert.deepEqual(LH.leadTags(advertiser({ places: { match: true, rating: 4.5, reviews: 80 } })), ['No website', 'Good reviews']);
-  assert.equal(LH.tagLine(prospect()), 'No Meta ads · Good reviews');
-  assert.equal(LH.tagLine(advertiser()), 'No website');
-  assert.equal(LH.tagLine(prospect({ adCheck: { state: 'pending' } })), 'Ad check not done · Good reviews');
 
   const base = { activeAdCount: 4, earliestStart: Date.now() - 70 * 86400000, phones: [{ number: '+971501234567', source: 'website' }], emails: [], pageLikes: 2000 };
   const noSite = LH.priority({ ...base, website: null });
@@ -424,7 +374,7 @@ test('tags and priority: running-ads leads sink to the bottom', () => {
   assert.ok(LH.priority(prospect({ adCheck: { state: 'running' } })) < LH.priority(prospect({ adCheck: { state: 'pending' }, sources: {} })));
 });
 
-test('results: sent, replied and reply rate by niche and by script, across both tabs', () => {
+test('results: sent, replied and reply rate by niche and by offer, across both tabs', () => {
   const day = 86400000;
   const leads = [
     prospect({ contactedAt: 1, sentScript: 'ads', status: 'replied', repliedAt: 2 }),
@@ -441,7 +391,7 @@ test('results: sent, replied and reply rate by niche and by script, across both 
   const niche = Object.fromEntries(r.byNiche.map((x) => [x.label, [x.sent, x.replied, x.rate]]));
   assert.deepEqual(niche, { Car: [4, 3, '75%'], 'Aesthetic clinics': [1, 1, '100%'], 'No niche': [1, 0, '0%'] });
   const script = Object.fromEntries(r.byScript.map((x) => [x.label, [x.sent, x.replied, x.rate]]));
-  assert.deepEqual(script, { 'Ads script': [3, 2, '67%'], 'Website script': [2, 2, '100%'], 'Not recorded': [1, 0, '0%'] });
+  assert.deepEqual(script, { 'Ads offer': [3, 2, '67%'], 'Website offer': [2, 2, '100%'], 'Not recorded': [1, 0, '0%'] });
   assert.deepEqual(LH.results([advertiser()], S).total, { sent: 0, replied: 0, rate: '–' }, 'a dash when nothing was sent');
 });
 
@@ -544,12 +494,11 @@ test('chains: the same name twice, "branch" in the name, or merged Maps listings
   assert.ok(LH.leadTags({ kind: 'prospect', pageName: 'Gloss Garage JLT', phones: [] }, { chains }).includes('Chain'));
 });
 
-test('the script city comes from the lead area', () => {
+test('the email city comes from the lead area', () => {
   assert.equal(LH.cityOf('Al Nahda, Sharjah'), 'Sharjah');
   assert.equal(LH.cityOf('Ras Al Khaimah'), 'Ras Al Khaimah');
   assert.equal(LH.cityOf('Al Quoz', 'Dubai'), 'Dubai', 'older leads keep the setting');
-  const p = LH.pitchFor(prospect({ area: 'Al Nahda, Sharjah', niche: 'Fitness', pageName: 'Iron Box' }), S);
-  assert.match(p.bubbles[1], /We help gyms and fitness studios in Sharjah get consistent inquiries/);
+  assert.match(LH.emailFor(prospect({ area: 'Al Nahda, Sharjah', niche: 'Fitness', pageName: 'Iron Box' }), S).steps[0], /We help gyms and fitness studios in Sharjah get consistent inquiries/);
 });
 
 test('presets JSON: export and import round trip, bad files explain themselves', () => {
@@ -665,7 +614,7 @@ test('ad status names for every kind of lead', () => {
   assert.ok(LH.prospectPriority(lead) > LH.prospectPriority({ ...lead, adCheck: { state: 'none' } }));
 });
 
-test('quality: website weakness score, one reason per failed check, strongest gives the pitch line', () => {
+test('quality: website weakness score, one reason per failed check, the strongest is the top reason', () => {
   const year = new Date().getFullYear();
   const okSite = { state: 'ok', parked: false, https: true, mobile: true, copyrightYear: year, whatsappButton: true, contactForm: false, psi: { performance: 80 }, issues: [] };
   const lead = (site, extra = {}) => ({ kind: 'prospect', website: 'https://gloss.ae/', site, phones: [], socials: {}, sources: {}, ...extra });
@@ -678,9 +627,8 @@ test('quality: website weakness score, one reason per failed check, strongest gi
   assert.equal(bad.website.score, 85);
   assert.ok(bad.weak && bad.signals.includes('weak_site'));
   assert.equal(bad.website.reasons.find((r) => r.id === 'slow_mobile').label, 'PageSpeed mobile 31/100 (under 50)');
-  assert.equal(bad.website.reasons.find((r) => r.id === 'old_copyright').pitch, `I noticed your site still says © ${year - 3} at the bottom so it looks like nobody is running it`);
-  assert.equal(bad.pitch, 'I noticed your site shows a Not secure warning in the browser and that puts people off before they even look');
-  for (const r of [...bad.website.reasons, ...LH.WEAK_CHECKS]) assert.ok(!/[;—–]| - /.test(r.pitch), `no semicolons or dashes: ${r.pitch}`);
+  assert.equal(bad.website.reasons.find((r) => r.id === 'old_copyright').label, `Copyright still says © ${year - 3}`);
+  assert.equal(bad.topReason, 'No HTTPS or an SSL error');
 
   // Down, parked or an error page is the strongest reason. An SSL error counts as no HTTPS.
   assert.deepEqual(LH.quality(lead({ state: 'error', issues: [{ id: 'httpError', label: 'Website returns an error (404)' }] })).website.reasons.map((r) => r.id), ['site_down']);
@@ -695,29 +643,28 @@ test('quality: website weakness score, one reason per failed check, strongest gi
   // Older checks: "no call or WhatsApp" and "no form" together mean no contact.
   const old = { state: 'ok', https: true, mobile: true, issues: [{ id: 'contactLinks' }, { id: 'leadCapture' }] };
   assert.ok(LH.quality(lead(old)).website.reasons.some((r) => r.id === 'no_contact'));
-  // Your points and pitch lines from Settings, and the weak site limit.
-  const mine = { weakChecks: [{ id: 'no_https', points: 50, pitch: 'Your site says Not secure' }], weakSiteMin: 60 };
+  // Your points from Settings, and the weak site limit.
+  const mine = { weakChecks: [{ id: 'no_https', points: 50 }], weakSiteMin: 60 };
   const edited = LH.quality(lead({ ...okSite, https: false }), mine);
-  assert.deepEqual([edited.website.score, edited.weak, edited.pitch], [50, false, 'Your site says Not secure']);
+  assert.deepEqual([edited.website.score, edited.weak, edited.topReason], [50, false, 'No HTTPS or an SSL error']);
   assert.equal(LH.quality(lead({ ...okSite, https: false }), { ...mine, weakSiteMin: 50 }).weak, true);
 });
 
-test('quality: no website, followers band, new business, and the pitch for a good site', () => {
+test('quality: no website, followers band, new business, and the top reason for a good site', () => {
   const q = LH.quality({ kind: 'prospect', website: null, socials: { instagram: 'https://www.instagram.com/gloss.dxb/' }, phones: [], sources: { maps: { placeId: 'x', reviews: 6 } }, igStats: { followers: 2400, from: 'api' } });
-  assert.deepEqual([q.website.noSite, q.website.reasons[0].label, q.pitch], [true, 'No website, only Instagram', "I couldn't find a website for you, just your Instagram"]);
+  assert.deepEqual([q.website.noSite, q.website.reasons[0].label, q.topReason], [true, 'No website, only Instagram', 'No website, only Instagram']);
   assert.deepEqual([q.followers, q.inBand, q.reviews, q.newBusiness], [2400, true, 6, true]);
   assert.deepEqual(q.signals, ['no_website', 'follower_band', 'new_business']);
-  assert.equal(LH.quality({ website: null, socials: {}, phones: [] }).pitch, "I couldn't find a website for you");
+  assert.equal(LH.quality({ website: null, socials: {}, phones: [] }).topReason, 'No website');
   // Outside the band, a count from the profile page, an editable band and review limit.
   const page = { kind: 'prospect', website: null, socials: {}, phones: [], sources: { instagram: { username: 'big', followers: '12.5K' }, maps: { placeId: 'y', reviews: 10 } } };
   assert.deepEqual([LH.quality(page).followers, LH.quality(page).inBand, LH.quality(page).newBusiness], [12500, false, false]);
   assert.deepEqual([LH.quality(page, { followerMax: 20000 }).inBand, LH.quality(page, { newBusinessReviews: 11 }).newBusiness], [true, true]);
   assert.deepEqual(['2,345', '1.2M', '840', 'n/a', 77].map(LH.parseCount), [2345, 1200000, 840, null, 77]);
-  // A good site: the ad history gives the line.
+  // A good site: the ad history is the reason.
   const site = { state: 'ok', https: true, mobile: true, whatsappButton: true, contactForm: true, issues: [] };
-  assert.equal(LH.quality({ kind: 'prospect', website: 'https://a.ae/', site, phones: [], adCheck: { state: 'past', v: 2 } }).pitch, 'I noticed you ran Meta ads before but nothing is running right now');
-  // {{pitch}} in scripts, and the tags.
-  assert.equal(LH.scriptVars({ website: null, socials: {}, phones: [] }).pitch, "I couldn't find a website for you");
+  assert.equal(LH.quality({ kind: 'prospect', website: 'https://a.ae/', site, phones: [], adCheck: { state: 'past', v: 2 } }).topReason, 'Ran Meta ads before, none live');
+  // The tags.
   const tags = LH.leadTags({ kind: 'prospect', website: 'https://a.ae/', site: { ...site, https: false, mobile: false }, phones: [], sources: { maps: { placeId: 'z', reviews: 3 } }, igStats: { followers: 900 }, adCheck: { state: 'none', v: 2 } });
   assert.deepEqual(tags, ['Weak site', 'New business', 'Followers in range']);
 });
@@ -775,5 +722,5 @@ test('full CSV: every field of the record, one row per lead', () => {
   );
   assert.match(col('heat_reasons'), /^Ran Meta ads before, none live \+30; Instagram followers in range \+15; New business \+10; One of your target niches \+10; Has a WhatsApp mobile \+10/);
   assert.match(col('signals'), /follower_band/);
-  assert.equal(col('pitch_line'), 'I noticed your site shows a Not secure warning in the browser and that puts people off before they even look');
+  assert.equal(col('top_reason'), 'No HTTPS or an SSL error');
 });

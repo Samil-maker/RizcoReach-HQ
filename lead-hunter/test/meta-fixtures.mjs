@@ -201,6 +201,16 @@ ${job(903, 'Digital Marketing Specialist', 'Acme Corp', 'London, United Kingdom'
 </ul></body></html>`;
 const LI_WALL = `<!doctype html><html><head><title>Security Verification | LinkedIn</title></head><body><main><h1>Let's do a quick security check</h1></main></body></html>`;
 
+/* Claude's Messages API: a verdict per post, picked by what the post says. */
+export const CLAUDE = { key: 'sk-ant-test-key', calls: [] };
+const VERDICTS = [
+  [/bakery/, { is_buyer: true, service_needed: 'website', business_type: 'bakery', location: 'JLT, Dubai', urgency: 'high', summary: 'A bakery owner in JLT wants a website.', intent_score: 90 }],
+  [/Business is slow/, { is_buyer: true, service_needed: 'marketing', business_type: 'unknown', location: 'unknown', urgency: 'medium', summary: 'A business owner says sales are slow and their ads are not working.', intent_score: 70 }],
+  [/cleaning company/, { is_buyer: false, service_needed: 'none', business_type: 'cleaning company', location: 'Sharjah', urgency: 'low', summary: 'Someone asking in general how cleaning companies find clients, not looking to hire anyone.', intent_score: 15 }],
+  [/Social Media Executive/, { is_buyer: true, service_needed: 'marketing', business_type: 'car detailing studio', location: 'Dubai', urgency: 'medium', summary: 'Gloss Garage is hiring a social media executive.', intent_score: 65 }],
+  [/salon/, { is_buyer: true, service_needed: 'marketing', business_type: 'salon', location: 'Al Barsha, Dubai', urgency: 'high', summary: 'A salon owner in Al Barsha needs a social media manager.', intent_score: 85 }],
+  [/gym/, { is_buyer: true, service_needed: 'website', business_type: 'gym', location: 'Al Quoz, Dubai', urgency: 'high', summary: 'A gym owner in Al Quoz wants a web developer.', intent_score: 80 }],
+];
 // Set to a page body to answer every Ad Library request with it (a login wall, a block).
 export const metaWall = { body: '' };
 function libraryPage(ads, count, pageInfo) {
@@ -232,6 +242,20 @@ export function metaHandler(req, res, url, host) {
     if (url.pathname === '/search' && url.searchParams.get('tbm') === 'map') return send(200, 'application/json; charset=utf-8', mapsXhr()), true;
   }
   if (SITES[host]) return send(200, 'text/html; charset=utf-8', SITES[host]), true;
+  if (host === 'api.anthropic.com' && url.pathname === '/v1/messages') {
+    let raw = '';
+    req.on('data', (c) => (raw += c));
+    req.on('end', () => {
+      const body = JSON.parse(raw || '{}');
+      const h = req.headers;
+      CLAUDE.calls.push({ key: h['x-api-key'], version: h['anthropic-version'], browser: h['anthropic-dangerous-direct-browser-access'], model: body.model, effort: (body.output_config || {}).effort, format: ((body.output_config || {}).format || {}).type, text: body.messages[0].content });
+      const json = (code, o) => send(code, 'application/json', JSON.stringify(o));
+      if (h['x-api-key'] !== CLAUDE.key) return json(401, { type: 'error', error: { type: 'authentication_error', message: 'invalid x-api-key' } });
+      const verdict = (VERDICTS.find(([re]) => re.test(body.messages[0].content)) || [null, VERDICTS[0][1]])[1];
+      json(200, { id: 'msg_1', type: 'message', role: 'assistant', model: body.model, stop_reason: 'end_turn', content: [{ type: 'thinking', thinking: '', signature: 'x' }, { type: 'text', text: JSON.stringify(verdict) }], usage: { input_tokens: 600, output_tokens: 90 } });
+    });
+    return true;
+  }
   if (host === 'www.reddit.com') {
     const sub = (url.pathname.match(/^\/r\/([^/]+)\/new\.json$/) || [])[1];
     if (!sub) return send(404, 'text/plain', 'not found'), true;

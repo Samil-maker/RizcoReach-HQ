@@ -4,7 +4,8 @@
    - Reddit, every few hours through Reddit's API (r/dubai, r/UAE, r/abudhabi, r/sharjah, r/smallbusiness with UAE
      mentions only), a few seconds apart;
    - Facebook groups and LinkedIn posts and jobs, only when you press Scan on a page you have open yourself.
-   Every post goes through LH.intentProcess (lib/intent.js) and is saved once in IndexedDB (lib/intent-db.js). */
+   Every post goes through LH.intentProcess (lib/intent.js) and is saved once in IndexedDB (lib/intent-db.js).
+   With your Claude API key, Claude then reads each new post and says whether it is a real buyer (the AI check). */
 
 /* --------------------------------------------------------------- badge */
 /** The icon: a red ! while a source is paused, else the number of new intent posts you have not seen. */
@@ -63,9 +64,89 @@ async function saveIntent(raws, source, opts = {}) {
     await store.set({ intentState });
   });
   await refreshBadge();
+  if (added.length && aiReady(settings) && settings.aiAuto) queueAi(added.map((p) => p.id));
   if (added.length && opts.notify) notify('New intent posts', `${added.length} new post${added.length === 1 ? '' : 's'} from people asking for help. Open the Intent tab in Lead Hunter.`);
   return stats;
 }
+
+/* ------------------------------------------------------------- AI check */
+const aiReady = (settings) => !!settings.anthropicKey;
+async function bumpIntent() {
+  await locked(async () => {
+    const { intentState = {} } = await store.get('intentState');
+    intentState.rev = (intentState.rev || 0) + 1;
+    await store.set({ intentState });
+  });
+}
+async function queueAi(ids) {
+  if (!ids.length) return;
+  await locked(async () => {
+    const { aiQueue = [] } = await store.get('aiQueue');
+    await store.set({ aiQueue: [...new Set([...aiQueue, ...ids])] });
+  });
+  runAi();
+}
+/** One post to Claude. Returns what LH.aiParse says. */
+async function aiCheckOne(post, settings) {
+  const { url, init } = LH.aiRequest(post, settings);
+  let res;
+  try {
+    res = await fetch(url, { ...init, signal: AbortSignal.timeout(60000) });
+  } catch (e) {
+    return { error: `Could not reach Claude (${String(e.message || e)})`, retry: true, wait: 60000 };
+  }
+  const data = await res.json().catch(() => null);
+  return LH.aiParse(res.status, data, res.headers.get('retry-after'));
+}
+let aiBusy = false;
+async function runAi() {
+  if (aiBusy) return;
+  aiBusy = true;
+  try {
+    for (;;) {
+      const settings = await getSettings();
+      const { aiQueue = [], alerts = {}, aiWaitUntil = 0 } = await store.get(['aiQueue', 'alerts', 'aiWaitUntil']);
+      if (!aiQueue.length || alerts.ai || !aiReady(settings) || now() < aiWaitUntil) break;
+      const id = aiQueue[0];
+      const post = await LH.intentDb.get(id);
+      if (post) {
+        const r = await aiCheckOne(post, settings);
+        if (r.stop) {
+          await alertSource('ai', r.error, '', 'Check your Claude API key in Settings > Intent Radar, then press Resume on the Intent tab.');
+          break;
+        }
+        if (r.retry) {
+          // Busy or rate limited: this post stays first and the checks carry on later (the minute tick restarts them).
+          await store.set({ aiWaitUntil: now() + r.wait });
+          await logProblem('ai', r.error);
+          break;
+        }
+        if (r.error) {
+          await logProblem('ai', `${post.summary.slice(0, 60)}: ${r.error}`);
+          await LH.intentDb.update(id, { aiError: r.error, checkedAt: now() });
+        } else {
+          const next = LH.aiApply(post, r.result);
+          await LH.intentDb.update(id, { ...next, aiError: null });
+          // Not a buyer after all: a lead it was linked to loses the bonus.
+          if (next.notBuyer && post.leadId)
+            await updateLead(post.leadId, (l) => {
+              if (l.hiring && l.hiring.url === post.url) l.hiring = null;
+              if (l.intent && l.intent.url === post.url) l.intent = null;
+            });
+        }
+        await bumpIntent();
+      }
+      await locked(async () => {
+        const { aiQueue: q = [] } = await store.get('aiQueue');
+        await store.set({ aiQueue: q.filter((x) => x !== id) });
+      });
+      await sleep(400);
+    }
+  } finally {
+    aiBusy = false;
+  }
+}
+chrome.alarms.onAlarm.addListener((a) => a.name === 'tick' && runAi());
 
 /* -------------------------------------------------------------- Reddit */
 /* With a Reddit app id (reddit.com/prefs/apps) it uses Reddit's OAuth API; without one, Reddit's public JSON for
@@ -141,7 +222,7 @@ async function runRadar(manual = false) {
   const stats = await saveIntent(raws, 'reddit', { notify: !manual });
   return { stats };
 }
-const SOURCE_EXTRA = { reddit: 'Reddit', facebook: 'Facebook groups', linkedin: 'LinkedIn' };
+const SOURCE_EXTRA = { reddit: 'Reddit', facebook: 'Facebook groups', linkedin: 'LinkedIn', ai: 'AI check' };
 Object.assign(SOURCE_NAMES, SOURCE_EXTRA);
 
 // Every minute: is a scan due? (Every few hours by default, 0 in Settings turns it off.)
@@ -167,12 +248,24 @@ Object.assign(handlers, {
   'intent:run': async () => runRadar(true),
   'intent:update': async (msg) => {
     const post = await LH.intentDb.update(msg.id, msg.patch || {});
-    await locked(async () => {
-      const { intentState = {} } = await store.get('intentState');
-      intentState.rev = (intentState.rev || 0) + 1;
-      await store.set({ intentState });
-    });
+    await bumpIntent();
     return { post };
+  },
+  /** Check posts with the AI now: the ones you pick, or every post not checked yet. */
+  'ai:check': async (msg) => {
+    const settings = await getSettings();
+    if (!aiReady(settings)) return { error: 'Add your Claude API key in Settings > Intent Radar first.' };
+    const ids = msg.ids && msg.ids.length ? msg.ids : (await LH.intentDb.all()).filter((p) => !p.verified).map((p) => p.id);
+    await store.set({ aiWaitUntil: 0 });
+    await queueAi(ids);
+    return { queued: ids.length };
+  },
+  /** One tiny request with your key: does it work? */
+  'ai:test': async () => {
+    const settings = await getSettings();
+    if (!aiReady(settings)) return { error: 'Add your Claude API key first, then Save.' };
+    const r = await aiCheckOne({ source: 'reddit', place: 'r/dubai', author: 'u/test', title: 'Need a website for my bakery in JLT, any recommendations?', text: '' }, settings);
+    return r.error ? { error: r.error } : { result: r.result };
   },
   /** You opened the Intent tab: the badge count goes. */
   'intent:seen': async () => {
@@ -187,6 +280,7 @@ Object.assign(handlers, {
   'intent:resume': async (msg) => {
     await clearAlert(String(msg.source || ''));
     if (msg.source === 'reddit') runRadar(true).catch(() => {});
+    if (msg.source === 'ai') runAi();
     return { ok: true };
   },
 });
