@@ -563,7 +563,18 @@ Mussafah, Abu Dhabi`),
     igToken: '',
     igApiVersion: 'v23.0',
     igAuto: true, // look up followers for new businesses with an Instagram handle
-    adCheckAll: false, // also check the Ad Library for businesses without a website (one name search each, slower)
+    adCheckAll: false,
+    // Intent Radar (Phase 5)
+    radarEveryHours: 3, // scan Reddit every this many hours, 0 = only when you press Scan now
+    intentMaxDays: 14, // only posts this new
+    intentCap: 100, // posts read per subreddit per scan (Reddit's maximum is 100)
+    subreddits: 'dubai\nUAE\nabudhabi\nsharjah',
+    uaeOnlySubs: 'smallbusiness', // these count only when the post mentions the UAE
+    redditClientId: '', // optional: an app from reddit.com/prefs/apps (installed app: the id is enough)
+    redditSecret: '',
+    intentKeywords: null, // { website, marketing, pain, hiring, arabic } as text, null = defaults (LH.INTENT_KEYWORDS)
+    sellerWords: null, // null = LH.SELLER_WORDS
+    intentOpeners: null, // { website, marketing, pain, hiring }, null = LH.INTENT_OPENERS // also check the Ad Library for businesses without a website (one name search each, slower)
     nameMatch: 0.92, // how close two names in the same area must be to count as one business (Jaro-Winkler, 0.8 to 1)
     bubbles: 3, // WhatsApp messages per pitch: 3 = greeting, body, closing · 2 = greeting with body, closing
     niches: null, // null = use LH.DEFAULT_NICHES

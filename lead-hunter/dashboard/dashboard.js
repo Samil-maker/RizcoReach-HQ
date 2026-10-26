@@ -86,6 +86,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
     else if (k === 'adCheckQueue') S.adQueue = newValue || [];
     else if (k === 'adCheckPaused') S.adPaused = !!newValue;
     else if (k === 'alerts') S.alerts = newValue || {};
+    else if (k === 'intentState') {
+      S.intent.state = newValue || {};
+      renderIntentCount();
+    }
     else if (k === 'problems') {
       S.problems = newValue || {};
       renderProblems();
@@ -264,6 +268,7 @@ function rowHtml({ l, h }) {
 /* ---------------------------------------------------------------- render */
 function renderKpis() {
   if (S.view === 'ads') return renderProspectKpis();
+  if (S.view === 'intent') return renderIntentKpis();
   const leads = [...S.leads.values()].filter((l) => l.kind !== 'prospect');
   const now = Date.now();
   const hot = leads.filter((l) => l.status === 'new' && LH.heatClass(LH.heatScore(l, S.settings, now).score, S.settings) === 'hot').length;
@@ -378,6 +383,7 @@ function renderAll() {
   }
   if (S.view === 'hunt') renderLastHunt();
   if (S.view === 'ads') renderProspectsView();
+  if (S.view === 'intent') renderIntentView();
   if (S.openId) renderDrawer();
 }
 
@@ -919,6 +925,7 @@ function setView(v) {
     loadEmailStatus();
   }
   if (v === 'hunt') renderLastHunt();
+  if (v === 'intent') send({ type: 'intent:seen' }); // the badge count goes once you look
   renderAll();
   try {
     history.replaceState(null, '', `#${v}`);
@@ -1118,6 +1125,14 @@ function fillSettings() {
     else el.value = s[el.name] ?? '';
   }
   renderNicheEditor(LH.nichesFor(s));
+  const il = LH.intentListsFor(s);
+  $('[data-intent-lists]', f).innerHTML = Object.entries(il.keywords)
+    .map(([k, list]) => `<label class="field"><span class="lbl">${esc(LH.INTENT_LABELS[k])} <small>one phrase per line</small></span><textarea class="inp" rows="5" data-intent-kw="${k}">${esc(list.join('\n'))}</textarea></label>`)
+    .join('');
+  $('[data-seller-words]', f).value = il.seller.join('\n');
+  $('[data-intent-openers]', f).innerHTML = Object.keys(LH.INTENT_OPENERS)
+    .map((k) => `<label class="field"><span class="lbl">${esc(LH.INTENT_LABELS[k])}</span><textarea class="inp" rows="2" data-intent-opener-tpl="${k}">${esc((s.intentOpeners || {})[k] || LH.INTENT_OPENERS[k])}</textarea></label>`)
+    .join('');
   const hw = LH.heatWeightsFor(s);
   $('[data-heat-weights]', f).innerHTML = Object.entries(hw)
     .map(([group, w]) => `<div class="heat-group"><h4>${esc(LH.HEAT_GROUPS[group])}</h4>${Object.entries(w).map(([id, n]) => `<label class="heat-w"><span>${esc(LH.HEAT_LABELS[id])}</span><input class="inp" type="number" min="-100" max="100" data-heat-group="${group}" data-heat-id="${id}" value="${esc(n)}" /></label>`).join('')}</div>`)
@@ -1136,7 +1151,7 @@ function fillSettings() {
   renderHistory();
   renderProblems();
 }
-const SOURCE_LABEL = { adlib: 'Meta Ad Library', maps: 'Google Maps', instagram: 'Instagram API' };
+const SOURCE_LABEL = { adlib: 'Meta Ad Library', maps: 'Google Maps', instagram: 'Instagram API', reddit: 'Reddit', facebook: 'Facebook groups', linkedin: 'LinkedIn' };
 /** Settings > Your data: the last problems each source hit. */
 function renderProblems() {
   const el = $('[data-problems]');
@@ -1170,7 +1185,9 @@ async function saveSettings() {
   const next = { ...S.settings };
   for (const el of f.elements) {
     if (!el.name || !(el.name in LH.DEFAULT_SETTINGS)) continue;
-    next[el.name] = el.type === 'checkbox' ? el.checked : el.type === 'number' ? Number(el.value) || LH.DEFAULT_SETTINGS[el.name] : el.value.trim();
+    // A number box: empty or not a number keeps the default, 0 is kept (it can mean "off").
+    const n = Number(el.value);
+    next[el.name] = el.type === 'checkbox' ? el.checked : el.type === 'number' ? (el.value.trim() === '' || !Number.isFinite(n) ? LH.DEFAULT_SETTINGS[el.name] : n) : el.value.trim();
   }
   next.bubbles = Number(next.bubbles) === 2 ? 2 : 3;
   next.emailFollowups = Math.max(0, Math.min(2, Math.round(Number(next.emailFollowups)) || 0));
@@ -1189,6 +1206,15 @@ async function saveSettings() {
     })
     .filter(Boolean);
   next.weakChecks = edits.length ? edits : null;
+  // Intent Radar lists: only the ones you changed are kept.
+  const lists = {};
+  for (const el of $$('[data-intent-kw]', f)) if (el.value.trim() !== (LH.INTENT_KEYWORDS[el.dataset.intentKw] || []).join('\n')) lists[el.dataset.intentKw] = el.value.trim();
+  next.intentKeywords = Object.keys(lists).length ? lists : null;
+  const sellerEl = $('[data-seller-words]', f);
+  next.sellerWords = sellerEl.value.trim() === LH.SELLER_WORDS.join('\n') ? null : sellerEl.value.trim();
+  const openers = {};
+  for (const el of $$('[data-intent-opener-tpl]', f)) if (el.value.trim() && el.value.trim() !== LH.INTENT_OPENERS[el.dataset.intentOpenerTpl]) openers[el.dataset.intentOpenerTpl] = el.value.trim();
+  next.intentOpeners = Object.keys(openers).length ? openers : null;
   // Heat weights: only what differs from the defaults is kept.
   const heat = {};
   for (const el of $$('[data-heat-id]', f)) {
@@ -1552,6 +1578,7 @@ function bind() {
     if (b.dataset.removePhone && l) return update(l.id, { removePhone: b.dataset.removePhone });
     const act = b.dataset.act;
     const bubbles = () => $$('[data-bubble]').map((t) => t.value);
+    if (await intentAction(act, b)) return;
     if (await prospectAction(act, b, l, e)) return;
     switch (act) {
       case 'close':
@@ -1898,8 +1925,9 @@ function bind() {
   initHuntForm();
   initSettings();
   initProspects();
+  initIntent();
   fillSettings();
   const hash = location.hash.replace('#', '');
-  setView(['leads', 'hunt', 'settings', 'ads'].includes(hash) ? hash : 'leads');
+  setView(['leads', 'hunt', 'settings', 'ads', 'intent'].includes(hash) ? hash : 'leads');
   if (S.settings.queueKey) send({ type: 'queue:sync' }).catch(() => {});
 })();

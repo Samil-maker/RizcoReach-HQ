@@ -136,7 +136,7 @@ function renderFinderStatus() {
   const el = $('[data-finder-status]');
   const f = S.finder;
   const waiting = S.adQueue.length;
-  if (!f && !waiting && !Object.keys(S.alerts).length) return (el.hidden = true);
+  if (!f && !waiting && !['adlib', 'maps', 'instagram'].some((k) => S.alerts[k])) return (el.hidden = true);
   el.hidden = false;
   const parts = [];
   if (f && ['running', 'paused'].includes(f.status)) {
@@ -154,6 +154,7 @@ function renderFinderStatus() {
   if (notes.length) parts.push(`<span class="err" style="margin:0">${esc(notes.join(' · '))}</span>`);
   // A login wall, checkpoint or block paused a source: say so and leave it to you.
   for (const [src, a] of Object.entries(S.alerts)) {
+    if (['reddit', 'facebook', 'linkedin'].includes(src)) continue; // shown on the Intent tab
     const resume = { maps: 'finder-resume', adlib: 'adcheck-resume', instagram: 'ig-resume' }[src] || 'adcheck-resume';
     const what =
       src === 'instagram'

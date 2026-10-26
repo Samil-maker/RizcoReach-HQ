@@ -4,7 +4,7 @@
    - Enriches leads: audits the landing page, finds phones/emails/socials,
      optional Google Places + PageSpeed lookups
    - Sends leads to the phone queue and the email queue on the user's site, and syncs them back */
-importScripts('lib/common.js', 'lib/site-audit.js', 'lib/prospects.js');
+importScripts('lib/common.js', 'lib/site-audit.js', 'lib/prospects.js', 'lib/intent.js', 'lib/intent-db.js');
 const LH = self.LH;
 
 const DASHBOARD = chrome.runtime.getURL('dashboard/dashboard.html');
@@ -1196,3 +1196,5 @@ pump();
 
 // Meta-ads prospecting (Google Maps / Instagram finder + Ad Library checks).
 importScripts('finder.js');
+// Intent Radar: people asking for help on Reddit, Facebook groups and LinkedIn.
+importScripts('intent.js');

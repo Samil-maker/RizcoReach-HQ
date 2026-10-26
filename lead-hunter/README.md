@@ -323,6 +323,35 @@ businesses. Lead Hunter counts requests and stops at the monthly limit in
 Settings (default 950). After that, remove the key to search in a tab
 instead, or raise the limit.
 
+## Intent Radar
+
+The **Intent** tab lists people asking for what you sell, newest first. It covers website buyers, marketing
+buyers, owners saying business is slow, and companies hiring for marketing, all from the last 14 days. The
+extension icon shows how many new ones came in.
+
+- **Reddit** (r/dubai, r/UAE, r/abudhabi, r/sharjah, plus r/smallbusiness posts that mention the UAE) is read every
+  3 hours, one request per subreddit, 4 to 12 seconds apart, or when you press **Scan Reddit now**. It uses Reddit's
+  public JSON for those pages. If Reddit starts refusing, create an app at reddit.com/prefs/apps (installed app)
+  and paste its id in Settings > Intent Radar to use Reddit's OAuth API instead.
+- **Facebook groups and LinkedIn**: open a group, your LinkedIn feed, a LinkedIn post search or a LinkedIn jobs
+  search yourself, then press **Scan for leads** at the bottom right. It reads the posts already on the page.
+  **Scroll and scan** scrolls five small steps first, 4 to 12 seconds apart. Nothing runs without you pressing it.
+- **Jobs**: a marketing role (social media, digital marketing, content, SEO…) in the UAE counts as a company hiring
+  for marketing. If you already have that company as a lead, the post is linked to it and the lead gets the +20
+  hiring bonus in its heat score. A post that names a lead's website gets the +50 intent bonus the same way.
+- **The rules**: a post must contain one of your keyword phrases (English and Arabic, editable). Sellers are
+  dropped ("we offer", "DM me", "our agency"…, editable). The same post seen twice (by link, or by author and
+  words) is saved once. Posts older than 14 days are skipped.
+- Each card shows a summary, where it was posted, how old it is, the link, and an opener in your style that you
+  can edit and copy. It also has **Mark contacted** and **Dismiss**. Nothing is ever sent for you.
+- Until the AI check (Phase 6) is set up, every post is marked **unverified**. Keywords catch most real buyers
+  but not all, so read the post before you reach out.
+- A login wall, checkpoint, captcha or block on Reddit, Facebook or LinkedIn pauses that source with an alert and
+  a **Resume** button. Nothing tries to get past it.
+- Facebook and LinkedIn change their pages often. If **Scan for leads** says it found no posts on a page full of
+  posts, tell me and I will update how it reads them. Facebook often hides post dates in a way that can't be read;
+  those posts show "date unknown" and are kept.
+
 ## Heat score
 
 Every lead gets one score from 0 to 100 and both tabs are ranked by it (highest first). The badge on each row
@@ -492,6 +521,8 @@ out of backups.
 | `lib/site-audit.js` | Website audit and contact extraction (same checks as `netlify/functions/audit.mts`, plus ad-specific ones) |
 | `lib/common.js` | Phones, links, priority score, niches, scripts and bubbles, tags, results, CSV |
 | `background.js` | Lead storage, hunts, enrichment queue, Google lookups |
+| `intent.js`, `lib/intent.js`, `lib/intent-db.js` | Intent Radar: Reddit scans, the rules every post goes through, and the IndexedDB store |
+| `content/social-scan.js` | The Scan for leads button on Facebook groups and LinkedIn |
 | `finder.js` | Meta ads tab: Google Maps search (Places API or a Maps tab) and the Ad Library check queue |
 | `lib/prospects.js` | Prospect de-duplication keys, Places results, matching ads to a business |
 | `content/maps-hook.js` · `content/maps.js` | Read Google Maps search results (network data plus the visible list) |

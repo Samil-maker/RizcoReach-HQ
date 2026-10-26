@@ -17,6 +17,7 @@
         <button role="tab" data-view="leads" aria-selected="true">Website leads</button>
         <button role="tab" data-view="hunt">New hunt</button>
         <button role="tab" data-view="ads">Meta ads</button>
+        <button role="tab" data-view="intent">Intent <span class="count" data-intent-count hidden></span></button>
         <button role="tab" data-view="settings">Settings</button>
       </nav>
       <div class="kpis" data-kpis></div>
@@ -272,6 +273,40 @@
     </main>
 
     <!-- HUNT -->
+    <!-- INTENT -->
+    <main class="view" data-view-panel="intent" hidden>
+      <section class="card intent-head">
+        <h2>Intent Radar</h2>
+        <p class="hint">People asking for a website or marketing help, owners saying business is slow, and companies hiring for marketing, from the last 14 days. Reddit is scanned for you. For Facebook groups and LinkedIn (posts or jobs), open the page yourself and press <b>Scan for leads</b> at the bottom right. Sellers are filtered out. Until the AI check is set up every post is marked unverified: read it before you reach out.</p>
+        <div class="row"><button class="btn pri" data-act="intent-run">Scan Reddit now</button></div>
+        <div class="finder-status" data-intent-status></div>
+      </section>
+      <div class="toolbar">
+        <select class="inp" data-intent-f="status" aria-label="Status">
+          <option value="new">New</option>
+          <option value="contacted">Contacted</option>
+          <option value="dismissed">Dismissed</option>
+          <option value="all">All</option>
+        </select>
+        <select class="inp" data-intent-f="kind" aria-label="Kind">
+          <option value="">Any kind</option>
+          <option value="website">Website buyers</option>
+          <option value="marketing">Marketing buyers</option>
+          <option value="pain">Owner pain</option>
+          <option value="hiring">Hiring for marketing</option>
+        </select>
+        <select class="inp" data-intent-f="source" aria-label="Source">
+          <option value="">Any source</option>
+          <option value="reddit">Reddit</option>
+          <option value="facebook">Facebook groups</option>
+          <option value="linkedin">LinkedIn</option>
+        </select>
+      </div>
+      <p class="muted" data-intent-count-line></p>
+      <div class="intent-rows" data-intent-rows></div>
+      <p class="empty" data-intent-empty hidden></p>
+    </main>
+
     <main class="view narrow" data-view-panel="hunt" hidden>
       <h1 class="h">New hunt</h1>
       <p class="sub">Lead Hunter opens the Meta Ad Library, searches each keyword, and scrolls until it has collected your target number of new advertisers. Keep the tab it opens on screen while it runs.</p>
@@ -405,6 +440,23 @@
           </label>
         </div>
 
+        <h2 id="intent">Intent Radar</h2>
+        <p class="hint">Reddit is read through Reddit's API, one request per subreddit, 4 to 12 seconds apart. Without an app id it uses Reddit's public JSON for the same pages, which is fine for a few requests every few hours. If Reddit starts refusing, create an app at reddit.com/prefs/apps (type: installed app, the id is under its name) and paste the id here. A refusal pauses Reddit and alerts you.</p>
+        <div class="grid2">
+          <label class="field"><span class="lbl">Scan Reddit every <small>hours, 0 = only when you press Scan now</small></span><input class="inp" name="radarEveryHours" type="number" min="0" max="48" /></label>
+          <label class="field"><span class="lbl">Only posts from the last <small>days</small></span><input class="inp" name="intentMaxDays" type="number" min="1" max="60" /></label>
+          <label class="field"><span class="lbl">Subreddits <small>one per line</small></span><textarea class="inp" name="subreddits" rows="4"></textarea></label>
+          <label class="field"><span class="lbl">UAE only subreddits <small>a post counts only if it mentions the UAE</small></span><textarea class="inp" name="uaeOnlySubs" rows="4"></textarea></label>
+          <label class="field"><span class="lbl">Posts per subreddit per scan <small>at most 100</small></span><input class="inp" name="intentCap" type="number" min="10" max="100" /></label>
+          <label class="field"><span class="lbl">Reddit app id <small>optional</small></span><input class="inp" name="redditClientId" autocomplete="off" /></label>
+          <label class="field"><span class="lbl">Reddit app secret <small>only for script or web apps</small></span><input class="inp" name="redditSecret" type="password" autocomplete="off" /></label>
+        </div>
+        <p class="hint">Keywords: a post with any of these phrases is saved under that kind. Arabic phrases about websites or marketing count as those too.</p>
+        <div class="grid2" data-intent-lists></div>
+        <label class="field"><span class="lbl">Seller words <small>a post with any of these is someone selling, and is skipped</small></span><textarea class="inp" rows="5" data-seller-words></textarea></label>
+        <p class="hint">Openers, written the way you write. <code>{name}</code> is the poster's first name when it looks like one.</p>
+        <div data-intent-openers></div>
+
         <h2 id="heat">Heat score</h2>
         <p class="hint">Every lead gets one score from 0 to 100, ranked highest first. A business with a website is scored for the Ads offer, one without a working website for the Website offer, and the bonuses at the bottom add to either. Use a minus number to push a signal down. Businesses running ads are hidden by default (tick Show skipped to see them).</p>
         <div class="heat-weights" data-heat-weights></div>
@@ -524,9 +576,12 @@
 
     <script src="../lib/common.js"></script>
     <script src="../lib/prospects.js"></script>
+    <script src="../lib/intent.js"></script>
+    <script src="../lib/intent-db.js"></script>
     <script src="../lib/vendor/qrcode.js"></script>
     <script src="../lib/qr.js"></script>
     <script src="dashboard.js"></script>
     <script src="prospects.js"></script>
+    <script src="intent.js"></script>
   </body>
 </html>

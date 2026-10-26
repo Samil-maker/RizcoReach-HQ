@@ -14,7 +14,7 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { makeAd, searchResponse, memStore } from './fixtures.mjs';
-import { metaHandler, checkLog, metaWall, IG_API, PRESET_SEARCHES } from './meta-fixtures.mjs';
+import { metaHandler, checkLog, metaWall, IG_API, redditCalls, PRESET_SEARCHES } from './meta-fixtures.mjs';
 import { handle as queueHandle } from '../../netlify/functions/lead-queue.mts';
 import { handle as emailHandle } from '../../netlify/functions/email-queue.mts';
 
@@ -238,7 +238,7 @@ const ctx = await pw.chromium.launchPersistentContext(path.join(tmp, 'profile'),
   args: [
     `--disable-extensions-except=${EXT}`,
     `--load-extension=${EXT}`,
-    `--host-resolver-rules=MAP www.facebook.com 127.0.0.1:${PORT}, MAP *.example 127.0.0.1:${PORT}, MAP wa.me 127.0.0.1:${PORT}, MAP www.rizcoreach.ae 127.0.0.1:${PORT}, MAP www.google.com 127.0.0.1:${PORT}, MAP places.googleapis.com 127.0.0.1:${PORT}, MAP www.instagram.com 127.0.0.1:${PORT}, MAP graph.facebook.com 127.0.0.1:${PORT}`,
+    `--host-resolver-rules=MAP www.facebook.com 127.0.0.1:${PORT}, MAP *.example 127.0.0.1:${PORT}, MAP wa.me 127.0.0.1:${PORT}, MAP www.rizcoreach.ae 127.0.0.1:${PORT}, MAP www.google.com 127.0.0.1:${PORT}, MAP places.googleapis.com 127.0.0.1:${PORT}, MAP www.instagram.com 127.0.0.1:${PORT}, MAP graph.facebook.com 127.0.0.1:${PORT}, MAP www.reddit.com 127.0.0.1:${PORT}, MAP www.linkedin.com 127.0.0.1:${PORT}`,
     '--ignore-certificate-errors',
     '--no-proxy-server',
   ],
@@ -278,6 +278,7 @@ try {
   await dash.click('[data-view="settings"]');
   await dash.fill('[name="myName"]', 'Samil');
   await dash.fill('[name="scrollDelayMs"]', '900');
+  await dash.fill('[name="radarEveryHours"]', '0'); // the Intent Radar runs when the test says so
   assert.equal(await dash.$$eval('[data-niche-row]', (r) => r.length), 5, 'the 5 default presets');
   assert.equal(await dash.$$eval('[data-script-card]', (r) => r.length), 2, 'two scripts');
   assert.equal(await dash.inputValue('[name="bubbles"]'), '3');
@@ -1319,6 +1320,72 @@ try {
   await waitFor(async () => (await storage('settings')).settings.heatWeights === null, 5000, 'back to the defaults');
   await dash.click('[data-view="ads"]');
   await dash.uncheck('[data-af="contactedBefore"]');
+
+  /* ------------------------------ Intent Radar: Reddit, a Facebook group, LinkedIn jobs */
+  await sw.evaluate(async () => {
+    const { settings } = await chrome.storage.local.get('settings');
+    await chrome.storage.local.set({ settings: { ...settings, subreddits: 'dubai\nUAE', uaeOnlySubs: 'smallbusiness' } });
+  });
+  const radar = await sw.evaluate(() => handlers['intent:run']({}));
+  const runStats = ({ seen, saved, duplicates, nomatch, seller, old, foreign }) => ({ seen, saved, duplicates, nomatch, seller, old, foreign });
+  console.log('Reddit scan:', JSON.stringify(runStats(radar.stats)));
+  assert.deepEqual(runStats(radar.stats), { seen: 8, saved: 3, duplicates: 1, nomatch: 1, seller: 1, old: 1, foreign: 1 });
+  assert.deepEqual(redditCalls, ['dubai?100', 'UAE?100', 'smallbusiness?100'], 'one request per subreddit, public JSON without an app id');
+  assert.equal(await sw.evaluate(() => chrome.action.getBadgeText({})), '3', 'new posts on the icon');
+  await dash.bringToFront();
+  await dash.click('[data-view="intent"]');
+  await dash.waitForFunction(() => document.querySelectorAll('[data-intent-rows] .intent-card').length === 3);
+  const sums = await dash.$$eval('.intent-card .sum', (p) => p.map((x) => x.textContent));
+  assert.deepEqual(sums, ['Need a website for my bakery in JLT, any recommendations?', 'Business is slow, ads not working', 'How do I get clients for my cleaning company in Sharjah?'], 'newest first');
+  await waitFor(async () => (await sw.evaluate(() => chrome.action.getBadgeText({}))) === '', 5000, 'the badge clears once you look');
+  const first = await dash.textContent('.intent-card');
+  assert.match(first, /Reddit · r\/dubai\s*3h ago · u\/sarah_dxb\s*Website buyer\s*unverified/);
+  assert.equal(await dash.inputValue('.intent-card [data-intent-opener]'), 'Hey Sarah saw your post about the website. I build sites for small businesses here in the UAE and happy to send you a few examples if that helps');
+  if (SHOTS) await dash.screenshot({ path: `${SHOTS}/22-intent.png` });
+  const firstId = await dash.getAttribute('.intent-card', 'data-intent-id');
+  await dash.click('.intent-card [data-act="intent-contacted"]');
+  await dash.waitForFunction(() => document.querySelectorAll('[data-intent-rows] .intent-card').length === 2);
+  assert.equal((await dash.evaluate((id) => LH.intentDb.get(id), firstId)).status, 'contacted');
+  await dash.click('.intent-card [data-act="intent-dismiss"]');
+  await dash.waitForFunction(() => document.querySelectorAll('[data-intent-rows] .intent-card').length === 1);
+  await dash.selectOption('[data-intent-f="status"]', 'all');
+  await dash.waitForFunction(() => document.querySelectorAll('[data-intent-rows] .intent-card').length === 3);
+  await dash.selectOption('[data-intent-f="status"]', 'new');
+  // A Facebook group you opened yourself: press Scan for leads.
+  const fbg = await ctx.newPage();
+  await fbg.goto('https://www.facebook.com/groups/dubaibiz/');
+  await fbg.locator('button', { hasText: 'Scan for leads' }).click();
+  await fbg.locator('.msg', { hasText: 'Read 3 posts' }).waitFor();
+  assert.equal(await fbg.textContent('.msg'), 'Read 3 posts · 1 saved to the Intent tab · 1 sellers · 1 older than 14 days');
+  const fbPost = await dash.evaluate(() => LH.intentDb.get('facebook:111'));
+  assert.deepEqual([fbPost.place, fbPost.author, fbPost.categories, fbPost.url], ['Dubai Business Owners', 'Sarah Khan', ['marketing'], 'https://www.facebook.com/groups/dubaibiz/posts/111/']);
+  assert.ok(Math.abs(fbPost.createdAt - (Date.now() - 2 * 36e5)) < 6e4, '"2h" read as two hours ago');
+  await fbg.close();
+  // LinkedIn jobs: a marketing role in the UAE is a company hiring for marketing, linked to your lead.
+  const lij = await ctx.newPage();
+  await lij.goto('https://www.linkedin.com/jobs/search/?keywords=marketing');
+  await lij.locator('button', { hasText: 'Scan for leads' }).click();
+  await lij.locator('.msg', { hasText: 'Read 3 jobs' }).waitFor();
+  assert.equal(await lij.textContent('.msg'), 'Read 3 jobs · 1 saved to the Intent tab · 1 not in the UAE');
+  const hire = await dash.evaluate(() => LH.intentDb.get('linkedin:job:901'));
+  assert.deepEqual([hire.categories, hire.title, hire.company], [['hiring'], 'Social Media Executive', 'Gloss Garage']);
+  const hiredLead = await lead(hire.leadId);
+  assert.equal(await sw.evaluate((n) => LH.normName(n), hiredLead.pageName), 'gloss garage');
+  assert.equal(hiredLead.hiring.url, 'https://www.linkedin.com/jobs/view/901/');
+  const hiredHeat = await sw.evaluate(async (id) => LH.heatScore((await chrome.storage.local.get('lead:' + id))['lead:' + id], (await chrome.storage.local.get('settings')).settings), hire.leadId);
+  assert.ok(hiredHeat.parts.some((x) => x.id === 'hiring_marketing' && x.points === 20), 'the lead gets +20 for hiring');
+  // A security check on LinkedIn: that source pauses and says so. Nothing tries to get past it.
+  await lij.goto('https://www.linkedin.com/feed/');
+  await lij.locator('button', { hasText: 'Scan for leads' }).click();
+  await lij.locator('.msg', { hasText: 'security check' }).waitFor();
+  assert.equal((await storage('alerts')).alerts.linkedin.text, 'LinkedIn showed a security check');
+  await dash.bringToFront();
+  await dash.waitForSelector('[data-intent-status] [data-alert="linkedin"]');
+  assert.match(await dash.textContent('[data-alert="linkedin"]'), /LinkedIn paused: LinkedIn showed a security check/);
+  await dash.click('[data-act="intent-resume"][data-source="linkedin"]');
+  await waitFor(async () => !(await storage('alerts')).alerts.linkedin, 5000, 'LinkedIn resumed');
+  await lij.close();
+  await dash.waitForFunction(() => document.querySelectorAll('[data-intent-rows] .intent-card').length === 3, null, { timeout: 5000 });
 
   // Popup renders stats.
   const popup = await ctx.newPage();

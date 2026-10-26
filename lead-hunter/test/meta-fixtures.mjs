@@ -163,6 +163,44 @@ const KEYWORD_ADS = {
 };
 // Instagram Graph API (Business Discovery): business and creator accounts only.
 export const IG_API = { token: 'ig-test-token', account: '17841400000000001', followers: { instatintbar: 640, 'glossy.tint_bar': 2345 }, calls: [] };
+/* ---------------------------------------- Intent Radar: Reddit, a Facebook group, LinkedIn */
+const hoursAgo = (h) => Math.floor(Date.now() / 1000 - h * 3600);
+const rp = (id, sub, author, title, selftext, h, extra = {}) => ({ data: { id, subreddit: sub, permalink: `/r/${sub}/comments/${id}/post/`, author, title, selftext, created_utc: hoursAgo(h), ...extra } });
+export const REDDIT = {
+  dubai: [
+    rp('d1', 'dubai', 'sarah_dxb', 'Need a website for my bakery in JLT, any recommendations?', '', 3), // website buyer
+    rp('d2', 'dubai', 'webpro_ae', 'Need a website? AED 999', 'We offer websites for small businesses, DM me', 5), // a seller using buyer words
+    rp('d3', 'dubai', 'foodie', 'Best shawarma in Dubai?', '', 6), // nothing to do with us
+    rp('d4', 'dubai', 'old_post', 'Looking for a marketing agency', 'Anyone know a marketing agency?', 20 * 24), // 20 days old
+    rp('d5', 'dubai', 'mod', 'Weekly thread', '', 1, { stickied: true }), // pinned: left out
+  ],
+  UAE: [
+    rp('u1', 'UAE', 'owner_ae', 'Business is slow, ads not working', 'What do you guys do to get more customers?', 26), // owner pain
+    rp('u2', 'UAE', 'sarah_dxb', 'Need a website for my bakery in JLT, any recommendations?', '', 2), // the same post again
+  ],
+  smallbusiness: [
+    rp('s1', 'smallbusiness', 'clean_co', 'How do I get clients for my cleaning company in Sharjah?', '', 30), // owner pain, in the UAE
+    rp('s2', 'smallbusiness', 'ohio_shop', 'Need a website for my shop', 'In Ohio', 4), // not in the UAE
+  ],
+};
+export const redditCalls = [];
+const fbPost = (who, id, age, text, inner = '') =>
+  `<div role="article"><h3><a href="/${who.toLowerCase().replace(/\s/g, '.')}">${who}</a></h3><a href="https://www.facebook.com/groups/dubaibiz/posts/${id}/" aria-label="${age}">${age}</a><div data-ad-preview="message">${text}</div>${inner}</div>`;
+const FB_GROUP = `<!doctype html><html><head><meta charset="utf-8"><title>(3) Dubai Business Owners | Facebook</title></head><body><div role="feed">
+${fbPost('Sarah Khan', 111, '2h', 'Can anyone recommend a social media manager for my salon in Al Barsha? Our Instagram is dead', '<div role="article"><div>We offer social media management, DM me</div></div>')}
+${fbPost('Ali Agency', 222, '5h', 'Our agency offers Facebook ads management, DM us for a free audit')}
+${fbPost('Omar', 333, '3w', 'Looking for a web developer for our restaurant')}
+</div></body></html>`;
+const day = (d) => new Date(Date.now() - d * 864e5).toISOString().slice(0, 10);
+const job = (id, title, company, where, d) =>
+  `<li data-occludable-job-id="${id}"><div data-job-id="${id}"><a class="job-card-list__title" href="/jobs/view/${id}/"><strong>${title}</strong></a><div class="artdeco-entity-lockup__subtitle">${company}</div><div class="artdeco-entity-lockup__caption">${where}</div><time datetime="${day(d)}">${d} days ago</time></div></li>`;
+const LI_JOBS = `<!doctype html><html><head><meta charset="utf-8"><title>Marketing jobs | LinkedIn</title></head><body><ul>
+${job(901, 'Social Media Executive', 'Gloss Garage', 'Dubai, United Arab Emirates', 2)}
+${job(902, 'Accountant', 'Prime Audit', 'Dubai, United Arab Emirates', 1)}
+${job(903, 'Digital Marketing Specialist', 'Acme Corp', 'London, United Kingdom', 3)}
+</ul></body></html>`;
+const LI_WALL = `<!doctype html><html><head><title>Security Verification | LinkedIn</title></head><body><main><h1>Let's do a quick security check</h1></main></body></html>`;
+
 // Set to a page body to answer every Ad Library request with it (a login wall, a block).
 export const metaWall = { body: '' };
 function libraryPage(ads, count, pageInfo) {
@@ -194,6 +232,17 @@ export function metaHandler(req, res, url, host) {
     if (url.pathname === '/search' && url.searchParams.get('tbm') === 'map') return send(200, 'application/json; charset=utf-8', mapsXhr()), true;
   }
   if (SITES[host]) return send(200, 'text/html; charset=utf-8', SITES[host]), true;
+  if (host === 'www.reddit.com') {
+    const sub = (url.pathname.match(/^\/r\/([^/]+)\/new\.json$/) || [])[1];
+    if (!sub) return send(404, 'text/plain', 'not found'), true;
+    redditCalls.push(`${sub}?${url.searchParams.get('limit')}`);
+    return send(200, 'application/json', JSON.stringify({ kind: 'Listing', data: { children: REDDIT[sub] || [] } })), true;
+  }
+  if (host === 'www.facebook.com' && url.pathname.startsWith('/groups/')) return send(200, 'text/html; charset=utf-8', FB_GROUP), true;
+  if (host === 'www.linkedin.com') {
+    if (url.pathname.startsWith('/jobs/')) return send(200, 'text/html; charset=utf-8', LI_JOBS), true;
+    if (url.pathname.startsWith('/feed')) return send(200, 'text/html; charset=utf-8', LI_WALL), true;
+  }
   if (host === 'graph.facebook.com') {
     const json = (code, o) => (send(code, 'application/json', JSON.stringify(o)), true);
     const fields = url.searchParams.get('fields') || '';

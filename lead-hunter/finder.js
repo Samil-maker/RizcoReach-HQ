@@ -318,10 +318,7 @@ async function alertSource(source, text, url, hint = 'Open the tab, sort it out,
     alerts[source] = { at: now(), text, url: url || '' };
     await store.set({ alerts });
   });
-  try {
-    chrome.action.setBadgeBackgroundColor({ color: '#d93025' });
-    chrome.action.setBadgeText({ text: '!' });
-  } catch {}
+  await refreshBadge();
   notify(`${SOURCE_NAMES[source] || source} paused`, `${text}. ${hint}`);
 }
 async function clearAlert(source) {
@@ -329,11 +326,8 @@ async function clearAlert(source) {
     const { alerts = {} } = await store.get('alerts');
     delete alerts[source];
     await store.set({ alerts });
-    if (!Object.keys(alerts).length)
-      try {
-        chrome.action.setBadgeText({ text: '' });
-      } catch {}
   });
+  await refreshBadge();
 }
 
 async function runAdChecks() {
