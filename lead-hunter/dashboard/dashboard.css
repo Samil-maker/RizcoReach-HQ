@@ -347,3 +347,7 @@ h3.sub { margin: 16px 0 6px; font-size: 14px; }
 .hint.ok { color: var(--good); }
 .hint.err { color: var(--weak); }
 @media (max-width: 640px) { .weak-row { grid-template-columns: 1fr 70px; } .weak-row [data-weak-pitch] { grid-column: 1 / -1; } .quality ul.checks { padding-left: 0; } }
+
+.heat-weights { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-bottom: 12px; }
+.heat-group h4 { margin: 0 0 6px; font-size: 13px; }
+.heat-w { display: grid; grid-template-columns: 1fr 70px; gap: 8px; align-items: center; font-size: 13px; margin: 4px 0; }

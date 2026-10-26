@@ -35,7 +35,7 @@ const S = {
   // force: 'website' after "Pitch anyway" · bubbles: edits while the drawer is open · qr: bubble in the QR code
   // waTab: the WhatsApp tab this lead's bubbles open in
   pitch: { id: null, channel: 'whatsapp', force: null, bubbles: null, phone: null, qr: 0, opened: new Set(), waTab: null },
-  filters: { q: '', heat: '', status: '', keyword: '', site: '', tag: '', contact: '', minDays: 0, hideBig: true, skipped: false, contactedBefore: false, sort: 'priority', hunt: '' },
+  filters: { q: '', heat: '', status: '', keyword: '', site: '', tag: '', contact: '', minDays: 0, hideBig: true, skipped: false, contactedBefore: false, sort: 'heat', hunt: '' },
   alerts: {}, // sources paused by a login wall, checkpoint or block: { adlib: { at, text, url } }
   problems: {}, // the last problems per source, newest first: { adlib: [[at, text]] }
   history: {}, // contacted memory: phones, websites, handles and names you contacted, exported or imported
@@ -118,10 +118,11 @@ function filtered() {
   for (const l of S.leads.values()) {
     if (l.kind === 'prospect') continue; // Meta-ads prospects live in their own tab
     const p = LH.priority(l, now);
+    const h = LH.heatScore(l, S.settings, now);
     if (f.hunt && !(l.hunts || []).includes(f.hunt)) continue;
     if (f.hideBig && (l.pageLikes || 0) > BIG_BRAND) continue;
     if (skipHidden(l, f) || hideContacted(l, f) || !tagMatch(l, f.tag)) continue;
-    if (f.heat && LH.heat(p) !== f.heat) continue;
+    if (f.heat && LH.heatClass(h.score, S.settings) !== f.heat) continue;
     if (f.status === '' && l.status === 'skip') continue;
     if (f.status && f.status !== 'all' && l.status !== f.status) continue;
     if (f.keyword && !(l.keywords || []).includes(f.keyword)) continue;
@@ -138,10 +139,11 @@ function filtered() {
         .toLowerCase();
       if (!hay.includes(q)) continue;
     }
-    rows.push({ l, p });
+    rows.push({ l, p, h });
   }
   const score = (l) => (l.website ? (typeof (l.site || {}).score === 'number' ? l.site.score : 101) : -1);
   const sorters = {
+    heat: (a, b) => b.h.score - a.h.score,
     priority: (a, b) => b.p - a.p,
     days: (a, b) => (LH.daysRunning(b.l, now) ?? -1) - (LH.daysRunning(a.l, now) ?? -1),
     ads: (a, b) => (b.l.activeAdCount || 0) - (a.l.activeAdCount || 0),
@@ -219,6 +221,9 @@ function contactCell(l) {
   return `<div class="contact">${parts.join('')}</div>`;
 }
 
+/* Heat score (Phase 4): the badge on every row and in the lead panel, with what it is made of. */
+const heatParts = (h) => h.parts.map((x) => `${x.label} ${x.points > 0 ? '+' : ''}${x.points}`).join(', ');
+const heatBadge = (h) => `<span class="heat ${LH.heatClass(h.score, S.settings)}" title="${esc(`Heat ${h.score}/100, ${LH.HEAT_GROUPS[h.profile]}: ${heatParts(h) || 'no signals yet'}`)}">${h.score}</span>`;
 /* Row tags are for sorting and filtering only: the script never changes because of them. */
 const TAG_CLASS = { 'Contacted before': 'red', 'Weak site': 'amber', 'New business': 'green', 'Followers in range': 'green', 'No website': 'amber', 'Site down': 'amber', 'Running ads': 'red', 'Good reviews': 'green', Mobile: 'green', Landline: 'amber', Corporate: 'red', Chain: 'red' };
 /** Tags need to know which business names appear more than once (chains). */
@@ -239,14 +244,13 @@ function toggleReplied(l) {
   else update(l.id, { status: 'replied' });
 }
 
-function rowHtml({ l, p }) {
-  const heat = LH.heat(p);
+function rowHtml({ l, h }) {
   const days = LH.daysRunning(l);
   const meta = [l.categories && l.categories[0], l.keywords && l.keywords[0] && `“${l.keywords[0]}”`].filter(Boolean).join(' · ');
   const dim = ['lost', 'skip', 'won'].includes(l.status) || skippedNew(l) ? ' dim' : '';
   return `<tr data-id="${esc(l.id)}" class="${S.selected.has(l.id) ? 'sel' : ''}${dim}">
     <td class="c-sel"><input type="checkbox" data-sel ${S.selected.has(l.id) ? 'checked' : ''} aria-label="Select ${esc(l.pageName)}" /></td>
-    <td><span class="heat ${heat}" title="Priority ${p}/100">${p}</span></td>
+    <td>${heatBadge(h)}</td>
     <td><div class="biz">${avatar(l)}<div style="min-width:0"><div class="n">${esc(l.pageName || 'Unknown page')}</div><div class="m">${esc(meta)}</div>${tagsHtml(l)}</div></div></td>
     <td class="nowrap"><b class="num">${l.activeAdCount || 0}</b> <span class="muted">active</span><div class="muted">${esc(daysText(days))}</div></td>
     <td>${siteCell(l)}</td>
@@ -262,7 +266,7 @@ function renderKpis() {
   if (S.view === 'ads') return renderProspectKpis();
   const leads = [...S.leads.values()].filter((l) => l.kind !== 'prospect');
   const now = Date.now();
-  const hot = leads.filter((l) => l.status === 'new' && LH.heat(LH.priority(l, now)) === 'hot').length;
+  const hot = leads.filter((l) => l.status === 'new' && LH.heatClass(LH.heatScore(l, S.settings, now).score, S.settings) === 'hot').length;
   const phone = leads.filter((l) => l.phones.length).length;
   const contacted = leads.filter((l) => !['new', 'skip'].includes(l.status)).length;
   $('[data-kpis]').innerHTML =
@@ -688,7 +692,7 @@ function drawerHtml(l) {
   return `
     <header class="d-head">${avatar(l)}
       <div style="min-width:0"><h2>${esc(l.pageName || 'Unknown page')}</h2>
-        <div class="links"><span class="heat ${LH.heat(p)}">${p}</span>
+        <div class="links">${heatBadge(LH.heatScore(l, S.settings))}
           <a href="${esc(safeHref(l.pageUrl))}" target="_blank" rel="noopener noreferrer">Facebook page</a>
           <a href="${esc(safeHref(LH.pageAdsUrl(l.pageId, country, l.pageName)))}" target="_blank" rel="noopener noreferrer">All their ads</a>
           ${l.categories.length ? `<span>${esc(l.categories.slice(0, 2).join(', '))}</span>` : ''}</div></div>
@@ -787,7 +791,11 @@ function qualitySection(l) {
   else ig = `<span class="muted">@${esc(handle)}: not looked up yet</span>`;
   const igBtn = handle && igReady ? `<button class="btn sm ghost" data-act="ig-lookup">${st.at ? 'Look up again' : 'Look up followers'}</button>` : handle ? '<span class="muted">Set up the Instagram API in Settings to look up followers</span>' : '';
   const reviews = q.reviews == null ? '<span class="muted">No Google listing</span>' : `${esc(q.reviews)} Google reviews ${q.newBusiness ? `<span class="tag green">New business</span>` : '<span class="muted">not new</span>'}`;
+  const h = LH.heatScore(l, s);
+  const heat = `<div class="q-row heat-row"><span class="lbl">Heat score</span>${heatBadge(h)} <span class="muted">${esc(LH.HEAT_GROUPS[h.profile])}</span></div>
+    <ul class="checks">${h.parts.map((x) => `<li class="${x.points < 0 ? 'bad' : 'ok'}">${x.points > 0 ? '+' : ''}${esc(x.points)} ${esc(x.label)}</li>`).join('') || '<li class="muted">No signals yet</li>'}</ul>`;
   return `<section class="d-sec quality" data-quality-sec><h3>Quality signals</h3>
+    ${heat}
     ${q.pitch ? `<div class="pitch-line"><p>${esc(q.pitch)}</p><button class="btn sm" data-act="copy-pitch-line">Copy pitch line</button></div>` : ''}
     <div class="q-row"><span class="lbl">Website weakness</span>${score}</div>
     <ul class="checks">${site}</ul>
@@ -832,6 +840,13 @@ function exportContacts(list) {
   // Saved on your phone from now on: future searches skip these businesses.
   send({ type: 'history:add', ids: list.filter((l) => l.phones.length || (l.emails || []).length).map((l) => l.id), via: 'export' });
   toast(`${rows.length} contact${rows.length === 1 ? '' : 's'} saved. Import the file at contacts.google.com`);
+}
+
+/** Every field of every lead (the full record), for a spreadsheet or another tool. */
+function exportFull(list) {
+  if (!list.length) return toast('No leads to export.');
+  download(`lead-finder-full-${new Date().toISOString().slice(0, 10)}.csv`, '\ufeff' + LH.toCsv([LH.FULL_CSV_HEAD, ...LH.fullCsvRows(list, S.settings, S.history)]), 'text/csv;charset=utf-8');
+  toast(`${list.length} lead${list.length === 1 ? '' : 's'} exported with every field`);
 }
 
 function download(name, text, type) {
@@ -1103,6 +1118,14 @@ function fillSettings() {
     else el.value = s[el.name] ?? '';
   }
   renderNicheEditor(LH.nichesFor(s));
+  const hw = LH.heatWeightsFor(s);
+  $('[data-heat-weights]', f).innerHTML = Object.entries(hw)
+    .map(([group, w]) => `<div class="heat-group"><h4>${esc(LH.HEAT_GROUPS[group])}</h4>${Object.entries(w).map(([id, n]) => `<label class="heat-w"><span>${esc(LH.HEAT_LABELS[id])}</span><input class="inp" type="number" min="-100" max="100" data-heat-group="${group}" data-heat-id="${id}" value="${esc(n)}" /></label>`).join('')}</div>`)
+    .join('');
+  const targets = Array.isArray(s.targetNiches) ? s.targetNiches : null;
+  $('[data-target-niches]', f).innerHTML = LH.presetsFor(s)
+    .map((p) => `<label class="chk inline"><input type="checkbox" data-target-niche value="${esc(p.name)}" ${!targets || targets.includes(p.name) ? 'checked' : ''} /> ${esc(p.label || p.name)}</label>`)
+    .join('');
   $('[data-weak-checks]', f).innerHTML = LH.weakChecksFor(s)
     .map((c) => `<div class="weak-row" data-weak-id="${esc(c.id)}"><span>${esc(c.label)}</span><input class="inp" type="number" min="0" max="100" data-weak-points value="${esc(c.points)}" aria-label="Points" /><input class="inp" data-weak-pitch value="${esc(c.pitch)}" aria-label="Pitch line" /></div>`)
     .join('');
@@ -1166,6 +1189,17 @@ async function saveSettings() {
     })
     .filter(Boolean);
   next.weakChecks = edits.length ? edits : null;
+  // Heat weights: only what differs from the defaults is kept.
+  const heat = {};
+  for (const el of $$('[data-heat-id]', f)) {
+    const def = LH.HEAT_WEIGHTS[el.dataset.heatGroup][el.dataset.heatId];
+    const v = Number(el.value);
+    if (el.value !== '' && Number.isFinite(v) && v !== def) (heat[el.dataset.heatGroup] = heat[el.dataset.heatGroup] || {})[el.dataset.heatId] = Math.max(-100, Math.min(100, Math.round(v)));
+  }
+  next.heatWeights = Object.keys(heat).length ? heat : null;
+  if (next.heatWarm > next.heatHot) [next.heatWarm, next.heatHot] = [next.heatHot, next.heatWarm];
+  const niches = $$('[data-target-niche]', f);
+  next.targetNiches = niches.every((el) => el.checked) ? null : niches.filter((el) => el.checked).map((el) => el.value);
   if (next.followerMax < next.followerMin) [next.followerMin, next.followerMax] = [next.followerMax, next.followerMin];
   next.niches = readNiches(f);
   next.scripts = readEdits(f, 'script', LH.DEFAULT_SCRIPTS);
@@ -1526,6 +1560,8 @@ function bind() {
         return exportCsv(filtered().map((r) => r.l));
       case 'bulk-export':
         return exportCsv([...S.selected].map((id) => S.leads.get(id)).filter(Boolean));
+      case 'export-full':
+        return exportFull(filtered().map((r) => r.l));
       case 'export-contacts':
         return exportContacts(filtered().map((r) => r.l));
       case 'bulk-contacts':

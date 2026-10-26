@@ -399,10 +399,13 @@ async function igApi(settings, path, fields) {
 // Token expired or wrong (190, 102), no permission (10, 200), rate limits (4, 17, 32, 613, 80002), your account id unknown (100/33).
 const igStop = (r) => [190, 102, 10, 200, 4, 17, 32, 613, 80002].includes(r.code) || (r.code === 100 && r.sub === 33);
 async function igLookup(handle, settings) {
-  const r = await igApi(settings, settings.igAccountId, `business_discovery.username(${handle}){followers_count,media_count,username}`);
+  const r = await igApi(settings, settings.igAccountId, `business_discovery.username(${handle}){followers_count,media_count,username,media.limit(1){timestamp}}`);
   if (r.error) return r;
   const b = r.business_discovery || {};
-  return { followers: typeof b.followers_count === 'number' ? b.followers_count : null, media: typeof b.media_count === 'number' ? b.media_count : null };
+  // "2026-10-20T10:00:00+0000": the newest post, for "active Instagram".
+  const last = (((b.media || {}).data || [])[0] || {}).timestamp || '';
+  const lastPostAt = Date.parse(String(last).replace(/([+-]\d{2})(\d{2})$/, '$1:$2')) || null;
+  return { followers: typeof b.followers_count === 'number' ? b.followers_count : null, media: typeof b.media_count === 'number' ? b.media_count : null, lastPostAt };
 }
 const igReady = (settings) => !!(settings.igToken && settings.igAccountId);
 
@@ -439,7 +442,7 @@ async function runIg() {
           break;
         }
         if (r.error) logProblem('instagram', `@${handle}: ${r.error}`);
-        await updateLead(id, (l) => (l.igStats = r.error ? { handle, error: r.error, at: now() } : { handle, followers: r.followers, media: r.media, at: now(), from: 'api' }));
+        await updateLead(id, (l) => (l.igStats = r.error ? { handle, error: r.error, at: now() } : { handle, followers: r.followers, media: r.media, lastPostAt: r.lastPostAt, at: now(), from: 'api' }));
       }
       await locked(async () => {
         const { igQueue: q = [] } = await store.get('igQueue');

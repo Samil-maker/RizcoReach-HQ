@@ -81,7 +81,8 @@
         <label class="chk"><input type="checkbox" data-f="skipped" /> Show skipped (running ads)</label>
         <label class="chk"><input type="checkbox" data-f="contactedBefore" /> Show contacted before</label>
         <select class="inp" data-f="sort" aria-label="Sort">
-          <option value="priority">Sort: priority</option>
+          <option value="heat">Sort: heat score</option>
+          <option value="priority">Sort: old priority</option>
           <option value="days">Sort: running longest</option>
           <option value="ads">Sort: most active ads</option>
           <option value="score">Sort: worst website</option>
@@ -91,6 +92,7 @@
         <div class="spacer"></div>
         <button class="btn" data-act="phone-mode" title="Step through these leads with a QR code each: scan with your phone and WhatsApp opens with the message ready">Phone mode</button>
         <button class="btn" data-act="export-csv">Export CSV</button>
+        <button class="btn" data-act="export-full" title="Every field of every lead shown, with the heat score and signals">Full CSV</button>
         <button class="btn" data-act="export-contacts" title="A file for Google Contacts: import it at contacts.google.com and WhatsApp shows each business by name">Google Contacts</button>
         <button class="btn" data-act="enrich-pending" hidden>Check websites</button>
       </div>
@@ -220,7 +222,8 @@
         <label class="chk"><input type="checkbox" data-af="skipped" /> Show skipped (running ads)</label>
         <label class="chk"><input type="checkbox" data-af="contactedBefore" /> Show contacted before</label>
         <select class="inp" data-af="sort" aria-label="Sort">
-          <option value="priority">Sort: priority</option>
+          <option value="heat">Sort: heat score</option>
+          <option value="priority">Sort: old priority</option>
           <option value="reviews">Sort: most Google reviews</option>
           <option value="newest">Sort: newest found</option>
           <option value="name">Sort: name</option>
@@ -228,6 +231,7 @@
         <div class="spacer"></div>
         <button class="btn" data-act="ads-phone-mode">Phone mode</button>
         <button class="btn" data-act="ads-export">Export CSV</button>
+        <button class="btn" data-act="ads-export-full" title="Every field of every business shown, with the heat score and signals">Full CSV</button>
         <button class="btn" data-act="ads-contacts" title="A file for Google Contacts: import it at contacts.google.com and WhatsApp shows each business by name">Google Contacts</button>
       </div>
 
@@ -400,6 +404,17 @@
             </select>
           </label>
         </div>
+
+        <h2 id="heat">Heat score</h2>
+        <p class="hint">Every lead gets one score from 0 to 100, ranked highest first. A business with a website is scored for the Ads offer, one without a working website for the Website offer, and the bonuses at the bottom add to either. Use a minus number to push a signal down. Businesses running ads are hidden by default (tick Show skipped to see them).</p>
+        <div class="heat-weights" data-heat-weights></div>
+        <div class="grid2">
+          <label class="field"><span class="lbl">Hot <small>score at least</small></span><input class="inp" name="heatHot" type="number" min="1" max="100" /></label>
+          <label class="field"><span class="lbl">Warm <small>score at least</small></span><input class="inp" name="heatWarm" type="number" min="1" max="100" /></label>
+          <label class="field"><span class="lbl">Active Instagram <small>a post in this many days</small></span><input class="inp" name="igActiveDays" type="number" min="1" max="365" /></label>
+        </div>
+        <p class="hint">Your target niches (each one adds the target niche points):</p>
+        <div class="row" data-target-niches></div>
 
         <h2 id="quality">Quality signals</h2>
         <p class="hint">Signals shown on every lead and used for scoring. A business with fewer Google reviews than the limit is a new business.</p>

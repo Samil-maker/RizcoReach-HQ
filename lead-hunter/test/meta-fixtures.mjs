@@ -204,7 +204,8 @@ export function metaHandler(req, res, url, host) {
     if (!m) return json(200, { id: IG_API.account, username: 'rizcoreach', followers_count: 1200 });
     const n = IG_API.followers[m[1]];
     if (n == null) return json(400, { error: { message: 'Invalid user id', code: 110, error_subcode: 2207013 } });
-    return json(200, { id: IG_API.account, business_discovery: { id: '9', username: m[1], followers_count: n, media_count: 40 } });
+    const posted = new Date(Date.now() - 3 * 864e5).toISOString().replace(/\.\d+Z$/, '+0000'); // Instagram's own format
+    return json(200, { id: IG_API.account, business_discovery: { id: '9', username: m[1], followers_count: n, media_count: 40, media: { data: [{ timestamp: posted, id: '1' }] } } });
   }
   if (host === 'www.facebook.com' && url.pathname.startsWith('/plugins/page.php')) {
     const handle = new URL(url.searchParams.get('href')).pathname.replace(/\//g, '');

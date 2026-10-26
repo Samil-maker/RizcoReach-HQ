@@ -552,6 +552,12 @@ Mussafah, Abu Dhabi`),
     psiMin: 50, // PageSpeed mobile score under this fails the speed check
     copyrightYears: 2, // a copyright year this many years old or more fails the freshness check
     weakChecks: null,
+    // Heat score (Phase 4): points per signal for each offer, null = defaults (LH.HEAT_WEIGHTS).
+    heatWeights: null,
+    heatHot: 60, // a heat score at or above this is hot
+    heatWarm: 35, // at or above this is warm
+    targetNiches: null, // presets that count as your target niches, null = all of them
+    igActiveDays: 30, // an Instagram with a post in this many days counts as active
     // Instagram Graph API (Business Discovery), for follower counts. Your own token, from your own Meta app.
     igAccountId: '',
     igToken: '',
@@ -1282,6 +1288,81 @@ Mussafah, Abu Dhabi`),
     return out;
   };
 
+  /* ---------------------------------------------------------------- Heat score */
+  /*
+   * One score per lead from 0 to 100, from the offer it gets (LH.scriptFor): the Ads profile for a business with a
+   * website, the Website profile for one without a working website. The shared bonuses add to either.
+   */
+  LH.HEAT_WEIGHTS = {
+    ads: { ran_before: 30, never_ran: 15, active_now: -25, follower_band: 15, new_business: 10, target_niche: 10, whatsapp_mobile: 10, weak_site: 5 },
+    website: { no_website: 35, weak_site: 25, new_business: 15, running_ads: 10, active_instagram: 5 },
+    shared: { intent_7d: 50, hiring_marketing: 20 },
+  };
+  LH.HEAT_LABELS = {
+    ran_before: 'Ran Meta ads before, none live',
+    never_ran: 'Never ran Meta ads',
+    active_now: 'Running Meta ads now',
+    follower_band: 'Instagram followers in range',
+    new_business: 'New business',
+    target_niche: 'One of your target niches',
+    whatsapp_mobile: 'Has a WhatsApp mobile',
+    weak_site: 'Weak website',
+    no_website: 'No website',
+    running_ads: 'Running Meta ads now',
+    active_instagram: 'Active Instagram',
+    intent_7d: 'Asked for help in the last 7 days',
+    hiring_marketing: 'Hiring for marketing',
+  };
+  LH.HEAT_GROUPS = { ads: 'Ads offer', website: 'Website offer', shared: 'Both offers' };
+  /** The weights with your edits from Settings. */
+  LH.heatWeightsFor = (settings = {}) => {
+    const mine = settings.heatWeights || {};
+    const out = {};
+    for (const [group, w] of Object.entries(LH.HEAT_WEIGHTS)) {
+      out[group] = {};
+      for (const [id, n] of Object.entries(w)) {
+        const v = Number((mine[group] || {})[id]);
+        out[group][id] = (mine[group] || {})[id] !== undefined && (mine[group] || {})[id] !== '' && Number.isFinite(v) ? Math.max(-100, Math.min(100, v)) : n;
+      }
+    }
+    return out;
+  };
+  /** { score, profile: 'ads' | 'website', parts: [{ id, label, points }] }. */
+  LH.heatScore = (lead, settings = {}, now = Date.now()) => {
+    const s = { ...LH.DEFAULT_SETTINGS, ...settings };
+    const l = lead || {};
+    const w = LH.heatWeightsFor(s);
+    const q = LH.quality(l, s);
+    const ad = LH.adStatus(l).status;
+    const profile = LH.scriptFor(l).script === 'website' ? 'website' : 'ads';
+    const targets = Array.isArray(s.targetNiches) ? s.targetNiches : LH.presetsFor(s).map((p) => p.name);
+    const st = l.igStats || {};
+    const facts = {
+      ran_before: ad === 'ran_before_inactive_now',
+      never_ran: ad === 'never_ran',
+      active_now: ad === 'active_now',
+      running_ads: ad === 'active_now',
+      follower_band: q.inBand === true,
+      new_business: q.newBusiness === true,
+      target_niche: targets.includes(LH.nicheOf(l, s)),
+      whatsapp_mobile: !!LH.whatsappTarget(l),
+      weak_site: q.weak,
+      no_website: !l.website,
+      active_instagram: !!st.lastPostAt && now - st.lastPostAt <= s.igActiveDays * 864e5,
+      intent_7d: !!(l.intent && l.intent.at && now - l.intent.at <= 7 * 864e5),
+      hiring_marketing: !!(l.hiring && l.hiring.at && now - l.hiring.at <= 30 * 864e5),
+    };
+    const parts = [];
+    for (const group of [profile, 'shared'])
+      for (const [id, points] of Object.entries(w[group])) if (facts[id] && points) parts.push({ id, label: LH.HEAT_LABELS[id], points });
+    const score = Math.max(0, Math.min(100, parts.reduce((n, x) => n + x.points, 0)));
+    return { score, profile, parts };
+  };
+  LH.heatClass = (score, settings = {}) => {
+    const s = { ...LH.DEFAULT_SETTINGS, ...settings };
+    return score >= s.heatHot ? 'hot' : score >= s.heatWarm ? 'warm' : 'cold';
+  };
+
   /* ------------------------------------------------------------ Contacted memory */
   /**
    * Everything that identifies a business you have contacted, as history keys: its phones, website, Instagram
@@ -1383,7 +1464,15 @@ Mussafah, Abu Dhabi`),
    * on your phone shows who each chat is. Leads without a phone or an email are left out. All go in one label.
    */
   LH.GOOGLE_CONTACTS_HEAD = ['Name', 'Given Name', 'Family Name', 'Organization 1 - Name', 'Phone 1 - Type', 'Phone 1 - Value', 'Phone 2 - Type', 'Phone 2 - Value', 'E-mail 1 - Type', 'E-mail 1 - Value', 'Website 1 - Type', 'Website 1 - Value', 'Address 1 - Type', 'Address 1 - Formatted', 'Notes', 'Group Membership'];
-  LH.googleContactsRows = (leads, settings = {}) =>
+  /** "LF-2026-10-26": the label each export gets in Google Contacts, so one batch is easy to find and to delete. */
+  LH.contactsLabel = (date = new Date()) => `LF-${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  /** Notes for a contact: the heat score, its signals and the pitch line. */
+  LH.contactNotes = (l, settings = {}) => {
+    const h = LH.heatScore(l, settings);
+    const signals = h.parts.filter((x) => x.points > 0).map((x) => x.label);
+    return [`Heat ${h.score} (${h.profile} offer)`, signals.join(', '), LH.quality(l, settings).pitch, LH.nicheOf(l, settings), l.area].filter(Boolean).join(' · ');
+  };
+  LH.googleContactsRows = (leads, settings = {}, date = new Date()) =>
     (leads || [])
       .filter(Boolean)
       .map((l) => {
@@ -1392,12 +1481,70 @@ Mussafah, Abu Dhabi`),
         const email = LH.goodEmails(l)[0] || '';
         if (!main && !email) return null;
         const name = LH.shortName(l.pageName) || LH.igHandle(l) || LH.domainOf(l.website || '') || main;
-        const status = (LH.STATUSES.find((s) => s.id === l.status) || {}).label || '';
-        const notes = ['RizcoReach lead', LH.nicheOf(l, settings), l.area, LH.tagLine(l), status].filter(Boolean).join(' · ');
         const address = (((l.sources || {}).maps || {}).address) || '';
-        return [name, name, '', name, main ? 'Mobile' : '', main, other ? 'Work' : '', other, email ? 'Work' : '', email, l.website ? 'Work' : '', l.website || '', address ? 'Work' : '', address, notes, '* myContacts ::: RizcoReach leads'];
+        return [name, name, '', name, main ? 'Mobile' : '', main, other ? 'Work' : '', other, email ? 'Work' : '', email, l.website ? 'Work' : '', l.website || '', address ? 'Work' : '', address, LH.contactNotes(l, settings), `* myContacts ::: ${LH.contactsLabel(date)}`];
       })
       .filter(Boolean);
+
+  /* ------------------------------------------------------------------ Full CSV */
+  /** Every field of every lead, one row each: the record from the brief plus the scores behind it. */
+  LH.FULL_CSV_HEAD = ['id', 'kind', 'business', 'normalized_name', 'phone_e164', 'all_phones', 'whatsapp_link', 'email', 'website', 'root_domain', 'instagram_handle', 'instagram_followers', 'instagram_last_post', 'facebook_page_id', 'area', 'emirate', 'niche', 'sources', 'google_rating', 'google_reviews', 'maps_url', 'ad_status', 'ad_status_certain', 'last_ad_date', 'live_ads', 'signals', 'heat_score', 'heat_class', 'heat_offer', 'heat_reasons', 'pitch_line', 'website_weakness', 'weakness_reasons', 'status', 'contacted_channel', 'contacted_date', 'contacted_before', 'first_seen', 'last_updated', 'notes'];
+  LH.fullCsvRows = (leads, settings = {}, history = null) => {
+    const day = (t) => (t ? new Date(t).toISOString().slice(0, 10) : '');
+    return (leads || []).filter(Boolean).map((l) => {
+      const q = LH.quality(l, settings);
+      const h = LH.heatScore(l, settings);
+      const ad = LH.adStatus(l);
+      const m = (l.sources || {}).maps || {};
+      const g = googleRating(l);
+      const best = LH.whatsappTarget(l) || (LH.bestPhone(l) || {}).number || '';
+      const wa = LH.whatsappTarget(l);
+      const sources = [m.placeId && 'google_maps', (l.sources || {}).instagram && 'instagram', l.kind !== 'prospect' && 'meta_ad_library', l.websiteSource === 'manual' && 'manual'].filter(Boolean);
+      const hit = history && l.status === 'new' ? LH.historyHit(l, history) : null;
+      return [
+        l.id,
+        l.kind === 'prospect' ? 'meta_ads_prospect' : 'facebook_advertiser',
+        l.pageName,
+        LH.normName(l.pageName),
+        best,
+        (l.phones || []).map((p) => p.number).join('; '),
+        wa ? LH.waLink(wa) : '',
+        LH.goodEmails(l)[0] || '',
+        l.website || '',
+        l.website ? LH.rootDomain(l.website) : '',
+        LH.igHandle(l),
+        q.followers ?? '',
+        day((l.igStats || {}).lastPostAt),
+        l.kind === 'prospect' ? (l.adCheck || {}).pageId || '' : /^\d+$/.test(String(l.pageId || l.id)) ? l.pageId || l.id : '',
+        l.area || '',
+        l.area ? LH.cityOf(l.area, settings.adsCity || 'Dubai') : '',
+        LH.nicheOf(l, settings),
+        sources.join('; '),
+        g.rating || '',
+        g.known ? g.reviews : '',
+        m.mapsUrl || '',
+        ad.status || '',
+        ad.status ? (ad.sure ? 'yes' : 'no') : '',
+        day(ad.lastAdAt),
+        l.kind === 'prospect' ? (l.adCheck || {}).activeAds ?? '' : l.activeAdCount ?? '',
+        [...new Set([...q.signals, ...h.parts.filter((x) => x.points > 0).map((x) => x.id)])].join('; '),
+        h.score,
+        LH.heatClass(h.score, settings),
+        h.profile,
+        h.parts.map((x) => `${x.label} ${x.points > 0 ? '+' : ''}${x.points}`).join('; '),
+        q.pitch,
+        q.website.score ?? '',
+        q.website.reasons.map((r) => r.label).join('; '),
+        (LH.STATUSES.find((x) => x.id === l.status) || {}).label || l.status || '',
+        l.contactedVia || '',
+        day(l.contactedAt),
+        hit ? `${day(hit.at)} ${hit.via}`.trim() : '',
+        day(l.createdAt),
+        day(l.updatedAt),
+        l.notes || '',
+      ];
+    });
+  };
 
   /* ---------------------------------------------------------------------- CSV */
   LH.toCsv = (rows) =>

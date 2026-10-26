@@ -1,7 +1,7 @@
 /* Lead Hunter dashboard: the Meta ads tab (businesses found on Google Maps).
    Loaded after dashboard.js and shares its helpers ($, esc, S, send, toast, openDrawer…). */
 
-S.af = { q: '', ads: '', niche: '', tag: '', heat: '', status: '', contact: '', skipped: false, mobile: false, chains: false, contactedBefore: false, sort: 'priority' };
+S.af = { q: '', ads: '', niche: '', tag: '', heat: '', status: '', contact: '', skipped: false, mobile: false, chains: false, contactedBefore: false, sort: 'heat' };
 S.areasOff = new Set();
 S.finderNiche = '';
 
@@ -31,6 +31,7 @@ function filteredProspects() {
   const rows = [];
   for (const l of prospects()) {
     const p = LH.priority(l);
+    const h = LH.heatScore(l, S.settings);
     const ad = (l.adCheck || {}).state || 'pending';
     if (l.avoid && f.niche !== '__avoid') continue;
     // Running ads with a website and not messaged yet: skipped for outreach, shown only when asked for.
@@ -40,7 +41,7 @@ function filteredProspects() {
     const old = LH.oldAdCheck(l.adCheck);
     if (f.ads === 'pending' ? !old && !['pending', 'queued', 'checking', 'skipped'].includes(ad) : f.ads === 'none' ? old || !['none', 'likely'].includes(ad) : f.ads && ad !== f.ads) continue;
     if (f.niche && f.niche !== '__avoid' && LH.nicheOf(l, S.settings) !== f.niche) continue;
-    if (f.heat && LH.heat(p) !== f.heat) continue;
+    if (f.heat && LH.heatClass(h.score, S.settings) !== f.heat) continue;
     if (f.status === '' && l.status === 'skip') continue;
     if (f.status && f.status !== 'all' && l.status !== f.status) continue;
     if (f.contact === 'phone' && !l.phones.length) continue;
@@ -52,9 +53,10 @@ function filteredProspects() {
       const hay = [l.pageName, l.area, l.niche, l.website, LH.igHandle(l), ...(l.emails || []), ...l.phones.map((x) => x.number), l.notes].join(' ').toLowerCase();
       if (!hay.includes(q)) continue;
     }
-    rows.push({ l, p });
+    rows.push({ l, p, h });
   }
   const val = {
+    heat: (r) => r.h.score,
     priority: (r) => r.p,
     reviews: (r) => ((r.l.sources || {}).maps || {}).reviews || 0,
     newest: (r) => r.l.createdAt || 0,
@@ -83,12 +85,12 @@ function adCell(l) {
   return `<span class="ad-state ${cls}" title="${esc(a.reason || '')}">${spin}${esc(label + adExtra(a))}</span>`;
 }
 
-function prospectRow({ l, p }) {
+function prospectRow({ l, h }) {
   const meta = [LH.nicheOf(l, S.settings), l.area || (l.sources.maps && l.sources.maps.address ? l.sources.maps.address.split(',').slice(-3, -2)[0] : '')].filter(Boolean).join(' · ');
   const dim = ['lost', 'skip', 'won'].includes(l.status) || skippedNew(l) ? ' dim' : '';
   return `<tr data-id="${esc(l.id)}" class="${S.selected.has(l.id) ? 'sel' : ''}${dim}">
     <td class="c-sel"><input type="checkbox" data-sel ${S.selected.has(l.id) ? 'checked' : ''} aria-label="Select ${esc(l.pageName)}" /></td>
-    <td><span class="heat ${LH.heat(p)}" title="Priority ${p}/100">${p}</span></td>
+    <td>${heatBadge(h)}</td>
     <td><div class="biz">${avatar(l)}<div style="min-width:0"><div class="n">${esc(l.pageName || 'Unknown')}</div><div class="m">${esc(meta)}</div>${tagsHtml(l)}</div></div></td>
     <td>${sourceCell(l)}</td>
     <td>${adCell(l)}</td>
@@ -232,7 +234,7 @@ function prospectDrawerHtml(l) {
   return `
     <header class="d-head">${avatar(l)}
       <div style="min-width:0"><h2>${esc(l.pageName || 'Unknown')}</h2>
-        <div class="links"><span class="heat ${LH.heat(p)}">${p}</span>${links.join('')}${LH.nicheOf(l, S.settings) ? `<span>${esc(LH.nicheOf(l, S.settings))}</span>` : ''}</div></div>
+        <div class="links">${heatBadge(LH.heatScore(l, S.settings))}${links.join('')}${LH.nicheOf(l, S.settings) ? `<span>${esc(LH.nicheOf(l, S.settings))}</span>` : ''}</div></div>
       <button class="btn sm ghost x" data-act="close" aria-label="Close">✕</button>
     </header>
     <section class="d-sec">
@@ -482,6 +484,9 @@ async function prospectAction(act, b, l) {
       return true;
     case 'ads-bulk-export':
       exportProspectsCsv(selected().map((id) => S.leads.get(id)));
+      return true;
+    case 'ads-export-full':
+      exportFull(filteredProspects().map((r) => r.l));
       return true;
     case 'ads-contacts':
       exportContacts(filteredProspects().map((r) => r.l));

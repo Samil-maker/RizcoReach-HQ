@@ -468,6 +468,7 @@ test('Google Contacts file: the business name as the contact, WhatsApp number fi
       prospect({ pageName: 'Mail Only', phones: [], emails: ['team@mailonly.example'], website: null }),
     ],
     S,
+    new Date(2026, 9, 26),
   );
   assert.equal(LH.GOOGLE_CONTACTS_HEAD.length, rows[0].length);
   const col = (r, name) => r[LH.GOOGLE_CONTACTS_HEAD.indexOf(name)];
@@ -478,8 +479,9 @@ test('Google Contacts file: the business name as the contact, WhatsApp number fi
   assert.deepEqual([col(rows[0], 'Phone 2 - Type'), col(rows[0], 'Phone 2 - Value')], ['Work', '+97142345678']);
   assert.equal(col(rows[0], 'E-mail 1 - Value'), 'hi@glossy.example', 'a bounced email is skipped');
   assert.equal(col(rows[0], 'Website 1 - Value'), 'https://glossyppf.example/');
-  assert.match(col(rows[0], 'Notes'), /^RizcoReach lead · Car · Al Quoz/);
-  assert.equal(col(rows[0], 'Group Membership'), '* myContacts ::: RizcoReach leads');
+  // Notes: the heat score, its signals and the pitch line. One label per export day.
+  assert.match(col(rows[0], 'Notes'), /^Heat \d+ \(ads offer\) · .*Has a WhatsApp mobile · Car · Al Quoz$/);
+  assert.equal(col(rows[0], 'Group Membership'), '* myContacts ::: LF-2026-10-26');
   assert.deepEqual([col(rows[1], 'Name'), col(rows[1], 'Phone 1 - Value'), col(rows[1], 'E-mail 1 - Value')], ['Mail Only', '', 'team@mailonly.example']);
   // Phone numbers stay numbers in the file (no formula guard quote).
   assert.match(LH.toCsv([rows[0]]), /,Mobile,\+971501234567,/);
@@ -718,4 +720,60 @@ test('quality: no website, followers band, new business, and the pitch for a goo
   assert.equal(LH.scriptVars({ website: null, socials: {}, phones: [] }).pitch, "I couldn't find a website for you");
   const tags = LH.leadTags({ kind: 'prospect', website: 'https://a.ae/', site: { ...site, https: false, mobile: false }, phones: [], sources: { maps: { placeId: 'z', reviews: 3 } }, igStats: { followers: 900 }, adCheck: { state: 'none', v: 2 } });
   assert.deepEqual(tags, ['Weak site', 'New business', 'Followers in range']);
+});
+
+test('heat score: the ads and website offers, shared bonuses, your weights', () => {
+  const now = Date.now();
+  const site = { state: 'ok', https: true, mobile: true, whatsappButton: true, contactForm: true, issues: [], score: 90 };
+  const ads = {
+    kind: 'prospect', niche: 'Car', website: 'https://gloss.ae/', site, adCheck: { state: 'past', v: 2 },
+    phones: [{ number: '+971501234567', source: 'google' }], socials: {}, sources: { maps: { placeId: 'x', reviews: 6 } }, igStats: { followers: 2000 },
+  };
+  const h = LH.heatScore(ads, {}, now);
+  assert.equal(h.profile, 'ads');
+  assert.deepEqual(h.parts.map((x) => [x.id, x.points]), [['ran_before', 30], ['follower_band', 15], ['new_business', 10], ['target_niche', 10], ['whatsapp_mobile', 10]]);
+  assert.equal(h.score, 75);
+  assert.equal(LH.heatClass(h.score), 'hot');
+  // Never ran, running now (and hidden as skipped), weak site.
+  assert.equal(LH.heatScore({ ...ads, adCheck: { state: 'none', v: 2 } }, {}, now).score, 60);
+  const running = LH.heatScore({ ...ads, adCheck: { state: 'running', v: 2 } }, {}, now);
+  assert.deepEqual([running.parts[0].id, running.score], ['active_now', 20]);
+  assert.ok(LH.heatScore({ ...ads, site: { ...site, https: false, mobile: false } }, {}, now).parts.some((x) => x.id === 'weak_site' && x.points === 5));
+  // The website offer: no website, new business, running ads, active Instagram.
+  const web = { ...ads, website: null, site: null, adCheck: { state: 'running', v: 2 }, igStats: { followers: 300, lastPostAt: now - 5 * 864e5 } };
+  const w = LH.heatScore(web, {}, now);
+  assert.equal(w.profile, 'website');
+  assert.deepEqual(w.parts.map((x) => [x.id, x.points]), [['no_website', 35], ['new_business', 15], ['running_ads', 10], ['active_instagram', 5]]);
+  assert.equal(w.score, 65);
+  assert.ok(!LH.heatScore({ ...web, igStats: { lastPostAt: now - 60 * 864e5 } }, {}, now).parts.some((x) => x.id === 'active_instagram'), 'last post two months ago');
+  // Shared bonuses, capped at 100.
+  const intent = LH.heatScore({ ...ads, intent: { at: now - 2 * 864e5 }, hiring: { at: now - 864e5 } }, {}, now);
+  assert.deepEqual([intent.parts.slice(-2).map((x) => x.id), intent.score], [['intent_7d', 'hiring_marketing'], 100]);
+  assert.ok(!LH.heatScore({ ...ads, intent: { at: now - 9 * 864e5 } }, {}, now).parts.some((x) => x.id === 'intent_7d'), 'older than 7 days');
+  // Your weights, thresholds and target niches.
+  const mine = { heatWeights: { ads: { ran_before: 50, whatsapp_mobile: 0 } }, heatHot: 90, targetNiches: ['Pets'] };
+  const m = LH.heatScore(ads, mine, now);
+  assert.deepEqual([m.score, m.parts.map((x) => x.id)], [75, ['ran_before', 'follower_band', 'new_business']]);
+  assert.equal(LH.heatClass(m.score, mine), 'warm');
+  assert.deepEqual(LH.heatWeightsFor({ heatWeights: { shared: { intent_7d: '' } } }).shared.intent_7d, 50, 'an empty box keeps the default');
+});
+
+test('full CSV: every field of the record, one row per lead', () => {
+  const lead = {
+    id: 'p:m:1', kind: 'prospect', pageName: 'Gloss Garage L.L.C', area: 'Al Barsha, Dubai', niche: 'Car', status: 'contacted', contactedVia: 'whatsapp', contactedAt: Date.UTC(2026, 9, 20),
+    createdAt: Date.UTC(2026, 9, 1), updatedAt: Date.UTC(2026, 9, 21), website: 'https://shop.gloss.ae/', site: { state: 'ok', https: false, mobile: true, issues: [] },
+    phones: [{ number: '+971501234567', source: 'google' }, { number: '+97142223333', source: 'website' }], emails: ['hi@gloss.ae'], socials: { instagram: 'https://www.instagram.com/gloss.dxb/' },
+    sources: { maps: { placeId: 'x', rating: 4.6, reviews: 8, mapsUrl: 'https://maps.example/x' } }, igStats: { followers: 1500, lastPostAt: Date.UTC(2026, 9, 18) },
+    adCheck: { state: 'past', v: 2, lastAdAt: Date.UTC(2026, 6, 1), pageId: '555' }, notes: 'call after 5',
+  };
+  const [row] = LH.fullCsvRows([lead], {});
+  const col = (name) => row[LH.FULL_CSV_HEAD.indexOf(name)];
+  assert.equal(row.length, LH.FULL_CSV_HEAD.length);
+  assert.deepEqual(
+    ['business', 'normalized_name', 'phone_e164', 'all_phones', 'whatsapp_link', 'root_domain', 'instagram_handle', 'instagram_followers', 'instagram_last_post', 'facebook_page_id', 'emirate', 'sources', 'google_reviews', 'ad_status', 'ad_status_certain', 'last_ad_date', 'heat_offer', 'website_weakness', 'contacted_channel', 'contacted_date', 'first_seen', 'notes'].map(col),
+    ['Gloss Garage L.L.C', 'gloss garage', '+971501234567', '+971501234567; +97142223333', 'https://wa.me/971501234567', 'gloss.ae', 'gloss.dxb', 1500, '2026-10-18', '555', 'Dubai', 'google_maps', 8, 'ran_before_inactive_now', 'yes', '2026-07-01', 'ads', 15, 'whatsapp', '2026-10-20', '2026-10-01', 'call after 5'],
+  );
+  assert.match(col('heat_reasons'), /^Ran Meta ads before, none live \+30; Instagram followers in range \+15; New business \+10; One of your target niches \+10; Has a WhatsApp mobile \+10/);
+  assert.match(col('signals'), /follower_band/);
+  assert.equal(col('pitch_line'), 'I noticed your site shows a Not secure warning in the browser and that puts people off before they even look');
 });

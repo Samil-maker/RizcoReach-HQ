@@ -458,7 +458,8 @@ try {
   const shineContact = gRows.find((r) => r[0] === 'Shine Auto Spa');
   assert.ok(shineContact, 'Shine Auto Spa is a contact');
   assert.match(shineContact[gHead.indexOf('Phone 1 - Value')] || shineContact[gHead.indexOf('E-mail 1 - Value')], /^\+971|@/);
-  assert.equal(shineContact[gHead.indexOf('Group Membership')], '* myContacts ::: RizcoReach leads');
+  assert.match(shineContact[gHead.indexOf('Group Membership')], /^\* myContacts ::: LF-\d{4}-\d{2}-\d{2}$/, 'one label per export day');
+  assert.match(shineContact[gHead.indexOf('Notes')], /^Heat \d+ \((ads|website) offer\) · /, 'notes: heat score, signals, pitch line');
   assert.ok(gRows.every((r) => r[gHead.indexOf('Phone 1 - Value')] || r[gHead.indexOf('E-mail 1 - Value')]), 'every contact has a phone or an email');
 
   // A skipped lead: no message, unless you pitch it anyway with the website script.
@@ -1249,7 +1250,8 @@ try {
   assert.deepEqual([(await lead(instaLead.id)).igStats.followers, (await lead(glossyIg)).igStats.followers], [640, 2345]);
   assert.equal((await lead(glossyIg)).igStats.from, 'api');
   assert.match((await lead('p:i:luxe.lash.dxb')).igStats.error, /Invalid user id/, 'a personal account is not found');
-  assert.ok(IG_API.calls.includes('business_discovery.username(instatintbar){followers_count,media_count,username}'));
+  assert.ok(IG_API.calls.includes('business_discovery.username(instatintbar){followers_count,media_count,username,media.limit(1){timestamp}}'));
+  assert.ok(Math.abs((await lead(instaLead.id)).igStats.lastPostAt - (Date.now() - 3 * 864e5)) < 60000, 'the newest post date, from +0000 time');
   assert.match((await storage('problems')).problems.instagram[0][1], /^@luxe\.lash\.dxb: Invalid user id/);
   // The lead panel: no website, only Instagram; followers in range; the pitch line to copy.
   await dash.click('[data-view="ads"]');
@@ -1263,6 +1265,12 @@ try {
   assert.match(qText, /640 followers \(official API, .*\) In range 500 to 10K/);
   assert.match(qText, /18 Google reviews not new/);
   if (SHOTS) await dash.screenshot({ path: `${SHOTS}/21-quality.png` });
+  // Heat score, website offer: no website +35, active Instagram +5 (posted 3 days ago), WhatsApp is not part of this offer.
+  const instaHeat = await sw.evaluate(async (id) => LH.heatScore((await chrome.storage.local.get('lead:' + id))['lead:' + id], (await chrome.storage.local.get('settings')).settings), instaLead.id);
+  console.log('heat score (Insta Tint Bar):', JSON.stringify(instaHeat));
+  assert.equal(instaHeat.profile, 'website');
+  assert.ok(instaHeat.parts.some((x) => x.id === 'no_website' && x.points === 35) && instaHeat.parts.some((x) => x.id === 'active_instagram'));
+  assert.match(qText, /Heat score40 Website offer\s+\+35 No website\+5 Active Instagram/);
   await dash.click('[data-act="close"]');
   // A website that passes: its checks are listed, PageSpeed waits for a key.
   const glossyPpf = (await prospectsNow()).find((l) => l.pageName === 'Glossy PPF Studio');
@@ -1290,6 +1298,26 @@ try {
   await dash.click('[data-act="ig-resume"]');
   await waitFor(async () => !((await storage('igQueue')).igQueue || []).length, 20000, 'lookups after resume');
   assert.ok(!(await storage('alerts')).alerts.instagram);
+  // Ranked by heat score, highest first.
+  const heats = await dash.$$eval('[data-ads-rows] tr td:nth-child(2) .heat', (b) => b.map((x) => Number(x.textContent)));
+  assert.ok(heats.length > 3 && heats.every((n, i) => i === 0 || heats[i - 1] >= n), `sorted by heat: ${heats}`);
+  // Full CSV: every field, for every business shown.
+  const [fdl] = await Promise.all([dash.waitForEvent('download'), dash.click('[data-act="ads-export-full"]')]);
+  const [fHead, ...fRows] = parseCsv(fs.readFileSync(await fdl.path(), 'utf8'));
+  assert.equal(fHead.length, 40);
+  const instaFull = fRows.find((r) => r[2] === 'Insta Tint Bar');
+  assert.deepEqual(['instagram_handle', 'instagram_followers', 'heat_offer', 'ad_status'].map((c) => instaFull[fHead.indexOf(c)]), ['instatintbar', '640', 'website', '']);
+  console.log('full CSV row:', JSON.stringify(Object.fromEntries(fHead.map((c, i) => [c, instaFull[i]]).filter(([, v]) => v !== ''))));
+  // Your weights in Settings change the scores straight away.
+  await dash.click('[data-view="settings"]');
+  await dash.fill('[data-heat-group="website"][data-heat-id="no_website"]', '50');
+  await dash.click('[data-settings-form] button[type="submit"]');
+  await waitFor(async () => ((await storage('settings')).settings.heatWeights || {}).website?.no_website === 50, 5000, 'heat weight saved');
+  assert.deepEqual((await storage('settings')).settings.heatWeights, { website: { no_website: 50 } }, 'only your change is kept');
+  await dash.fill('[data-heat-group="website"][data-heat-id="no_website"]', '35');
+  await dash.click('[data-settings-form] button[type="submit"]');
+  await waitFor(async () => (await storage('settings')).settings.heatWeights === null, 5000, 'back to the defaults');
+  await dash.click('[data-view="ads"]');
   await dash.uncheck('[data-af="contactedBefore"]');
 
   // Popup renders stats.

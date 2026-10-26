@@ -323,6 +323,38 @@ businesses. Lead Hunter counts requests and stops at the monthly limit in
 Settings (default 950). After that, remove the key to search in a tab
 instead, or raise the limit.
 
+## Heat score
+
+Every lead gets one score from 0 to 100 and both tabs are ranked by it (highest first). The badge on each row
+shows it; hover it, or open the lead, to see what it is made of.
+
+| Ads offer (a business with a website) | Points | Website offer (no working website) | Points |
+| --- | --- | --- | --- |
+| Ran Meta ads before, none live | +30 | No website | +35 |
+| Never ran Meta ads | +15 | Weak website | +25 |
+| Running Meta ads now | −25 | New business | +15 |
+| Instagram followers in range | +15 | Running Meta ads now | +10 |
+| New business | +10 | Active Instagram (a post in the last 30 days) | +5 |
+| One of your target niches | +10 | | |
+| Has a WhatsApp mobile | +10 | | |
+| Weak website | +5 | | |
+
+Both offers also get **+50** when the business asked for help in the last 7 days and **+20** when it is hiring
+for marketing (the Intent Radar fills these in). 60 or more is hot, 35 or more is warm. Every number, the hot and
+warm limits, your target niches and the active Instagram window are in Settings > Heat score. Businesses running
+ads with a working website stay hidden unless you tick **Show skipped**.
+
+**Exports**
+
+- **Google Contacts**: the business name as the contact name, the WhatsApp number first, and notes with the heat
+  score, its signals and the pitch line. Each export gets the label `LF-<date>` (for example `LF-2026-10-26`), so
+  one batch is easy to find, and to delete, in Google Contacts.
+- **Full CSV**: every field of every lead shown (40 columns). It includes the name and normalized name, the phone
+  in +971 format and all phones, the WhatsApp link, the website and root domain, the Instagram handle, followers
+  and last post, the Facebook page id, the area and emirate, the niche and sources, the Google rating and reviews,
+  the ad status and last ad date, the signals, the heat score with its reasons, the pitch line, the website
+  weakness, and the contacted status, channel and date, plus first seen and last updated.
+
 ## Quality signals
 
 Every lead panel has a **Quality signals** section, and the Meta ads CSV has the same columns.
