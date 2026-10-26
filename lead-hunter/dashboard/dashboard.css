@@ -332,3 +332,18 @@ table.mini { border-collapse: collapse; font-size: 12.5px; min-width: 300px; }
 .err.alert a { color: inherit; text-decoration: underline; }
 .problems { margin: 6px 0 10px; font-size: 13px; }
 .problems ul { margin: 4px 0 0; padding-left: 18px; }
+
+.quality .pitch-line { display: flex; gap: 10px; align-items: flex-start; margin: 4px 0 10px; }
+.quality .pitch-line p { margin: 0; flex: 1; font-style: italic; }
+.quality .q-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 6px 0; }
+.quality .q-row .lbl { min-width: 130px; color: var(--fg-3); }
+.quality ul.checks { list-style: none; margin: 2px 0 8px; padding: 0 0 0 138px; font-size: 13px; }
+.quality ul.checks li { margin: 2px 0; }
+.quality ul.checks .bad { color: var(--weak); }
+.quality ul.checks .ok { color: var(--fg-3); }
+.weak-checks { display: grid; gap: 6px; margin-bottom: 12px; }
+.weak-row { display: grid; grid-template-columns: minmax(150px, 1fr) 70px 3fr; gap: 8px; align-items: center; font-size: 13px; }
+h3.sub { margin: 16px 0 6px; font-size: 14px; }
+.hint.ok { color: var(--good); }
+.hint.err { color: var(--weak); }
+@media (max-width: 640px) { .weak-row { grid-template-columns: 1fr 70px; } .weak-row [data-weak-pitch] { grid-column: 1 / -1; } .quality ul.checks { padding-left: 0; } }

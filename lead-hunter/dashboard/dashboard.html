@@ -198,6 +198,9 @@
           <option>Growing</option>
           <option>Running ads</option>
           <option>Contacted before</option>
+          <option>Weak site</option>
+          <option>New business</option>
+          <option>Followers in range</option>
         </select>
         <select class="inp" data-af="heat" aria-label="Priority">
           <option value="">Any priority</option>
@@ -235,6 +238,7 @@
         <button class="btn" data-act="ads-bulk-queue">Send to phone queue</button>
         <button class="btn" data-act="ads-bulk-email">Send to email queue</button>
         <button class="btn" data-act="ads-bulk-recheck">Check ads again</button>
+        <button class="btn" data-act="ads-bulk-ig">Get Instagram followers</button>
         <button class="btn" data-act="ads-bulk-export">Export selected</button>
         <button class="btn" data-act="ads-bulk-contacts">Google Contacts</button>
         <button class="btn danger" data-act="ads-bulk-delete">Delete</button>
@@ -397,6 +401,28 @@
           </label>
         </div>
 
+        <h2 id="quality">Quality signals</h2>
+        <p class="hint">Signals shown on every lead and used for scoring. A business with fewer Google reviews than the limit is a new business.</p>
+        <div class="grid2">
+          <label class="field"><span class="lbl">Instagram followers from</span><input class="inp" name="followerMin" type="number" min="0" step="100" /></label>
+          <label class="field"><span class="lbl">Instagram followers up to</span><input class="inp" name="followerMax" type="number" min="0" step="100" /></label>
+          <label class="field"><span class="lbl">New business <small>fewer Google reviews than</small></span><input class="inp" name="newBusinessReviews" type="number" min="1" /></label>
+          <label class="field"><span class="lbl">Weak site <small>weakness score at least</small></span><input class="inp" name="weakSiteMin" type="number" min="1" max="100" /></label>
+          <label class="field"><span class="lbl">PageSpeed mobile <small>a score under this fails</small></span><input class="inp" name="psiMin" type="number" min="1" max="100" /></label>
+          <label class="field"><span class="lbl">Old copyright <small>this many years old or more</small></span><input class="inp" name="copyrightYears" type="number" min="1" max="10" /></label>
+        </div>
+        <p class="hint">Website checks: each one that fails adds its points to the weakness score (at most 100) and is saved as a reason. The failed check with the most points gives the lead its pitch line, also available in scripts as <code>{{pitch}}</code>.</p>
+        <div class="weak-checks" data-weak-checks></div>
+        <h3 class="sub">Instagram followers (official API)</h3>
+        <p class="hint">Lead Hunter never opens Instagram for this. It asks Meta's Instagram Graph API (Business Discovery) with your own token, and it can only see business and creator accounts. You need an Instagram business or creator account linked to a Facebook page, and a Meta app. In the Graph API Explorer pick your app, add the permissions <b>instagram_basic</b>, <b>pages_show_list</b>, <b>pages_read_engagement</b> and <b>business_management</b>, press Generate Access Token, then run <code>me/accounts?fields=instagram_business_account</code>: the id it shows is your account id. Tokens from the Explorer stop working after about an hour; swap it for a long lived one (about 60 days) with the Access Token Debugger's Extend button. If the token stops working, lookups pause and you get an alert.</p>
+        <div class="grid2">
+          <label class="field"><span class="lbl">Your Instagram business account id</span><input class="inp" name="igAccountId" placeholder="17841400000000000" autocomplete="off" /></label>
+          <label class="field"><span class="lbl">Access token <small>kept in this browser only</small></span><input class="inp" name="igToken" type="password" autocomplete="off" /></label>
+          <label class="field"><span class="lbl">Graph API version</span><input class="inp" name="igApiVersion" placeholder="v23.0" /></label>
+        </div>
+        <label class="chk"><input type="checkbox" name="igAuto" /> Look up followers automatically for new businesses with an Instagram handle</label>
+        <div class="row"><button type="button" class="btn" data-act="ig-test">Save and test</button><span class="hint" data-ig-test></span></div>
+
         <h2 id="presets">Presets</h2>
         <p class="hint">One per kind of business. Searches run as "keyword area", one keyword at a time across every area, in the order you list them. Paste lists one item per line. An exclude word drops any business with it in its name or Google category. Start a line with <b>category:</b> to only check the category. The review range keeps small, owner run businesses: listings outside it are never opened or saved.</p>
         <div class="niches" data-niches></div>
@@ -408,7 +434,7 @@
         </div>
 
         <h2>Scripts</h2>
-        <p class="hint">Lead Hunter picks the script for each lead. No website, or a site that is down, gets the Website script. A website and no Meta ads gets the Ads script. Leads that run ads and have a working website are skipped. Variables: <code>{{business}}</code> <code>{{niche}}</code> <code>{{city}}</code> <code>{{found_on}}</code> <code>{{website_line}}</code> <code>{{my_name}}</code> <code>{{agency}}</code> <code>{{my_phone}}</code></p>
+        <p class="hint">Lead Hunter picks the script for each lead. No website, or a site that is down, gets the Website script. A website and no Meta ads gets the Ads script. Leads that run ads and have a working website are skipped. Variables: <code>{{business}}</code> <code>{{niche}}</code> <code>{{city}}</code> <code>{{found_on}}</code> <code>{{website_line}}</code> <code>{{pitch}}</code> <code>{{my_name}}</code> <code>{{agency}}</code> <code>{{my_phone}}</code></p>
         <div data-scripts></div>
 
         <h2 id="email">Email sender</h2>

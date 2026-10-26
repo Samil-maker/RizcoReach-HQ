@@ -671,6 +671,7 @@ async function enrichOne(id, opts = {}) {
     l.socials = { ...contacts.socials, ...(l.socials || {}) };
     l.enrichedAt = now();
   });
+  igAuto([await getLead(id)], settings); // the website may have linked their Instagram
 }
 
 /* --------------------------------------------------------------- phone queue */

@@ -405,7 +405,7 @@ test('tags and priority: running-ads leads sink to the bottom', () => {
   assert.deepEqual(LH.leadTags(prospect({ sources: { maps: { placeId: 'x', rating: 3.6, reviews: 90 } } })), [], 'many reviews, low rating: not growing');
   assert.deepEqual(LH.leadTags(prospect({ sources: { maps: { placeId: 'x', rating: 3.5, reviews: 300 } } })), []);
   assert.equal(LH.tagLine(prospect({ sources: { maps: { placeId: 'x', rating: 3.5, reviews: 300 } } })), 'No Meta ads');
-  assert.deepEqual(LH.leadTags(prospect({ sources: { maps: { placeId: 'x', rating: 3.2, reviews: 7 } } })), ['Growing'], 'few reviews');
+  assert.deepEqual(LH.leadTags(prospect({ sources: { maps: { placeId: 'x', rating: 3.2, reviews: 7 } } })), ['New business'], 'under 10 reviews');
   assert.deepEqual(LH.leadTags(advertiser({ website: 'https://gone.example/', site: { state: 'error' } })), ['Site down'], 'a site that is down');
   assert.deepEqual(LH.leadTags(prospect({ site: { state: 'ok', parked: true } })), ['Site down', 'Good reviews'], 'a parked domain');
   assert.equal(LH.tagLine(advertiser({ website: 'https://gone.example/', site: { state: 'error' } })), 'Site down');
@@ -661,4 +661,61 @@ test('ad status names for every kind of lead', () => {
   const lead = { kind: 'prospect', website: 'https://x.example/', site: { state: 'done', score: 80 }, adCheck: { state: 'past' } };
   assert.deepEqual(LH.scriptFor(lead), { script: 'ads', tag: 'Ran ads before' });
   assert.ok(LH.prospectPriority(lead) > LH.prospectPriority({ ...lead, adCheck: { state: 'none' } }));
+});
+
+test('quality: website weakness score, one reason per failed check, strongest gives the pitch line', () => {
+  const year = new Date().getFullYear();
+  const okSite = { state: 'ok', parked: false, https: true, mobile: true, copyrightYear: year, whatsappButton: true, contactForm: false, psi: { performance: 80 }, issues: [] };
+  const lead = (site, extra = {}) => ({ kind: 'prospect', website: 'https://gloss.ae/', site, phones: [], socials: {}, sources: {}, ...extra });
+  const good = LH.quality(lead(okSite));
+  assert.deepEqual([good.website.score, good.weak, good.website.reasons, good.website.unknown], [0, false, [], []]);
+  assert.equal(good.website.passed.length, 7);
+
+  const bad = LH.quality(lead({ ...okSite, https: false, mobile: false, copyrightYear: year - 3, whatsappButton: false, psi: { performance: 31 } }, { website: 'https://gloss.wixsite.com/home' }));
+  assert.deepEqual(bad.website.reasons.map((r) => [r.id, r.points]), [['no_https', 15], ['slow_mobile', 15], ['no_viewport', 15], ['no_contact', 15], ['free_builder', 15], ['old_copyright', 10]]);
+  assert.equal(bad.website.score, 85);
+  assert.ok(bad.weak && bad.signals.includes('weak_site'));
+  assert.equal(bad.website.reasons.find((r) => r.id === 'slow_mobile').label, 'PageSpeed mobile 31/100 (under 50)');
+  assert.equal(bad.website.reasons.find((r) => r.id === 'old_copyright').pitch, `I noticed your site still says © ${year - 3} at the bottom so it looks like nobody is running it`);
+  assert.equal(bad.pitch, 'I noticed your site shows a Not secure warning in the browser and that puts people off before they even look');
+  for (const r of [...bad.website.reasons, ...LH.WEAK_CHECKS]) assert.ok(!/[;—–]| - /.test(r.pitch), `no semicolons or dashes: ${r.pitch}`);
+
+  // Down, parked or an error page is the strongest reason. An SSL error counts as no HTTPS.
+  assert.deepEqual(LH.quality(lead({ state: 'error', issues: [{ id: 'httpError', label: 'Website returns an error (404)' }] })).website.reasons.map((r) => r.id), ['site_down']);
+  assert.deepEqual(LH.quality(lead({ state: 'ok', parked: true, issues: [] })).website.reasons.map((r) => r.id), ['site_down']);
+  assert.deepEqual(LH.quality(lead({ state: 'error', issues: [{ id: 'unreachable', label: 'Website does not load: SSL certificate error' }] })).website.reasons.map((r) => r.id), ['no_https']);
+  // Not checked yet: no score, only what the address shows.
+  const waiting = LH.quality(lead({ state: 'queued' }, { website: 'https://shop.godaddysites.com/' }));
+  assert.deepEqual([waiting.website.score, waiting.website.reasons.map((r) => r.id), waiting.website.unknown.length], [15, ['free_builder'], 6]);
+  assert.equal(LH.quality(lead({ state: 'queued' })).website.score, null);
+  // No PageSpeed run: the speed check is not counted either way.
+  assert.ok(LH.quality(lead({ ...okSite, psi: undefined })).website.unknown.includes('slow_mobile'));
+  // Older checks: "no call or WhatsApp" and "no form" together mean no contact.
+  const old = { state: 'ok', https: true, mobile: true, issues: [{ id: 'contactLinks' }, { id: 'leadCapture' }] };
+  assert.ok(LH.quality(lead(old)).website.reasons.some((r) => r.id === 'no_contact'));
+  // Your points and pitch lines from Settings, and the weak site limit.
+  const mine = { weakChecks: [{ id: 'no_https', points: 50, pitch: 'Your site says Not secure' }], weakSiteMin: 60 };
+  const edited = LH.quality(lead({ ...okSite, https: false }), mine);
+  assert.deepEqual([edited.website.score, edited.weak, edited.pitch], [50, false, 'Your site says Not secure']);
+  assert.equal(LH.quality(lead({ ...okSite, https: false }), { ...mine, weakSiteMin: 50 }).weak, true);
+});
+
+test('quality: no website, followers band, new business, and the pitch for a good site', () => {
+  const q = LH.quality({ kind: 'prospect', website: null, socials: { instagram: 'https://www.instagram.com/gloss.dxb/' }, phones: [], sources: { maps: { placeId: 'x', reviews: 6 } }, igStats: { followers: 2400, from: 'api' } });
+  assert.deepEqual([q.website.noSite, q.website.reasons[0].label, q.pitch], [true, 'No website, only Instagram', "I couldn't find a website for you, just your Instagram"]);
+  assert.deepEqual([q.followers, q.inBand, q.reviews, q.newBusiness], [2400, true, 6, true]);
+  assert.deepEqual(q.signals, ['no_website', 'follower_band', 'new_business']);
+  assert.equal(LH.quality({ website: null, socials: {}, phones: [] }).pitch, "I couldn't find a website for you");
+  // Outside the band, a count from the profile page, an editable band and review limit.
+  const page = { kind: 'prospect', website: null, socials: {}, phones: [], sources: { instagram: { username: 'big', followers: '12.5K' }, maps: { placeId: 'y', reviews: 10 } } };
+  assert.deepEqual([LH.quality(page).followers, LH.quality(page).inBand, LH.quality(page).newBusiness], [12500, false, false]);
+  assert.deepEqual([LH.quality(page, { followerMax: 20000 }).inBand, LH.quality(page, { newBusinessReviews: 11 }).newBusiness], [true, true]);
+  assert.deepEqual(['2,345', '1.2M', '840', 'n/a', 77].map(LH.parseCount), [2345, 1200000, 840, null, 77]);
+  // A good site: the ad history gives the line.
+  const site = { state: 'ok', https: true, mobile: true, whatsappButton: true, contactForm: true, issues: [] };
+  assert.equal(LH.quality({ kind: 'prospect', website: 'https://a.ae/', site, phones: [], adCheck: { state: 'past', v: 2 } }).pitch, 'I noticed you ran Meta ads before but nothing is running right now');
+  // {{pitch}} in scripts, and the tags.
+  assert.equal(LH.scriptVars({ website: null, socials: {}, phones: [] }).pitch, "I couldn't find a website for you");
+  const tags = LH.leadTags({ kind: 'prospect', website: 'https://a.ae/', site: { ...site, https: false, mobile: false }, phones: [], sources: { maps: { placeId: 'z', reviews: 3 } }, igStats: { followers: 900 }, adCheck: { state: 'none', v: 2 } });
+  assert.deepEqual(tags, ['Weak site', 'New business', 'Followers in range']);
 });

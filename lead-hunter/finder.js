@@ -144,9 +144,10 @@ async function ingestProspects(items, ctx = {}) {
     await store.set(writes);
     const websites = counted.filter((id) => touched.get(id).website);
     const checks = counted.filter((id) => touched.get(id).adCheck.state === 'queued');
-    return { added: counted.length, ids: counted, websites, checks, contacted };
+    return { added: counted.length, ids: counted, websites, checks, contacted, leads: counted.map((id) => touched.get(id)) };
   });
   if (result.checks.length) queueAdChecks(result.checks);
+  igAuto(result.leads, settings);
   if (result.websites.length) enqueue(result.websites);
   return result;
 }
@@ -309,8 +310,8 @@ async function logProblem(source, text) {
     await store.set({ problems });
   });
 }
-const SOURCE_NAMES = { adlib: 'Meta Ad Library', maps: 'Google Maps' };
-async function alertSource(source, text, url) {
+const SOURCE_NAMES = { adlib: 'Meta Ad Library', maps: 'Google Maps', instagram: 'Instagram API' };
+async function alertSource(source, text, url, hint = 'Open the tab, sort it out, then press Resume in Lead Hunter.') {
   await logProblem(source, text);
   await locked(async () => {
     const { alerts = {} } = await store.get('alerts');
@@ -321,7 +322,7 @@ async function alertSource(source, text, url) {
     chrome.action.setBadgeBackgroundColor({ color: '#d93025' });
     chrome.action.setBadgeText({ text: '!' });
   } catch {}
-  notify(`${SOURCE_NAMES[source] || source} paused`, `${text}. Open the tab, sort it out, then press Resume in Lead Hunter.`);
+  notify(`${SOURCE_NAMES[source] || source} paused`, `${text}. ${hint}`);
 }
 async function clearAlert(source) {
   await locked(async () => {
@@ -380,6 +381,77 @@ async function runAdChecks() {
     adCheckBusy = false;
   }
 }
+
+/* ---------------------------------------------------- Instagram followers */
+/* Follower counts from Meta's official Instagram Graph API (Business Discovery), with your own token: nothing is
+   read from instagram.com. It only sees business and creator accounts. A personal account, or a handle that does
+   not exist, is saved as not found. A bad token, a missing permission or a rate limit pauses the lookups. */
+async function igApi(settings, path, fields) {
+  const u = new URL(`https://graph.facebook.com/${settings.igApiVersion || 'v23.0'}/${encodeURIComponent(path)}`);
+  u.searchParams.set('fields', fields);
+  u.searchParams.set('access_token', settings.igToken);
+  const res = await fetch(u, { signal: AbortSignal.timeout(20000) });
+  const data = await res.json().catch(() => ({}));
+  if (data && data.error) return { error: data.error.message || 'Instagram API error', code: data.error.code, sub: data.error.error_subcode };
+  if (!res.ok) return { error: `Instagram API answered ${res.status}` };
+  return data;
+}
+// Token expired or wrong (190, 102), no permission (10, 200), rate limits (4, 17, 32, 613, 80002), your account id unknown (100/33).
+const igStop = (r) => [190, 102, 10, 200, 4, 17, 32, 613, 80002].includes(r.code) || (r.code === 100 && r.sub === 33);
+async function igLookup(handle, settings) {
+  const r = await igApi(settings, settings.igAccountId, `business_discovery.username(${handle}){followers_count,media_count,username}`);
+  if (r.error) return r;
+  const b = r.business_discovery || {};
+  return { followers: typeof b.followers_count === 'number' ? b.followers_count : null, media: typeof b.media_count === 'number' ? b.media_count : null };
+}
+const igReady = (settings) => !!(settings.igToken && settings.igAccountId);
+
+async function queueIg(ids) {
+  if (!ids.length) return;
+  await locked(async () => {
+    const { igQueue = [] } = await store.get('igQueue');
+    await store.set({ igQueue: [...new Set([...igQueue, ...ids])] });
+  });
+  runIg();
+}
+/** New businesses with an Instagram handle and no count yet, when the API is set up and Look up automatically is on. */
+function igAuto(leads, settings) {
+  if (!igReady(settings) || !settings.igAuto) return;
+  queueIg((leads || []).filter((l) => l && l.kind === 'prospect' && LH.igHandle(l) && !l.igStats).map((l) => l.id));
+}
+let igBusy = false;
+async function runIg() {
+  if (igBusy) return;
+  igBusy = true;
+  try {
+    for (;;) {
+      const settings = await getSettings();
+      const { igQueue = [], igPaused } = await store.get(['igQueue', 'igPaused']);
+      if (!igQueue.length || igPaused || !igReady(settings)) break;
+      const id = igQueue[0];
+      const lead = await getLead(id);
+      const handle = lead && LH.igHandle(lead).toLowerCase();
+      if (handle) {
+        const r = await igLookup(handle, settings).catch((e) => ({ error: String(e.message || e) }));
+        if (r.error && igStop(r)) {
+          await store.set({ igPaused: true });
+          await alertSource('instagram', `Instagram API: ${r.error}`, '', 'Check the token and account id in Settings, then press Resume.');
+          break;
+        }
+        if (r.error) logProblem('instagram', `@${handle}: ${r.error}`);
+        await updateLead(id, (l) => (l.igStats = r.error ? { handle, error: r.error, at: now() } : { handle, followers: r.followers, media: r.media, at: now(), from: 'api' }));
+      }
+      await locked(async () => {
+        const { igQueue: q = [] } = await store.get('igQueue');
+        await store.set({ igQueue: q.filter((x) => x !== id) });
+      });
+      await sleep(jitter(1500, 3000));
+    }
+  } finally {
+    igBusy = false;
+  }
+}
+chrome.alarms.onAlarm.addListener((a) => a.name === 'tick' && runIg());
 
 /* ---------------------------------------------------------- Google Maps */
 const PLACES_FIELDS = [
@@ -685,6 +757,26 @@ Object.assign(handlers, {
   'adcheck:set': async (msg) => {
     const state = ['running', 'past', 'none'].includes(msg.state) ? msg.state : 'none';
     await updateLead(msg.id, (l) => (l.adCheck = { ...(l.adCheck || {}), state, manual: true, checkedAt: now() }));
+    return { ok: true };
+  },
+  'ig:lookup': async (msg) => {
+    const settings = await getSettings();
+    if (!igReady(settings)) return { error: 'Add your Instagram account id and token in Settings > Quality signals first.' };
+    const got = await store.get((msg.ids || []).map(leadKey));
+    const ids = Object.values(got).filter((l) => LH.igHandle(l)).map((l) => l.id);
+    await queueIg(ids);
+    return { queued: ids.length, noHandle: (msg.ids || []).length - ids.length };
+  },
+  'ig:test': async () => {
+    const settings = await getSettings();
+    if (!igReady(settings)) return { error: 'Add your Instagram account id and token first, then Save.' };
+    const r = await igApi(settings, settings.igAccountId, 'username,followers_count').catch((e) => ({ error: String(e.message || e) }));
+    return r.error ? { error: r.error } : { username: r.username, followers: r.followers_count };
+  },
+  'ig:resume': async () => {
+    await store.set({ igPaused: false });
+    await clearAlert('instagram');
+    runIg();
     return { ok: true };
   },
   'adcheck:pause': async () => (await store.set({ adCheckPaused: true }), { ok: true }),

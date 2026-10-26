@@ -220,9 +220,9 @@ function contactCell(l) {
 }
 
 /* Row tags are for sorting and filtering only: the script never changes because of them. */
-const TAG_CLASS = { 'Contacted before': 'red', 'No website': 'amber', 'Site down': 'amber', 'Running ads': 'red', 'Good reviews': 'green', Mobile: 'green', Landline: 'amber', Corporate: 'red', Chain: 'red' };
+const TAG_CLASS = { 'Contacted before': 'red', 'Weak site': 'amber', 'New business': 'green', 'Followers in range': 'green', 'No website': 'amber', 'Site down': 'amber', 'Running ads': 'red', 'Good reviews': 'green', Mobile: 'green', Landline: 'amber', Corporate: 'red', Chain: 'red' };
 /** Tags need to know which business names appear more than once (chains). */
-const leadTags = (l) => LH.leadTags(l, { history: S.history, chains: S.chains || (S.chains = LH.chainNames([...S.leads.values()].filter((x) => x.kind === 'prospect'))) });
+const leadTags = (l) => LH.leadTags(l, { settings: S.settings, history: S.history, chains: S.chains || (S.chains = LH.chainNames([...S.leads.values()].filter((x) => x.kind === 'prospect'))) });
 const tagsHtml = (l) => {
   const tags = leadTags(l);
   return tags.length ? `<div class="tags">${tags.map((t) => `<span class="tag ${TAG_CLASS[t] || ''}">${esc(t)}</span>`).join('')}</div>` : '';
@@ -709,6 +709,7 @@ function drawerHtml(l) {
       ${contactedRow(l)}
     </section>
     ${pitchSection(l)}
+    ${qualitySection(l)}
     ${siteSection(l)}
     ${contactSection(l)}
     <section class="d-sec"><h3>Notes</h3><textarea class="inp" rows="3" data-notes placeholder="Who you spoke to, what they said, when to follow up…">${esc(l.notes || '')}</textarea></section>
@@ -755,6 +756,44 @@ function markContacted(l, script, via) {
   update(l.id, { status: 'contacted', sentScript: script || undefined, via: via || undefined });
   toast(`Marked “${l.pageName}” as contacted${via ? ` on ${VIA[via]}` : ''}`, () => update(l.id, { status: prev }));
   return true;
+}
+/* Quality signals (Phase 3): the website weakness score and its reasons, Instagram followers, new business, pitch line. */
+const CHECK_HINT = { slow_mobile: 'needs PageSpeed (Settings > Enrichment)', no_contact: 'the site loads its content with scripts, so this could not be read' };
+function qualitySection(l) {
+  const s = S.settings;
+  const q = LH.quality(l, s);
+  const w = q.website;
+  const checks = LH.weakChecksFor(s);
+  const name = (id) => (checks.find((c) => c.id === id) || {}).label || id;
+  let site;
+  if (w.noSite) site = `<li class="bad">✗ ${esc(w.reasons[0].label)}</li>`;
+  else {
+    const waiting = ['queued', 'running', 'pending'].includes((l.site || {}).state);
+    site = [
+      ...w.reasons.map((r) => `<li class="bad">✗ ${esc(r.label)} <span class="muted">+${esc(r.points)}</span></li>`),
+      ...w.passed.map((id) => `<li class="ok">✓ ${esc(name(id))}</li>`),
+      ...w.unknown.map((id) => `<li class="muted">· ${esc(name(id))}: ${esc(waiting ? 'website check not done yet' : CHECK_HINT[id] || 'not checked')}</li>`),
+    ].join('');
+  }
+  const score = w.noSite ? '<b>No website</b>' : w.score == null ? '<b>Not checked yet</b>' : `<b>${esc(w.score)}/100</b> ${q.weak ? '<span class="tag amber">Weak site</span>' : '<span class="muted">not weak</span>'}`;
+  const handle = LH.igHandle(l);
+  const st = l.igStats || {};
+  const igReady = s.igToken && s.igAccountId;
+  let ig;
+  if (q.followers != null)
+    ig = `${esc(compactNum(q.followers))} followers <span class="muted">(${st.from === 'api' ? `official API, ${esc(fmtDate(st.at))}` : 'from their profile page'})</span> ${q.inBand ? `<span class="tag green">In range ${esc(compactNum(s.followerMin))} to ${esc(compactNum(s.followerMax))}</span>` : '<span class="muted">outside your range</span>'}`;
+  else if (!handle) ig = '<span class="muted">No Instagram found</span>';
+  else if (st.error) ig = `<span class="muted">@${esc(handle)}: not found by the API. Personal accounts can't be looked up, only business and creator accounts.</span>`;
+  else ig = `<span class="muted">@${esc(handle)}: not looked up yet</span>`;
+  const igBtn = handle && igReady ? `<button class="btn sm ghost" data-act="ig-lookup">${st.at ? 'Look up again' : 'Look up followers'}</button>` : handle ? '<span class="muted">Set up the Instagram API in Settings to look up followers</span>' : '';
+  const reviews = q.reviews == null ? '<span class="muted">No Google listing</span>' : `${esc(q.reviews)} Google reviews ${q.newBusiness ? `<span class="tag green">New business</span>` : '<span class="muted">not new</span>'}`;
+  return `<section class="d-sec quality" data-quality-sec><h3>Quality signals</h3>
+    ${q.pitch ? `<div class="pitch-line"><p>${esc(q.pitch)}</p><button class="btn sm" data-act="copy-pitch-line">Copy pitch line</button></div>` : ''}
+    <div class="q-row"><span class="lbl">Website weakness</span>${score}</div>
+    <ul class="checks">${site}</ul>
+    <div class="q-row"><span class="lbl">Instagram</span>${ig} ${igBtn}</div>
+    <div class="q-row"><span class="lbl">Google</span>${reviews}</div>
+  </section>`;
 }
 const VIA = { whatsapp: 'WhatsApp', instagram: 'Instagram', email: 'Email', export: 'Google Contacts export', import: 'your imported contacts' };
 /** In the drawer: when and how they were contacted, Mark contacted with the channel, and Reset. */
@@ -1064,6 +1103,9 @@ function fillSettings() {
     else el.value = s[el.name] ?? '';
   }
   renderNicheEditor(LH.nichesFor(s));
+  $('[data-weak-checks]', f).innerHTML = LH.weakChecksFor(s)
+    .map((c) => `<div class="weak-row" data-weak-id="${esc(c.id)}"><span>${esc(c.label)}</span><input class="inp" type="number" min="0" max="100" data-weak-points value="${esc(c.points)}" aria-label="Points" /><input class="inp" data-weak-pitch value="${esc(c.pitch)}" aria-label="Pitch line" /></div>`)
+    .join('');
   renderScriptsEditor(s.scripts);
   renderEmailsEditor(s.emails);
   renderEmailSender();
@@ -1071,7 +1113,7 @@ function fillSettings() {
   renderHistory();
   renderProblems();
 }
-const SOURCE_LABEL = { adlib: 'Meta Ad Library', maps: 'Google Maps' };
+const SOURCE_LABEL = { adlib: 'Meta Ad Library', maps: 'Google Maps', instagram: 'Instagram API' };
 /** Settings > Your data: the last problems each source hit. */
 function renderProblems() {
   const el = $('[data-problems]');
@@ -1111,6 +1153,20 @@ async function saveSettings() {
   next.emailFollowups = Math.max(0, Math.min(2, Math.round(Number(next.emailFollowups)) || 0));
   next.emailMaxPerDay = Math.max(1, Math.min(40, Math.round(next.emailMaxPerDay)));
   next.nameMatch = Math.max(0.8, Math.min(1, Number(next.nameMatch) || LH.DEFAULT_SETTINGS.nameMatch));
+  // Website checks: only what differs from the defaults is kept, so later improvements to the defaults still arrive.
+  const edits = $$('[data-weak-id]', f)
+    .map((row) => {
+      const def = LH.WEAK_CHECKS.find((c) => c.id === row.dataset.weakId);
+      const points = Number($('[data-weak-points]', row).value);
+      const pitch = $('[data-weak-pitch]', row).value.trim();
+      const out = { id: def.id };
+      if (Number.isFinite(points) && points !== def.points) out.points = Math.max(0, Math.min(100, Math.round(points)));
+      if (pitch && pitch !== def.pitch) out.pitch = pitch;
+      return Object.keys(out).length > 1 ? out : null;
+    })
+    .filter(Boolean);
+  next.weakChecks = edits.length ? edits : null;
+  if (next.followerMax < next.followerMin) [next.followerMin, next.followerMax] = [next.followerMax, next.followerMin];
   next.niches = readNiches(f);
   next.scripts = readEdits(f, 'script', LH.DEFAULT_SCRIPTS);
   next.emails = readEdits(f, 'email', LH.DEFAULT_EMAILS);
@@ -1621,6 +1677,25 @@ function bind() {
         if (r && r.error) return toast(r.error);
         return toast(`Lead Hunter will never email “${l.pageName}”`, () => send({ type: 'email:never', id: l.id, remove: true }));
       }
+      case 'copy-pitch-line':
+        if (l) return copy(LH.quality(l, S.settings).pitch);
+        return;
+      case 'ig-lookup': {
+        if (!l) return;
+        const r = await send({ type: 'ig:lookup', ids: [l.id] });
+        return toast(r && r.error ? r.error : 'Looking up their followers with the Instagram API');
+      }
+      case 'ig-test': {
+        await saveSettings();
+        const r = await send({ type: 'ig:test' });
+        const out = $('[data-ig-test]');
+        out.textContent = !r ? 'Lead Hunter did not answer. Reload the extension.' : r.error ? `Not working: ${r.error}` : `Working: @${r.username}, ${r.followers} followers.`;
+        out.className = `hint ${r && !r.error ? 'ok' : 'err'}`;
+        return;
+      }
+      case 'ig-resume':
+        await send({ type: 'ig:resume' });
+        return toast('Instagram lookups resumed');
       case 'mark-via':
         if (!l) return;
         if (!markContacted(l, null, b.dataset.via)) {

@@ -161,6 +161,8 @@ const KEYWORD_ADS = {
     makeAd({ id: 78004, pageId: '5550004', pageName: 'Pure Derma Studio', link: 'https://purederma.example/facial', active: false, daysAgo: 200, endedDaysAgo: 150 }),
   ],
 };
+// Instagram Graph API (Business Discovery): business and creator accounts only.
+export const IG_API = { token: 'ig-test-token', account: '17841400000000001', followers: { instatintbar: 640, 'glossy.tint_bar': 2345 }, calls: [] };
 // Set to a page body to answer every Ad Library request with it (a login wall, a block).
 export const metaWall = { body: '' };
 function libraryPage(ads, count, pageInfo) {
@@ -192,6 +194,18 @@ export function metaHandler(req, res, url, host) {
     if (url.pathname === '/search' && url.searchParams.get('tbm') === 'map') return send(200, 'application/json; charset=utf-8', mapsXhr()), true;
   }
   if (SITES[host]) return send(200, 'text/html; charset=utf-8', SITES[host]), true;
+  if (host === 'graph.facebook.com') {
+    const json = (code, o) => (send(code, 'application/json', JSON.stringify(o)), true);
+    const fields = url.searchParams.get('fields') || '';
+    IG_API.calls.push(fields);
+    if (url.searchParams.get('access_token') !== IG_API.token) return json(400, { error: { message: 'Error validating access token: Session has expired', type: 'OAuthException', code: 190 } });
+    if (url.pathname !== `/v23.0/${IG_API.account}`) return json(400, { error: { message: 'Unsupported get request', code: 100, error_subcode: 33 } });
+    const m = fields.match(/^business_discovery\.username\(([^)]+)\)/);
+    if (!m) return json(200, { id: IG_API.account, username: 'rizcoreach', followers_count: 1200 });
+    const n = IG_API.followers[m[1]];
+    if (n == null) return json(400, { error: { message: 'Invalid user id', code: 110, error_subcode: 2207013 } });
+    return json(200, { id: IG_API.account, business_discovery: { id: '9', username: m[1], followers_count: n, media_count: 40 } });
+  }
   if (host === 'www.facebook.com' && url.pathname.startsWith('/plugins/page.php')) {
     const handle = new URL(url.searchParams.get('href')).pathname.replace(/\//g, '');
     return send(200, 'text/html', FB_IDS[handle] ? `<a href="https://www.facebook.com/${FB_IDS[handle]}?ref=embed_page">page</a>` : '<div>Page not found</div>'), true;

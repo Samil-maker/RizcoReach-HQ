@@ -544,6 +544,19 @@ Mussafah, Abu Dhabi`),
     queueKey: '',
     queueKeyAt: 0,
     adsCity: 'Dubai',
+    // Quality signals (Phase 3). Points and pitch lines for each website check are in weakChecks (null = defaults).
+    followerMin: 500,
+    followerMax: 10000,
+    newBusinessReviews: 10, // fewer Google reviews than this = new business
+    weakSiteMin: 30, // a website weakness score at or above this counts as a weak site
+    psiMin: 50, // PageSpeed mobile score under this fails the speed check
+    copyrightYears: 2, // a copyright year this many years old or more fails the freshness check
+    weakChecks: null,
+    // Instagram Graph API (Business Discovery), for follower counts. Your own token, from your own Meta app.
+    igAccountId: '',
+    igToken: '',
+    igApiVersion: 'v23.0',
+    igAuto: true, // look up followers for new businesses with an Instagram handle
     adCheckAll: false, // also check the Ad Library for businesses without a website (one name search each, slower)
     nameMatch: 0.92, // how close two names in the same area must be to count as one business (Jaro-Winkler, 0.8 to 1)
     bubbles: 3, // WhatsApp messages per pitch: 3 = greeting, body, closing · 2 = greeting with body, closing
@@ -787,7 +800,7 @@ Mussafah, Abu Dhabi`),
     s += reviews >= 300 ? 15 : reviews >= 100 ? 12 : reviews >= 30 ? 8 : reviews >= 10 ? 4 : 0;
     if (m.rating >= 4.5) s += 5;
     else if (m.rating && m.rating < 3.8) s -= 6;
-    const f = ig.followers || 0;
+    const f = LH.followersOf(p) || 0;
     if (f >= 1000 && f <= 100000) s += 8;
     else if (f > 150000) s -= 12;
     if (ig.lastPostAt) s += Date.now() - ig.lastPostAt < 30 * LH.DAY ? 6 : Date.now() - ig.lastPostAt > 120 * LH.DAY ? -6 : 0;
@@ -915,9 +928,13 @@ Mussafah, Abu Dhabi`),
     if (!lead.website) tags.push('No website');
     else if (LH.siteDown(lead)) tags.push('Site down');
     if (!LH.scriptFor(lead).script) tags.push('Running ads');
+    const q = LH.quality(lead, ctx.settings);
+    if (q.weak && !LH.siteDown(lead)) tags.push('Weak site'); // a site that is down says so already
     const g = googleRating(lead);
     if (g.rating >= 4 && g.reviews >= 25) tags.push('Good reviews');
+    else if (q.newBusiness) tags.push('New business');
     else if (g.known && g.reviews < 25) tags.push('Growing');
+    if (q.inBand) tags.push('Followers in range');
     return tags;
   };
   /** The one-line summary the phone queue shows: "No website", "No Meta ads · Good reviews". */
@@ -970,6 +987,7 @@ Mussafah, Abu Dhabi`),
       city: LH.cityOf(l.area, settings.adsCity || 'Dubai'),
       found_on: l.kind !== 'prospect' ? 'Facebook and Instagram' : ig.username && !m.placeId ? 'Instagram' : 'Google Maps',
       website_line: LH.siteDown(l) ? "your website wasn't loading when I checked" : "couldn't find a website for you",
+      pitch: LH.quality(l, settings).pitch,
       my_name: settings.myName || '',
       agency: settings.agency || '',
       my_phone: settings.myPhone || '',
@@ -1134,6 +1152,134 @@ Mussafah, Abu Dhabi`),
     const parts = host.split('.');
     const n = parts.length >= 3 && SECOND_LEVEL.test(parts.slice(-2).join('.')) ? 3 : 2;
     return parts.slice(-n).join('.');
+  };
+
+  /* ------------------------------------------------------------- Quality signals */
+  /** A "no ads" verdict from before 1.8, when only live ads were looked at: it says nothing about past ads. */
+  LH.oldAdCheck = (a) => !!a && ['none', 'likely'].includes(a.state) && !a.v && !a.manual;
+  /** "2,345" · "12.5K" · "1.2M" · 840 -> a number, or null. */
+  LH.parseCount = (v) => {
+    if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+    const m = String(v || '').replace(/,/g, '').trim().match(/^(\d+(?:\.\d+)?)\s*([kKmM]?)$/);
+    if (!m) return null;
+    return Math.round(Number(m[1]) * (m[2] ? (/k/i.test(m[2]) ? 1e3 : 1e6) : 1));
+  };
+  /** Instagram followers: the official API's count first, else what the profile page showed when it was added. */
+  LH.followersOf = (lead) => {
+    const api = (lead && lead.igStats) || {};
+    if (typeof api.followers === 'number') return api.followers;
+    return LH.parseCount((((lead && lead.sources) || {}).instagram || {}).followers);
+  };
+
+  /*
+   * The website checks from the brief. Each failed check is saved as a reason with its points (the weakness score
+   * adds them up, at most 100) and a pitch line. The strongest reason gives the lead its pitch line.
+   * Lines are written the way Samil writes: casual, few commas, no semicolons, no dashes.
+   */
+  LH.WEAK_CHECKS = [
+    { id: 'site_down', label: 'Site down, 404 or parked', points: 40, pitch: "I noticed your website isn't loading right now so anyone who looks you up hits a dead end" },
+    { id: 'no_https', label: 'No HTTPS or an SSL error', points: 15, pitch: 'I noticed your site shows a Not secure warning in the browser and that puts people off before they even look' },
+    { id: 'slow_mobile', label: 'PageSpeed mobile score under the limit', points: 15, pitch: 'I noticed your site takes a while to open on phones and most people leave before it loads' },
+    { id: 'no_viewport', label: 'Not set up for phones (no viewport tag)', points: 15, pitch: "I noticed your site doesn't fit phone screens so people have to pinch and zoom to read it" },
+    { id: 'no_contact', label: 'No WhatsApp button and no contact form', points: 15, pitch: "I noticed there's no WhatsApp button or contact form on your site so people have no quick way to reach you" },
+    { id: 'free_builder', label: 'On a free builder address', points: 15, pitch: "I noticed your site is on a free builder address and that makes it harder for people to trust it" },
+    { id: 'old_copyright', label: 'Copyright year is old', points: 10, pitch: 'I noticed your site still says © {year} at the bottom so it looks like nobody is running it' },
+  ];
+  const NO_SITE = {
+    id: 'no_website',
+    label: 'No website',
+    pitch: { instagram: "I couldn't find a website for you, just your Instagram", facebook: "I couldn't find a website for you, just your Facebook page", linkinbio: "I couldn't find a website for you, just a link page", none: "I couldn't find a website for you" },
+  };
+  const AD_PITCH = { past: "I noticed you ran Meta ads before but nothing is running right now", none: "I noticed you're not running any Meta ads right now" };
+  /** The checks with your edits from Settings (points and pitch lines). */
+  LH.weakChecksFor = (settings = {}) => {
+    const mine = new Map((Array.isArray(settings.weakChecks) ? settings.weakChecks : []).map((c) => [c.id, c]));
+    return LH.WEAK_CHECKS.map((c) => {
+      const m = mine.get(c.id) || {};
+      return { ...c, points: Number.isFinite(Number(m.points)) && m.points !== '' ? Math.max(0, Math.min(100, Number(m.points))) : c.points, pitch: m.pitch ? String(m.pitch) : c.pitch };
+    });
+  };
+
+  /** Which website checks failed, passed, or could not be run yet. */
+  function websiteChecks(lead, s) {
+    const site = lead.site || {};
+    const host = LH.domainOf(lead.website || '');
+    const fail = new Map();
+    const pass = new Set();
+    const set = (id, failed, v) => (failed === null ? null : failed ? fail.set(id, v) : pass.add(id));
+    set('free_builder', LH.FREE_BUILDERS.some((b) => host === b || host.endsWith(`.${b}`)));
+    const issueIds = new Set((site.issues || []).map((i) => i.id));
+    if (site.state === 'error') {
+      const ssl = (site.issues || []).some((i) => i.id === 'unreachable' && /ssl/i.test(i.label));
+      set('no_https', ssl || null);
+      set('site_down', !ssl);
+    } else if (site.state === 'ok') {
+      set('site_down', !!site.parked);
+      if (!site.parked) {
+        set('no_https', site.https === false);
+        set('no_viewport', site.mobile === false);
+        const psi = (site.psi || {}).performance;
+        set('slow_mobile', typeof psi === 'number' ? psi < s.psiMin : null, psi);
+        const year = site.copyrightYear;
+        set('old_copyright', year ? year <= new Date().getFullYear() - s.copyrightYears : false, year);
+        // Newer checks know the WhatsApp button and the form apart; older ones only flagged "no call or WhatsApp" and "no form".
+        if (site.spa) set('no_contact', null);
+        else if ('whatsappButton' in site) set('no_contact', !site.whatsappButton && !site.contactForm);
+        else set('no_contact', issueIds.has('contactLinks') && issueIds.has('leadCapture'));
+      }
+    }
+    return { fail, pass };
+  }
+
+  /**
+   * Phase 3 signals for one lead: the website weakness score and its reasons, Instagram followers and the band,
+   * the new business flag, the pitch line, and a short list of signal ids for scoring and chips.
+   */
+  LH.quality = (lead, settings = {}) => {
+    const s = { ...LH.DEFAULT_SETTINGS, ...settings };
+    const l = lead || {};
+    const checks = LH.weakChecksFor(s);
+    const out = { website: null, weak: false, followers: null, inBand: null, newBusiness: null, reviews: null, pitch: '', signals: [] };
+
+    if (!l.website) {
+      const only = l.socials && (l.socials.instagram || LH.igHandle(l)) ? 'instagram' : l.socials && l.socials.facebook ? 'facebook' : l.socials && l.socials.linkinbio ? 'linkinbio' : 'none';
+      out.website = { score: null, noSite: true, only, reasons: [{ id: NO_SITE.id, label: only === 'none' ? 'No website' : `No website, only ${only === 'linkinbio' ? 'a link page' : only === 'instagram' ? 'Instagram' : 'Facebook'}`, points: 0, pitch: NO_SITE.pitch[only] }], passed: [], unknown: [] };
+      out.signals.push('no_website');
+    } else {
+      const { fail, pass } = websiteChecks(l, s);
+      const reasons = checks
+        .filter((c) => fail.has(c.id))
+        .map((c) => {
+          const v = fail.get(c.id);
+          const label = c.id === 'slow_mobile' && v != null ? `PageSpeed mobile ${v}/100 (under ${s.psiMin})` : c.id === 'old_copyright' && v ? `Copyright still says © ${v}` : c.label;
+          return { id: c.id, label, points: c.points, pitch: c.pitch.replace('{year}', v || '') };
+        })
+        .sort((a, b) => b.points - a.points);
+      const checked = ['ok', 'error'].includes((l.site || {}).state);
+      const score = checked || reasons.length ? Math.min(100, reasons.reduce((n, r) => n + r.points, 0)) : null;
+      out.website = { score, noSite: false, reasons, passed: checks.filter((c) => pass.has(c.id)).map((c) => c.id), unknown: checks.filter((c) => !fail.has(c.id) && !pass.has(c.id)).map((c) => c.id) };
+      out.weak = score != null && score >= s.weakSiteMin;
+      if (out.weak) out.signals.push('weak_site');
+    }
+
+    out.followers = LH.followersOf(l);
+    if (out.followers != null) {
+      out.inBand = out.followers >= s.followerMin && out.followers <= s.followerMax;
+      if (out.inBand) out.signals.push('follower_band');
+    }
+    const g = googleRating(l);
+    if (g.known) {
+      out.reviews = g.reviews;
+      out.newBusiness = g.reviews < s.newBusinessReviews;
+      if (out.newBusiness) out.signals.push('new_business');
+    }
+    const ad = l.kind === 'prospect' && !LH.oldAdCheck((l.adCheck || {})) ? (l.adCheck || {}).state : null;
+    if (ad === 'past') out.signals.push('ran_ads_before');
+
+    // The strongest reason gives the pitch line. A good website: the ad history speaks instead.
+    const top = out.website.reasons[0];
+    out.pitch = top ? top.pitch : AD_PITCH[ad === 'likely' ? 'none' : ad] || '';
+    return out;
   };
 
   /* ------------------------------------------------------------ Contacted memory */

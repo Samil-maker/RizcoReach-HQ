@@ -323,6 +323,41 @@ businesses. Lead Hunter counts requests and stops at the monthly limit in
 Settings (default 950). After that, remove the key to search in a tab
 instead, or raise the limit.
 
+## Quality signals
+
+Every lead panel has a **Quality signals** section, and the Meta ads CSV has the same columns.
+
+- **Website weakness score (0 to 100).** Each failed check adds its points and is saved as a reason:
+
+  | Check | Points |
+  | --- | --- |
+  | Site down, 404 or parked | 40 |
+  | No HTTPS or an SSL error | 15 |
+  | PageSpeed mobile score under 50 | 15 |
+  | Not set up for phones (no viewport tag) | 15 |
+  | No WhatsApp button and no contact form | 15 |
+  | On a free builder address (wixsite.com, godaddysites.com…) | 15 |
+  | Copyright year 2 or more years old | 10 |
+
+  30 or more is a **Weak site** (a tag you can filter on). A business with no website, or only an Instagram,
+  Facebook or link page, is saved as that reason instead. The PageSpeed check only runs when PageSpeed is set
+  up in Settings > Enrichment; until then it shows as not checked and adds nothing.
+- **Pitch line.** The failed check with the most points gives the lead one line, written casually with no
+  semicolons or dashes, for example "I noticed your site shows a Not secure warning in the browser and that puts
+  people off before they even look". A good website gets a line from its ad history instead. Copy it from the
+  panel, or use `{{pitch}}` in your scripts.
+- **Instagram followers in your range** (500 to 10,000 by default). Counts come from Meta's official Instagram
+  Graph API (Business Discovery) with your own token; Lead Hunter never opens Instagram for this. It can only
+  see business and creator accounts: a personal account shows as not found. Set it up in Settings > Quality
+  signals (the steps are written there), press **Save and test**, then use **Get Instagram followers** on
+  selected businesses, or leave automatic lookups on. A token that stops working, or a rate limit, pauses the
+  lookups with an alert. Profiles added with the Instagram button keep the count their page showed until the
+  API gives a fresh one.
+- **New business**: fewer than 10 Google reviews.
+
+Everything above is in Settings > Quality signals: the follower range, the review limit, the weak site limit,
+the PageSpeed and copyright limits, and each check's points and pitch line.
+
 ## One record per business, and who you already contacted
 
 - **No duplicates.** Two finds count as one business when they share a phone number, a website (`shop.gloss.ae` and `gloss.ae` are the same site; `gloss.wixsite.com` and `other.wixsite.com` are not), an Instagram handle, or a name that is nearly the same in the same area. Names are compared without LLC, FZE, FZCO, FZ-LLC, Trading, Est, Co, Services, Dubai and UAE, using Jaro-Winkler at 0.92 (Settings > Collecting). The second listing is added to the first record, so nothing is lost.

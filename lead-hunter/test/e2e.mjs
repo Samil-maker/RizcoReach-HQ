@@ -14,7 +14,7 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { makeAd, searchResponse, memStore } from './fixtures.mjs';
-import { metaHandler, checkLog, metaWall, PRESET_SEARCHES } from './meta-fixtures.mjs';
+import { metaHandler, checkLog, metaWall, IG_API, PRESET_SEARCHES } from './meta-fixtures.mjs';
 import { handle as queueHandle } from '../../netlify/functions/lead-queue.mts';
 import { handle as emailHandle } from '../../netlify/functions/email-queue.mts';
 
@@ -238,7 +238,7 @@ const ctx = await pw.chromium.launchPersistentContext(path.join(tmp, 'profile'),
   args: [
     `--disable-extensions-except=${EXT}`,
     `--load-extension=${EXT}`,
-    `--host-resolver-rules=MAP www.facebook.com 127.0.0.1:${PORT}, MAP *.example 127.0.0.1:${PORT}, MAP wa.me 127.0.0.1:${PORT}, MAP www.rizcoreach.ae 127.0.0.1:${PORT}, MAP www.google.com 127.0.0.1:${PORT}, MAP places.googleapis.com 127.0.0.1:${PORT}, MAP www.instagram.com 127.0.0.1:${PORT}`,
+    `--host-resolver-rules=MAP www.facebook.com 127.0.0.1:${PORT}, MAP *.example 127.0.0.1:${PORT}, MAP wa.me 127.0.0.1:${PORT}, MAP www.rizcoreach.ae 127.0.0.1:${PORT}, MAP www.google.com 127.0.0.1:${PORT}, MAP places.googleapis.com 127.0.0.1:${PORT}, MAP www.instagram.com 127.0.0.1:${PORT}, MAP graph.facebook.com 127.0.0.1:${PORT}`,
     '--ignore-certificate-errors',
     '--no-proxy-server',
   ],
@@ -740,6 +740,9 @@ try {
   const [head2, ...rows2] = parseCsv(fs.readFileSync(await dl2.path(), 'utf8'));
   assert.deepEqual(head2.slice(0, 5), ['priority', 'business', 'niche', 'area', 'meta_ads']);
   assert.ok(head2.includes('instagram') && head2.includes('email'));
+  assert.deepEqual(head2.slice(8, 14), ['website_weakness', 'weakness_reasons', 'instagram_followers', 'followers_in_range', 'new_business', 'pitch_line']);
+  const instaRow = rows2.find((r) => r[1] === 'Insta Tint Bar');
+  assert.deepEqual([instaRow[head2.indexOf('weakness_reasons')], instaRow[head2.indexOf('pitch_line')]], ['No website, only Instagram', "I couldn't find a website for you, just your Instagram"]);
   assert.equal(rows2.length, 9, '9 prospects');
   assert.equal(rows2.find((r) => r[1] === 'Insta Tint Bar')[head2.indexOf('instagram')], 'https://www.instagram.com/instatintbar/');
   assert.equal(rows2.find((r) => r[1] === 'Glossy PPF Studio')[head2.indexOf('niche')], 'Car detailing studios');
@@ -1229,6 +1232,65 @@ try {
   await igBtn.waitFor({ state: 'detached' });
   if (SHOTS) await ig.screenshot({ path: `${SHOTS}/16-instagram.png` });
   await ig.close();
+
+  /* ---------------- Quality signals: website checks, followers from the official Instagram API, pitch line */
+  await dash.bringToFront();
+  await dash.click('[data-view="settings"]');
+  await dash.fill('[name="igAccountId"]', IG_API.account);
+  await dash.fill('[name="igToken"]', IG_API.token);
+  await dash.click('[data-act="ig-test"]');
+  await dash.waitForFunction(() => document.querySelector('[data-ig-test]').textContent === 'Working: @rizcoreach, 1200 followers.');
+  assert.equal((await storage('settings')).settings.igApiVersion, 'v23.0');
+  const instaLead = (await prospectsNow()).find((l) => l.pageName === 'Insta Tint Bar');
+  const glossyIg = 'p:i:glossy.tint_bar';
+  const lookup = await sw.evaluate((ids) => handlers['ig:lookup']({ ids }), [instaLead.id, glossyIg, 'p:i:luxe.lash.dxb', by('Wash Wizards').id]);
+  assert.deepEqual(lookup, { queued: 3, noHandle: 1 });
+  await waitFor(async () => !((await storage('igQueue')).igQueue || []).length, 30000, 'Instagram lookups');
+  assert.deepEqual([(await lead(instaLead.id)).igStats.followers, (await lead(glossyIg)).igStats.followers], [640, 2345]);
+  assert.equal((await lead(glossyIg)).igStats.from, 'api');
+  assert.match((await lead('p:i:luxe.lash.dxb')).igStats.error, /Invalid user id/, 'a personal account is not found');
+  assert.ok(IG_API.calls.includes('business_discovery.username(instatintbar){followers_count,media_count,username}'));
+  assert.match((await storage('problems')).problems.instagram[0][1], /^@luxe\.lash\.dxb: Invalid user id/);
+  // The lead panel: no website, only Instagram; followers in range; the pitch line to copy.
+  await dash.click('[data-view="ads"]');
+  await dash.selectOption('[data-af="status"]', 'all');
+  await dash.check('[data-af="contactedBefore"]');
+  await dash.click(`[data-ads-rows] tr[data-id="${instaLead.id}"] [data-open]`);
+  await dash.waitForSelector('.drawer.open [data-quality-sec]');
+  const qText = await dash.textContent('.drawer [data-quality-sec]');
+  assert.match(qText, /I couldn't find a website for you, just your Instagram/);
+  assert.match(qText, /✗ No website, only Instagram/);
+  assert.match(qText, /640 followers \(official API, .*\) In range 500 to 10K/);
+  assert.match(qText, /18 Google reviews not new/);
+  if (SHOTS) await dash.screenshot({ path: `${SHOTS}/21-quality.png` });
+  await dash.click('[data-act="close"]');
+  // A website that passes: its checks are listed, PageSpeed waits for a key.
+  const glossyPpf = (await prospectsNow()).find((l) => l.pageName === 'Glossy PPF Studio');
+  await dash.click(`[data-ads-rows] tr[data-id="${glossyPpf.id}"] [data-open]`);
+  await dash.waitForSelector('.drawer.open [data-quality-sec]');
+  const gText = await dash.textContent('.drawer [data-quality-sec]');
+  assert.match(gText, /Website weakness0\/100 not weak/);
+  assert.match(gText, /✓ No HTTPS or an SSL error/);
+  assert.match(gText, /PageSpeed mobile score under the limit: needs PageSpeed/);
+  await dash.click('[data-act="close"]');
+  // An expired token: lookups pause with an alert. Fix it and Resume.
+  await sw.evaluate(async () => {
+    const { settings } = await chrome.storage.local.get('settings');
+    await chrome.storage.local.set({ settings: { ...settings, igToken: 'expired' } });
+  });
+  await sw.evaluate((ids) => handlers['ig:lookup']({ ids }), [glossyIg]);
+  await waitFor(async () => (await storage('igPaused')).igPaused === true, 20000, 'lookups paused');
+  assert.match((await storage('alerts')).alerts.instagram.text, /Session has expired/);
+  await dash.waitForSelector('[data-alert="instagram"]');
+  assert.match(await dash.textContent('[data-alert="instagram"]'), /Instagram API paused: .*Check the token and account id in Settings/);
+  await sw.evaluate(async (token) => {
+    const { settings } = await chrome.storage.local.get('settings');
+    await chrome.storage.local.set({ settings: { ...settings, igToken: token } });
+  }, IG_API.token);
+  await dash.click('[data-act="ig-resume"]');
+  await waitFor(async () => !((await storage('igQueue')).igQueue || []).length, 20000, 'lookups after resume');
+  assert.ok(!(await storage('alerts')).alerts.instagram);
+  await dash.uncheck('[data-af="contactedBefore"]');
 
   // Popup renders stats.
   const popup = await ctx.newPage();

@@ -68,7 +68,9 @@ function sourceCell(l) {
   const ig = (l.sources || {}).instagram;
   const parts = [];
   if (m) parts.push(`<span>Maps ${m.rating ? `<b>${esc(m.rating)}★</b>` : ''} <span class="muted">(${esc(m.reviews || 0)})</span></span>`);
-  if (ig) parts.push(`<span>IG <b>${esc(compactNum(ig.followers))}</b> <span class="muted">@${esc(ig.username)}</span></span>`);
+  const followers = LH.followersOf(l);
+  const handle = LH.igHandle(l);
+  if (ig || followers != null) parts.push(`<span>IG <b>${followers != null ? esc(compactNum(followers)) : '–'}</b> <span class="muted">@${esc((ig && ig.username) || handle)}</span></span>`);
   return `<div class="src">${parts.join('') || '<span class="muted">–</span>'}</div>`;
 }
 
@@ -150,8 +152,12 @@ function renderFinderStatus() {
   if (notes.length) parts.push(`<span class="err" style="margin:0">${esc(notes.join(' · '))}</span>`);
   // A login wall, checkpoint or block paused a source: say so and leave it to you.
   for (const [src, a] of Object.entries(S.alerts)) {
-    const resume = src === 'maps' ? 'finder-resume' : 'adcheck-resume';
-    parts.push(`<span class="err alert" style="margin:0" data-alert="${esc(src)}"><b>${esc(SOURCE_LABEL[src] || src)} paused:</b> ${esc(a.text)}. Open the ${src === 'maps' ? 'Google Maps' : 'Ad Library'} tab${a.url ? ` (<a href="${esc(safeHref(a.url))}" target="_blank" rel="noopener noreferrer">this search</a>)` : ''}, sort it out, then press Resume. Nothing tries to get past it.</span><button class="btn sm" data-act="${resume}">Resume</button>`);
+    const resume = { maps: 'finder-resume', adlib: 'adcheck-resume', instagram: 'ig-resume' }[src] || 'adcheck-resume';
+    const what =
+      src === 'instagram'
+        ? 'Check the token and account id in Settings > Quality signals, then press Resume.'
+        : `Open the ${src === 'maps' ? 'Google Maps' : 'Ad Library'} tab${a.url ? ` (<a href="${esc(safeHref(a.url))}" target="_blank" rel="noopener noreferrer">this search</a>)` : ''}, sort it out, then press Resume. Nothing tries to get past it.`;
+    parts.push(`<span class="err alert" style="margin:0" data-alert="${esc(src)}"><b>${esc(SOURCE_LABEL[src] || src)} paused:</b> ${esc(a.text)}. ${what}</span><button class="btn sm" data-act="${resume}">Resume</button>`);
   }
   if (waiting) parts.push(`<span class="m"><span class="spin"></span> Ad Library checks: ${waiting} left${S.adPaused ? ' (paused)' : ''}</span><button class="btn sm" data-act="${S.adPaused ? 'adcheck-resume' : 'adcheck-pause'}">${S.adPaused ? 'Resume' : 'Pause'} checks</button>`);
   el.innerHTML = parts.join('');
@@ -254,6 +260,7 @@ function prospectDrawerHtml(l) {
       </div>
     </section>
     ${pitchSection(l)}
+    ${qualitySection(l)}
     ${l.website ? siteSection(l) : `<section class="d-sec" data-site-sec><h3>Website</h3><p class="muted">No website listed on Google Maps.</p>
       <form class="inline-form" data-set-website><input class="inp" name="website" placeholder="Know their website? Paste it here" /><button class="btn sm" type="submit">Check it</button></form></section>`}
     ${contactSection(l)}
@@ -268,10 +275,11 @@ function prospectDrawerHtml(l) {
 
 /* --------------------------------------------------------------------- csv */
 function exportProspectsCsv(list) {
-  const head = ['priority', 'business', 'niche', 'area', 'meta_ads', 'meta_ad_status', 'active_ads', 'last_ad_date', 'ad_library_search', 'google_rating', 'google_reviews', 'google_maps', 'website', 'website_score', 'tags', 'phone', 'whatsapp_link', 'whatsapp_message_link', 'email', 'instagram', 'address', 'status', 'notes', 'found_on'];
+  const head = ['priority', 'business', 'niche', 'area', 'meta_ads', 'meta_ad_status', 'active_ads', 'last_ad_date', 'website_weakness', 'weakness_reasons', 'instagram_followers', 'followers_in_range', 'new_business', 'pitch_line', 'ad_library_search', 'google_rating', 'google_reviews', 'google_maps', 'website', 'website_score', 'tags', 'phone', 'whatsapp_link', 'whatsapp_message_link', 'email', 'instagram', 'address', 'status', 'notes', 'found_on'];
   const rows = list.map((l) => {
     const m = (l.sources || {}).maps || {};
     const a = l.adCheck || {};
+    const q = LH.quality(l, S.settings);
     const best = LH.bestPhone(l);
     const wa = LH.whatsappTarget(l);
     return [
@@ -283,6 +291,12 @@ function exportProspectsCsv(list) {
       LH.adStatus(l).status || '',
       a.activeAds || '',
       a.lastAdAt ? new Date(a.lastAdAt).toISOString().slice(0, 10) : '',
+      q.website.score ?? '',
+      q.website.reasons.map((r) => r.label).join('; '),
+      q.followers ?? '',
+      q.inBand == null ? '' : q.inBand ? 'yes' : 'no',
+      q.newBusiness == null ? '' : q.newBusiness ? 'yes' : 'no',
+      q.pitch,
       a.searchUrl || '',
       m.rating || '',
       m.reviews || '',
@@ -438,6 +452,11 @@ async function prospectAction(act, b, l) {
       await send({ type: 'adcheck:recheck', ids: [l.id] });
       toast('Checking the Ad Library again');
       return true;
+    case 'ads-bulk-ig': {
+      const r = await send({ type: 'ig:lookup', ids: selected() });
+      toast(r && r.error ? r.error : `Looking up ${r.queued} Instagram account${r.queued === 1 ? '' : 's'}${r.noHandle ? `. ${r.noHandle} have no Instagram` : ''}`);
+      return true;
+    }
     case 'adcheck-set':
       if (!l) return true;
       await send({ type: 'adcheck:set', id: l.id, state: b.dataset.state });
