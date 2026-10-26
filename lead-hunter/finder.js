@@ -238,7 +238,7 @@ async function loadView(lead, url) {
  */
 async function checkOne(lead) {
   const country = lead.countries[0] && lead.countries[0] !== 'ALL' ? lead.countries[0] : 'AE';
-  const base = { checkedAt: now() };
+  const base = { checkedAt: now(), v: 2 }; // v2: live and past ads (before 1.8 only live ads were looked at)
   const steps = [];
   const blocked = (r, url) => ({ ...base, blocked: true, reason: r.reason || 'Facebook asked to log in or blocked the search', searchUrl: url });
   // Only the first ads load. When none of them is live but there are more, load the live ones on their own.

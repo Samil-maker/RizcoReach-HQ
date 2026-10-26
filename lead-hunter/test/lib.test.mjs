@@ -646,9 +646,12 @@ test('ad history: live now, ran before, never, with the newest dates', () => {
 
 test('ad status names for every kind of lead', () => {
   const p = (state, extra = {}) => ({ kind: 'prospect', adCheck: { state, ...extra } });
-  assert.deepEqual(LH.adStatus(p('past', { lastAdAt: 9 })), { status: 'ran_before_inactive_now', sure: true, lastAdAt: 9 });
-  assert.deepEqual(LH.adStatus(p('none')), { status: 'never_ran', sure: true, lastAdAt: null });
-  assert.deepEqual(LH.adStatus(p('likely')), { status: 'never_ran', sure: false, lastAdAt: null });
+  assert.deepEqual(LH.adStatus(p('past', { lastAdAt: 9, v: 2 })), { status: 'ran_before_inactive_now', sure: true, lastAdAt: 9 });
+  assert.deepEqual(LH.adStatus(p('none', { v: 2 })), { status: 'never_ran', sure: true, lastAdAt: null });
+  assert.deepEqual(LH.adStatus(p('likely', { v: 2 })), { status: 'never_ran', sure: false, lastAdAt: null });
+  // Before 1.8 only live ads were looked at: "no ads" then says nothing about the past. Your own verdict counts.
+  assert.deepEqual(LH.adStatus(p('none')), { status: null, sure: false, lastAdAt: null });
+  assert.equal(LH.adStatus(p('none', { manual: true })).status, 'never_ran');
   assert.equal(LH.adStatus(p('running')).status, 'active_now');
   assert.equal(LH.adStatus(p('skipped')).status, null);
   // Facebook advertisers: from their own ads.

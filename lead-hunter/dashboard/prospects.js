@@ -36,7 +36,9 @@ function filteredProspects() {
     // Running ads with a website and not messaged yet: skipped for outreach, shown only when asked for.
     if (skippedNew(l) && !f.skipped && f.ads !== 'running' && f.tag !== 'Running ads') continue;
     if (hideContacted(l, f) || !tagMatch(l, f.tag)) continue;
-    if (f.ads === 'pending' ? !['pending', 'queued', 'checking', 'skipped'].includes(ad) : f.ads === 'none' ? !['none', 'likely'].includes(ad) : f.ads && ad !== f.ads) continue;
+    // Old "no ads" checks (before 1.8) count as not checked: they never looked at past ads.
+    const old = LH.oldAdCheck(l.adCheck);
+    if (f.ads === 'pending' ? !old && !['pending', 'queued', 'checking', 'skipped'].includes(ad) : f.ads === 'none' ? old || !['none', 'likely'].includes(ad) : f.ads && ad !== f.ads) continue;
     if (f.niche && f.niche !== '__avoid' && LH.nicheOf(l, S.settings) !== f.niche) continue;
     if (f.heat && LH.heat(p) !== f.heat) continue;
     if (f.status === '' && l.status === 'skip') continue;
@@ -70,9 +72,11 @@ function sourceCell(l) {
   return `<div class="src">${parts.join('') || '<span class="muted">–</span>'}</div>`;
 }
 
+/** The label for a check; a "no ads" check from before 1.8 only looked at live ads. */
+const adState = (a) => (LH.oldAdCheck(a) ? ['likely', 'No live ads (old check)'] : AD_STATE[a.state || 'pending'] || AD_STATE.pending);
 function adCell(l) {
   const a = l.adCheck || {};
-  const [cls, label] = AD_STATE[a.state || 'pending'] || AD_STATE.pending;
+  const [cls, label] = adState(a);
   const spin = ['checking', 'queued'].includes(a.state) ? '<span class="spin"></span>' : '';
   return `<span class="ad-state ${cls}" title="${esc(a.reason || '')}">${spin}${esc(label + adExtra(a))}</span>`;
 }
@@ -197,7 +201,7 @@ function prospectDrawerHtml(l) {
   const m = (l.sources || {}).maps || null;
   const ig = (l.sources || {}).instagram || null;
   const a = l.adCheck || {};
-  const [cls, label] = AD_STATE[a.state || 'pending'] || AD_STATE.pending;
+  const [cls, label] = adState(a);
   const links = [
     LH.igHandle(l) && `<a href="https://www.instagram.com/${esc(encodeURIComponent(LH.igHandle(l)))}/" target="_blank" rel="noopener noreferrer">@${esc(LH.igHandle(l))}</a>`,
     m && m.mapsUrl && `<a href="${esc(safeHref(m.mapsUrl))}" target="_blank" rel="noopener noreferrer">Google Maps</a>`,
@@ -218,6 +222,7 @@ function prospectDrawerHtml(l) {
     pending: 'Not checked yet.',
     skipped: 'Not checked: without a website they get the website script either way. Use Check ads again if you want to know.',
   }[a.state || 'pending'];
+  const adNote = LH.oldAdCheck(a) ? 'Checked before version 1.8, when only live ads were looked at. Press Check again to see whether they ran ads before.' : adText;
   return `
     <header class="d-head">${avatar(l)}
       <div style="min-width:0"><h2>${esc(l.pageName || 'Unknown')}</h2>
@@ -239,7 +244,7 @@ function prospectDrawerHtml(l) {
       ${contactedRow(l)}
     </section>
     <section class="d-sec"><h3>Meta Ad Library check</h3>
-      <p>${esc(adText)}</p>
+      <p>${esc(adNote)}</p>
       ${matches ? `<ul class="matches">${matches}</ul>` : ''}
       <div class="row">
         <button class="btn sm" data-act="adcheck-one">Check again</button>
@@ -274,7 +279,7 @@ function exportProspectsCsv(list) {
       l.pageName,
       LH.nicheOf(l, S.settings),
       l.area,
-      (AD_STATE[a.state || 'pending'] || AD_STATE.pending)[1],
+      adState(a)[1],
       LH.adStatus(l).status || '',
       a.activeAds || '',
       a.lastAdAt ? new Date(a.lastAdAt).toISOString().slice(0, 10) : '',

@@ -80,6 +80,8 @@
 
   /* Meta ad status, in the words of the brief. "likely" is never_ran without proof (their page could not be checked). */
   LH.AD_STATUS = { running: 'active_now', past: 'ran_before_inactive_now', none: 'never_ran', likely: 'never_ran' };
+  /** A "no ads" verdict from before 1.8, when only live ads were looked at: it says nothing about past ads. */
+  LH.oldAdCheck = (a) => !!a && ['none', 'likely'].includes(a.state) && !a.v && !a.manual;
   /** { status, sure, lastAdAt } for any lead. Facebook advertisers come from their ads, so their ads answer it. */
   LH.adStatus = (lead) => {
     if (!lead) return { status: null, sure: false, lastAdAt: null };
@@ -88,6 +90,7 @@
       return v ? { status: LH.AD_STATUS[v.state], sure: true, lastAdAt: v.lastAdAt || null } : { status: null, sure: false, lastAdAt: null };
     }
     const a = lead.adCheck || {};
+    if (LH.oldAdCheck(a)) return { status: null, sure: false, lastAdAt: null };
     const status = LH.AD_STATUS[a.state] || null;
     return { status, sure: !!status && a.state !== 'likely', lastAdAt: a.lastAdAt || null };
   };
