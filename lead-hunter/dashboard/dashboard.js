@@ -1281,7 +1281,7 @@ function bind() {
         return copy(text.replace(/var SITE = '__SITE__'/, () => `var SITE = ${js(queueSite)}`).replace(/var KEY = '__KEY__'/, () => `var KEY = ${js(queueKey)}`));
       }
       case 'backup': {
-        const settings = { ...S.settings, pagespeedKey: '', placesKey: '', queueKey: '' }; // keep keys out of backups
+        const settings = { ...S.settings, pagespeedKey: '', placesKey: '', queueKey: '', geminiKey: '', anthropicKey: '', igToken: '', redditSecret: '' }; // keep keys out of backups
         return download(`lead-hunter-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), settings, leads: [...S.leads.values()] }), 'application/json');
       }
       case 'wipe':
@@ -1341,10 +1341,10 @@ function bind() {
       case 'ai-test': {
         await saveSettings();
         const out = $('[data-ai-test]');
-        out.textContent = 'Asking Claude…';
+        out.textContent = 'Asking the AI…';
         out.className = 'hint';
         const r = await send({ type: 'ai:test' });
-        out.textContent = !r ? 'Lead Hunter did not answer. Reload the extension.' : r.error ? `Not working: ${r.error}` : `Working. Claude read a test post: ${r.result.is_buyer ? 'a buyer' : 'not a buyer'}, needs ${r.result.service_needed.replace(/_/g, ' ')}, score ${r.result.intent_score}.`;
+        out.textContent = !r ? 'Lead Hunter did not answer. Reload the extension.' : r.error ? `Not working: ${r.error}` : `Working. ${r.name} read a test post: ${r.result.is_buyer ? 'a buyer' : 'not a buyer'}, needs ${r.result.service_needed.replace(/_/g, ' ')}, score ${r.result.intent_score}.`;
         out.className = `hint ${r && !r.error ? 'ok' : 'err'}`;
         return;
       }

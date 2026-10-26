@@ -437,10 +437,12 @@
         <div class="grid2" data-intent-lists></div>
         <label class="field"><span class="lbl">Seller words <small>a post with any of these is someone selling, and is skipped</small></span><textarea class="inp" rows="5" data-seller-words></textarea></label>
         <h3 class="sub">AI check</h3>
-        <p class="hint">With your Claude API key, Claude reads every post the keywords catch and says whether the person is really a buyer, what they need, what business they are and where, and how urgent it is. Posts it rules out are hidden (tick Show not buyers to see them). It uses Claude Haiku 5.5, about 0.2 US cents per post. Get a key at console.anthropic.com > API keys. The key stays in this browser and is only sent to Claude.</p>
+        <p class="hint">An AI reads every post the keywords catch and says whether the person is really a buyer, what they need, what business they are and where, and how urgent it is. Posts it rules out are hidden (tick Show not buyers to see them). Use a free Google AI Studio key: aistudio.google.com &gt; Get API key &gt; Create API key. On Google's free tier there is a daily limit (the check waits and carries on when it is reached), and Google may use what is sent to improve its products; these are public posts. Or use a Claude key (console.anthropic.com &gt; API keys, about 0.2 US cents a post). If both are filled in, Gemini is used. Keys stay in this browser and are only sent to Google or Anthropic.</p>
         <div class="grid2">
-          <label class="field"><span class="lbl">Claude API key</span><input class="inp" name="anthropicKey" type="password" autocomplete="off" placeholder="sk-ant-…" /></label>
-          <label class="field"><span class="lbl">Model</span><input class="inp" name="aiModel" placeholder="claude-haiku-5-5" /></label>
+          <label class="field"><span class="lbl">Google AI Studio key <small>free</small></span><input class="inp" name="geminiKey" type="password" autocomplete="off" placeholder="AIza…" /></label>
+          <label class="field"><span class="lbl">Gemini model</span><input class="inp" name="geminiModel" placeholder="gemini-flash-lite-latest" /></label>
+          <label class="field"><span class="lbl">Claude API key <small>optional, instead of Gemini</small></span><input class="inp" name="anthropicKey" type="password" autocomplete="off" placeholder="sk-ant-…" /></label>
+          <label class="field"><span class="lbl">Claude model</span><input class="inp" name="aiModel" placeholder="claude-haiku-5-5" /></label>
         </div>
         <label class="chk"><input type="checkbox" name="aiAuto" /> Check new posts as they come in</label>
         <div class="row"><button type="button" class="btn" data-act="ai-test">Save and test</button><span class="hint" data-ai-test></span></div>

@@ -273,9 +273,12 @@ for hire
 
   /* ------------------------------------------------------------- AI check */
   /*
-   * Claude reads a post the rules kept and says whether the person is really a buyer for what you sell. The answer
-   * is JSON in a fixed shape (structured outputs), so it can be read without guessing.
+   * An AI reads a post the rules kept and says whether the person is really a buyer for what you sell: Google's
+   * Gemini (a free AI Studio key) or Claude, whichever key you filled in (Gemini when both are). The answer is JSON
+   * in a fixed shape (structured output), so it can be read without guessing.
    */
+  LH.AI_NAMES = { gemini: 'Gemini', claude: 'Claude' };
+  LH.aiProvider = (settings = {}) => (settings.geminiKey ? 'gemini' : settings.anthropicKey ? 'claude' : '');
   LH.AI_SCHEMA = {
     type: 'object',
     additionalProperties: false,
@@ -305,7 +308,7 @@ Fill in every field:
 - summary: one plain sentence saying who they are and what they want.
 - intent_score: 0 to 100, how likely they are to pay for these services soon. Under 30 when they are not a buyer.`;
 
-  /** The request for one post: Claude's Messages API, called straight from the extension with your key. */
+  /** The request for one post, called straight from the extension with your key. */
   LH.aiRequest = (post, settings = {}) => {
     const lines = [
       `Source: ${post.source}${post.place ? ` (${post.place})` : ''}`,
@@ -314,7 +317,25 @@ Fill in every field:
       post.title && !post.job ? `Title: ${post.title}` : '',
       `Text: ${String(post.text || '').slice(0, 3000) || '(no text)'}`,
     ].filter(Boolean);
+    if (LH.aiProvider(settings) === 'gemini') {
+      // Gemini API generateContent. The "-latest" model names follow Google's newest model, so they don't retire.
+      const model = String(settings.geminiModel || 'gemini-flash-lite-latest').replace(/^models\//, '');
+      return {
+        provider: 'gemini',
+        url: `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+        init: {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-goog-api-key': settings.geminiKey },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: LH.AI_SYSTEM }] },
+            contents: [{ role: 'user', parts: [{ text: lines.join('\n') }] }],
+            generationConfig: { responseMimeType: 'application/json', responseJsonSchema: LH.AI_SCHEMA, maxOutputTokens: 8192 },
+          }),
+        },
+      };
+    }
     return {
+      provider: 'claude',
       url: 'https://api.anthropic.com/v1/messages',
       init: {
         method: 'POST',
@@ -335,11 +356,56 @@ Fill in every field:
     };
   };
 
+  /** The JSON answer, checked and with the score kept between 0 and 100. */
+  function aiResult(text, name) {
+    let result;
+    try {
+      result = JSON.parse(text);
+    } catch {
+      return { error: `${name} did not answer in the expected shape` };
+    }
+    if (!result || typeof result.is_buyer !== 'boolean') return { error: `${name} did not answer in the expected shape` };
+    result.intent_score = Math.max(0, Math.min(100, Math.round(Number(result.intent_score) || 0)));
+    return { result };
+  }
+
+  /** Gemini's answer. Free tier limits come back as 429 with how long to wait. */
+  function geminiParse(status, data) {
+    const err = (data && data.error) || {};
+    const message = err.message || '';
+    const details = Array.isArray(err.details) ? err.details : [];
+    const reasons = details.map((d) => d && d.reason).filter(Boolean);
+    if (reasons.includes('API_KEY_INVALID') || (status === 400 && /api key/i.test(message)) || status === 401 || status === 403)
+      return { error: `Google did not accept your API key (${status})${message ? `: ${message}` : ''}`, stop: true };
+    if (status === 404) return { error: `Gemini could not find that model. Change it in Settings > Intent Radar${message ? ` (${message})` : ''}`, stop: true };
+    if (status === 400 && err.status === 'FAILED_PRECONDITION') return { error: `Google says: ${message}`, stop: true };
+    if (status === 429 || status >= 500) {
+      const delay = details.map((d) => d && d.retryDelay).find(Boolean);
+      const seconds = parseFloat(delay) || 0;
+      const daily = /per ?day/i.test(JSON.stringify(details) + message);
+      if (status >= 500) return { error: `Gemini is busy (${status}), trying again later`, retry: true, wait: 60000 };
+      return {
+        error: daily ? "Google's free daily limit is used up, carrying on later" : 'Gemini rate limit, trying again later',
+        retry: true,
+        wait: Math.max(daily ? 3600 : 15, seconds || 60) * 1000,
+      };
+    }
+    if (status !== 200 || !data) return { error: `Gemini answered ${status}${message ? `: ${message}` : ''}` };
+    const block = data.promptFeedback && data.promptFeedback.blockReason;
+    if (block) return { error: `Gemini declined to read this post (${block})` };
+    const cand = (data.candidates || [])[0] || {};
+    const text = ((cand.content || {}).parts || []).filter((p) => p && !p.thought && typeof p.text === 'string').map((p) => p.text).join('');
+    if (cand.finishReason === 'MAX_TOKENS') return { error: 'Gemini ran out of room answering' };
+    if (!text) return { error: `Gemini declined to read this post${cand.finishReason ? ` (${cand.finishReason})` : ''}` };
+    return aiResult(text, 'Gemini');
+  }
+
   /**
    * The answer: { result } or { error, retry, stop }. retry: try again later (busy, rate limited);
    * stop: nothing will work until you fix it (wrong key, no credit), so the checks pause.
    */
-  LH.aiParse = (status, data, retryAfter) => {
+  LH.aiParse = (status, data, retryAfter, provider = 'claude') => {
+    if (provider === 'gemini') return geminiParse(status, data);
     const message = (data && data.error && data.error.message) || '';
     if (status === 401 || status === 403) return { error: `Claude did not accept your API key (${status})${message ? `: ${message}` : ''}`, stop: true };
     if (status === 400 && /credit|billing|balance/i.test(message)) return { error: `Claude says: ${message}`, stop: true };
@@ -348,18 +414,10 @@ Fill in every field:
     if (data.stop_reason === 'refusal') return { error: 'Claude declined to read this post' };
     if (data.stop_reason === 'max_tokens') return { error: 'Claude ran out of room answering' };
     const text = ((data.content || []).find((b) => b && b.type === 'text') || {}).text || '';
-    let result;
-    try {
-      result = JSON.parse(text);
-    } catch {
-      return { error: 'Claude did not answer in the expected shape' };
-    }
-    if (typeof result.is_buyer !== 'boolean') return { error: 'Claude did not answer in the expected shape' };
-    result.intent_score = Math.max(0, Math.min(100, Math.round(Number(result.intent_score) || 0)));
-    return { result };
+    return aiResult(text, 'Claude');
   };
 
-  /** A post with Claude's verdict on it. Its kinds follow what Claude says they need; hiring and owner pain stay. */
+  /** A post with the AI's verdict on it. Its kinds follow what the AI says they need; hiring and owner pain stay. */
   LH.aiApply = (post, result, now = Date.now()) => {
     const need = { website: ['website'], seo: ['website'], marketing: ['marketing'], website_and_marketing: ['website', 'marketing'] }[result.service_needed] || [];
     const keep = (post.categories || []).filter((c) => c === 'hiring' || c === 'pain');

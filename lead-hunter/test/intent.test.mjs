@@ -75,9 +75,49 @@ test('Reddit listings: posts with their age and link, pinned and removed ones le
   assert.deepEqual(LH.redditPosts(null, 'dubai'), []);
 });
 
+test('AI check with Gemini: picked when its key is set, the request, and every kind of answer', () => {
+  const post = { id: 'reddit:a', source: 'reddit', place: 'r/dubai', author: 'u/sarah_dxb', title: 'Need a website for my bakery in JLT', text: 'Any recommendations?' };
+  assert.equal(LH.aiProvider({}), '');
+  assert.equal(LH.aiProvider({ anthropicKey: 'sk-ant' }), 'claude');
+  assert.equal(LH.aiProvider({ anthropicKey: 'sk-ant', geminiKey: 'AIza' }), 'gemini', 'Gemini when both keys are set');
+  const { provider, url, init } = LH.aiRequest(post, { geminiKey: 'AIza-test', geminiModel: 'models/gemini-flash-latest' });
+  assert.equal(provider, 'gemini');
+  assert.equal(url, 'https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent');
+  assert.deepEqual([init.method, init.headers['x-goog-api-key']], ['POST', 'AIza-test']);
+  assert.ok(!url.includes('key='), 'the key goes in a header, not the address');
+  const body = JSON.parse(init.body);
+  assert.equal(body.systemInstruction.parts[0].text, LH.AI_SYSTEM);
+  assert.equal(body.contents[0].parts[0].text, 'Source: reddit (r/dubai)\nPosted by: u/sarah_dxb\nTitle: Need a website for my bakery in JLT\nText: Any recommendations?');
+  assert.equal(body.generationConfig.responseMimeType, 'application/json');
+  assert.deepEqual(body.generationConfig.responseJsonSchema, LH.AI_SCHEMA);
+  assert.match(LH.aiRequest(post, { geminiKey: 'AIza' }).url, /models\/gemini-flash-lite-latest:generateContent$/, 'the default model');
+  // Answers.
+  const parse = (status, data) => LH.aiParse(status, data, null, 'gemini');
+  const answer = { is_buyer: true, service_needed: 'website', business_type: 'bakery', location: 'JLT, Dubai', urgency: 'high', summary: 'A bakery owner in JLT wants a website.', intent_score: -5 };
+  const ok = parse(200, { candidates: [{ content: { role: 'model', parts: [{ text: 'thinking…', thought: true }, { text: JSON.stringify(answer) }] }, finishReason: 'STOP' }] });
+  assert.deepEqual(ok.result, { ...answer, intent_score: 0 }, 'thoughts are skipped and the score is kept between 0 and 100');
+  const badKey = parse(400, { error: { code: 400, message: 'API key not valid. Please pass a valid API key.', status: 'INVALID_ARGUMENT', details: [{ '@type': 'type.googleapis.com/google.rpc.ErrorInfo', reason: 'API_KEY_INVALID' }] } });
+  assert.deepEqual([badKey.stop, /^Google did not accept your API key \(400\)/.test(badKey.error)], [true, true]);
+  assert.equal(parse(403, { error: { message: 'Permission denied' } }).stop, true);
+  assert.match(parse(404, { error: { message: 'models/gemini-9 is not found' } }).error, /could not find that model/);
+  assert.equal(parse(404, {}).stop, true);
+  assert.equal(parse(400, { error: { status: 'FAILED_PRECONDITION', message: 'User location is not supported for the API use.' } }).stop, true);
+  const minute = parse(429, { error: { code: 429, status: 'RESOURCE_EXHAUSTED', message: 'You exceeded your current quota', details: [{ '@type': 'type.googleapis.com/google.rpc.QuotaFailure', violations: [{ quotaId: 'GenerateRequestsPerMinutePerProjectPerModel-FreeTier' }] }, { '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '37s' }] } });
+  assert.deepEqual([minute.retry, minute.wait, minute.stop], [true, 37000, undefined], 'waits as long as Google says');
+  const day = parse(429, { error: { code: 429, status: 'RESOURCE_EXHAUSTED', message: 'You exceeded your current quota', details: [{ '@type': 'type.googleapis.com/google.rpc.QuotaFailure', violations: [{ quotaId: 'GenerateRequestsPerDayPerProjectPerModel-FreeTier' }] }, { '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '20s' }] } });
+  assert.deepEqual([day.retry, day.wait, /free daily limit/.test(day.error)], [true, 3600000, true], 'the daily limit waits at least an hour');
+  assert.deepEqual([parse(503, {}).retry, parse(503, {}).wait], [true, 60000]);
+  assert.match(parse(200, { promptFeedback: { blockReason: 'SAFETY' } }).error, /declined to read this post \(SAFETY\)/);
+  assert.match(parse(200, { candidates: [{ finishReason: 'SAFETY' }] }).error, /declined/);
+  assert.match(parse(200, { candidates: [{ content: { parts: [{ text: '{"is_buyer": tr' }] }, finishReason: 'MAX_TOKENS' }] }).error, /ran out of room/);
+  assert.match(parse(200, { candidates: [{ content: { parts: [{ text: 'not json' }] }, finishReason: 'STOP' }] }).error, /Gemini did not answer in the expected shape/);
+  assert.equal(parse(200, { candidates: [{ content: { parts: [{ text: 'not json' }] } }] }).stop, undefined, 'one odd answer does not pause the checks');
+});
+
 test('AI check: the request, every kind of answer, and what it does to a post', () => {
   const post = { id: 'reddit:a', source: 'reddit', place: 'r/dubai', author: 'u/sarah_dxb', title: 'Need a website for my bakery in JLT', text: 'Any recommendations?', categories: ['website'], summary: 'Need a website for my bakery in JLT', verified: false };
-  const { url, init } = LH.aiRequest(post, { anthropicKey: 'sk-ant-test', aiModel: 'claude-haiku-5-5' });
+  const { provider, url, init } = LH.aiRequest(post, { anthropicKey: 'sk-ant-test', aiModel: 'claude-haiku-5-5' });
+  assert.equal(provider, 'claude');
   assert.equal(url, 'https://api.anthropic.com/v1/messages');
   assert.deepEqual([init.method, init.headers['x-api-key'], init.headers['anthropic-version'], init.headers['anthropic-dangerous-direct-browser-access']], ['POST', 'sk-ant-test', '2026-10-21', 'true']);
   const body = JSON.parse(init.body);

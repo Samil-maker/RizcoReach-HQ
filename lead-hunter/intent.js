@@ -5,7 +5,7 @@
      mentions only), a few seconds apart;
    - Facebook groups and LinkedIn posts and jobs, only when you press Scan on a page you have open yourself.
    Every post goes through LH.intentProcess (lib/intent.js) and is saved once in IndexedDB (lib/intent-db.js).
-   With your Claude API key, Claude then reads each new post and says whether it is a real buyer (the AI check). */
+   With a Gemini (free) or Claude key, the AI then reads each new post and says whether it is a real buyer (the AI check). */
 
 /* --------------------------------------------------------------- badge */
 /** The icon: a red ! while a source is paused, else the number of new intent posts you have not seen. */
@@ -70,7 +70,7 @@ async function saveIntent(raws, source, opts = {}) {
 }
 
 /* ------------------------------------------------------------- AI check */
-const aiReady = (settings) => !!settings.anthropicKey;
+const aiReady = (settings) => !!LH.aiProvider(settings);
 async function bumpIntent() {
   await locked(async () => {
     const { intentState = {} } = await store.get('intentState');
@@ -86,17 +86,17 @@ async function queueAi(ids) {
   });
   runAi();
 }
-/** One post to Claude. Returns what LH.aiParse says. */
+/** One post to the AI (Gemini or Claude). Returns what LH.aiParse says. */
 async function aiCheckOne(post, settings) {
-  const { url, init } = LH.aiRequest(post, settings);
+  const { provider, url, init } = LH.aiRequest(post, settings);
   let res;
   try {
     res = await fetch(url, { ...init, signal: AbortSignal.timeout(60000) });
   } catch (e) {
-    return { error: `Could not reach Claude (${String(e.message || e)})`, retry: true, wait: 60000 };
+    return { error: `Could not reach ${LH.AI_NAMES[provider]} (${String(e.message || e)})`, retry: true, wait: 60000 };
   }
   const data = await res.json().catch(() => null);
-  return LH.aiParse(res.status, data, res.headers.get('retry-after'));
+  return LH.aiParse(res.status, data, res.headers.get('retry-after'), provider);
 }
 let aiBusy = false;
 async function runAi() {
@@ -112,7 +112,7 @@ async function runAi() {
       if (post) {
         const r = await aiCheckOne(post, settings);
         if (r.stop) {
-          await alertSource('ai', r.error, '', 'Check your Claude API key in Settings > Intent Radar, then press Resume on the Intent tab.');
+          await alertSource('ai', r.error, '', 'Check your AI key and model in Settings > Intent Radar, then press Resume on the Intent tab.');
           break;
         }
         if (r.retry) {
@@ -254,7 +254,7 @@ Object.assign(handlers, {
   /** Check posts with the AI now: the ones you pick, or every post not checked yet. */
   'ai:check': async (msg) => {
     const settings = await getSettings();
-    if (!aiReady(settings)) return { error: 'Add your Claude API key in Settings > Intent Radar first.' };
+    if (!aiReady(settings)) return { error: 'Add a Google AI Studio key (free) or a Claude key in Settings > Intent Radar first.' };
     const ids = msg.ids && msg.ids.length ? msg.ids : (await LH.intentDb.all()).filter((p) => !p.verified).map((p) => p.id);
     await store.set({ aiWaitUntil: 0 });
     await queueAi(ids);
@@ -263,9 +263,10 @@ Object.assign(handlers, {
   /** One tiny request with your key: does it work? */
   'ai:test': async () => {
     const settings = await getSettings();
-    if (!aiReady(settings)) return { error: 'Add your Claude API key first, then Save.' };
+    if (!aiReady(settings)) return { error: 'Add a Google AI Studio key or a Claude key first, then Save.' };
     const r = await aiCheckOne({ source: 'reddit', place: 'r/dubai', author: 'u/test', title: 'Need a website for my bakery in JLT, any recommendations?', text: '' }, settings);
-    return r.error ? { error: r.error } : { result: r.result };
+    const name = LH.AI_NAMES[LH.aiProvider(settings)];
+    return r.error ? { error: r.error, name } : { result: r.result, name };
   },
   /** You opened the Intent tab: the badge count goes. */
   'intent:seen': async () => {

@@ -1,5 +1,5 @@
 /* Lead Hunter dashboard: the Intent tab (people asking for help on Reddit, Facebook groups and LinkedIn), each post
-   confirmed or ruled out by the AI check when your Claude API key is set.
+   confirmed or ruled out by the AI check when a Gemini or Claude key is set.
    Loaded after dashboard.js and prospects.js and shares their helpers ($, esc, S, send, toast, copy…).
    Posts live in IndexedDB (lib/intent-db.js); the background bumps intentState.rev when they change. */
 
@@ -65,7 +65,7 @@ function intentCard(p) {
     ${lead ? `<p class="muted">Linked to your lead <button class="linkish" data-act="intent-lead" data-id="${esc(lead.id)}">${esc(lead.pageName)}</button>, which gets the heat bonus</p>` : ''}
     <div class="row">
       ${p.url ? `<a class="btn sm" href="${esc(safeHref(p.url))}" target="_blank" rel="noopener noreferrer">Open post</a>` : '<span class="muted">No link to this post</span>'}
-      ${!p.verified && S.settings.anthropicKey ? '<button class="btn sm" data-act="intent-ai">Check with AI</button>' : ''}
+      ${!p.verified && LH.aiProvider(S.settings) ? '<button class="btn sm" data-act="intent-ai">Check with AI</button>' : ''}
       ${status === 'contacted' ? '' : '<button class="btn sm pri" data-act="intent-contacted">Mark contacted</button>'}
       ${status === 'dismissed' ? '<button class="btn sm ghost" data-act="intent-restore">Restore</button>' : '<button class="btn sm ghost" data-act="intent-dismiss">Dismiss</button>'}
     </div>
@@ -89,9 +89,9 @@ function renderIntentStatus() {
   const every = S.settings.radarEveryHours;
   const unchecked = S.intent.posts.filter((p) => !p.verified).length;
   parts.push(
-    S.settings.anthropicKey
-      ? `<span class="m">AI check is on${unchecked ? `: ${unchecked} post${unchecked === 1 ? '' : 's'} not checked yet` : ', every post checked'}.</span>${unchecked ? '<button class="btn sm" data-act="intent-ai-all">Check them now</button>' : ''}`
-      : '<span class="m">AI check is off: add your Claude API key in Settings > Intent Radar to have each post read and confirmed.</span>',
+    LH.aiProvider(S.settings)
+      ? `<span class="m">AI check (${esc(LH.AI_NAMES[LH.aiProvider(S.settings)])}) is on${unchecked ? `: ${unchecked} post${unchecked === 1 ? '' : 's'} not checked yet` : ', every post checked'}.</span>${unchecked ? '<button class="btn sm" data-act="intent-ai-all">Check them now</button>' : ''}`
+      : '<span class="m">AI check is off: add a free Google AI Studio key in Settings > Intent Radar to have each post read and confirmed.</span>',
   );
   parts.push(`<span class="m">${every > 0 ? `Reddit is scanned every ${esc(every)} hour${every === 1 ? '' : 's'}${st.lastRedditAt ? `, last ${esc(ago(st.lastRedditAt))}` : ''}.` : 'Automatic Reddit scans are off (Settings > Intent Radar).'} Facebook groups and LinkedIn: open one and press Scan for leads.</span>`);
   el.innerHTML = parts.join('');

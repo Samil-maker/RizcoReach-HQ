@@ -201,8 +201,9 @@ ${job(903, 'Digital Marketing Specialist', 'Acme Corp', 'London, United Kingdom'
 </ul></body></html>`;
 const LI_WALL = `<!doctype html><html><head><title>Security Verification | LinkedIn</title></head><body><main><h1>Let's do a quick security check</h1></main></body></html>`;
 
-/* Claude's Messages API: a verdict per post, picked by what the post says. */
+/* Claude's Messages API and Google's Gemini API: a verdict per post, picked by what the post says. */
 export const CLAUDE = { key: 'sk-ant-test-key', calls: [] };
+export const GEMINI = { key: 'AIza-test-key', calls: [] };
 const VERDICTS = [
   [/bakery/, { is_buyer: true, service_needed: 'website', business_type: 'bakery', location: 'JLT, Dubai', urgency: 'high', summary: 'A bakery owner in JLT wants a website.', intent_score: 90 }],
   [/Business is slow/, { is_buyer: true, service_needed: 'marketing', business_type: 'unknown', location: 'unknown', urgency: 'medium', summary: 'A business owner says sales are slow and their ads are not working.', intent_score: 70 }],
@@ -242,6 +243,22 @@ export function metaHandler(req, res, url, host) {
     if (url.pathname === '/search' && url.searchParams.get('tbm') === 'map') return send(200, 'application/json; charset=utf-8', mapsXhr()), true;
   }
   if (SITES[host]) return send(200, 'text/html; charset=utf-8', SITES[host]), true;
+  const geminiModel = host === 'generativelanguage.googleapis.com' && (url.pathname.match(/^\/v1beta\/models\/([^/:]+):generateContent$/) || [])[1];
+  if (geminiModel) {
+    let raw = '';
+    req.on('data', (c) => (raw += c));
+    req.on('end', () => {
+      const body = JSON.parse(raw || '{}');
+      const cfg = body.generationConfig || {};
+      const text = body.contents[0].parts[0].text;
+      GEMINI.calls.push({ key: req.headers['x-goog-api-key'], inUrl: url.searchParams.has('key'), model: geminiModel, mime: cfg.responseMimeType, schema: !!cfg.responseJsonSchema, system: !!body.systemInstruction, text });
+      const json = (code, o) => send(code, 'application/json', JSON.stringify(o));
+      if (req.headers['x-goog-api-key'] !== GEMINI.key) return json(400, { error: { code: 400, message: 'API key not valid. Please pass a valid API key.', status: 'INVALID_ARGUMENT', details: [{ '@type': 'type.googleapis.com/google.rpc.ErrorInfo', reason: 'API_KEY_INVALID', domain: 'googleapis.com' }] } });
+      const verdict = (VERDICTS.find(([re]) => re.test(text)) || [null, VERDICTS[0][1]])[1];
+      json(200, { candidates: [{ content: { role: 'model', parts: [{ text: JSON.stringify(verdict) }] }, finishReason: 'STOP', index: 0 }], usageMetadata: { promptTokenCount: 600, candidatesTokenCount: 90 }, modelVersion: geminiModel });
+    });
+    return true;
+  }
   if (host === 'api.anthropic.com' && url.pathname === '/v1/messages') {
     let raw = '';
     req.on('data', (c) => (raw += c));

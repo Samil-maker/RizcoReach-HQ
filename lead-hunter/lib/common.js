@@ -574,7 +574,10 @@ Mussafah, Abu Dhabi`),
     redditSecret: '',
     intentKeywords: null, // { website, marketing, pain, hiring, arabic } as text, null = defaults (LH.INTENT_KEYWORDS)
     sellerWords: null, // null = LH.SELLER_WORDS
-    // Intent AI check (Phase 6): Claude reads each new post and says whether it is a real buyer.
+    // Intent AI check (Phase 6): an AI reads each new post and says whether it is a real buyer.
+    // Gemini when geminiKey is filled in, else Claude when anthropicKey is.
+    geminiKey: '', // a Google AI Studio key (free tier), kept in this browser only
+    geminiModel: 'gemini-flash-lite-latest',
     anthropicKey: '', // your Claude API key, kept in this browser only
     aiModel: 'claude-haiku-5-5',
     aiAuto: true, // check new posts as they come in

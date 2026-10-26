@@ -14,7 +14,7 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { makeAd, searchResponse, memStore } from './fixtures.mjs';
-import { metaHandler, checkLog, metaWall, IG_API, CLAUDE, redditCalls, PRESET_SEARCHES } from './meta-fixtures.mjs';
+import { metaHandler, checkLog, metaWall, IG_API, CLAUDE, GEMINI, redditCalls, PRESET_SEARCHES } from './meta-fixtures.mjs';
 import { handle as queueHandle } from '../../netlify/functions/lead-queue.mts';
 import { handle as emailHandle } from '../../netlify/functions/email-queue.mts';
 
@@ -238,7 +238,7 @@ const ctx = await pw.chromium.launchPersistentContext(path.join(tmp, 'profile'),
   args: [
     `--disable-extensions-except=${EXT}`,
     `--load-extension=${EXT}`,
-    `--host-resolver-rules=MAP www.facebook.com 127.0.0.1:${PORT}, MAP *.example 127.0.0.1:${PORT}, MAP wa.me 127.0.0.1:${PORT}, MAP www.rizcoreach.ae 127.0.0.1:${PORT}, MAP www.google.com 127.0.0.1:${PORT}, MAP places.googleapis.com 127.0.0.1:${PORT}, MAP www.instagram.com 127.0.0.1:${PORT}, MAP graph.facebook.com 127.0.0.1:${PORT}, MAP www.reddit.com 127.0.0.1:${PORT}, MAP www.linkedin.com 127.0.0.1:${PORT}, MAP api.anthropic.com 127.0.0.1:${PORT}`,
+    `--host-resolver-rules=MAP www.facebook.com 127.0.0.1:${PORT}, MAP *.example 127.0.0.1:${PORT}, MAP wa.me 127.0.0.1:${PORT}, MAP www.rizcoreach.ae 127.0.0.1:${PORT}, MAP www.google.com 127.0.0.1:${PORT}, MAP places.googleapis.com 127.0.0.1:${PORT}, MAP www.instagram.com 127.0.0.1:${PORT}, MAP graph.facebook.com 127.0.0.1:${PORT}, MAP www.reddit.com 127.0.0.1:${PORT}, MAP www.linkedin.com 127.0.0.1:${PORT}, MAP api.anthropic.com 127.0.0.1:${PORT}, MAP generativelanguage.googleapis.com 127.0.0.1:${PORT}`,
     '--ignore-certificate-errors',
     '--no-proxy-server',
   ],
@@ -1175,7 +1175,7 @@ try {
   const first = await dash.textContent('.intent-card');
   assert.match(first, /Reddit · r\/dubai\s*3h ago · u\/sarah_dxb\s*Website buyer\s*unverified/);
   assert.ok(!(await dash.$('.intent-card [data-intent-opener], .intent-card [data-act="intent-copy"]')), 'no opener: you write your own');
-  assert.match(await dash.textContent('[data-intent-status]'), /AI check is off: add your Claude API key/);
+  assert.match(await dash.textContent('[data-intent-status]'), /AI check is off: add a free Google AI Studio key/);
   if (SHOTS) await dash.screenshot({ path: `${SHOTS}/22-intent.png` });
   const firstId = await dash.getAttribute('.intent-card', 'data-intent-id');
   await dash.click('.intent-card [data-act="intent-contacted"]');
@@ -1222,8 +1222,9 @@ try {
   await lij.close();
   await dash.waitForFunction(() => document.querySelectorAll('[data-intent-rows] .intent-card').length === 3, null, { timeout: 5000 });
 
-  /* --------------------------------- AI check: Claude confirms or rules out each post */
+  /* --------------------------------- AI check: Gemini (or Claude) confirms or rules out each post */
   await dash.click('[data-view="settings"]');
+  // Claude works too, when it is the only key.
   await dash.fill('[name="anthropicKey"]', 'sk-ant-wrong');
   await dash.click('[data-act="ai-test"]');
   await dash.waitForFunction(() => /^Not working: Claude did not accept your API key \(401\)/.test(document.querySelector('[data-ai-test]').textContent));
@@ -1232,14 +1233,32 @@ try {
   await dash.waitForFunction(() => document.querySelector('[data-ai-test]').textContent === 'Working. Claude read a test post: a buyer, needs website, score 90.');
   const call = CLAUDE.calls.at(-1);
   assert.deepEqual([call.version, call.browser, call.model, call.effort, call.format], ['2026-10-21', 'true', 'claude-haiku-5-5', 'low', 'json_schema']);
-  // Every post the keywords caught, read by Claude.
+  // The free Google AI Studio key: used whenever it is filled in.
+  await dash.fill('[name="geminiKey"]', 'AIza-wrong');
+  await dash.click('[data-act="ai-test"]');
+  await dash.waitForFunction(() => /^Not working: Google did not accept your API key \(400\)/.test(document.querySelector('[data-ai-test]').textContent));
+  await dash.fill('[name="geminiKey"]', GEMINI.key);
+  await dash.click('[data-act="ai-test"]');
+  await dash.waitForFunction(() => document.querySelector('[data-ai-test]').textContent === 'Working. Gemini read a test post: a buyer, needs website, score 90.');
+  const gcall = GEMINI.calls.at(-1);
+  assert.deepEqual([gcall.key, gcall.inUrl, gcall.model, gcall.mime, gcall.schema, gcall.system], [GEMINI.key, false, 'gemini-flash-lite-latest', 'application/json', true, true]);
+  // Every post the keywords caught, read by Gemini.
   await dash.click('[data-view="intent"]');
   await dash.waitForSelector('[data-act="intent-ai-all"]');
-  assert.match(await dash.textContent('[data-intent-status]'), /AI check is on: 5 posts not checked yet/);
-  const before = CLAUDE.calls.length;
+  assert.match(await dash.textContent('[data-intent-status]'), /AI check \(Gemini\) is on: 5 posts not checked yet/);
+  const before = GEMINI.calls.length;
+  const claudeBefore = CLAUDE.calls.length;
   await dash.click('[data-act="intent-ai-all"]');
   await waitFor(async () => (await dash.evaluate(() => LH.intentDb.all())).every((p) => p.verified), 30000, 'every post checked by the AI');
-  assert.equal(CLAUDE.calls.length - before, 5, 'one call per post');
+  assert.equal(GEMINI.calls.length - before, 5, 'one call per post');
+  assert.equal(CLAUDE.calls.length, claudeBefore, 'Gemini is used when both keys are set');
+  // Keys never go into a backup file.
+  await dash.click('[data-view="settings"]');
+  const [backupDl] = await Promise.all([dash.waitForEvent('download'), dash.click('[data-act="backup"]')]);
+  const backup = JSON.parse(fs.readFileSync(await backupDl.path(), 'utf8'));
+  assert.deepEqual(['geminiKey', 'anthropicKey', 'igToken', 'queueKey'].map((k) => backup.settings[k]), ['', '', '', '']);
+  assert.ok(backup.leads.length > 0);
+  await dash.click('[data-view="intent"]');
   const checked = Object.fromEntries((await dash.evaluate(() => LH.intentDb.all())).map((p) => [p.id, p]));
   console.log('AI check:', JSON.stringify(Object.values(checked).map((p) => [p.id, p.notBuyer ? 'not a buyer' : 'buyer', p.score, p.summary])));
   assert.deepEqual([checked['reddit:d1'].ai.business_type, checked['reddit:d1'].score, checked['reddit:d1'].summary], ['bakery', 90, 'A bakery owner in JLT wants a website.']);
@@ -1259,16 +1278,16 @@ try {
   // A wrong key pauses the checks with an alert. Nothing else runs until you fix it.
   await sw.evaluate(async () => {
     const { settings } = await chrome.storage.local.get('settings');
-    await chrome.storage.local.set({ settings: { ...settings, anthropicKey: 'sk-ant-expired' } });
+    await chrome.storage.local.set({ settings: { ...settings, geminiKey: 'AIza-expired' } });
   });
   await sw.evaluate(() => handlers['ai:check']({ ids: ['reddit:d1'] }));
   await waitFor(async () => !!((await storage('alerts')).alerts || {}).ai, 20000, 'AI check paused');
   await dash.waitForSelector('[data-intent-status] [data-alert="ai"]');
-  assert.match(await dash.textContent('[data-alert="ai"]'), /AI check paused: Claude did not accept your API key \(401\)/);
+  assert.match(await dash.textContent('[data-alert="ai"]'), /AI check paused: Google did not accept your API key \(400\)/);
   await sw.evaluate(async (key) => {
     const { settings } = await chrome.storage.local.get('settings');
-    await chrome.storage.local.set({ settings: { ...settings, anthropicKey: key } });
-  }, CLAUDE.key);
+    await chrome.storage.local.set({ settings: { ...settings, geminiKey: key } });
+  }, GEMINI.key);
   await dash.click('[data-act="intent-resume"][data-source="ai"]');
   await waitFor(async () => !((await storage('alerts')).alerts || {}).ai && !((await storage('aiQueue')).aiQueue || []).length, 20000, 'AI check resumed');
 

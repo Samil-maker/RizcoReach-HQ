@@ -13,7 +13,7 @@ Where leads come from:
 - **Website leads** (*New hunt* tab): businesses already running Meta ads, from the Ad Library. The ones without
   a working website are website leads.
 - **Intent** tab: people asking for a website or marketing help on Reddit, Facebook groups and LinkedIn, each
-  confirmed or ruled out by an AI check. See [Intent Radar](#intent-radar).
+  confirmed or ruled out by an AI check (free with a Google AI Studio key). See [Intent Radar](#intent-radar).
 
 ## Two offers, picked for you
 
@@ -269,14 +269,23 @@ extension icon shows how many new ones came in.
   words) is saved once. Posts older than 14 days are skipped.
 - Each card shows a summary, where it was posted, how old it is, the post itself and the link, with **Mark
   contacted** and **Dismiss**. Nothing is written or sent for you.
-- **AI check**: add your Claude API key in Settings > Intent Radar (console.anthropic.com > API keys) and press
-  **Save and test**. Claude (Haiku, about 0.2 US cents a post) then reads every post the keywords catch and says
-  whether the person is really a buyer, what they need (website, SEO, marketing), what business they run, where,
-  how urgent it is, and an intent score. Posts it rules out are hidden (tick **Show not buyers**), and a lead
-  linked to one loses its heat bonus. New posts are checked as they come in; **Check them now** checks the rest.
+- **AI check**: an AI reads every post the keywords catch and says whether the person is really a buyer, what
+  they need (website, SEO, marketing), what business they run, where, how urgent it is, and an intent score.
+  Posts it rules out are hidden (tick **Show not buyers**), and a lead linked to one loses its heat bonus. New
+  posts are checked as they come in; **Check them now** checks the rest. Two ways to run it:
+  - **Free: a Google AI Studio key.** aistudio.google.com → **Get API key** → **Create API key**, paste it in
+    Settings > Intent Radar and press **Save and test**. It uses `gemini-flash-lite-latest`, which always points
+    to Google's newest Flash-Lite model (change it in Settings, for example to `gemini-flash-latest`). The free
+    tier has per-minute and daily limits: when one is reached the check waits as long as Google says (an hour for
+    the daily one) and carries on by itself. On the free tier Google may use what is sent to improve its
+    products; these are public posts.
+  - **Or a Claude key** (console.anthropic.com > API keys, about 0.2 US cents a post). If both keys are filled
+    in, Gemini is used.
+
   Without a key, posts stay **unverified**: keywords catch most real buyers but not all, so read the post first.
-  A key that stops working, or no credit left, pauses the check with an alert and a **Resume** button. The key
-  stays in this browser and is only sent to Claude.
+  A key that stops working, a model name Google doesn't know, or no credit left pauses the check with an alert
+  and a **Resume** button. Keys stay in this browser, are only sent to Google or Anthropic, and are left out of
+  backups.
 - A login wall, checkpoint, captcha or block on Reddit, Facebook or LinkedIn pauses that source with an alert and
   a **Resume** button. Nothing tries to get past it.
 - Facebook and LinkedIn change their pages often. If **Scan for leads** says it found no posts on a page full of
@@ -448,7 +457,7 @@ out of backups.
 | `lib/site-audit.js` | Website audit and contact extraction (same checks as `netlify/functions/audit.mts`, plus ad-specific ones) |
 | `lib/common.js` | Phones, links, presets, offers and emails, quality signals, heat score, tags, results, exports |
 | `background.js` | Lead storage, hunts, enrichment queue, Google lookups, the email queue on your site |
-| `intent.js`, `lib/intent.js`, `lib/intent-db.js` | Intent Radar: Reddit scans, the rules every post goes through, the AI check (Claude), and the IndexedDB store |
+| `intent.js`, `lib/intent.js`, `lib/intent-db.js` | Intent Radar: Reddit scans, the rules every post goes through, the AI check (Gemini or Claude), and the IndexedDB store |
 | `content/social-scan.js` | The Scan for leads button on Facebook groups and LinkedIn |
 | `finder.js` | Meta ads tab: Google Maps search (Places API or a Maps tab) and the Ad Library check queue |
 | `lib/prospects.js` | Prospect de-duplication keys, Places results, matching ads to a business |
@@ -463,5 +472,5 @@ Tests:
 
 ```bash
 node --test lead-hunter/test/*.test.mjs   # parsers, audit, scoring, offers and emails, presets, results, heat score, intent rules, AI check, Meta ads prospects
-node lead-hunter/test/e2e.mjs   # real Chromium + mock Ad Library, Google Maps, Places API, websites, Reddit, Claude and email queue (needs Playwright + openssl)
+node lead-hunter/test/e2e.mjs   # real Chromium + mock Ad Library, Google Maps, Places API, websites, Reddit, Gemini, Claude and email queue (needs Playwright + openssl)
 ```
