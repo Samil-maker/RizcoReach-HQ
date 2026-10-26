@@ -134,17 +134,19 @@ async function ingestProspects(items, ctx = {}) {
       run.lastActivity = now();
       writes.finder = run;
     }
-    // Without a website they get the website script whatever their ads, so their Ad Library check is skipped.
+    // Without a website they get the website script whatever their ads, so their Ad Library check is skipped
+    // unless Settings asks for it (Phase 4 scores "running ads" on website leads too).
     for (const id of counted) {
       const l = touched.get(id);
-      l.adCheck = { state: l.website ? 'queued' : 'skipped' };
+      l.adCheck = { state: l.website || settings.adCheckAll ? 'queued' : 'skipped' };
       if (l.website) l.site = { state: 'queued' };
     }
     await store.set(writes);
     const websites = counted.filter((id) => touched.get(id).website);
-    return { added: counted.length, ids: counted, websites, contacted };
+    const checks = counted.filter((id) => touched.get(id).adCheck.state === 'queued');
+    return { added: counted.length, ids: counted, websites, checks, contacted };
   });
-  if (result.websites.length) queueAdChecks(result.websites);
+  if (result.checks.length) queueAdChecks(result.checks);
   if (result.websites.length) enqueue(result.websites);
   return result;
 }
@@ -176,13 +178,14 @@ async function adCheckTab() {
   return t.id;
 }
 
-/* Ad Library views used by the check. The page view is the reliable one: it lists exactly the
-   ads a Facebook page is running. Keyword search does NOT look at page names, so a name search
-   that finds nothing is never proof that a business isn't advertising. */
-const pageViewUrl = (pageId) =>
-  `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=ALL&is_targeted_country=false&media_type=all&search_type=page&view_all_page_id=${encodeURIComponent(pageId)}`;
-const searchUrl = (q, country = 'ALL') =>
-  `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=${country}&is_targeted_country=false&media_type=all&q=${encodeURIComponent(q)}&search_type=keyword_unordered`;
+/* Ad Library views used by the check, UAE only, live and past ads ("all") so a business that stopped advertising
+   shows up too. The page view is the reliable one: it lists exactly the ads a Facebook page ran. Keyword search
+   does NOT look at page names, so a name search that finds nothing is never proof that a business never advertised. */
+const LIBRARY = 'https://www.facebook.com/ads/library/';
+const pageViewUrl = (pageId, country = 'AE', liveOnly = false) =>
+  `${LIBRARY}?active_status=${liveOnly ? 'active' : 'all'}&ad_type=all&country=${country}&is_targeted_country=false&media_type=all&search_type=page&view_all_page_id=${encodeURIComponent(pageId)}`;
+const searchUrl = (q, country = 'AE', liveOnly = false) =>
+  `${LIBRARY}?active_status=${liveOnly ? 'active' : 'all'}&ad_type=all&country=${country}&is_targeted_country=false&media_type=all&q=${encodeURIComponent(q)}&search_type=keyword_unordered`;
 
 /** The business's Facebook page id, from the Facebook link on its website (if any). */
 async function resolvePageId(lead) {
@@ -215,6 +218,11 @@ async function loadView(lead, url) {
     });
     pendingCheck = null;
     if (res.blocked) return res;
+    // A login or checkpoint page has no Ad Library script to answer: the tab's address says it.
+    if (res.timeout) {
+      const at = await chrome.tabs.get(tabId).then((t) => t.url || '').catch(() => '');
+      if (/facebook\.com\/(login|checkpoint)/.test(at)) return { blocked: true, reason: /checkpoint/.test(at) ? 'Facebook showed a security check' : 'Facebook asked you to log in' };
+    }
     // About 1 load in 4 arrives without the results; one retry fixes most of them.
     if (res.loaded) return res;
     await sleep(jitter(2500, 4500));
@@ -223,55 +231,108 @@ async function loadView(lead, url) {
 }
 
 /**
- * Verdicts: running · none (their Facebook page has no live ads: confirmed) ·
- * likely (no ads found by website or name, but their page could not be checked) · unclear.
+ * Verdicts: running (live ads now) · past (ran ads before, none live) · none (their Facebook page never ran ads in
+ * the UAE: confirmed) · likely (no ads found by website or name, but their page could not be checked) · unclear.
+ * With the newest ad's date (lastAdAt): when it started if live, when the last one stopped if past.
+ * A login wall, checkpoint or block stops the check: { blocked } pauses all checks until you look.
  */
 async function checkOne(lead) {
   const country = lead.countries[0] && lead.countries[0] !== 'ALL' ? lead.countries[0] : 'AE';
   const base = { checkedAt: now() };
   const steps = [];
-  let blocked = false;
+  const blocked = (r, url) => ({ ...base, blocked: true, reason: r.reason || 'Facebook asked to log in or blocked the search', searchUrl: url });
+  // Only the first ads load. When none of them is live but there are more, load the live ones on their own.
+  // mine: which ads are theirs (all of them on their page view, the matching ones in a search).
+  const addLive = async (h, url, mine) => {
+    const r = await loadView(lead, url);
+    if (r.blocked) return { blocked: r };
+    const ads = r.loaded ? (r.ads || []).filter((a) => a.active !== false && mine(a)) : [];
+    return ads.length ? { ...h, active: ads.length, lastStart: Math.max(h.lastStart || 0, LH.adHistory(ads).lastStart || 0) || null } : h;
+  };
 
-  // 1. Their Facebook page (from the website): an exact live-ad count.
+  // 1. Their Facebook page (from the website): every ad it ran in the UAE.
   const pageId = await resolvePageId(lead);
   if (pageId) {
-    const url = pageViewUrl(pageId);
+    const url = pageViewUrl(pageId, country);
     const r = await loadView(lead, url);
-    blocked = blocked || !!r.blocked;
+    if (r.blocked) return blocked(r, url);
     if (r.loaded && r.pageInfo !== false) {
-      const count = typeof r.count === 'number' ? r.count : (r.ads || []).length;
-      if (count > 0 && !(r.ads || []).length) return { ...base, state: 'unclear', reason: 'Facebook showed an ad count but no ads (it may be slowing searches down)', searchUrl: url, pageId };
-      if (count > 0) return { ...base, state: 'running', activeAds: count, pageId, searchUrl: url, matches: [{ pageId, pageName: (r.ads[0] || {}).pageName || lead.pageName, ads: count, reasons: ['their Facebook page'] }] };
-      return { ...base, state: 'none', pageId, searchUrl: url, evidence: 'Their Facebook page has no active ads in the Ad Library.' };
+      const ads = r.ads || [];
+      const count = typeof r.count === 'number' ? r.count : ads.length;
+      if (count > 0 && !ads.length) return { ...base, state: 'unclear', reason: 'Facebook showed an ad count but no ads (it may be slowing searches down)', searchUrl: url, pageId };
+      if (!count) return { ...base, state: 'none', pageId, searchUrl: url, totalAds: 0, evidence: 'Their Facebook page has never run ads in the UAE (Ad Library, live and past ads).' };
+      let h = { ...LH.adHistory(ads), total: count };
+      if (!h.active && count > ads.length) {
+        h = await addLive(h, pageViewUrl(pageId, country, true), () => true);
+        if (h.blocked) return blocked(h.blocked, url);
+      }
+      const v = LH.adVerdict(h);
+      return { ...base, ...v, pageId, searchUrl: url, matches: [{ pageId, pageName: ads[0].pageName || lead.pageName, ads: v.activeAds, total: count, reasons: ['their Facebook page'] }] };
     }
     steps.push(r.loaded ? 'page not in the Ad Library' : 'page view did not load');
   }
 
-  // 2. Their website domain: ads show where they link to, so this finds advertisers even without a page id.
+  // 2. Their website domain, then 3. their name (weakest: finds ads that mention the business, absence proves little).
   const domain = lead.website ? LH.domainOf(lead.website) : '';
-  if (domain) {
-    const url = searchUrl(domain, 'ALL');
-    const r = await loadView(lead, url);
-    blocked = blocked || !!r.blocked;
+  const searches = [domain && [domain, 'no ads link to their website'], [lead.pageName, 'no ads mention their name']].filter(Boolean);
+  let url = '';
+  let r = {};
+  for (const [q, none] of searches) {
+    url = searchUrl(q, country);
+    r = await loadView(lead, url);
+    if (r.blocked) return blocked(r, url);
     if (r.loaded) {
       const m = matchAds(lead, r.ads);
-      if (m.length) return { ...base, state: 'running', activeAds: m.reduce((s, x) => s + x.ads, 0), matches: m.slice(0, 3), searchUrl: url };
-      steps.push('no ads link to their website');
+      if (m.length) {
+        let h = LH.sumHistory(m);
+        if (!h.active && (r.count || 0) > (r.ads || []).length) {
+          h = await addLive(h, searchUrl(q, country, true), (a) => matchAds(lead, [a]).length > 0);
+          if (h.blocked) return blocked(h.blocked, url);
+        }
+        return { ...base, ...LH.adVerdict(h), matches: m.slice(0, 3).map(({ pageId: id, pageName, ads, total, reasons }) => ({ pageId: id, pageName, ads, total, reasons })), searchUrl: url };
+      }
+      steps.push(none);
     }
-    await sleep(jitter(2000, 4000));
+    if (q === domain) await sleep(jitter(2000, 4000));
   }
+  if (r.loaded) return { ...base, state: 'likely', searchUrl: url, resultsSeen: (r.ads || []).length, evidence: `No ads found, live or past (${steps.join(', ')}). Their Facebook page could not be checked directly, so this is not certain.` };
+  return { ...base, state: 'unclear', searchUrl: url, reason: 'The Ad Library did not load' };
+}
 
-  // 3. Their name (weakest: finds ads that mention the business, but absence proves little).
-  const url = searchUrl(lead.pageName, country);
-  const r = await loadView(lead, url);
-  blocked = blocked || !!r.blocked;
-  if (r.loaded) {
-    const m = matchAds(lead, r.ads);
-    if (m.length) return { ...base, state: 'running', activeAds: m.reduce((s, x) => s + x.ads, 0), matches: m.slice(0, 3), searchUrl: url };
-    steps.push('no ads mention their name');
-    return { ...base, state: 'likely', searchUrl: url, resultsSeen: (r.ads || []).length, evidence: `No ads found (${steps.join(', ')}). Their Facebook page could not be checked directly, so this is not certain.` };
-  }
-  return { ...base, state: 'unclear', searchUrl: url, reason: blocked ? 'Facebook asked to log in or blocked the search' : 'The Ad Library did not load' };
+/* ----------------------------------------------------- per source problems */
+/* Every problem a source hits, newest first (Settings > Your data), and a pause with an alert when a site shows a
+   login wall, checkpoint, captcha or block. Nothing tries to get past it. */
+async function logProblem(source, text) {
+  await locked(async () => {
+    const { problems = {} } = await store.get('problems');
+    problems[source] = [[now(), String(text).slice(0, 300)], ...(problems[source] || [])].slice(0, 20);
+    await store.set({ problems });
+  });
+}
+const SOURCE_NAMES = { adlib: 'Meta Ad Library', maps: 'Google Maps' };
+async function alertSource(source, text, url) {
+  await logProblem(source, text);
+  await locked(async () => {
+    const { alerts = {} } = await store.get('alerts');
+    alerts[source] = { at: now(), text, url: url || '' };
+    await store.set({ alerts });
+  });
+  try {
+    chrome.action.setBadgeBackgroundColor({ color: '#d93025' });
+    chrome.action.setBadgeText({ text: '!' });
+  } catch {}
+  notify(`${SOURCE_NAMES[source] || source} paused`, `${text}. Open the tab, sort it out, then press Resume in Lead Hunter.`);
+}
+async function clearAlert(source) {
+  await locked(async () => {
+    const { alerts = {} } = await store.get('alerts');
+    delete alerts[source];
+    await store.set({ alerts });
+    if (!Object.keys(alerts).length)
+      try {
+        chrome.action.setBadgeText({ text: '' });
+      } catch {}
+  });
 }
 
 async function runAdChecks() {
@@ -299,6 +360,14 @@ async function runAdChecks() {
       if (lead && lead.kind === 'prospect') {
         await updateLead(id, (l) => (l.adCheck = { ...(l.adCheck || {}), state: 'checking' }));
         const result = await checkOne(lead).catch((e) => ({ state: 'unclear', reason: String(e.message || e), checkedAt: now() }));
+        if (result.blocked) {
+          // Stop here: this business stays first in the queue and every check waits until you press Resume.
+          await updateLead(id, (l) => (l.adCheck = { ...(l.adCheck || {}), state: 'queued' }));
+          await store.set({ adCheckPaused: true });
+          await alertSource('adlib', result.reason, result.searchUrl);
+          break;
+        }
+        if (result.state === 'unclear') logProblem('adlib', `${lead.pageName}: ${result.reason}`);
         await updateLead(id, (l) => (l.adCheck = result));
       }
       await locked(async () => {
@@ -498,7 +567,15 @@ async function runMaps(fid) {
         await sleep(jitter(2500, 5000)); // one search at a time, a human pace between them
       }
     } catch (e) {
-      await patchFinder(fid, { mapsDone: true, mapsNote: String(e.message || e) });
+      const text = String(e.message || e);
+      if (e.blocked) {
+        // Paused, not stopped: Resume carries on from this search once the page is sorted out.
+        await patchFinder(fid, { status: 'paused', mapsNote: text });
+        await alertSource('maps', text);
+      } else {
+        await patchFinder(fid, { mapsDone: true, mapsNote: text });
+        await logProblem('maps', `${q.q}: ${text}`);
+      }
       return;
     }
   }
@@ -526,7 +603,7 @@ async function mapsBrowserSearch(query) {
     chrome.tabs.update(tabId, { url: `https://www.google.com/maps/search/${encodeURIComponent(query)}/?hl=en` }).catch(() => resolve({ error: 'tab', items: [] }));
   });
   pendingMaps = null;
-  if (res.blocked) throw new Error('Google Maps showed a consent or verification page. Open the Maps tab, accept it, then start again.');
+  if (res.blocked) throw Object.assign(new Error('Google Maps showed a consent or verification page'), { blocked: true });
   return (res.items || []).map((x) => ({ ...x, source: 'maps' }));
 }
 
@@ -574,7 +651,8 @@ Object.assign(handlers, {
   'finder:resume': async () => {
     const { finder: f } = await store.get('finder');
     if (f && f.status === 'paused') {
-      await patchFinder(f.id, { status: 'running' });
+      await patchFinder(f.id, { status: 'running', mapsNote: null });
+      await clearAlert('maps');
       runFinder();
     }
     return { ok: true };
@@ -605,12 +683,14 @@ Object.assign(handlers, {
     return { ok: true };
   },
   'adcheck:set': async (msg) => {
-    await updateLead(msg.id, (l) => (l.adCheck = { ...(l.adCheck || {}), state: msg.state === 'running' ? 'running' : 'none', manual: true, checkedAt: now() }));
+    const state = ['running', 'past', 'none'].includes(msg.state) ? msg.state : 'none';
+    await updateLead(msg.id, (l) => (l.adCheck = { ...(l.adCheck || {}), state, manual: true, checkedAt: now() }));
     return { ok: true };
   },
   'adcheck:pause': async () => (await store.set({ adCheckPaused: true }), { ok: true }),
   'adcheck:resume': async () => {
     await store.set({ adCheckPaused: false });
+    await clearAlert('adlib');
     runAdChecks();
     return { ok: true };
   },

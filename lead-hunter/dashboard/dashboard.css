@@ -271,6 +271,7 @@ details.preset[open] > summary { margin-bottom: 10px; }
 .src { display: flex; flex-direction: column; gap: 2px; font-size: 12.5px; white-space: nowrap; }
 .src b { font-variant-numeric: tabular-nums; }
 .ad-state { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; white-space: nowrap; }
+.ad-state.past { color: var(--good); font-weight: 600; }
 .ad-state.none { color: var(--good); }
 .ad-state.likely { color: #b9e8c0; }
 .ad-state.running { color: var(--weak); }
@@ -327,3 +328,7 @@ table.mini { border-collapse: collapse; font-size: 12.5px; min-width: 300px; }
 .mini th { text-align: left; font-weight: 600; color: var(--fg-3); padding: 4px 10px 4px 0; border-bottom: 1px solid var(--line); white-space: nowrap; }
 .mini td { padding: 4px 10px 4px 0; border-bottom: 1px solid var(--line); }
 .mini td.num, .mini th:not(:first-child) { text-align: right; }
+
+.err.alert a { color: inherit; text-decoration: underline; }
+.problems { margin: 6px 0 10px; font-size: 13px; }
+.problems ul { margin: 4px 0 0; padding-left: 18px; }

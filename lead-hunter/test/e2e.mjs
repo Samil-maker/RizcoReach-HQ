@@ -14,7 +14,7 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { makeAd, searchResponse, memStore } from './fixtures.mjs';
-import { metaHandler, checkLog, PRESET_SEARCHES } from './meta-fixtures.mjs';
+import { metaHandler, checkLog, metaWall, PRESET_SEARCHES } from './meta-fixtures.mjs';
 import { handle as queueHandle } from '../../netlify/functions/lead-queue.mts';
 import { handle as emailHandle } from '../../netlify/functions/email-queue.mts';
 
@@ -615,14 +615,19 @@ try {
   assert.equal(pn('Elite Renovation & Detailing').avoid, true);
   const states = Object.fromEntries(['Glossy PPF Studio', 'Armor Shield Detailing', 'Desert Ceramic Care', 'Nano Pro Tint', 'Shiny Wheels Car Spa', 'Wrap Kings JLT'].map((n) => [n, pn(n).adCheck.state]));
   assert.deepEqual(states, {
-    'Glossy PPF Studio': 'none', // their Facebook page: 0 live ads (confirmed)
-    'Armor Shield Detailing': 'running', // their Facebook page: 3 live ads
+    'Glossy PPF Studio': 'none', // their Facebook page never ran ads in the UAE (confirmed)
+    'Armor Shield Detailing': 'running', // their Facebook page: 3 live ads, found after the first load showed only old ones
     'Desert Ceramic Care': 'running', // found by website domain
     'Nano Pro Tint': 'skipped', // no website: the website script either way, so no Ad Library check
     'Shiny Wheels Car Spa': 'skipped',
     'Wrap Kings JLT': 'likely', // page unknown to the Ad Library
   });
-  assert.equal(pn('Armor Shield Detailing').adCheck.activeAds, 3);
+  const armor = pn('Armor Shield Detailing').adCheck;
+  assert.deepEqual([armor.activeAds, armor.totalAds], [3, 5]);
+  assert.ok(Math.abs(armor.lastAdAt - (Date.now() - 10 * 864e5)) < 864e5, 'the date the newest live ad started');
+  assert.ok(checkLog.includes('page:5550002') && checkLog.includes('page:5550002:live'), 'no live ad in the first load: the live ones are asked for');
+  assert.match(pn('Glossy PPF Studio').adCheck.searchUrl, /active_status=all&.*country=AE&/, 'UAE, live and past ads');
+  assert.deepEqual([pn('Glossy PPF Studio').adCheck.totalAds, pn('Wrap Kings JLT').adCheck.state], [0, 'likely']);
   assert.ok(checkLog.includes('page:5550001') && !checkLog.includes('q:glossyppf.example'), 'a confirmed page check needs no further searches');
   const glossyPhones = pn('Glossy PPF Studio').phones.map((p) => p.number);
   assert.equal(glossyPhones[0], '+971507000001', 'the main listing phone comes first');
@@ -642,6 +647,32 @@ try {
   await dash.bringToFront(); // the Maps and Ad Library tabs were in front; background tabs don't run the drawer's slide-in
   ps = await prospectsNow();
   const pure = pn('Pure Derma Studio');
+  // Ran ads before: two old ads link to their website, nothing live. The last one stopped 45 days ago.
+  const pureAd = pure.adCheck;
+  console.log('ad history:', JSON.stringify(Object.fromEntries(ps.filter((l) => l.adCheck.state !== 'skipped').map((l) => [l.pageName, [l.adCheck.state, l.adCheck.lastAdAt ? new Date(l.adCheck.lastAdAt).toISOString().slice(0, 10) : null]]))));
+  assert.deepEqual([pureAd.state, pureAd.activeAds, pureAd.totalAds], ['past', 0, 2]);
+  assert.ok(Math.abs(pureAd.lastAdAt - (Date.now() - 45 * 864e5)) < 864e5, 'the date the last ad stopped');
+  assert.deepEqual(await sw.evaluate((l) => LH.adStatus(l), pure), { status: 'ran_before_inactive_now', sure: true, lastAdAt: pureAd.lastAdAt });
+  // A login wall: the checks pause and say so, and nothing tries to get past it. Resume carries on.
+  metaWall.body = 'You must log in to continue.';
+  await sw.evaluate((id) => handlers['adcheck:recheck']({ ids: [id] }), pure.id);
+  await waitFor(async () => (await storage('adCheckPaused')).adCheckPaused === true, 60000, 'checks paused at the wall');
+  assert.equal((await storage('alerts')).alerts.adlib.text, 'Facebook asked you to log in');
+  assert.equal((await lead(pure.id)).adCheck.state, 'queued', 'waits its turn again');
+  assert.deepEqual((await storage('adCheckQueue')).adCheckQueue, [pure.id]);
+  assert.equal((await storage('problems')).problems.adlib[0][1], 'Facebook asked you to log in');
+  assert.equal(await sw.evaluate(() => chrome.action.getBadgeText({})), '!');
+  await dash.click('[data-view="ads"]');
+  await dash.waitForSelector('[data-alert="adlib"]');
+  assert.match(await dash.textContent('[data-alert="adlib"]'), /Meta Ad Library paused: Facebook asked you to log in\. Open the Ad Library tab/);
+  if (SHOTS) await dash.screenshot({ path: `${SHOTS}/20-adlib-paused.png` });
+  metaWall.body = '';
+  await dash.click('[data-act="adcheck-resume"]');
+  await checksDone('ad check after resume');
+  assert.equal((await lead(pure.id)).adCheck.state, 'past');
+  assert.ok(!(await storage('alerts')).alerts.adlib);
+  assert.equal(await sw.evaluate(() => chrome.action.getBadgeText({})), '');
+  await dash.waitForFunction(() => !document.querySelector('[data-alert]'));
   assert.equal(pure.website, 'https://purederma.example/', 'website read from Maps network data');
   assert.equal(pure.phones[0].number, '+971553334443', 'phone read from Maps network data');
   assert.equal(pure.sources.maps.reviews, 95);
@@ -660,6 +691,9 @@ try {
   await dash.uncheck('[data-af="skipped"]');
   await dash.selectOption('[data-af="ads"]', 'running');
   await dash.waitForFunction(() => document.querySelectorAll('[data-ads-rows] tr').length === 2);
+  await dash.selectOption('[data-af="ads"]', 'past');
+  await dash.waitForFunction(() => document.querySelectorAll('[data-ads-rows] tr').length === 1);
+  assert.match(await dash.textContent(`tr[data-id="${pure.id}"]`), /Ran ads before · stopped/);
   await dash.selectOption('[data-af="ads"]', '');
   await dash.selectOption('[data-af="tag"]', 'No website');
   await dash.waitForFunction(() => document.querySelectorAll('[data-ads-rows] tr').length === 5);
@@ -709,6 +743,8 @@ try {
   assert.equal(rows2.length, 9, '9 prospects');
   assert.equal(rows2.find((r) => r[1] === 'Insta Tint Bar')[head2.indexOf('instagram')], 'https://www.instagram.com/instatintbar/');
   assert.equal(rows2.find((r) => r[1] === 'Glossy PPF Studio')[head2.indexOf('niche')], 'Car detailing studios');
+  const pureRow = rows2.find((r) => r[1] === 'Pure Derma Studio');
+  assert.deepEqual([pureRow[head2.indexOf('meta_ads')], pureRow[head2.indexOf('meta_ad_status')], pureRow[head2.indexOf('last_ad_date')]], ['Ran ads before', 'ran_before_inactive_now', new Date(pure.adCheck.lastAdAt || Date.now() - 45 * 864e5).toISOString().slice(0, 10)]);
 
   /* ------------------------------- phone queue: one button per bubble, synced back */
   await dash.selectOption('[data-af="status"]', 'new');
@@ -721,7 +757,7 @@ try {
   await dash.waitForFunction(() => document.querySelectorAll('.tag.phone').length === 3);
   const queued = queueStore.peek().items;
   assert.ok(queued.every((i) => i.parts.length === 3 && i.message === i.parts.join('\n\n')), 'each lead goes to the phone as 3 bubbles');
-  assert.ok(queued.every((i) => /^(No website|No Meta ads)/.test(i.issue)), 'the tag line: ' + queued.map((i) => i.issue).join(' | '));
+  assert.ok(queued.every((i) => /^(No website|No Meta ads|Ran ads before)/.test(i.issue)), 'the tag line: ' + queued.map((i) => i.issue).join(' | '));
   await dash.click('[data-ads-bulk] [data-act="bulk-clear"]');
 
   const phone = await ctx.newPage();

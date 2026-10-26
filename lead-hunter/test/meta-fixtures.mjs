@@ -145,14 +145,24 @@ export const SITES = {
 
 /* --------------------------------------------- Ad Library views used by the check */
 const FB_IDS = { glossyppf: '5550001', armorshield: '5550002' };
-// Page view: id -> [live count, does the Ad Library know the page]
-const PAGE_VIEWS = { 5550001: [0, true], 5550002: [3, true], 5550007: [0, false] };
-const armorAds = [0, 1, 2].map((i) => makeAd({ id: 77000 + i, pageId: '5550002', pageName: 'Armor Shield Detailing', link: 'https://armorshield.example/ppf' }));
+// Page view: id -> [ads in all (live and past), does the Ad Library know the page]
+const PAGE_VIEWS = { 5550001: [0, true], 5550002: [5, true], 5550007: [0, false] };
+// Armor Shield: 3 live ads and 2 old ones. The first load of all their ads only shows the 2 old ones, so the check
+// has to ask for the live ones on their own before it can say "ran before".
+const armorAds = [0, 1, 2].map((i) => makeAd({ id: 77000 + i, pageId: '5550002', pageName: 'Armor Shield Detailing', link: 'https://armorshield.example/ppf', daysAgo: 10 + i }));
+const armorOld = [3, 4].map((i) => makeAd({ id: 77000 + i, pageId: '5550002', pageName: 'Armor Shield Detailing', link: 'https://armorshield.example/ppf', active: false, daysAgo: 300, endedDaysAgo: 200 }));
 // Keyword searches (domain or name) -> ads returned
 const KEYWORD_ADS = {
   'desertceramic.example': [makeAd({ id: 78001, pageId: '5550003', pageName: 'DCC Auto', link: 'https://desertceramic.example/offer', caption: 'desertceramic.example' })],
   'nano pro tint': [makeAd({ id: 78002, pageId: '5550099', pageName: 'Nano Pro Car Spa', link: 'https://elsewhere.example/' })],
+  // Ran ads before, none live: two old ads link to their site. The newest one stopped 45 days ago.
+  'purederma.example': [
+    makeAd({ id: 78003, pageId: '5550004', pageName: 'Pure Derma Studio', link: 'https://purederma.example/laser', active: false, daysAgo: 120, endedDaysAgo: 45 }),
+    makeAd({ id: 78004, pageId: '5550004', pageName: 'Pure Derma Studio', link: 'https://purederma.example/facial', active: false, daysAgo: 200, endedDaysAgo: 150 }),
+  ],
 };
+// Set to a page body to answer every Ad Library request with it (a login wall, a block).
+export const metaWall = { body: '' };
 function libraryPage(ads, count, pageInfo) {
   const result = { data: { ad_library_main: { search_results_connection: { count, edges: ads.map((a) => ({ node: { collated_results: [a] } })), page_info: { end_cursor: null, has_next_page: false } } }, ...(pageInfo === undefined ? {} : { ad_library_page_info: { page_info: pageInfo } }) } };
   const blob = { require: [['ScheduledServerJS', 'handle', null, [{ __bbox: { require: [['RelayPrefetchedStreamCache', 'next', [], ['adp_AdLibraryFoundationRootQueryRelayPreloader_1', { __bbox: { complete: true, result } }]]] } }]]] };
@@ -189,14 +199,21 @@ export function metaHandler(req, res, url, host) {
   if (host === 'www.facebook.com' && url.pathname.startsWith('/ads/library')) {
     const id = url.searchParams.get('view_all_page_id');
     const q = (url.searchParams.get('q') || '').toLowerCase();
+    const live = url.searchParams.get('active_status') === 'active';
+    checkLog.push(`country:${url.searchParams.get('country')}`);
+    if (metaWall.body) {
+      checkLog.push('wall');
+      return send(200, 'text/html; charset=utf-8', `<!doctype html><html><body><div id="AdLibraryFoundationRoot">${metaWall.body}</div></body></html>`), true;
+    }
     if (id) {
-      checkLog.push(`page:${id}`);
+      checkLog.push(`page:${id}${live ? ':live' : ''}`);
       const [count, known] = PAGE_VIEWS[id] || [0, false];
-      return send(200, 'text/html; charset=utf-8', libraryPage(id === '5550002' ? armorAds : [], count, known ? { page_name: 'x', page_is_deleted: false } : null)), true;
+      const ads = id === '5550002' ? (live ? armorAds : armorOld) : [];
+      return send(200, 'text/html; charset=utf-8', libraryPage(ads, live ? ads.length : count, known ? { page_name: 'x', page_is_deleted: false } : null)), true;
     }
     if (q && (KEYWORD_ADS[q] || /\.example$|clinic|studio|lounge|medspa|spa|tint|wrap|glossy|armor|desert|shiny/.test(q))) {
-      checkLog.push(`q:${q}`);
-      const ads = KEYWORD_ADS[q] || [];
+      checkLog.push(`q:${q}${live ? ':live' : ''}`);
+      const ads = (KEYWORD_ADS[q] || []).filter((a) => !live || a.is_active);
       return send(200, 'text/html; charset=utf-8', libraryPage(ads, ads.length)), true;
     }
   }

@@ -3,13 +3,13 @@
 const DAY = 86400;
 const nowSec = () => Math.floor(Date.now() / 1000);
 
-export function makeAd({ id, pageId, pageName, daysAgo = 30, active = true, link = null, cta = 'LEARN_MORE', ctaText = 'Learn more', body = '', caption = '', likes = 1200, count = 1, category = 'Car Wash' }) {
+export function makeAd({ id, pageId, pageName, daysAgo = 30, endedDaysAgo = null, active = true, link = null, cta = 'LEARN_MORE', ctaText = 'Learn more', body = '', caption = '', likes = 1200, count = 1, category = 'Car Wash' }) {
   return {
     ad_archive_id: String(id),
     ad_id: null,
     collation_count: count,
     collation_id: String(id) + '9',
-    end_date: nowSec() + DAY,
+    end_date: endedDaysAgo == null ? nowSec() + DAY : nowSec() - endedDaysAgo * DAY,
     entity_type: 'PERSON_PROFILE',
     is_active: active,
     page_id: String(pageId),

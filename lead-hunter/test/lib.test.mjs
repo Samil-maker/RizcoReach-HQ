@@ -622,3 +622,40 @@ test('phone numbers from a contacted sheet or a Google Contacts export', () => {
   assert.deepEqual(LH.parseCsv('a,"b ""q"" c",d\n\n"multi\nline",x'), [['a', 'b "q" c', 'd'], ['multi\nline', 'x']]);
   assert.deepEqual(LH.phonesInCsv('2026-10-20,LF-2026-10-20'), []); // dates are not phones
 });
+
+test('ad history: live now, ran before, never, with the newest dates', () => {
+  const day = 864e5;
+  const t = Date.now();
+  const ads = [
+    { active: false, start: t - 300 * day, end: t - 200 * day },
+    { active: false, start: t - 120 * day, end: t - 45 * day },
+  ];
+  assert.deepEqual(LH.adHistory(ads), { active: 0, total: 2, lastStart: t - 120 * day, lastEnd: t - 45 * day });
+  assert.deepEqual(LH.adVerdict(LH.adHistory(ads)), { state: 'past', activeAds: 0, totalAds: 2, lastAdAt: t - 45 * day });
+  const live = LH.adVerdict(LH.adHistory([...ads, { active: true, start: t - 10 * day, end: null }]));
+  assert.deepEqual(live, { state: 'running', activeAds: 1, totalAds: 3, lastAdAt: t - 10 * day });
+  assert.equal(LH.adVerdict(LH.adHistory([])), null);
+  assert.deepEqual(LH.sumHistory([{ active: 0, total: 2, lastStart: 5, lastEnd: 9 }, { active: 1, total: 1, lastStart: 7, lastEnd: null }]), { active: 1, total: 3, lastStart: 7, lastEnd: 9 });
+  // Matched pages carry their history.
+  const m = LH.matchAds({ pageName: 'Pure Derma Studio', website: 'https://purederma.example/', phones: [] }, [
+    { pageId: '1', pageName: 'Pure Derma Studio', links: ['https://purederma.example/laser'], active: false, start: t - 120 * day, end: t - 45 * day },
+    { pageId: '2', pageName: 'Someone Else', links: ['https://other.example/'], active: true, start: t },
+  ]);
+  assert.deepEqual([m.length, m[0].ads, m[0].total, m[0].lastEnd], [1, 0, 1, t - 45 * day]);
+});
+
+test('ad status names for every kind of lead', () => {
+  const p = (state, extra = {}) => ({ kind: 'prospect', adCheck: { state, ...extra } });
+  assert.deepEqual(LH.adStatus(p('past', { lastAdAt: 9 })), { status: 'ran_before_inactive_now', sure: true, lastAdAt: 9 });
+  assert.deepEqual(LH.adStatus(p('none')), { status: 'never_ran', sure: true, lastAdAt: null });
+  assert.deepEqual(LH.adStatus(p('likely')), { status: 'never_ran', sure: false, lastAdAt: null });
+  assert.equal(LH.adStatus(p('running')).status, 'active_now');
+  assert.equal(LH.adStatus(p('skipped')).status, null);
+  // Facebook advertisers: from their own ads.
+  assert.deepEqual(LH.adStatus({ kind: 'advertiser', ads: { a: { active: true, start: 5 }, b: { active: false, start: 1, end: 2 } } }), { status: 'active_now', sure: true, lastAdAt: 5 });
+  assert.equal(LH.adStatus({ kind: 'advertiser', ads: { b: { active: false, start: 1, end: 2 } } }).status, 'ran_before_inactive_now');
+  // Ran before gets the ads script, ahead of never ran.
+  const lead = { kind: 'prospect', website: 'https://x.example/', site: { state: 'done', score: 80 }, adCheck: { state: 'past' } };
+  assert.deepEqual(LH.scriptFor(lead), { script: 'ads', tag: 'Ran ads before' });
+  assert.ok(LH.prospectPriority(lead) > LH.prospectPriority({ ...lead, adCheck: { state: 'none' } }));
+});

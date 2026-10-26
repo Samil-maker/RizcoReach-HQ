@@ -121,7 +121,10 @@
       domSeen.add(m[1]);
       const text = card.innerText || card.textContent || '';
       const slug = new URL(pageA.href).pathname.split('/').filter(Boolean)[0];
-      const started = text.match(/Started running on\s+(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}|[A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4})/i);
+      const DATE = '(\\d{1,2}\\s+[A-Za-z]{3,9}\\s+\\d{4}|[A-Za-z]{3,9}\\s+\\d{1,2},?\\s+\\d{4})';
+      const started = text.match(new RegExp(`Started running on\\s+${DATE}`, 'i'));
+      // A finished ad shows when it ran instead: "18 Jan 2026 - 12 Mar 2026".
+      const ran = text.match(new RegExp(`${DATE}\\s*[-–]\\s*${DATE}`));
       const links = [...card.querySelectorAll('a[href]')]
         .map((a) => LH.unwrapLink(a.href))
         .filter((u) => u && !['facebook', null].includes(LH.linkKind(u)))
@@ -136,8 +139,8 @@
         likes: null,
         categories: [],
         active: !/\bInactive\b/.test(text),
-        start: started ? Date.parse(started[1]) || null : null,
-        end: null,
+        start: started ? Date.parse(started[1]) || null : ran ? Date.parse(ran[1]) || null : null,
+        end: ran ? Date.parse(ran[2]) || null : null,
         platforms: [],
         count: count ? Number(count[1]) : 1,
         cta: '',
@@ -293,6 +296,15 @@
   /* --------------------------------------------------------- ad check */
   // This tab is checking whether a business found on Google Maps runs ads: read what the Ad
   // Library shows for the page / domain / name the background opened, report back, wait for the next.
+  function blockedBy(text) {
+    if (/checkpoint/.test(location.pathname) || /captcha/.test(location.href)) return 'Facebook showed a security check';
+    if (/\/login/.test(location.pathname)) return 'Facebook asked you to log in';
+    if (state.queue.length || state.answered) return '';
+    if (/temporarily blocked|you['’]re blocked|rate limit|too many requests/i.test(text)) return 'Facebook says this browser is temporarily blocked';
+    if (/security check|confirm (that )?you['’]?re (a )?human|captcha|not a robot/i.test(text)) return 'Facebook showed a security check';
+    if (/you must log in|log in to continue|log into facebook/i.test(text)) return 'Facebook asked you to log in';
+    return '';
+  }
   async function runCheck(check) {
     state.check = check;
     setStatus(`Checking whether “${check.name}” runs Meta ads… This tab is used for ad checks; you can leave it in the background.`);
@@ -304,9 +316,9 @@
       await sleep(500);
       scanEmbedded();
       const text = (document.body && document.body.innerText) || '';
-      if (/\/login|checkpoint/.test(location.pathname) || /you must log in|log in to continue|log into facebook/i.test(text)) {
-        return send({ type: 'adcheck:result', id: check.id, blocked: true, loaded: false, ads: [] });
-      }
+      // A wall instead of results. The text is only read before any ads arrive: an ad's own copy can say "log in".
+      const wall = blockedBy(text);
+      if (wall) return send({ type: 'adcheck:result', id: check.id, blocked: true, reason: wall, loaded: false, ads: [] });
       if (/no ads match your search|no ads match/i.test(text)) {
         state.answered = true;
         state.count = state.count || 0;

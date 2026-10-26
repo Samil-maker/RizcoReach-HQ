@@ -36,6 +36,8 @@ const S = {
   // waTab: the WhatsApp tab this lead's bubbles open in
   pitch: { id: null, channel: 'whatsapp', force: null, bubbles: null, phone: null, qr: 0, opened: new Set(), waTab: null },
   filters: { q: '', heat: '', status: '', keyword: '', site: '', tag: '', contact: '', minDays: 0, hideBig: true, skipped: false, contactedBefore: false, sort: 'priority', hunt: '' },
+  alerts: {}, // sources paused by a login wall, checkpoint or block: { adlib: { at, text, url } }
+  problems: {}, // the last problems per source, newest first: { adlib: [[at, text]] }
   history: {}, // contacted memory: phones, websites, handles and names you contacted, exported or imported
 };
 
@@ -54,6 +56,8 @@ async function load() {
   S.adPaused = !!all.adCheckPaused;
   S.queue = all.enrichQueue || [];
   S.history = all.contactHistory || {};
+  S.alerts = all.alerts || {};
+  S.problems = all.problems || {};
 }
 
 let renderTimer = 0;
@@ -81,7 +85,11 @@ chrome.storage.onChanged.addListener((changes, area) => {
     else if (k === 'finder') S.finder = newValue || null;
     else if (k === 'adCheckQueue') S.adQueue = newValue || [];
     else if (k === 'adCheckPaused') S.adPaused = !!newValue;
-    else if (k === 'contactHistory') {
+    else if (k === 'alerts') S.alerts = newValue || {};
+    else if (k === 'problems') {
+      S.problems = newValue || {};
+      renderProblems();
+    } else if (k === 'contactHistory') {
       S.history = newValue || {};
       renderHistory();
     }
@@ -1061,6 +1069,17 @@ function fillSettings() {
   renderEmailSender();
   renderPairQr();
   renderHistory();
+  renderProblems();
+}
+const SOURCE_LABEL = { adlib: 'Meta Ad Library', maps: 'Google Maps' };
+/** Settings > Your data: the last problems each source hit. */
+function renderProblems() {
+  const el = $('[data-problems]');
+  if (!el) return;
+  const rows = Object.entries(S.problems).filter(([, list]) => list.length);
+  el.innerHTML = rows.length
+    ? rows.map(([src, list]) => `<div class="problems"><b>${esc(SOURCE_LABEL[src] || src)}</b><ul>${list.slice(0, 5).map(([at, text]) => `<li><span class="muted">${esc(fmtDate(at))}</span> ${esc(text)}</li>`).join('')}</ul></div>`).join('')
+    : '<p class="hint">No problems so far.</p>';
 }
 /** Settings > Your data: how much the contacted memory holds. */
 function renderHistory() {

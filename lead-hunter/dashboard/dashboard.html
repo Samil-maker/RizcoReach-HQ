@@ -179,7 +179,8 @@
         <input type="search" class="inp search" placeholder="Search name, area, phone…" data-af="q" aria-label="Search prospects" />
         <select class="inp" data-af="ads" aria-label="Ads">
           <option value="">Any ad status</option>
-          <option value="none">Not running ads</option>
+          <option value="past">Ran ads before</option>
+          <option value="none">Never ran ads</option>
           <option value="pending">Not checked yet</option>
           <option value="unclear">Couldn't check</option>
           <option value="running">Running ads</option>
@@ -378,6 +379,7 @@
           <span class="lbl">Delay between scrolls <small>milliseconds; higher is gentler on Facebook</small></span>
           <input class="inp" name="scrollDelayMs" type="number" min="900" step="100" />
         </label>
+        <label class="chk"><input type="checkbox" name="adCheckAll" /> Check the Ad Library for businesses without a website too <small class="muted">(slower: one name search each, and a name alone proves less)</small></label>
         <label class="field">
           <span class="lbl">Same business name match <small>0.8 to 1. Two names in the same area this close count as one business. 0.92 is a good start, 1 means exactly the same</small></span>
           <input class="inp" name="nameMatch" type="number" min="0.8" max="1" step="0.01" />
@@ -457,6 +459,9 @@
           <label class="btn file">Restore backup<input type="file" accept="application/json" data-import hidden /></label>
           <button class="btn danger" data-act="wipe">Delete all leads</button>
         </div>
+        <h2 id="problems">Problems by source</h2>
+        <p class="hint">What went wrong lately on each site. A login wall, checkpoint or block pauses that source and shows an alert on the Meta ads tab.</p>
+        <div data-problems></div>
         <h2 id="memory">Contacted memory</h2>
         <p class="hint">Everyone you mark contacted, message from the phone queue, email or export to Google Contacts is remembered here, even after you delete the lead. Searches skip them and matching leads are hidden (tick Show contacted before to see them). Import your own list too: any CSV with phone numbers, like your sheet of contacted numbers or Google Contacts &gt; Export &gt; Google CSV.</p>
         <p class="hint" data-history-count></p>
@@ -477,6 +482,7 @@
     <div class="toast" data-toast role="status" aria-live="polite" hidden></div>
 
     <script src="../lib/common.js"></script>
+    <script src="../lib/prospects.js"></script>
     <script src="../lib/vendor/qrcode.js"></script>
     <script src="../lib/qr.js"></script>
     <script src="dashboard.js"></script>

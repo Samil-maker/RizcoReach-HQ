@@ -258,10 +258,13 @@ just say "I already run ads". Instead it works in three steps.
 2. **Checks each website** with the same audit as website leads, which also
    finds their Facebook page, WhatsApp number and email.
 3. **Checks the Meta Ad Library for each business with a website**, in a
-   background tab, one business every few seconds. Businesses without a
-   website get the website script whatever their ads, so their check is
-   skipped ("Not needed"); use **Check ads again** if you want it anyway:
-   1. the live ads on their Facebook page (found through the link on their
+   background tab, one business every few seconds. It searches the UAE
+   (country AE) for live **and** past ads, so a business that stopped
+   advertising shows up too. Businesses without a website get the website
+   script whatever their ads, so their check is skipped ("Not needed") unless
+   you tick **Check the Ad Library for businesses without a website too** in
+   Settings > Collecting, or press **Check again** on one:
+   1. every ad their Facebook page ran (found through the link on their
       website);
    2. a search for their website address, which catches ads run from a
       different page;
@@ -269,16 +272,31 @@ just say "I already run ads". Instead it works in three steps.
       count; it needs the same website, phone number or (almost) exactly the
       same name.
 
-| Verdict | What it means | Script (with a website) |
-| --- | --- | --- |
-| **Not running ads** | Their Facebook page was found and has 0 live ads. Confirmed. | Ads script |
-| **No ads found** | No Facebook page to check, and nothing matched their website, phone or name. Very likely not advertising, not certain. | Ads script |
-| **Running ads** | Live ads matched to them. | Skipped (hidden by default) |
-| **Couldn't check** | The Ad Library didn't load or asked you to log in. Press **Check again**, or open the search link and look. | Ads script, marked *Ad check not done* |
+   Only the first ads of a long history load. When none of those is live but
+   there are more, the check asks for the live ones on their own before it
+   says "ran before".
 
+| Verdict | Status in exports | What it means | Script (with a website) |
+| --- | --- | --- | --- |
+| **Ran ads before** | `ran_before_inactive_now` | Ads matched to them, none live now. Shows when the last one stopped. Your warmest ads prospects: they already paid for ads once. | Ads script |
+| **Never ran ads** | `never_ran` | Their Facebook page was found and has never run ads in the UAE. Confirmed. | Ads script |
+| **No ads found** | `never_ran` (not certain) | No Facebook page to check, and nothing matched their website, phone or name. | Ads script |
+| **Running ads** | `active_now` | Live ads matched to them. Shows when the newest started. | Skipped (hidden by default) |
+| **Couldn't check** | blank | The Ad Library didn't load. Press **Check again**, or open the search link and look. | Ads script, marked *Ad check not done* |
+
+The Meta ads CSV has `meta_ad_status` and `last_ad_date` columns.
 Businesses without a working website get the Website script whatever the verdict.
-You can overrule any verdict in the lead panel (**They don't run ads** /
-**They do run ads**).
+You can overrule any verdict in the lead panel (**They never ran ads** /
+**They ran ads before** / **They do run ads**).
+
+**Login walls and blocks.** If the Ad Library asks you to log in, or shows a
+checkpoint, a captcha or a "temporarily blocked" page, the checks pause at
+that business, the extension icon shows a red **!**, Chrome shows a
+notification, and the Meta ads tab says what happened. Nothing tries to get past
+it. Sort it out in the tab yourself, then press **Resume**. Google Maps works the
+same way: a consent or "unusual traffic" page pauses the search, and Resume
+carries on from the same search. Every problem is listed per site in
+Settings > Your data > Problems by source.
 
 The list is sorted by priority: not advertising, plenty of Google reviews and
 a good rating (proof of demand), a mobile or WhatsApp number, and a website

@@ -6,7 +6,8 @@ S.areasOff = new Set();
 S.finderNiche = '';
 
 const AD_STATE = {
-  none: ['none', 'Not running ads'],
+  past: ['past', 'Ran ads before'],
+  none: ['none', 'Never ran ads'],
   likely: ['likely', 'No ads found'],
   running: ['running', 'Running ads'],
   unclear: ['unclear', "Couldn't check"],
@@ -15,6 +16,9 @@ const AD_STATE = {
   pending: ['unclear', 'Not checked'],
   skipped: ['unclear', 'Not needed'],
 };
+const monthYear = (t) => (t ? new Date(t).toLocaleDateString(undefined, { month: 'short', year: 'numeric' }) : '');
+/** "Ran ads before · stopped Mar 2026", "Running ads (3)". */
+const adExtra = (a) => (a.state === 'running' && a.activeAds ? ` (${a.activeAds})` : a.state === 'past' && a.lastAdAt ? ` · stopped ${monthYear(a.lastAdAt)}` : '');
 const compactNum = (n) => Intl.NumberFormat(undefined, { notation: 'compact' }).format(n || 0);
 
 function prospects() {
@@ -32,7 +36,7 @@ function filteredProspects() {
     // Running ads with a website and not messaged yet: skipped for outreach, shown only when asked for.
     if (skippedNew(l) && !f.skipped && f.ads !== 'running' && f.tag !== 'Running ads') continue;
     if (hideContacted(l, f) || !tagMatch(l, f.tag)) continue;
-    if (f.ads === 'pending' ? !['pending', 'queued', 'checking'].includes(ad) : f.ads === 'none' ? !['none', 'likely'].includes(ad) : f.ads && ad !== f.ads) continue;
+    if (f.ads === 'pending' ? !['pending', 'queued', 'checking', 'skipped'].includes(ad) : f.ads === 'none' ? !['none', 'likely'].includes(ad) : f.ads && ad !== f.ads) continue;
     if (f.niche && f.niche !== '__avoid' && LH.nicheOf(l, S.settings) !== f.niche) continue;
     if (f.heat && LH.heat(p) !== f.heat) continue;
     if (f.status === '' && l.status === 'skip') continue;
@@ -70,8 +74,7 @@ function adCell(l) {
   const a = l.adCheck || {};
   const [cls, label] = AD_STATE[a.state || 'pending'] || AD_STATE.pending;
   const spin = ['checking', 'queued'].includes(a.state) ? '<span class="spin"></span>' : '';
-  const extra = a.state === 'running' && a.activeAds ? ` (${a.activeAds})` : '';
-  return `<span class="ad-state ${cls}" title="${esc(a.reason || '')}">${spin}${esc(label + extra)}</span>`;
+  return `<span class="ad-state ${cls}" title="${esc(a.reason || '')}">${spin}${esc(label + adExtra(a))}</span>`;
 }
 
 function prospectRow({ l, p }) {
@@ -92,7 +95,7 @@ function prospectRow({ l, p }) {
 
 function renderProspectKpis() {
   const all = prospects().filter((l) => !l.avoid);
-  const none = all.filter((l) => ['none', 'likely'].includes((l.adCheck || {}).state)).length;
+  const none = all.filter((l) => ['none', 'likely', 'past'].includes((l.adCheck || {}).state)).length;
   const waiting = all.filter((l) => ['queued', 'checking'].includes((l.adCheck || {}).state)).length;
   const phone = all.filter((l) => l.phones.length).length;
   const contacted = all.filter((l) => !['new', 'skip'].includes(l.status)).length;
@@ -125,7 +128,7 @@ function renderFinderStatus() {
   const el = $('[data-finder-status]');
   const f = S.finder;
   const waiting = S.adQueue.length;
-  if (!f && !waiting) return (el.hidden = true);
+  if (!f && !waiting && !Object.keys(S.alerts).length) return (el.hidden = true);
   el.hidden = false;
   const parts = [];
   if (f && ['running', 'paused'].includes(f.status)) {
@@ -139,8 +142,13 @@ function renderFinderStatus() {
   } else if (f) {
     parts.push(`<span class="t">Last run: ${esc(f.niche || finderWhat(f))} · ${f.mapsI || 0} searches · ${esc(f.status)}</span>${runStats(f) || `<span class="m">${f.added} new businesses</span>`}`);
   }
-  const notes = f && f.mapsNote ? [`Google Maps: ${f.mapsNote}`] : [];
+  const notes = f && f.mapsNote && !S.alerts.maps ? [`Google Maps: ${f.mapsNote}`] : [];
   if (notes.length) parts.push(`<span class="err" style="margin:0">${esc(notes.join(' · '))}</span>`);
+  // A login wall, checkpoint or block paused a source: say so and leave it to you.
+  for (const [src, a] of Object.entries(S.alerts)) {
+    const resume = src === 'maps' ? 'finder-resume' : 'adcheck-resume';
+    parts.push(`<span class="err alert" style="margin:0" data-alert="${esc(src)}"><b>${esc(SOURCE_LABEL[src] || src)} paused:</b> ${esc(a.text)}. Open the ${src === 'maps' ? 'Google Maps' : 'Ad Library'} tab${a.url ? ` (<a href="${esc(safeHref(a.url))}" target="_blank" rel="noopener noreferrer">this search</a>)` : ''}, sort it out, then press Resume. Nothing tries to get past it.</span><button class="btn sm" data-act="${resume}">Resume</button>`);
+  }
   if (waiting) parts.push(`<span class="m"><span class="spin"></span> Ad Library checks: ${waiting} left${S.adPaused ? ' (paused)' : ''}</span><button class="btn sm" data-act="${S.adPaused ? 'adcheck-resume' : 'adcheck-pause'}">${S.adPaused ? 'Resume' : 'Pause'} checks</button>`);
   el.innerHTML = parts.join('');
 }
@@ -177,7 +185,7 @@ function prospectHighlights(l) {
   const ig = (l.sources || {}).instagram || {};
   const a = (l.adCheck || {}).state;
   return [
-    a === 'none' ? 'Not running Meta ads' : a === 'likely' ? 'No Meta ads found' : a === 'running' ? 'Already running Meta ads' : 'Meta ads not checked yet',
+    a === 'past' ? 'Ran Meta ads before, none live now' : a === 'none' ? 'Never ran Meta ads' : a === 'likely' ? 'No Meta ads found' : a === 'running' ? 'Already running Meta ads' : 'Meta ads not checked yet',
     m.reviews ? `${m.rating ? `${m.rating}★ · ` : ''}${m.reviews} Google reviews` : '',
     ig.followers ? `${compactNum(ig.followers)} Instagram followers` : '',
   ].filter(Boolean);
@@ -196,12 +204,14 @@ function prospectDrawerHtml(l) {
     a.searchUrl && `<a href="${esc(safeHref(a.searchUrl))}" target="_blank" rel="noopener noreferrer">Ad Library search</a>`,
   ].filter(Boolean);
   const matches = (a.matches || [])
-    .map((x) => `<li><b>${esc(x.pageName)}</b> · ${esc(x.ads)} active ad${x.ads === 1 ? '' : 's'} · matched by ${esc(x.reasons.join(', '))}${x.pageId ? ` · <a href="${esc(safeHref(LH.pageAdsUrl(x.pageId, 'ALL', x.pageName)))}" target="_blank" rel="noopener noreferrer">see ads</a>` : ''}</li>`)
+    .map((x) => `<li><b>${esc(x.pageName)}</b> · ${esc(x.ads)} live ad${x.ads === 1 ? '' : 's'}${x.total > x.ads ? ` of ${esc(x.total)} in all` : ''} · matched by ${esc(x.reasons.join(', '))}${x.pageId ? ` · <a href="${esc(safeHref(LH.pageAdsUrl(x.pageId, 'ALL', x.pageName)))}" target="_blank" rel="noopener noreferrer">see ads</a>` : ''}</li>`)
     .join('');
+  const when = a.lastAdAt ? fmtDate(a.lastAdAt) : '';
   const adText = {
-    none: a.evidence || 'Their Facebook page has no active ads in the Ad Library.',
+    past: `They ran Meta ads in the UAE before but nothing is live now.${when ? ` The last one stopped ${when}.` : ''}${a.totalAds ? ` ${a.totalAds} ad${a.totalAds === 1 ? '' : 's'} in the Ad Library.` : ''}`,
+    none: a.evidence || 'Their Facebook page has never run ads in the UAE.',
     likely: a.evidence || 'No ads found, but their Facebook page could not be checked directly.',
-    running: 'They are running ads right now.',
+    running: `They are running ads right now${a.activeAds ? ` (${a.activeAds} live)` : ''}.${when ? ` The newest started ${when}.` : ''}`,
     unclear: `Couldn't check automatically${a.reason ? `: ${a.reason}` : ''}. Open the Ad Library search to look yourself.`,
     checking: 'Checking the Ad Library now…',
     queued: 'Waiting for its turn in the Ad Library check.',
@@ -233,7 +243,8 @@ function prospectDrawerHtml(l) {
       ${matches ? `<ul class="matches">${matches}</ul>` : ''}
       <div class="row">
         <button class="btn sm" data-act="adcheck-one">Check again</button>
-        <button class="btn sm ghost" data-act="adcheck-set" data-state="none">They don't run ads</button>
+        <button class="btn sm ghost" data-act="adcheck-set" data-state="none">They never ran ads</button>
+        <button class="btn sm ghost" data-act="adcheck-set" data-state="past">They ran ads before</button>
         <button class="btn sm ghost" data-act="adcheck-set" data-state="running">They do run ads</button>
       </div>
     </section>
@@ -252,7 +263,7 @@ function prospectDrawerHtml(l) {
 
 /* --------------------------------------------------------------------- csv */
 function exportProspectsCsv(list) {
-  const head = ['priority', 'business', 'niche', 'area', 'meta_ads', 'active_ads', 'ad_library_search', 'google_rating', 'google_reviews', 'google_maps', 'website', 'website_score', 'tags', 'phone', 'whatsapp_link', 'whatsapp_message_link', 'email', 'instagram', 'address', 'status', 'notes', 'found_on'];
+  const head = ['priority', 'business', 'niche', 'area', 'meta_ads', 'meta_ad_status', 'active_ads', 'last_ad_date', 'ad_library_search', 'google_rating', 'google_reviews', 'google_maps', 'website', 'website_score', 'tags', 'phone', 'whatsapp_link', 'whatsapp_message_link', 'email', 'instagram', 'address', 'status', 'notes', 'found_on'];
   const rows = list.map((l) => {
     const m = (l.sources || {}).maps || {};
     const a = l.adCheck || {};
@@ -264,7 +275,9 @@ function exportProspectsCsv(list) {
       LH.nicheOf(l, S.settings),
       l.area,
       (AD_STATE[a.state || 'pending'] || AD_STATE.pending)[1],
+      LH.adStatus(l).status || '',
       a.activeAds || '',
+      a.lastAdAt ? new Date(a.lastAdAt).toISOString().slice(0, 10) : '',
       a.searchUrl || '',
       m.rating || '',
       m.reviews || '',

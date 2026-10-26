@@ -544,6 +544,7 @@ Mussafah, Abu Dhabi`),
     queueKey: '',
     queueKeyAt: 0,
     adsCity: 'Dubai',
+    adCheckAll: false, // also check the Ad Library for businesses without a website (one name search each, slower)
     nameMatch: 0.92, // how close two names in the same area must be to count as one business (Jaro-Winkler, 0.8 to 1)
     bubbles: 3, // WhatsApp messages per pitch: 3 = greeting, body, closing · 2 = greeting with body, closing
     niches: null, // null = use LH.DEFAULT_NICHES
@@ -779,7 +780,7 @@ Mussafah, Abu Dhabi`),
   LH.prospectPriority = (p) => {
     let s = 0;
     const ad = (p.adCheck || {}).state;
-    s += ad === 'none' ? 30 : ad === 'likely' ? 22 : ad === 'running' ? -40 : 10;
+    s += ad === 'past' ? 32 : ad === 'none' ? 30 : ad === 'likely' ? 22 : ad === 'running' ? -40 : 10;
     const m = (p.sources || {}).maps || {};
     const ig = (p.sources || {}).instagram || {};
     const reviews = m.reviews || 0;
@@ -890,6 +891,7 @@ Mussafah, Abu Dhabi`),
     if (lead.kind !== 'prospect') return { script: null, tag: 'Running ads' };
     const ad = (lead.adCheck || {}).state;
     if (ad === 'running') return { script: null, tag: 'Running ads' };
+    if (ad === 'past') return { script: 'ads', tag: 'Ran ads before' };
     if (ad === 'none' || ad === 'likely') return { script: 'ads', tag: 'No Meta ads' };
     return { script: 'ads', tag: 'Ad check not done' };
   };
