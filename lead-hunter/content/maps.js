@@ -103,8 +103,9 @@
     // Lines after the rating look like "Beauty salon · · Al Wasl Rd" and "Open · Closes 9 pm · 04 123 4567".
     const info = lines.filter((l) => l.includes('·'));
     const parts = (info[0] || '').split('·').map((x) => x.trim()).filter((x) => x && !/^[\W\d]+$/.test(x));
-    const category = parts[0] && !/open|closed|closes|opens/i.test(parts[0]) ? parts[0] : '';
-    const address = parts.length > 1 ? parts[parts.length - 1] : '';
+    const category = parts[0] && !LH.looksLikeHours(parts[0]) ? parts[0] : '';
+    // The last part that is not opening hours ("Interior designer · Opens 10 AM" has no address).
+    const address = parts.length > 1 ? parts.slice(1).reverse().find((x) => !LH.looksLikeHours(x)) || '' : '';
     const site = card.querySelector('a[data-value="Website"], a[aria-label^="Visit"], a.lcr4fd, div.Rwjeuc a[href]');
     const dataId = placeIdFrom(a.getAttribute('href'));
     const n = net.get(dataId) || {};

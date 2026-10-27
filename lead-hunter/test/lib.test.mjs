@@ -440,6 +440,14 @@ test('Google Contacts file: the business name as the contact, WhatsApp number fi
   // Control and invisible characters (a pasted name, a line break in an address) never reach the file.
   const odd = LH.googleContactsRows([prospect({ pageName: 'Shine\u200b Studio', phones: [{ number: '+971501112222', source: 'google' }], sources: { maps: { address: 'Shop 3\nJLT' } } })], S)[0];
   assert.deepEqual([col(odd, 'First Name'), col(odd, 'Address 1 - Formatted')], ['Shine Studio', 'Shop 3 JLT']);
+  // From a real export Google refused: "fancy" bold letters, an emoji, a Google Maps icon glyph, opening hours as the address.
+  const real = (pageName, address) => LH.googleContactsRows([prospect({ pageName, phones: [{ number: '+971501112222', source: 'google' }], sources: { maps: { address } } })], S)[0];
+  assert.equal(col(real('𝐃𝐢𝐠𝐢𝐜𝐫𝐚𝐟𝐭 𝐈𝐧𝐭𝐞𝐫𝐢𝐨𝐫 𝐃𝐞𝐬𝐢𝐠𝐧', ''), 'First Name'), 'Digicraft Interior Design');
+  assert.equal(col(real('AR Tech Interior 🛠️', ''), 'First Name'), 'AR Tech Interior');
+  assert.equal(col(real('Gloss', '\ue0c8CPG9+WWQ - Al Falah - Abu Dhabi'), 'Address 1 - Formatted'), 'CPG9+WWQ - Al Falah - Abu Dhabi');
+  assert.equal(col(real('Gloss', 'Opens 10\u202fAM'), 'Address 1 - Formatted'), '', 'opening hours are not an address');
+  assert.equal(col(real('🛠️', ''), 'First Name'), 'glossyppf.example', 'a name of only emoji falls back to the website');
+  assert.deepEqual(['Opens 10\u202fAM', 'Closed', 'Open 24 hours', 'Closes 9 pm', 'Al Wasl Rd', 'Shop 7, Street 10'].map(LH.looksLikeHours), [true, true, true, true, false, false]);
 });
 
 test('vCard: the same contacts, escaped, one label, phones first', () => {

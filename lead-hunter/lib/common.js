@@ -1465,8 +1465,16 @@ Mussafah, Abu Dhabi`),
     const signals = h.parts.filter((x) => x.points > 0).map((x) => x.label);
     return [`Heat ${h.score} (${h.profile} offer)`, signals.join(', '), LH.quality(l, settings).topReason, LH.nicheOf(l, settings), l.area].filter(Boolean).join(' · ');
   };
-  // One line of plain text: no control or invisible characters, which importers choke on.
-  const oneLine = (v) => String(v == null ? '' : v).replace(/[\u0000-\u001f\u007f\u200b-\u200f\u2028\u2029\ufeff]/g, ' ').replace(/\s+/g, ' ').trim();
+  // One line of plain text that importers accept: "fancy" letters (𝐃𝐢𝐠𝐢) as plain ones, and no control, invisible,
+  // private use (icon font glyphs copied from Google Maps) or emoji characters.
+  const oneLine = (v) =>
+    String(v == null ? '' : v)
+      .normalize('NFKC')
+      .replace(/[\u0000-\u001f\u007f\u200b-\u200f\u2028\u2029\ufeff\ue000-\uf8ff\ufe00-\ufe0f]|[\u{10000}-\u{10ffff}]/gu, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  /** "Opens 10 AM", "Closed", "Open 24 hours": opening hours, which Google Maps lists show where an address can be. */
+  LH.looksLikeHours = (s) => /^(open|opens|opening|closed|closes|closing|temporarily closed|permanently closed)\b|\b\d{1,2}(:\d{2})?\s*(am|pm)\b|24 hours/i.test(String(s || '').trim());
   /** The contacts themselves, shared by both files. */
   LH.contactsFor = (leads, settings = {}, date = new Date()) =>
     (leads || [])
@@ -1476,8 +1484,10 @@ Mussafah, Abu Dhabi`),
         const other = ((l.phones || []).find((p) => p.number && p.number !== main) || {}).number || '';
         const email = LH.goodEmails(l)[0] || '';
         if (!main && !email) return null;
-        const name = oneLine(LH.shortName(l.pageName) || LH.igHandle(l) || LH.domainOf(l.website || '') || main || email).slice(0, 100);
-        return { name, main, other, email, website: oneLine(l.website), address: oneLine(((l.sources || {}).maps || {}).address), notes: oneLine(LH.contactNotes(l, settings)).slice(0, 1000), label: LH.contactsLabel(date) };
+        // The first name that is still there once cleaned (a name made only of emoji is not).
+        const name = [LH.shortName(l.pageName), LH.igHandle(l), LH.domainOf(l.website || ''), main, email].map(oneLine).find(Boolean).slice(0, 100);
+        const address = oneLine(((l.sources || {}).maps || {}).address);
+        return { name, main, other, email, website: oneLine(l.website), address: LH.looksLikeHours(address) ? '' : address, notes: oneLine(LH.contactNotes(l, settings)).slice(0, 1000), label: LH.contactsLabel(date) };
       })
       .filter(Boolean);
   LH.googleContactsRows = (leads, settings = {}, date = new Date()) =>
