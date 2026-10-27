@@ -472,6 +472,12 @@ async function prospectAction(act, b, l) {
     case 'ads-bulk-contacts':
       exportContacts(selected().map((id) => S.leads.get(id)));
       return true;
+    case 'ads-vcard':
+      exportContacts(filteredProspects().map((r) => r.l), 'vcf');
+      return true;
+    case 'ads-bulk-vcard':
+      exportContacts(selected().map((id) => S.leads.get(id)), 'vcf');
+      return true;
     case 'ads-bulk-delete': {
       const ids = selected();
       if (!confirm(`Delete ${ids.length} businesses? They may be found again in a later search.`)) return true;

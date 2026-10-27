@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "RizcoReach Lead Hunter",
   "short_name": "Lead Hunter",
-  "version": "2.2.1",
+  "version": "2.2.2",
   "description": "Find UAE businesses and people asking for help online, check and score them, and export them to Google Contacts.",
   "minimum_chrome_version": "111",
   "icons": {

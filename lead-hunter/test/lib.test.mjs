@@ -423,18 +423,44 @@ test('Google Contacts file: the business name as the contact, WhatsApp number fi
   assert.equal(LH.GOOGLE_CONTACTS_HEAD.length, rows[0].length);
   const col = (r, name) => r[LH.GOOGLE_CONTACTS_HEAD.indexOf(name)];
   assert.equal(rows.length, 2, 'a lead with no phone and no email is left out');
-  assert.equal(col(rows[0], 'Name'), 'Glossy PPF');
-  assert.equal(col(rows[0], 'Organization 1 - Name'), 'Glossy PPF');
-  assert.deepEqual([col(rows[0], 'Phone 1 - Type'), col(rows[0], 'Phone 1 - Value')], ['Mobile', '+971501234567'], 'the WhatsApp number comes first');
-  assert.deepEqual([col(rows[0], 'Phone 2 - Type'), col(rows[0], 'Phone 2 - Value')], ['Work', '+97142345678']);
+  // Google's current layout (contacts.google.com exports these headers today).
+  assert.deepEqual(LH.GOOGLE_CONTACTS_HEAD.slice(0, 5), ['First Name', 'Last Name', 'Organization Name', 'Notes', 'Labels']);
+  assert.equal(col(rows[0], 'First Name'), 'Glossy PPF');
+  assert.equal(col(rows[0], 'Organization Name'), 'Glossy PPF');
+  assert.deepEqual([col(rows[0], 'Phone 1 - Label'), col(rows[0], 'Phone 1 - Value')], ['Mobile', '+971501234567'], 'the WhatsApp number comes first');
+  assert.deepEqual([col(rows[0], 'Phone 2 - Label'), col(rows[0], 'Phone 2 - Value')], ['Work', '+97142345678']);
   assert.equal(col(rows[0], 'E-mail 1 - Value'), 'hi@glossy.example', 'a bounced email is skipped');
   assert.equal(col(rows[0], 'Website 1 - Value'), 'https://glossyppf.example/');
-  // Notes: the heat score, its signals and the pitch line. One label per export day.
+  // Notes: the heat score, its signals and the top reason. One label per export day.
   assert.match(col(rows[0], 'Notes'), /^Heat \d+ \(ads offer\) · .*Has a WhatsApp mobile · Car · Al Quoz$/);
-  assert.equal(col(rows[0], 'Group Membership'), '* myContacts ::: LF-2026-10-26');
-  assert.deepEqual([col(rows[1], 'Name'), col(rows[1], 'Phone 1 - Value'), col(rows[1], 'E-mail 1 - Value')], ['Mail Only', '', 'team@mailonly.example']);
+  assert.equal(col(rows[0], 'Labels'), 'LF-2026-10-26');
+  assert.deepEqual([col(rows[1], 'First Name'), col(rows[1], 'Phone 1 - Value'), col(rows[1], 'E-mail 1 - Value')], ['Mail Only', '', 'team@mailonly.example']);
   // Phone numbers stay numbers in the file (no formula guard quote).
   assert.match(LH.toCsv([rows[0]]), /,Mobile,\+971501234567,/);
+  // Control and invisible characters (a pasted name, a line break in an address) never reach the file.
+  const odd = LH.googleContactsRows([prospect({ pageName: 'Shine\u200b Studio', phones: [{ number: '+971501112222', source: 'google' }], sources: { maps: { address: 'Shop 3\nJLT' } } })], S)[0];
+  assert.deepEqual([col(odd, 'First Name'), col(odd, 'Address 1 - Formatted')], ['Shine Studio', 'Shop 3 JLT']);
+});
+
+test('vCard: the same contacts, escaped, one label, phones first', () => {
+  const vcf = LH.contactsVcf(
+    [
+      prospect({ pageName: 'Glow; Studio, Dubai', phones: [{ number: '+97142345678', source: 'google' }, { number: '+971501234567', source: 'whatsapp-site' }], emails: ['hi@glow.example'], area: 'JLT', sources: { maps: { address: 'Shop 3, JLT; Dubai' } } }),
+      prospect({ pageName: 'No Contact Spa', phones: [], emails: [] }),
+    ],
+    S,
+    new Date(2026, 9, 26),
+  );
+  const cards = vcf.split('END:VCARD\r\n').filter(Boolean);
+  assert.equal(cards.length, 1, 'no phone and no email: left out');
+  const lines = cards[0].split('\r\n');
+  assert.deepEqual(lines.slice(0, 5), ['BEGIN:VCARD', 'VERSION:3.0', 'N:;Glow\\; Studio;;;', 'FN:Glow\\; Studio', 'ORG:Glow\\; Studio']);
+  assert.ok(lines.includes('TEL;TYPE=CELL:+971501234567') && lines.includes('TEL;TYPE=WORK:+97142345678'), 'the WhatsApp number as the mobile');
+  assert.ok(lines.includes('EMAIL;TYPE=INTERNET,WORK:hi@glow.example'));
+  assert.ok(lines.includes('ADR;TYPE=WORK:;;Shop 3\\, JLT\\; Dubai;;;;'));
+  assert.ok(lines.includes('CATEGORIES:LF-2026-10-26'));
+  assert.ok(lines.some((x) => /^NOTE:Heat \d+ \(ads offer\)/.test(x)));
+  assert.ok(vcf.endsWith('\r\n') && !vcf.includes('\n\n'));
 });
 
 test('areas: Dubai and Abu Dhabi cover the whole city, no area twice', () => {

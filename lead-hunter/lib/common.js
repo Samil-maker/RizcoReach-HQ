@@ -1452,10 +1452,11 @@ Mussafah, Abu Dhabi`),
 
   /* ---------------------------------------------------------- Google Contacts */
   /**
-   * Leads as a Google Contacts import file (Google CSV format): the business name as the contact name, so WhatsApp
-   * on your phone shows who each chat is. Leads without a phone or an email are left out. All go in one label.
+   * Leads as contacts for Google Contacts: the business name as the contact name, so WhatsApp on your phone shows
+   * who each chat is. Leads without a phone or an email are left out. All go in one label. Two files: a CSV in the
+   * layout contacts.google.com exports today, and a vCard (.vcf), which Google imports too and a phone can open.
    */
-  LH.GOOGLE_CONTACTS_HEAD = ['Name', 'Given Name', 'Family Name', 'Organization 1 - Name', 'Phone 1 - Type', 'Phone 1 - Value', 'Phone 2 - Type', 'Phone 2 - Value', 'E-mail 1 - Type', 'E-mail 1 - Value', 'Website 1 - Type', 'Website 1 - Value', 'Address 1 - Type', 'Address 1 - Formatted', 'Notes', 'Group Membership'];
+  LH.GOOGLE_CONTACTS_HEAD = ['First Name', 'Last Name', 'Organization Name', 'Notes', 'Labels', 'E-mail 1 - Label', 'E-mail 1 - Value', 'Phone 1 - Label', 'Phone 1 - Value', 'Phone 2 - Label', 'Phone 2 - Value', 'Address 1 - Label', 'Address 1 - Formatted', 'Website 1 - Label', 'Website 1 - Value'];
   /** "LF-2026-10-26": the label each export gets in Google Contacts, so one batch is easy to find and to delete. */
   LH.contactsLabel = (date = new Date()) => `LF-${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
   /** Notes for a contact: the heat score, its signals and the top reason. */
@@ -1464,7 +1465,10 @@ Mussafah, Abu Dhabi`),
     const signals = h.parts.filter((x) => x.points > 0).map((x) => x.label);
     return [`Heat ${h.score} (${h.profile} offer)`, signals.join(', '), LH.quality(l, settings).topReason, LH.nicheOf(l, settings), l.area].filter(Boolean).join(' · ');
   };
-  LH.googleContactsRows = (leads, settings = {}, date = new Date()) =>
+  // One line of plain text: no control or invisible characters, which importers choke on.
+  const oneLine = (v) => String(v == null ? '' : v).replace(/[\u0000-\u001f\u007f\u200b-\u200f\u2028\u2029\ufeff]/g, ' ').replace(/\s+/g, ' ').trim();
+  /** The contacts themselves, shared by both files. */
+  LH.contactsFor = (leads, settings = {}, date = new Date()) =>
     (leads || [])
       .filter(Boolean)
       .map((l) => {
@@ -1472,11 +1476,52 @@ Mussafah, Abu Dhabi`),
         const other = ((l.phones || []).find((p) => p.number && p.number !== main) || {}).number || '';
         const email = LH.goodEmails(l)[0] || '';
         if (!main && !email) return null;
-        const name = LH.shortName(l.pageName) || LH.igHandle(l) || LH.domainOf(l.website || '') || main;
-        const address = (((l.sources || {}).maps || {}).address) || '';
-        return [name, name, '', name, main ? 'Mobile' : '', main, other ? 'Work' : '', other, email ? 'Work' : '', email, l.website ? 'Work' : '', l.website || '', address ? 'Work' : '', address, LH.contactNotes(l, settings), `* myContacts ::: ${LH.contactsLabel(date)}`];
+        const name = oneLine(LH.shortName(l.pageName) || LH.igHandle(l) || LH.domainOf(l.website || '') || main || email).slice(0, 100);
+        return { name, main, other, email, website: oneLine(l.website), address: oneLine(((l.sources || {}).maps || {}).address), notes: oneLine(LH.contactNotes(l, settings)).slice(0, 1000), label: LH.contactsLabel(date) };
       })
       .filter(Boolean);
+  LH.googleContactsRows = (leads, settings = {}, date = new Date()) =>
+    LH.contactsFor(leads, settings, date).map((c) => [
+      c.name,
+      '',
+      c.name,
+      c.notes,
+      c.label,
+      c.email ? 'Work' : '',
+      c.email,
+      c.main ? 'Mobile' : '',
+      c.main,
+      c.other ? 'Work' : '',
+      c.other,
+      c.address ? 'Work' : '',
+      c.address,
+      c.website ? 'Work' : '',
+      c.website,
+    ]);
+  /** The same contacts as a vCard 3.0 file. */
+  const vText = (v) => oneLine(v).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,');
+  LH.contactsVcf = (leads, settings = {}, date = new Date()) =>
+    LH.contactsFor(leads, settings, date)
+      .map((c) =>
+        [
+          'BEGIN:VCARD',
+          'VERSION:3.0',
+          `N:;${vText(c.name)};;;`,
+          `FN:${vText(c.name)}`,
+          `ORG:${vText(c.name)}`,
+          c.main && `TEL;TYPE=CELL:${c.main}`,
+          c.other && `TEL;TYPE=WORK:${c.other}`,
+          c.email && `EMAIL;TYPE=INTERNET,WORK:${c.email}`,
+          c.website && `URL:${c.website}`,
+          c.address && `ADR;TYPE=WORK:;;${vText(c.address)};;;;`,
+          c.notes && `NOTE:${vText(c.notes)}`,
+          `CATEGORIES:${vText(c.label)}`,
+          'END:VCARD',
+        ]
+          .filter(Boolean)
+          .join('\r\n'),
+      )
+      .join('\r\n') + '\r\n';
 
   /* ------------------------------------------------------------------ Full CSV */
   /** Every field of every lead, one row each: the record from the brief plus the scores behind it. */

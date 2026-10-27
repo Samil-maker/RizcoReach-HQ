@@ -451,13 +451,21 @@ try {
   const [gdl] = await Promise.all([dash.waitForEvent('download'), dash.click('[data-act="export-contacts"]')]);
   assert.match(gdl.suggestedFilename(), /^google-contacts-\d{4}-\d{2}-\d{2}\.csv$/);
   const [gHead, ...gRows] = parseCsv(fs.readFileSync(await gdl.path(), 'utf8'));
-  assert.deepEqual(gHead.slice(0, 2), ['Name', 'Given Name']);
+  const gRaw = fs.readFileSync(await gdl.path(), 'utf8');
+  assert.ok(!gRaw.startsWith('\ufeff'), "no byte order mark: Google's own files have none");
+  assert.deepEqual(gHead.slice(0, 3), ['First Name', 'Last Name', 'Organization Name']);
   const shineContact = gRows.find((r) => r[0] === 'Shine Auto Spa');
   assert.ok(shineContact, 'Shine Auto Spa is a contact');
   assert.match(shineContact[gHead.indexOf('Phone 1 - Value')] || shineContact[gHead.indexOf('E-mail 1 - Value')], /^\+971|@/);
-  assert.match(shineContact[gHead.indexOf('Group Membership')], /^\* myContacts ::: LF-\d{4}-\d{2}-\d{2}$/, 'one label per export day');
+  assert.match(shineContact[gHead.indexOf('Labels')], /^LF-\d{4}-\d{2}-\d{2}$/, 'one label per export day');
   assert.match(shineContact[gHead.indexOf('Notes')], /^Heat \d+ \((ads|website) offer\) · /, 'notes: heat score, signals, top reason');
   assert.ok(gRows.every((r) => r[gHead.indexOf('Phone 1 - Value')] || r[gHead.indexOf('E-mail 1 - Value')]), 'every contact has a phone or an email');
+  // The same contacts as a vCard.
+  const [vdl] = await Promise.all([dash.waitForEvent('download'), dash.click('[data-act="export-vcard"]')]);
+  assert.match(vdl.suggestedFilename(), /^google-contacts-\d{4}-\d{2}-\d{2}\.vcf$/);
+  const vcf = fs.readFileSync(await vdl.path(), 'utf8');
+  assert.equal(vcf.split('BEGIN:VCARD').length - 1, gRows.length, 'one card per contact');
+  assert.match(vcf, /FN:Shine Auto Spa\r\n/);
 
   // A skipped lead (running ads, working website): left out of the emails.
   await dash.click(`tr[data-id="${bad.id}"] [data-open]`);

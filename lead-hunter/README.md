@@ -78,7 +78,9 @@ is saved, with no hunt running.
   name as the contact name, the WhatsApp number first, and notes with the heat score, its signals and the top
   reason. Each export gets its own label, `LF-<date>`. Import it at contacts.google.com (Import) and WhatsApp
   on your phone shows each business by name. Leads without a phone or an email are left out. Everyone you
-  export is remembered, so later searches skip them.
+  export is remembered, so later searches skip them. The file uses the layout contacts.google.com exports
+  today. If Google still says it can't import it, press **vCard** next to it: the same contacts as a .vcf file,
+  which Google Contacts imports too (and a phone can open directly).
 - **Full CSV** gives every field of every lead shown (40 columns). **Export CSV** is the shorter version.
 - When you have contacted someone, open the lead and press **Mark contacted** with the channel (WhatsApp,
   Instagram or Email), or set the status on the row. **Replied** on the row marks a reply (press again to

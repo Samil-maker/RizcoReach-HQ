@@ -697,11 +697,14 @@ function contactedRow(l) {
 function openTab(url) {
   chrome.tabs.create({ url });
 }
-/* Google Contacts: import the file at contacts.google.com (Import), then WhatsApp shows each business by name. */
-function exportContacts(list) {
+/* Google Contacts: import the file at contacts.google.com (Import), then WhatsApp shows each business by name.
+   csv: Google's own layout (no byte order mark, which Google's files don't have); vcf: a vCard, the fallback. */
+function exportContacts(list, format = 'csv') {
   const rows = LH.googleContactsRows(list, S.settings);
   if (!rows.length) return toast('None of these leads has a phone number or an email yet.');
-  download(`google-contacts-${new Date().toISOString().slice(0, 10)}.csv`, '\ufeff' + LH.toCsv([LH.GOOGLE_CONTACTS_HEAD, ...rows]), 'text/csv;charset=utf-8');
+  const day = new Date().toISOString().slice(0, 10);
+  if (format === 'vcf') download(`google-contacts-${day}.vcf`, LH.contactsVcf(list, S.settings), 'text/vcard;charset=utf-8');
+  else download(`google-contacts-${day}.csv`, `${LH.toCsv([LH.GOOGLE_CONTACTS_HEAD, ...rows])}\r\n`, 'text/csv;charset=utf-8');
   // Saved on your phone from now on: future searches skip these businesses.
   send({ type: 'history:add', ids: list.filter((l) => l.phones.length || (l.emails || []).length).map((l) => l.id), via: 'export' });
   toast(`${rows.length} contact${rows.length === 1 ? '' : 's'} saved. Import the file at contacts.google.com`);
@@ -1211,6 +1214,10 @@ function bind() {
         return exportContacts(filtered().map((r) => r.l));
       case 'bulk-contacts':
         return exportContacts([...S.selected].map((id) => S.leads.get(id)).filter(Boolean));
+      case 'export-vcard':
+        return exportContacts(filtered().map((r) => r.l), 'vcf');
+      case 'bulk-vcard':
+        return exportContacts([...S.selected].map((id) => S.leads.get(id)).filter(Boolean), 'vcf');
       case 'bulk-recheck':
         await send({ type: 'lead:recheck', ids: [...S.selected] });
         return toast(`Re-checking ${S.selected.size} websites`);
