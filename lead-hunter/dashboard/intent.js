@@ -93,7 +93,12 @@ function renderIntentStatus() {
       ? `<span class="m">AI check (${esc(LH.AI_NAMES[LH.aiProvider(S.settings)])}) is on${unchecked ? `: ${unchecked} post${unchecked === 1 ? '' : 's'} not checked yet` : ', every post checked'}.</span>${unchecked ? '<button class="btn sm" data-act="intent-ai-all">Check them now</button>' : ''}`
       : '<span class="m">AI check is off: add a free Google AI Studio key in Settings > Intent Radar to have each post read and confirmed.</span>',
   );
-  parts.push(`<span class="m">${every > 0 ? `Reddit is scanned every ${esc(every)} hour${every === 1 ? '' : 's'}${st.lastRedditAt ? `, last ${esc(ago(st.lastRedditAt))}` : ''}.` : 'Automatic Reddit scans are off (Settings > Intent Radar).'} Facebook groups and LinkedIn: open one and press Scan for leads.</span>`);
+  const reddit = !S.settings.redditClientId
+    ? `Reddit: press Scan Reddit now (it opens Reddit, where you need to be logged in)${st.lastRedditAt ? `, last scan ${esc(ago(st.lastRedditAt))}` : ''}.`
+    : every > 0
+      ? `Reddit is scanned every ${esc(every)} hour${every === 1 ? '' : 's'}${st.lastRedditAt ? `, last ${esc(ago(st.lastRedditAt))}` : ''}.`
+      : 'Automatic Reddit scans are off (Settings > Intent Radar).';
+  parts.push(`<span class="m">${reddit} Facebook groups and LinkedIn: open one and press Scan for leads.</span>`);
   el.innerHTML = parts.join('');
 }
 
@@ -127,6 +132,13 @@ async function intentAction(act, b) {
   const post = id && S.intent.posts.find((p) => p.id === id);
   switch (act) {
     case 'intent-run': {
+      // Without an approved Reddit app id, Reddit is read in a Reddit tab where you are logged in.
+      if (!S.settings.redditClientId) {
+        const sub = (LH.parseLines(S.settings.subreddits)[0] || 'dubai').replace(/^\/?r\//i, '');
+        await chrome.tabs.create({ url: `https://www.reddit.com/r/${encodeURIComponent(sub)}/new/#lead-hunter-scan` });
+        toast('Reddit opened in a new tab and reads your subreddits there. Log in to Reddit in that tab if it asks.');
+        return true;
+      }
       b.disabled = true;
       b.textContent = 'Scanning Reddit…';
       const r = await send({ type: 'intent:run' });

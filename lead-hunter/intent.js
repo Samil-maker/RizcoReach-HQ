@@ -1,8 +1,8 @@
 /* Lead Hunter: Intent Radar (loaded by background.js after finder.js, shares its scope).
    Finds people asking for a website or marketing help, owners complaining business is slow, and companies hiring
    for marketing, from the last 14 days:
-   - Reddit, every few hours through Reddit's API (r/dubai, r/UAE, r/abudhabi, r/sharjah, r/smallbusiness with UAE
-     mentions only), a few seconds apart;
+   - Reddit (r/dubai, r/UAE, r/abudhabi, r/sharjah, r/smallbusiness with UAE mentions only), one subreddit a few
+     seconds apart: when you press Scan my subreddits on reddit.com, or every few hours with an approved app id;
    - Facebook groups and LinkedIn posts and jobs, only when you press Scan on a page you have open yourself.
    Every post goes through LH.intentProcess (lib/intent.js) and is saved once in IndexedDB (lib/intent-db.js).
    With a Gemini (free) or Claude key, the AI then reads each new post and says whether it is a real buyer (the AI check). */
@@ -149,8 +149,10 @@ async function runAi() {
 chrome.alarms.onAlarm.addListener((a) => a.name === 'tick' && runAi());
 
 /* -------------------------------------------------------------- Reddit */
-/* With a Reddit app id (reddit.com/prefs/apps) it uses Reddit's OAuth API; without one, Reddit's public JSON for
-   the same listings. Either way one request per subreddit, 4 to 12 seconds apart, every few hours. */
+/* Reddit refuses requests from anyone not logged in (403) and new Reddit apps need Reddit's approval. So:
+   - with an approved Reddit app id, its OAuth API is read here, every few hours, one subreddit 4 to 12 seconds apart;
+   - without one, the Scan my subreddits button on reddit.com (content/social-scan.js) reads them in your own
+     logged in Reddit tab when you press it, at the same pace, and sends the posts here. */
 async function redditToken(settings) {
   const { redditAuth = {} } = await store.get('redditAuth');
   if (redditAuth.token && redditAuth.exp > now() + 60000 && redditAuth.id === settings.redditClientId) return redditAuth.token;
@@ -193,6 +195,7 @@ let radarBusy = false;
 async function runRadar(manual = false) {
   if (radarBusy) return { error: 'The Intent Radar is already scanning.' };
   const settings = await getSettings();
+  if (!settings.redditClientId) return { error: 'Open Reddit while logged in and press Scan my subreddits at the bottom right.', tab: true };
   const { alerts = {} } = await store.get('alerts');
   if (alerts.reddit) return { error: 'Reddit is paused. Press Resume on the Intent tab first.' };
   const subs = LH.parseLines(settings.subreddits).map((s) => s.replace(/^\/?r\//i, ''));
@@ -225,25 +228,50 @@ async function runRadar(manual = false) {
 const SOURCE_EXTRA = { reddit: 'Reddit', facebook: 'Facebook groups', linkedin: 'LinkedIn', ai: 'AI check' };
 Object.assign(SOURCE_NAMES, SOURCE_EXTRA);
 
-// Every minute: is a scan due? (Every few hours by default, 0 in Settings turns it off.)
+// Every minute: is a scan due? (Every few hours by default, 0 in Settings turns it off.) Only with a Reddit app id.
 chrome.alarms.onAlarm.addListener(async (a) => {
   if (a.name !== 'tick') return;
   const settings = await getSettings();
+  if (!settings.redditClientId) return;
   const { intentState = {} } = await store.get('intentState');
   if (settings.radarEveryHours > 0 && now() - (intentState.lastRedditAt || 0) >= settings.radarEveryHours * 36e5) runRadar(false).catch(() => {});
 });
+// Before 2.2 Reddit was read here without logging in, which Reddit now refuses: that old alert goes.
+chrome.runtime.onInstalled.addListener(async () => {
+  if (!(await getSettings()).redditClientId) await clearAlert('reddit');
+});
+/** Which subreddits are r/smallbusiness-like: their posts only count when they mention the UAE. */
+const uaeOnlySubs = (settings) => new Set(LH.parseLines(settings.uaeOnlySubs).map((s) => s.replace(/^\/?r\//i, '').toLowerCase()));
 
 /* ------------------------------------------------------------- messages */
 Object.assign(handlers, {
-  /** A Facebook group or LinkedIn page you pressed Scan on. */
+  /** A Facebook group, LinkedIn or Reddit page you pressed Scan on. Reddit sends your subreddits' listings too. */
   'intent:scan': async (msg) => {
-    const source = msg.source === 'linkedin' ? 'linkedin' : 'facebook';
+    const source = ['linkedin', 'reddit'].includes(msg.source) ? msg.source : 'facebook';
     if (msg.blocked) {
       await alertSource(source, msg.blocked, msg.url || '', 'Sort it out in that tab, then press Resume on the Intent tab.');
       return { blocked: msg.blocked };
     }
+    if (source === 'reddit') {
+      const uaeOnly = uaeOnlySubs(await getSettings());
+      const fromPage = (msg.posts || []).slice(0, 200).map((p) => ({ ...p, needUae: uaeOnly.has(String(p.place || '').replace(/^r\//i, '').toLowerCase()) }));
+      const fromLists = (msg.listings || []).flatMap((l) => LH.redditPosts({ data: { children: (l.children || []).slice(0, 100).map((data) => ({ data })) } }, l.sub).map((p) => ({ ...p, needUae: uaeOnly.has(String(l.sub).toLowerCase()) })));
+      return { stats: await saveIntent([...fromLists, ...fromPage].map((p) => ({ ...p, source })), source) };
+    }
     const raws = (msg.posts || []).slice(0, 200).map((p) => ({ ...p, source, needUae: source === 'linkedin' }));
     return { stats: await saveIntent(raws, source) };
+  },
+  /** The Scan my subreddits button on reddit.com: your subreddits, and whether Reddit is paused. */
+  'reddit:plan': async () => {
+    const settings = await getSettings();
+    const { alerts = {} } = await store.get('alerts');
+    const uaeOnly = LH.parseLines(settings.uaeOnlySubs).map((s) => s.replace(/^\/?r\//i, ''));
+    const subs = LH.parseLines(settings.subreddits).map((s) => s.replace(/^\/?r\//i, ''));
+    return {
+      paused: alerts.reddit ? alerts.reddit.text : '',
+      subs: [...subs.map((s) => [s, false]), ...uaeOnly.map((s) => [s, true])],
+      cap: Math.max(1, Math.min(100, settings.intentCap || 100)),
+    };
   },
   'intent:run': async () => runRadar(true),
   'intent:update': async (msg) => {

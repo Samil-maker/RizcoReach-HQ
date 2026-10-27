@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "RizcoReach Lead Hunter",
   "short_name": "Lead Hunter",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Find UAE businesses and people asking for help online, check and score them, and export them to Google Contacts.",
   "minimum_chrome_version": "111",
   "icons": {
@@ -53,7 +53,7 @@
       "run_at": "document_idle"
     },
     {
-      "matches": ["https://www.facebook.com/*", "https://web.facebook.com/*", "https://www.linkedin.com/*"],
+      "matches": ["https://www.facebook.com/*", "https://web.facebook.com/*", "https://www.linkedin.com/*", "https://www.reddit.com/*", "https://old.reddit.com/*"],
       "exclude_matches": ["https://*.facebook.com/ads/library*"],
       "js": ["content/social-scan.js"],
       "run_at": "document_idle"

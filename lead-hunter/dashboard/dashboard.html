@@ -271,7 +271,7 @@
     <main class="view" data-view-panel="intent" hidden>
       <section class="card intent-head">
         <h2>Intent Radar</h2>
-        <p class="hint">People asking for a website or marketing help, owners saying business is slow, and companies hiring for marketing, from the last 14 days. Reddit is scanned for you. For Facebook groups and LinkedIn (posts or jobs), open the page yourself and press <b>Scan for leads</b> at the bottom right. Sellers are filtered out. Until the AI check is set up every post is marked unverified: read it before you reach out.</p>
+        <p class="hint">People asking for a website or marketing help, owners saying business is slow, and companies hiring for marketing, from the last 14 days. <b>Scan Reddit now</b> opens Reddit in a tab (be logged in there) and reads your subreddits. For Facebook groups and LinkedIn (posts or jobs), open the page yourself and press <b>Scan for leads</b> at the bottom right. Sellers are filtered out. Until the AI check is set up every post is marked unverified: read it before you reach out.</p>
         <div class="row"><button class="btn pri" data-act="intent-run">Scan Reddit now</button></div>
         <div class="finder-status" data-intent-status></div>
       </section>
@@ -423,14 +423,14 @@
         </div>
 
         <h2 id="intent">Intent Radar</h2>
-        <p class="hint">Reddit is read through Reddit's API, one request per subreddit, 4 to 12 seconds apart. Without an app id it uses Reddit's public JSON for the same pages, which is fine for a few requests every few hours. If Reddit starts refusing, create an app at reddit.com/prefs/apps (type: installed app, the id is under its name) and paste the id here. A refusal pauses Reddit and alerts you.</p>
+        <p class="hint">Reddit refuses to show posts to anyone not logged in, and new Reddit API apps now need Reddit's approval. So Reddit is read in your own Reddit tab: press <b>Scan Reddit now</b> on the Intent tab (or <b>Scan my subreddits</b> at the bottom right of any Reddit page) while logged in to Reddit in this Chrome profile. It reads the newest posts of each subreddit below, 4 to 12 seconds apart. If you have an approved Reddit app, paste its id here and Reddit is scanned by itself every few hours instead. A block or "too many requests" pauses Reddit and alerts you.</p>
         <div class="grid2">
-          <label class="field"><span class="lbl">Scan Reddit every <small>hours, 0 = only when you press Scan now</small></span><input class="inp" name="radarEveryHours" type="number" min="0" max="48" /></label>
+          <label class="field"><span class="lbl">Scan Reddit every <small>hours, only with an approved app id; 0 = only when you press Scan now</small></span><input class="inp" name="radarEveryHours" type="number" min="0" max="48" /></label>
           <label class="field"><span class="lbl">Only posts from the last <small>days</small></span><input class="inp" name="intentMaxDays" type="number" min="1" max="60" /></label>
           <label class="field"><span class="lbl">Subreddits <small>one per line</small></span><textarea class="inp" name="subreddits" rows="4"></textarea></label>
           <label class="field"><span class="lbl">UAE only subreddits <small>a post counts only if it mentions the UAE</small></span><textarea class="inp" name="uaeOnlySubs" rows="4"></textarea></label>
           <label class="field"><span class="lbl">Posts per subreddit per scan <small>at most 100</small></span><input class="inp" name="intentCap" type="number" min="10" max="100" /></label>
-          <label class="field"><span class="lbl">Reddit app id <small>optional</small></span><input class="inp" name="redditClientId" autocomplete="off" /></label>
+          <label class="field"><span class="lbl">Reddit app id <small>optional, an app Reddit approved</small></span><input class="inp" name="redditClientId" autocomplete="off" /></label>
           <label class="field"><span class="lbl">Reddit app secret <small>only for script or web apps</small></span><input class="inp" name="redditSecret" type="password" autocomplete="off" /></label>
         </div>
         <p class="hint">Keywords: a post with any of these phrases is saved under that kind. Arabic phrases about websites or marketing count as those too.</p>

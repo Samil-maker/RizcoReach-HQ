@@ -184,6 +184,13 @@ export const REDDIT = {
   ],
 };
 export const redditCalls = [];
+// refuse: the subreddit JSON answers 403, as Reddit does when you are not logged in.
+export const redditMode = { refuse: false };
+const shPost = (id, sub, author, title, body, h) =>
+  `<shreddit-post id="t3_${id}" permalink="/r/${sub}/comments/${id}/post/" post-title="${title}" author="${author}" subreddit-prefixed-name="r/${sub}" created-timestamp="${new Date(Date.now() - h * 36e5).toISOString()}"><a slot="title" href="/r/${sub}/comments/${id}/post/">${title}</a><div slot="text-body"><div class="md"><p>${body}</p></div></div></shreddit-post>`;
+const REDDIT_PAGE = () =>
+  `<!doctype html><html><head><meta charset="utf-8"><title>r/dubai</title></head><body><main>${shPost('d1', 'dubai', 'sarah_dxb', 'Need a website for my bakery in JLT, any recommendations?', '', 3)}${shPost('d9', 'dubai', 'old_cafe', 'Need a website for my cafe', 'Anyone?', 30 * 24)}</main></body></html>`;
+const REDDIT_WALL = `<!doctype html><html><head><meta charset="utf-8"><title>Blocked</title></head><body><p>You've been blocked by network security.</p><p>To continue, log in to your Reddit account or use your developer token</p></body></html>`;
 const fbPost = (who, id, age, text, inner = '') =>
   `<div role="article"><h3><a href="/${who.toLowerCase().replace(/\s/g, '.')}">${who}</a></h3><a href="https://www.facebook.com/groups/dubaibiz/posts/${id}/" aria-label="${age}">${age}</a><div data-ad-preview="message">${text}</div>${inner}</div>`;
 const FB_GROUP = `<!doctype html><html><head><meta charset="utf-8"><title>(3) Dubai Business Owners | Facebook</title></head><body><div role="feed">
@@ -275,9 +282,14 @@ export function metaHandler(req, res, url, host) {
   }
   if (host === 'www.reddit.com') {
     const sub = (url.pathname.match(/^\/r\/([^/]+)\/new\.json$/) || [])[1];
-    if (!sub) return send(404, 'text/plain', 'not found'), true;
-    redditCalls.push(`${sub}?${url.searchParams.get('limit')}`);
-    return send(200, 'application/json', JSON.stringify({ kind: 'Listing', data: { children: REDDIT[sub] || [] } })), true;
+    if (sub) {
+      redditCalls.push(`${sub}?${url.searchParams.get('limit')}`);
+      if (redditMode.refuse) return send(403, 'text/html; charset=utf-8', REDDIT_WALL), true;
+      return send(200, 'application/json', JSON.stringify({ kind: 'Listing', data: { children: REDDIT[sub] || [] } })), true;
+    }
+    if (url.pathname.startsWith('/r/blocked/')) return send(403, 'text/html; charset=utf-8', REDDIT_WALL), true;
+    if (/^\/r\/[^/]+\/new\/?$/.test(url.pathname)) return send(200, 'text/html; charset=utf-8', REDDIT_PAGE()), true;
+    return send(404, 'text/plain', 'not found'), true;
   }
   if (host === 'www.facebook.com' && url.pathname.startsWith('/groups/')) return send(200, 'text/html; charset=utf-8', FB_GROUP), true;
   if (host === 'www.linkedin.com') {

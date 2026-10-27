@@ -14,7 +14,7 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { makeAd, searchResponse, memStore } from './fixtures.mjs';
-import { metaHandler, checkLog, metaWall, IG_API, CLAUDE, GEMINI, redditCalls, PRESET_SEARCHES } from './meta-fixtures.mjs';
+import { metaHandler, checkLog, metaWall, IG_API, CLAUDE, GEMINI, redditCalls, redditMode, PRESET_SEARCHES } from './meta-fixtures.mjs';
 import { handle as queueHandle } from '../../netlify/functions/lead-queue.mts';
 import { handle as emailHandle } from '../../netlify/functions/email-queue.mts';
 
@@ -1160,11 +1160,42 @@ try {
     const { settings } = await chrome.storage.local.get('settings');
     await chrome.storage.local.set({ settings: { ...settings, subreddits: 'dubai\nUAE', uaeOnlySubs: 'smallbusiness' } });
   });
-  const radar = await sw.evaluate(() => handlers['intent:run']({}));
+  // Without an approved Reddit app id nothing is read in the background: Reddit refuses anyone not logged in.
+  assert.equal((await sw.evaluate(() => handlers['intent:run']({}))).tab, true);
+  assert.deepEqual(redditCalls, [], 'no background Reddit requests without an app id');
+  // Scan Reddit now opens a Reddit tab (where you are logged in) and reads your subreddits there.
+  const rd = await ctx.newPage();
+  await rd.goto('https://www.reddit.com/r/dubai/new/#lead-hunter-scan');
+  await rd.locator('.msg', { hasText: 'Read 8 posts' }).waitFor({ timeout: 45000 });
+  assert.equal(await rd.textContent('.msg'), 'Read 8 posts from 3 subreddits · 3 saved to the Intent tab · 1 sellers · 1 older than 14 days · 1 already saved · 1 not in the UAE');
+  assert.ok(!rd.url().includes('#lead-hunter-scan'), 'the start marker is removed');
+  assert.deepEqual(redditCalls, ['dubai?100', 'UAE?100', 'smallbusiness?100'], 'one request per subreddit, through the Reddit tab');
   const runStats = ({ seen, saved, duplicates, nomatch, seller, old, foreign }) => ({ seen, saved, duplicates, nomatch, seller, old, foreign });
-  console.log('Reddit scan:', JSON.stringify(runStats(radar.stats)));
-  assert.deepEqual(runStats(radar.stats), { seen: 8, saved: 3, duplicates: 1, nomatch: 1, seller: 1, old: 1, foreign: 1 });
-  assert.deepEqual(redditCalls, ['dubai?100', 'UAE?100', 'smallbusiness?100'], 'one request per subreddit, public JSON without an app id');
+  const radarRun = (await storage('intentState')).intentState.runs[0];
+  console.log('Reddit scan:', JSON.stringify(runStats(radarRun)));
+  assert.deepEqual(runStats(radarRun), { seen: 8, saved: 3, duplicates: 1, nomatch: 1, seller: 1, old: 1, foreign: 1 });
+  // Scan this page: the posts on the page (one already saved, one too old).
+  await rd.locator('button', { hasText: 'Scan this page' }).click();
+  await rd.locator('.msg', { hasText: 'Read 2 posts' }).waitFor();
+  assert.equal(await rd.textContent('.msg'), 'Read 2 posts · 0 saved to the Intent tab · 1 older than 14 days · 1 already saved');
+  // Reddit refusing (not logged in): it stops at once and reads the page instead. No alert for that.
+  redditMode.refuse = true;
+  await rd.locator('button', { hasText: 'Scan my subreddits' }).click();
+  await rd.locator('.msg', { hasText: 'From this page' }).waitFor();
+  assert.equal(await rd.textContent('.msg'), 'Reddit did not let Lead Hunter read your subreddits (403). If you are not logged in to Reddit, log in and try again. From this page: Read 2 posts · 0 saved to the Intent tab · 1 older than 14 days · 1 already saved');
+  assert.equal(redditCalls.length, 4, 'one refused request, then it stopped');
+  redditMode.refuse = false;
+  assert.ok(!((await storage('alerts')).alerts || {}).reddit);
+  // A Reddit block page pauses Reddit with an alert; nothing tries to get past it.
+  await rd.goto('https://www.reddit.com/r/blocked/new/');
+  await rd.locator('button', { hasText: 'Scan this page' }).click();
+  await rd.locator('.msg', { hasText: 'paused Reddit' }).waitFor();
+  assert.equal((await storage('alerts')).alerts.reddit.text, 'Reddit blocked this browser (log in to Reddit in this tab)');
+  await rd.locator('button', { hasText: 'Scan my subreddits' }).click();
+  await rd.locator('.msg', { hasText: 'Reddit scans are paused' }).waitFor();
+  assert.equal(redditCalls.length, 4, 'paused: no requests');
+  await sw.evaluate(() => handlers['intent:resume']({ source: 'reddit' }));
+  await rd.close();
   assert.equal(await sw.evaluate(() => chrome.action.getBadgeText({})), '3', 'new posts on the icon');
   await dash.bringToFront();
   await dash.click('[data-view="intent"]');
@@ -1176,6 +1207,11 @@ try {
   assert.match(first, /Reddit · r\/dubai\s*3h ago · u\/sarah_dxb\s*Website buyer\s*unverified/);
   assert.ok(!(await dash.$('.intent-card [data-intent-opener], .intent-card [data-act="intent-copy"]')), 'no opener: you write your own');
   assert.match(await dash.textContent('[data-intent-status]'), /AI check is off: add a free Google AI Studio key/);
+  assert.match(await dash.textContent('[data-intent-status]'), /Reddit: press Scan Reddit now \(it opens Reddit, where you need to be logged in\), last scan/);
+  const [redditTab] = await Promise.all([ctx.waitForEvent('page'), dash.click('[data-act="intent-run"]')]);
+  await redditTab.waitForLoadState('domcontentloaded');
+  assert.match(redditTab.url(), /^https:\/\/www\.reddit\.com\/r\/dubai\/new\//, 'opens your first subreddit');
+  await redditTab.close();
   if (SHOTS) await dash.screenshot({ path: `${SHOTS}/22-intent.png` });
   const firstId = await dash.getAttribute('.intent-card', 'data-intent-id');
   await dash.click('.intent-card [data-act="intent-contacted"]');

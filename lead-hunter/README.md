@@ -254,10 +254,13 @@ The **Intent** tab lists people asking for what you sell, newest first. It cover
 buyers, owners saying business is slow, and companies hiring for marketing, all from the last 14 days. The
 extension icon shows how many new ones came in.
 
-- **Reddit** (r/dubai, r/UAE, r/abudhabi, r/sharjah, plus r/smallbusiness posts that mention the UAE) is read every
-  3 hours, one request per subreddit, 4 to 12 seconds apart, or when you press **Scan Reddit now**. It uses Reddit's
-  public JSON for those pages. If Reddit starts refusing, create an app at reddit.com/prefs/apps (installed app)
-  and paste its id in Settings > Intent Radar to use Reddit's OAuth API instead.
+- **Reddit** (r/dubai, r/UAE, r/abudhabi, r/sharjah, plus r/smallbusiness posts that mention the UAE). Reddit now
+  refuses to show posts to anyone not logged in, and new Reddit API apps need Reddit's approval, so Reddit is read
+  in your own Reddit tab: press **Scan Reddit now** on the Intent tab, or **Scan my subreddits** at the bottom right
+  of any Reddit page, while logged in to Reddit in this Chrome profile. It reads the newest posts of each subreddit,
+  4 to 12 seconds apart (**Stop** ends it early). **Scan this page** reads just the posts on the page. If Reddit says
+  no (usually: not logged in), it stops at once and reads the page you are on instead. If you have a Reddit app that
+  Reddit approved, paste its id in Settings > Intent Radar and Reddit is scanned by itself every 3 hours instead.
 - **Facebook groups and LinkedIn**: open a group, your LinkedIn feed, a LinkedIn post search or a LinkedIn jobs
   search yourself, then press **Scan for leads** at the bottom right. It reads the posts already on the page.
   **Scroll and scan** scrolls five small steps first, 4 to 12 seconds apart. Nothing runs without you pressing it.
@@ -458,7 +461,7 @@ out of backups.
 | `lib/common.js` | Phones, links, presets, offers and emails, quality signals, heat score, tags, results, exports |
 | `background.js` | Lead storage, hunts, enrichment queue, Google lookups, the email queue on your site |
 | `intent.js`, `lib/intent.js`, `lib/intent-db.js` | Intent Radar: Reddit scans, the rules every post goes through, the AI check (Gemini or Claude), and the IndexedDB store |
-| `content/social-scan.js` | The Scan for leads button on Facebook groups and LinkedIn |
+| `content/social-scan.js` | The Scan for leads button on Facebook groups and LinkedIn, and Scan my subreddits on Reddit |
 | `finder.js` | Meta ads tab: Google Maps search (Places API or a Maps tab) and the Ad Library check queue |
 | `lib/prospects.js` | Prospect de-duplication keys, Places results, matching ads to a business |
 | `content/maps-hook.js` · `content/maps.js` | Read Google Maps search results (network data plus the visible list) |

@@ -1,16 +1,20 @@
-/* Lead Hunter: "Scan for leads" on Facebook groups and LinkedIn (content script).
+/* Lead Hunter: "Scan for leads" on Facebook groups and LinkedIn, "Scan my subreddits" on Reddit (content script).
    Nothing runs by itself. The button reads the posts already on the page you have open, and only when you press it.
    "Scroll and scan" scrolls a few small steps first, 4 to 12 seconds apart, like a person reading.
+   On Reddit (logged in), Scan my subreddits reads the newest posts of each subreddit in your settings through this
+   tab, the way Reddit's own pages load them, one subreddit 4 to 12 seconds apart; "Scan this page" reads the page.
    On a login wall, checkpoint, captcha or "temporarily blocked" page it stops and tells Lead Hunter, which pauses
    that source and alerts you. It never tries to get past one. */
 (() => {
   if (window.__leadHunterSocial) return;
   window.__leadHunterSocial = true;
 
-  const site = /linkedin\.com$/.test(location.hostname) ? 'linkedin' : 'facebook';
-  /** What this page is: a Facebook group, LinkedIn posts (feed or search), LinkedIn jobs, or nothing to scan. */
+  const site = /linkedin\.com$/.test(location.hostname) ? 'linkedin' : /reddit\.com$/.test(location.hostname) ? 'reddit' : 'facebook';
+  const NAME = { facebook: 'Facebook', linkedin: 'LinkedIn', reddit: 'Reddit' }[site];
+  /** What this page is: a Facebook group, LinkedIn posts (feed or search), LinkedIn jobs, Reddit, or nothing to scan. */
   const kind = () => {
     const p = location.pathname;
+    if (site === 'reddit') return 'reddit';
     if (site === 'facebook') return /^\/groups\/[^/]+/.test(p) ? 'group' : '';
     if (/^\/(feed|search\/results\/(content|all))/.test(p)) return 'posts';
     if (/^\/jobs\//.test(p)) return 'jobs';
@@ -42,13 +46,15 @@
   /* A wall instead of posts. Text is only read when no post was found: a post can say "log in" too. */
   function wall(found) {
     const p = location.pathname;
-    if (/\/checkpoint\//.test(p) || /captcha/i.test(location.href)) return `${site === 'linkedin' ? 'LinkedIn' : 'Facebook'} showed a security check`;
-    if (/^\/(login|authwall|uas\/login)/.test(p)) return `${site === 'linkedin' ? 'LinkedIn' : 'Facebook'} asked you to log in`;
+    if (/\/checkpoint\//.test(p) || /captcha/i.test(location.href)) return `${NAME} showed a security check`;
+    if (/^\/(login|authwall|uas\/login|account\/login)/.test(p)) return `${NAME} asked you to log in`;
     if (found) return '';
     const body = txt(document.body).slice(0, 4000);
-    if (/temporarily blocked|you['’]re temporarily|temporarily restricted|unusual activity/i.test(body)) return `${site === 'linkedin' ? 'LinkedIn' : 'Facebook'} says this account is temporarily restricted`;
-    if (/security check|confirm (that )?you['’]?re (a )?human|captcha|not a robot/i.test(body)) return `${site === 'linkedin' ? 'LinkedIn' : 'Facebook'} showed a security check`;
-    if (/join linkedin|sign in to (see|view)|log in to (see|continue)|you must log in/i.test(body)) return `${site === 'linkedin' ? 'LinkedIn' : 'Facebook'} asked you to log in`;
+    if (/blocked by network security/i.test(body)) return 'Reddit blocked this browser (log in to Reddit in this tab)';
+    if (/whoa there,? pardner|too many requests/i.test(body)) return `${NAME} says too many requests`;
+    if (/temporarily blocked|you['’]re temporarily|temporarily restricted|unusual activity/i.test(body)) return `${NAME} says this account is temporarily restricted`;
+    if (/security check|confirm (that )?you['’]?re (a )?human|captcha|not a robot/i.test(body)) return `${NAME} showed a security check`;
+    if (/join linkedin|sign in to (see|view)|log in to (see|continue)|you must log in/i.test(body)) return `${NAME} asked you to log in`;
     return '';
   }
 
@@ -101,7 +107,47 @@
     }
     return out;
   }
-  const read = () => (kind() === 'group' ? facebookPosts() : kind() === 'jobs' ? linkedinJobs() : kind() === 'posts' ? linkedinPosts() : []);
+  /** Reddit posts on the page: the current site (<shreddit-post>) and old.reddit.com (.thing). */
+  function redditPagePosts() {
+    const out = [];
+    const seen = new Set();
+    const abs = (path) => (path ? new URL(path, 'https://www.reddit.com').href : '');
+    for (const el of document.querySelectorAll('shreddit-post')) {
+      const id = String(el.getAttribute('id') || el.getAttribute('thingid') || '').replace(/^t3_/, '');
+      if (!id || seen.has(id) || el.hasAttribute('promoted')) continue;
+      seen.add(id);
+      const permalink = el.getAttribute('permalink') || '';
+      const title = el.getAttribute('post-title') || txt(pick(el, ['[slot="title"]', 'h1', 'h3']));
+      const author = el.getAttribute('author') || '';
+      out.push({
+        id: `reddit:${id}`,
+        place: el.getAttribute('subreddit-prefixed-name') || (permalink.match(/^\/(r\/[^/]+)/) || [])[1] || '',
+        url: abs(permalink),
+        author: author ? `u/${author}` : '',
+        title: title.slice(0, 300),
+        text: txt(pick(el, ['[slot="text-body"]', '[property="schema:articleBody"]', '.md'])).slice(0, 3000),
+        createdAt: Date.parse(el.getAttribute('created-timestamp') || '') || null,
+      });
+    }
+    for (const el of document.querySelectorAll('.thing.link[data-fullname^="t3_"]')) {
+      const id = el.getAttribute('data-fullname').slice(3);
+      if (seen.has(id) || el.classList.contains('promoted') || el.classList.contains('stickied')) continue;
+      seen.add(id);
+      const author = el.getAttribute('data-author') || '';
+      out.push({
+        id: `reddit:${id}`,
+        place: el.getAttribute('data-subreddit-prefixed') || `r/${el.getAttribute('data-subreddit') || ''}`,
+        url: abs(el.getAttribute('data-permalink')),
+        author: author ? `u/${author}` : '',
+        title: txt(el.querySelector('a.title')).slice(0, 300),
+        text: txt(el.querySelector('.expando .md')).slice(0, 3000),
+        createdAt: Number(el.getAttribute('data-timestamp')) || null,
+      });
+    }
+    return out;
+  }
+  const read = () =>
+    kind() === 'group' ? facebookPosts() : kind() === 'jobs' ? linkedinJobs() : kind() === 'posts' ? linkedinPosts() : kind() === 'reddit' ? redditPagePosts() : [];
 
   /* ---------------------------------------------------------------- button */
   const host = document.createElement('div');
@@ -113,43 +159,103 @@
       button[disabled]{opacity:.7;cursor:default}
       .msg{max-width:300px;background:#fff;color:#111;border:1px solid #ddd;border-radius:10px;padding:8px 10px;font-weight:500;box-shadow:0 4px 16px rgba(0,0,0,.12)}
       .msg:empty{display:none}
-    </style><div class="box"><div class="msg" data-msg></div><button type="button" class="ghost" data-scroll>Scroll and scan</button><button type="button" data-scan>Scan for leads</button></div>`;
+    </style><div class="box"><div class="msg" data-msg></div><button type="button" class="ghost" data-scroll>${site === 'reddit' ? 'Scan this page' : 'Scroll and scan'}</button><button type="button" data-scan>${site === 'reddit' ? 'Scan my subreddits' : 'Scan for leads'}</button></div>`;
   const msgEl = root.querySelector('[data-msg]');
   const scanBtn = root.querySelector('[data-scan]');
   const scrollBtn = root.querySelector('[data-scroll]');
   let busy = false;
   let stop = false;
 
-  async function scan() {
+  const summary = (s, what) => {
+    const skipped = [s.seller && `${s.seller} sellers`, s.old && `${s.old} older than 14 days`, s.duplicates && `${s.duplicates} already saved`, s.foreign && `${s.foreign} not in the UAE`].filter(Boolean);
+    return `Read ${s.seen} ${what} · ${s.saved} saved to the Intent tab${skipped.length ? ` · ${skipped.join(' · ')}` : ''}`;
+  };
+  async function scan(prefix = '') {
     const posts = read();
     const blocked = wall(posts.length > 0);
     if (blocked) {
       await send({ type: 'intent:scan', source: site, blocked, url: location.href });
-      msgEl.textContent = `${blocked}. Lead Hunter paused ${site === 'linkedin' ? 'LinkedIn' : 'Facebook'} scans. Sort it out here, then press Resume on the Intent tab.`;
+      msgEl.textContent = `${blocked}. Lead Hunter paused ${NAME} scans. Sort it out here, then press Resume on the Intent tab.`;
       return;
     }
     if (!posts.length) {
-      msgEl.textContent = 'No posts found on this part of the page. Scroll down a little and try again.';
+      msgEl.textContent = `${prefix}No posts found on this part of the page. Scroll down a little and try again.`;
       return;
     }
     const res = await send({ type: 'intent:scan', source: site, posts, url: location.href });
     if (!res) return (msgEl.textContent = 'Lead Hunter is not running. Reload this page.');
-    const s = res.stats || {};
-    const skipped = [s.seller && `${s.seller} sellers`, s.old && `${s.old} older than 14 days`, s.duplicates && `${s.duplicates} already saved`, s.foreign && `${s.foreign} not in the UAE`].filter(Boolean);
-    msgEl.textContent = `Read ${s.seen} ${kind() === 'jobs' ? 'jobs' : 'posts'} · ${s.saved} saved to the Intent tab${skipped.length ? ` · ${skipped.join(' · ')}` : ''}`;
+    msgEl.textContent = prefix + summary(res.stats || {}, kind() === 'jobs' ? 'jobs' : 'posts');
+  }
+
+  /* Reddit: the newest posts of each of your subreddits, read through this logged in tab like Reddit's own pages.
+     If Reddit refuses, it stops there and reads the page you are on instead; a wall or "too many requests" pauses
+     Reddit with an alert. */
+  async function scanSubreddits() {
+    const plan = await send({ type: 'reddit:plan' });
+    if (!plan) return (msgEl.textContent = 'Lead Hunter is not running. Reload this page.');
+    if (plan.paused) return (msgEl.textContent = `Reddit scans are paused (${plan.paused}). Press Resume on the Intent tab first.`);
+    if (!plan.subs.length) return (msgEl.textContent = 'No subreddits in Lead Hunter Settings > Intent Radar.');
+    const listings = [];
+    let refused = 0;
+    for (let i = 0; i < plan.subs.length && !stop; i++) {
+      const [sub] = plan.subs[i];
+      msgEl.textContent = `Reading r/${sub} (${i + 1} of ${plan.subs.length})… Press Stop to end early.`;
+      let res = null;
+      try {
+        res = await fetch(`/r/${encodeURIComponent(sub)}/new.json?limit=${plan.cap}&raw_json=1`, { credentials: 'include', headers: { accept: 'application/json' } });
+      } catch {}
+      const json = res && res.ok ? await res.json().catch(() => null) : null;
+      if (res && res.status === 429) {
+        await send({ type: 'intent:scan', source: 'reddit', blocked: 'Reddit says too many requests', url: location.href });
+        msgEl.textContent = 'Reddit says too many requests. Lead Hunter paused Reddit scans: wait a while, then press Resume on the Intent tab.';
+        return;
+      }
+      if (!json || !json.data) {
+        refused = (res && res.status) || -1;
+        break;
+      }
+      const children = (json.data.children || [])
+        .map((c) => c && c.data)
+        .filter(Boolean)
+        .map((d) => ({ id: d.id, subreddit: d.subreddit, permalink: d.permalink, author: d.author, title: d.title, selftext: String(d.selftext || '').slice(0, 3000), created_utc: d.created_utc, stickied: d.stickied, removed_by_category: d.removed_by_category }));
+      listings.push({ sub, children });
+      if (i < plan.subs.length - 1) for (let t = 0, wait = 4000 + Math.random() * 8000; t < wait && !stop; t += 250) await sleep(250);
+    }
+    let note = '';
+    if (listings.length) {
+      const res = await send({ type: 'intent:scan', source: 'reddit', listings, url: location.href });
+      if (!res) return (msgEl.textContent = 'Lead Hunter is not running. Reload this page.');
+      note = summary(res.stats || {}, `posts from ${listings.length} subreddit${listings.length === 1 ? '' : 's'}`);
+    }
+    if (!refused) return (msgEl.textContent = note);
+    // Reddit said no (often: not logged in). Read what is on this page instead.
+    await scan(`${note ? `${note}. ` : ''}Reddit did not let Lead Hunter read your subreddits${refused > 0 ? ` (${refused})` : ''}. If you are not logged in to Reddit, log in and try again. From this page: `);
   }
 
   scanBtn.addEventListener('click', async () => {
     if (busy) return;
     busy = true;
     scanBtn.disabled = true;
-    await scan();
+    if (site === 'reddit') {
+      stop = false;
+      scrollBtn.textContent = 'Stop';
+      await scanSubreddits();
+      scrollBtn.textContent = 'Scan this page';
+    } else await scan();
     scanBtn.disabled = false;
     busy = false;
   });
-  // A few small scrolls, a human pace apart, then one scan. Press again to stop.
+  // A few small scrolls, a human pace apart, then one scan. Press again to stop. On Reddit: read this page now.
   scrollBtn.addEventListener('click', async () => {
     if (busy) return (stop = true);
+    if (site === 'reddit') {
+      busy = true;
+      scanBtn.disabled = true;
+      await scan();
+      scanBtn.disabled = false;
+      busy = false;
+      return;
+    }
     busy = true;
     stop = false;
     scanBtn.disabled = true;
@@ -178,4 +284,9 @@
     if (k && !host.isConnected) document.documentElement.appendChild(host);
     if (!k && host.isConnected) host.remove();
   }, 700);
+  // Opened from the dashboard's Scan Reddit now button: that press starts the scan here.
+  if (site === 'reddit' && location.hash === '#lead-hunter-scan') {
+    history.replaceState(null, '', location.pathname + location.search);
+    setTimeout(() => scanBtn.click(), 1500);
+  }
 })();
