@@ -162,7 +162,8 @@ const KEYWORD_ADS = {
   ],
 };
 // Instagram Graph API (Business Discovery): business and creator accounts only.
-export const IG_API = { token: 'ig-test-token', account: '17841400000000001', followers: { instatintbar: 640, 'glossy.tint_bar': 2345 }, calls: [] };
+// noDiscovery: the token reads your own account but lacks a permission Business Discovery needs (error #10).
+export const IG_API = { token: 'ig-test-token', account: '17841400000000001', followers: { instatintbar: 640, 'glossy.tint_bar': 2345, rizcoreach: 1200 }, calls: [], noDiscovery: false };
 /* ---------------------------------------- Intent Radar: Reddit, a Facebook group, LinkedIn */
 const hoursAgo = (h) => Math.floor(Date.now() / 1000 - h * 3600);
 const rp = (id, sub, author, title, selftext, h, extra = {}) => ({ data: { id, subreddit: sub, permalink: `/r/${sub}/comments/${id}/post/`, author, title, selftext, created_utc: hoursAgo(h), ...extra } });
@@ -304,6 +305,7 @@ export function metaHandler(req, res, url, host) {
     if (url.pathname !== `/v23.0/${IG_API.account}`) return json(400, { error: { message: 'Unsupported get request', code: 100, error_subcode: 33 } });
     const m = fields.match(/^business_discovery\.username\(([^)]+)\)/);
     if (!m) return json(200, { id: IG_API.account, username: 'rizcoreach', followers_count: 1200 });
+    if (IG_API.noDiscovery) return json(403, { error: { message: 'Application does not have permission for this action', type: 'OAuthException', code: 10 } });
     const n = IG_API.followers[m[1]];
     if (n == null) return json(400, { error: { message: 'Invalid user id', code: 110, error_subcode: 2207013 } });
     const posted = new Date(Date.now() - 3 * 864e5).toISOString().replace(/\.\d+Z$/, '+0000'); // Instagram's own format

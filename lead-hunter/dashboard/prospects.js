@@ -154,11 +154,11 @@ function renderFinderStatus() {
   if (notes.length) parts.push(`<span class="err" style="margin:0">${esc(notes.join(' · '))}</span>`);
   // A login wall, checkpoint or block paused a source: say so and leave it to you.
   for (const [src, a] of Object.entries(S.alerts)) {
-    if (['reddit', 'facebook', 'linkedin'].includes(src)) continue; // shown on the Intent tab
+    if (['reddit', 'facebook', 'linkedin', 'ai'].includes(src)) continue; // shown on the Intent tab
     const resume = { maps: 'finder-resume', adlib: 'adcheck-resume', instagram: 'ig-resume' }[src] || 'adcheck-resume';
     const what =
       src === 'instagram'
-        ? 'Check the token and account id in Settings > Quality signals, then press Resume.'
+        ? esc(a.hint || 'Check the token and account id in Settings > Quality signals, then press Resume.')
         : `Open the ${src === 'maps' ? 'Google Maps' : 'Ad Library'} tab${a.url ? ` (<a href="${esc(safeHref(a.url))}" target="_blank" rel="noopener noreferrer">this search</a>)` : ''}, sort it out, then press Resume. Nothing tries to get past it.`;
     parts.push(`<span class="err alert" style="margin:0" data-alert="${esc(src)}"><b>${esc(SOURCE_LABEL[src] || src)} paused:</b> ${esc(a.text)}. ${what}</span><button class="btn sm" data-act="${resume}">Resume</button>`);
   }

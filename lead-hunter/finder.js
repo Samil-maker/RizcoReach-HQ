@@ -315,7 +315,7 @@ async function alertSource(source, text, url, hint = 'Open the tab, sort it out,
   await logProblem(source, text);
   await locked(async () => {
     const { alerts = {} } = await store.get('alerts');
-    alerts[source] = { at: now(), text, url: url || '' };
+    alerts[source] = { at: now(), text, url: url || '', hint };
     await store.set({ alerts });
   });
   await refreshBadge();
@@ -392,6 +392,15 @@ async function igApi(settings, path, fields) {
 }
 // Token expired or wrong (190, 102), no permission (10, 200), rate limits (4, 17, 32, 613, 80002), your account id unknown (100/33).
 const igStop = (r) => [190, 102, 10, 200, 4, 17, 32, 613, 80002].includes(r.code) || (r.code === 100 && r.sub === 33);
+// Business Discovery (other accounts' followers) needs more than reading your own account does.
+const IG_PERMS = 'instagram_basic, instagram_manage_insights, pages_show_list, pages_read_engagement and business_management';
+/** What to do about a stopping error, in words. */
+function igHint(r) {
+  if ([10, 200].includes(r.code)) return `Your token is missing a permission. In the Graph API Explorer make a new token with ${IG_PERMS}, extend it, paste it in Settings > Quality signals, then press Resume.`;
+  if ([190, 102].includes(r.code)) return 'Your token has expired or was changed. Make a new one (Settings > Quality signals has the steps), then press Resume.';
+  if (r.code === 100) return 'Check your Instagram business account id in Settings > Quality signals, then press Resume.';
+  return 'Meta is limiting requests for now. Wait an hour, then press Resume.';
+}
 async function igLookup(handle, settings) {
   const r = await igApi(settings, settings.igAccountId, `business_discovery.username(${handle}){followers_count,media_count,username,media.limit(1){timestamp}}`);
   if (r.error) return r;
@@ -432,7 +441,7 @@ async function runIg() {
         const r = await igLookup(handle, settings).catch((e) => ({ error: String(e.message || e) }));
         if (r.error && igStop(r)) {
           await store.set({ igPaused: true });
-          await alertSource('instagram', `Instagram API: ${r.error}`, '', 'Check the token and account id in Settings, then press Resume.');
+          await alertSource('instagram', `Instagram API: ${r.error}`, '', igHint(r));
           break;
         }
         if (r.error) logProblem('instagram', `@${handle}: ${r.error}`);
@@ -768,7 +777,11 @@ Object.assign(handlers, {
     const settings = await getSettings();
     if (!igReady(settings)) return { error: 'Add your Instagram account id and token first, then Save.' };
     const r = await igApi(settings, settings.igAccountId, 'username,followers_count').catch((e) => ({ error: String(e.message || e) }));
-    return r.error ? { error: r.error } : { username: r.username, followers: r.followers_count };
+    if (r.error) return { error: igStop(r) ? `${r.error}. ${igHint(r)}` : r.error };
+    // A real lookup, as on any business (your own account works too): it needs more permissions than the read above.
+    const d = await igLookup(String(r.username || '').toLowerCase(), settings).catch((e) => ({ error: String(e.message || e) }));
+    if (d.error) return { error: `Your account reads fine, but looking up other businesses failed: ${d.error}. ${igStop(d) ? igHint(d) : ''}`.trim() };
+    return { username: r.username, followers: r.followers_count };
   },
   'ig:resume': async () => {
     await store.set({ igPaused: false });

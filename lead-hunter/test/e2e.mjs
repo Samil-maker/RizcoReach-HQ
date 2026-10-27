@@ -1073,8 +1073,14 @@ try {
   await dash.click('[data-view="settings"]');
   await dash.fill('[name="igAccountId"]', IG_API.account);
   await dash.fill('[name="igToken"]', IG_API.token);
+  // A token that reads your own account but can't look up others fails the test, and says which permissions.
+  IG_API.noDiscovery = true;
+  await dash.click('[data-act="ig-test"]');
+  await dash.waitForFunction(() => /^Not working: Your account reads fine, but looking up other businesses failed: Application does not have permission for this action\. Your token is missing a permission\. .*instagram_manage_insights/.test(document.querySelector('[data-ig-test]').textContent));
+  IG_API.noDiscovery = false;
   await dash.click('[data-act="ig-test"]');
   await dash.waitForFunction(() => document.querySelector('[data-ig-test]').textContent === 'Working: @rizcoreach, 1200 followers.');
+  assert.ok(IG_API.calls.includes('business_discovery.username(rizcoreach){followers_count,media_count,username,media.limit(1){timestamp}}'), 'the test does a real lookup');
   assert.equal((await storage('settings')).settings.igApiVersion, 'v23.0');
   const instaLead = (await prospectsNow()).find((l) => l.pageName === 'Insta Tint Bar');
   const glossyIg = 'p:i:glossy.tint_bar';
@@ -1125,7 +1131,7 @@ try {
   await waitFor(async () => (await storage('igPaused')).igPaused === true, 20000, 'lookups paused');
   assert.match((await storage('alerts')).alerts.instagram.text, /Session has expired/);
   await dash.waitForSelector('[data-alert="instagram"]');
-  assert.match(await dash.textContent('[data-alert="instagram"]'), /Instagram API paused: .*Check the token and account id in Settings/);
+  assert.match(await dash.textContent('[data-alert="instagram"]'), /Instagram API paused: .*Your token has expired or was changed\. Make a new one/);
   await sw.evaluate(async (token) => {
     const { settings } = await chrome.storage.local.get('settings');
     await chrome.storage.local.set({ settings: { ...settings, igToken: token } });
