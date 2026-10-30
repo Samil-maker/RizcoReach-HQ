@@ -5,11 +5,14 @@ interface Props {
   centerMobile?: [number, number];
   spread?: number;
   spreadMobile?: number;
-  fpsMobile?: number;
+  zoom?: number;
+  focus?: [number, number];
+  intro?: boolean;
+  sharp?: boolean;
   class?: string;
 }
-const { center, centerMobile, spread, spreadMobile, fpsMobile, class: cls = '' } = Astro.props;
-const opts = JSON.stringify({ center, centerMobile, spread, spreadMobile, fpsMobile });
+const { center, centerMobile, spread, spreadMobile, zoom, focus, intro, sharp, class: cls = '' } = Astro.props;
+const opts = JSON.stringify({ center, centerMobile, spread, spreadMobile, zoom, focus, intro, sharp });
 ---
 
 <div class={`chrome ${cls}`} aria-hidden="true">

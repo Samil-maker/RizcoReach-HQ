@@ -4,13 +4,13 @@
  * the script reads the token from the address and talks to netlify/functions/pay.mts.
  * Ziina sends the client back here with ?r=success, ?r=cancel or ?r=failure.
  *
- * Layout: liquid chrome header (same shader as the home hero), the invoice card, then a white block
- * that previews Ziina's own black-and-white checkout so the jump to it feels expected.
+ * The page mirrors the Ziina checkout it hands over to (light grey page, avatar with the invoice
+ * message, "Pay RizcoReach.AE", a banner with the amount, a white card) so the jump feels like one flow.
+ * The banner is the home hero's liquid chrome; public/pay-assets/banner.webp is its first frame, and the
+ * same image is uploaded as the banner of the RizcoReach.AE Ziina profile.
  */
-import '@fontsource/instrument-serif/400.css';
-import '@fontsource/instrument-serif/400-italic.css';
+import '@fontsource-variable/archivo/wdth.css';
 import '@fontsource-variable/geist';
-import '@fontsource-variable/geist-mono';
 import '../styles/global.css';
 import ChromeCanvas from '../components/ChromeCanvas.astro';
 import Btn from '../components/Btn.astro';
@@ -27,118 +27,124 @@ const wa = `${SITE.whatsapp}?text=${encodeURIComponent('Hi, I have a question ab
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="robots" content="noindex, nofollow" />
     <meta name="referrer" content="no-referrer" />
-    <meta name="theme-color" content="#050505" />
+    <meta name="theme-color" content="#f3f3f3" />
     <title>Invoice payment | RizcoReach</title>
     <meta name="description" content="Secure invoice payment for RizcoReach clients." />
     <link rel="icon" type="image/png" href="/favicon-48.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="preload" href="/pay-assets/banner.webp" as="image" type="image/webp" />
   </head>
   <body class="pay" data-view="loading">
     <div class="pay-test" data-test hidden>Test mode: no real money will be charged.</div>
 
-    <header class="pay-top">
-      <ChromeCanvas center={[0.8, 0.5]} spread={1.05} centerMobile={[0.9, 0.78]} spreadMobile={0.6} fpsMobile={30} />
-      <div class="pay-top__inner pay-col">
+    <div class="pay-page">
+      <header class="pay-bar pay-wrap">
         <a href="/" class="pay-logo" aria-label="RizcoReach home">
-          <img src="/brand/mark-80.webp" srcset="/brand/mark-80.webp 1x, /brand/mark-160.webp 2x" alt="" width="40" height="40" />
+          <img src="/brand/mark-80.webp" srcset="/brand/mark-80.webp 1x, /brand/mark-160.webp 2x" alt="" width="34" height="34" />
           <span class="pay-logo__word">RIZCOREACH<span>.AE</span></span>
         </a>
-        <div class="pay-top__title">
-          <p class="label"><span class="pill__dot" aria-hidden="true"></span><span>Invoice <span class="ltr" data-f="number"></span></span></p>
-          <h1 class="h2 pay-h"><span data-h1>Your</span> <em class="chrome-text" data-h2>invoice</em></h1>
-        </div>
-      </div>
-    </header>
+        <a class="pay-help" href={wa} data-wa><Icon name="whatsapp" size={16} />Need help?</a>
+      </header>
 
-    <main class="pay-main pay-col" aria-live="polite">
-      <!-- Loading -->
-      <div data-view="loading" class="card pay-card" aria-label="Loading your invoice">
-        <div class="pay-skel w30"></div>
-        <div class="pay-skel w60 tall"></div>
-        <div class="pay-skel w45"></div>
-      </div>
-
-      <!-- Invoice to pay -->
-      <div data-view="invoice" class="pay-stack" hidden>
-        <article class="card pay-card">
-          <p class="label">Billed to</p>
-          <p class="pay-client" data-f="client"></p>
-          <p class="pay-desc" data-f="description"></p>
-          <div class="pay-due">
-            <p class="label">Amount due</p>
-            <p class="pay-amount tabular"><span class="pay-amount__cur">AED</span><span data-f="amount"></span></p>
+      <main class="pay-wrap pay-grid">
+        <section class="pay-intro" aria-label="Invoice from RizcoReach">
+          <div class="pay-from">
+            <span class="pay-avatar" aria-hidden="true"><img src="/brand/mark-80.webp" srcset="/brand/mark-80.webp 1x, /brand/mark-160.webp 2x" alt="" width="30" height="30" /></span>
+            <p class="pay-bubble">RizcoReach invoice <span data-f="number"></span></p>
           </div>
-          <dl class="pay-rows">
-            <div><dt>Issued</dt><dd data-f="created"></dd></div>
-          </dl>
-        </article>
-
-        <section class="zi" aria-labelledby="zi-title">
-          <div class="zi__head">
-            <span class="zi__lock" aria-hidden="true"><Icon name="lock" size={18} stroke={1.8} /></span>
-            <h2 class="h4" id="zi-title">Secure checkout with Ziina</h2>
+          <h1 class="pay-h" data-h>Pay RizcoReach.AE</h1>
+          <div class="pay-banner">
+            <ChromeCanvas zoom={0.6} center={[0.5, 0.5]} centerMobile={[0.5, 0.5]} spread={2.2} spreadMobile={2.2} intro={false} sharp />
+            <p class="pay-banner__amount" data-amount-line hidden></p>
           </div>
-          <ul class="zi__methods" role="list" aria-label="Accepted payment methods">
-            <li class="pill">Apple Pay</li>
-            <li class="pill">Google Pay</li>
-            <li class="pill">Card</li>
-          </ul>
-          <p class="zi__notice" data-notice hidden></p>
-          <Btn label="Continue to Ziina" variant="primary" size="lg" class="zi__btn" data-pay />
-          <p class="zi__err" data-error role="alert"></p>
-          <p class="zi__partner">Ziina is our payment partner, licensed by the Central Bank of the UAE. Your card details go to Ziina, never to RizcoReach.</p>
-          <p class="zi__fine">You'll come back here for your receipt after paying.</p>
         </section>
-      </div>
 
-      <!-- Confirming after Ziina sends the client back -->
-      <div data-view="confirming" class="card pay-card pay-state" hidden>
-        <div class="pay-spinner" aria-hidden="true"></div>
-        <p data-confirm-note>This takes a few seconds. Please keep this page open.</p>
-      </div>
+        <section class="pay-panel" aria-live="polite">
+          <ol class="pay-steps" data-steps hidden>
+            <li>Review</li>
+            <li>Pay with Ziina</li>
+            <li>Receipt</li>
+          </ol>
 
-      <!-- Paid: receipt -->
-      <div data-view="paid" class="pay-stack" hidden>
-        <article class="card pay-card">
-          <p class="pay-paid"><span class="pay-paid__tick" aria-hidden="true"><Icon name="check" size={14} stroke={2.6} /></span>Paid</p>
-          <p class="label">Amount paid</p>
-          <p class="pay-amount tabular"><span class="pay-amount__cur">AED</span><span data-f="amount"></span></p>
-          <p class="pay-desc">Thank you. This is your receipt.</p>
-          <dl class="pay-rows">
-            <div><dt>Invoice</dt><dd class="ltr" data-f="number"></dd></div>
-            <div><dt>Billed to</dt><dd data-f="client"></dd></div>
-            <div data-row="description"><dt>For</dt><dd data-f="description"></dd></div>
-            <div><dt>Paid on</dt><dd data-f="paid"></dd></div>
-            <div data-row="via"><dt>Paid via</dt><dd>Ziina</dd></div>
-            <div data-row="card"><dt>Card</dt><dd data-f="card"></dd></div>
-            <div data-row="reference"><dt>Reference</dt><dd class="pay-mono" data-f="reference"></dd></div>
-          </dl>
-          <p class="pay-testnote" data-paid-test hidden>Test payment: no money was charged.</p>
-        </article>
-        <Btn label="Save receipt as PDF" icon="download" class="pay-wide" data-print />
-      </div>
+          <!-- Loading -->
+          <div data-view="loading" class="pay-view" aria-label="Loading your invoice">
+            <div class="pay-skel w35"></div>
+            <div class="pay-skel w70"></div>
+            <div class="pay-skel w55"></div>
+            <div class="pay-skel tall"></div>
+          </div>
 
-      <!-- Cancelled invoice / bad link / server trouble -->
-      <div data-view="void" class="card pay-card pay-state" hidden>
-        <p>There is nothing to pay. If you think this is a mistake, message us and we'll sort it out.</p>
-        <Btn href={wa} label="Message us on WhatsApp" icon="whatsapp" class="pay-wide" data-wa />
-      </div>
-      <div data-view="missing" class="card pay-card pay-state" hidden>
-        <p>Please check the link you received, or message us and we'll send it again.</p>
-        <Btn href={wa} label="Message us on WhatsApp" icon="whatsapp" class="pay-wide" data-wa />
-      </div>
-      <div data-view="error" class="card pay-card pay-state" hidden>
-        <p>We couldn't load this invoice. Please refresh the page in a moment, or message us.</p>
-        <Btn href={wa} label="Message us on WhatsApp" icon="whatsapp" class="pay-wide" data-wa />
-      </div>
+          <!-- Invoice to pay -->
+          <div data-view="invoice" class="pay-view" hidden>
+            <dl class="pay-rows">
+              <div><dt>Billed to</dt><dd data-f="client"></dd></div>
+              <div data-row="description"><dt>For</dt><dd data-f="description"></dd></div>
+              <div><dt>Issued</dt><dd data-f="created"></dd></div>
+              <div class="pay-total"><dt>Amount due</dt><dd>AED <span data-f="amount"></span></dd></div>
+            </dl>
 
-      <noscript><p class="card pay-card pay-state">This page needs JavaScript to load your invoice.</p></noscript>
-    </main>
+            <div class="pay-co">
+              <h2 class="pay-co__title"><Icon name="lock" size={17} stroke={1.9} />Secure checkout with Ziina</h2>
+              <p class="pay-notice" data-notice hidden></p>
+              <Btn label="Continue to Ziina" variant="primary" size="lg" class="pay-btn" data-pay />
+              <p class="pay-err" data-error role="alert"></p>
+              <ul class="pay-methods" role="list" aria-label="Accepted payment methods">
+                <li>Apple Pay</li>
+                <li>Google Pay</li>
+                <li>Card</li>
+              </ul>
+              <p class="pay-partner">Ziina is our payment partner, licensed by the Central Bank of the UAE. Your card details go to Ziina, never to RizcoReach.</p>
+              <p class="pay-fine">You'll come back here for your receipt after paying.</p>
+            </div>
+          </div>
 
-    <footer class="pay-foot pay-col">
-      <p>Questions about this invoice? <a class="pay-link" href={wa} data-wa>Message us on WhatsApp</a> or email <a class="pay-link" href={`mailto:${SITE.email}`}>{SITE.email}</a></p>
-      <p class="pay-foot__small">RizcoReach · Dubai, United Arab Emirates · <a class="pay-link" href="/">rizcoreach.ae</a></p>
-    </footer>
+          <!-- Confirming after Ziina sends the client back -->
+          <div data-view="confirming" class="pay-view pay-state" hidden>
+            <div class="pay-spinner" aria-hidden="true"></div>
+            <p data-confirm-note>This takes a few seconds. Please keep this page open.</p>
+          </div>
+
+          <!-- Paid: receipt -->
+          <div data-view="paid" class="pay-view" hidden>
+            <p class="pay-paid"><span class="pay-paid__tick" aria-hidden="true"><Icon name="check" size={13} stroke={2.8} /></span>Paid</p>
+            <dl class="pay-rows">
+              <div class="pay-total"><dt>Amount paid</dt><dd>AED <span data-f="amount"></span></dd></div>
+              <div><dt>Invoice</dt><dd data-f="number"></dd></div>
+              <div><dt>Billed to</dt><dd data-f="client"></dd></div>
+              <div data-row="description"><dt>For</dt><dd data-f="description"></dd></div>
+              <div><dt>Paid on</dt><dd data-f="paid"></dd></div>
+              <div data-row="via"><dt>Paid via</dt><dd>Ziina</dd></div>
+              <div data-row="card"><dt>Card</dt><dd data-f="card"></dd></div>
+              <div data-row="reference"><dt>Reference</dt><dd class="pay-ref" data-f="reference"></dd></div>
+            </dl>
+            <p class="pay-testnote" data-paid-test hidden>Test payment: no money was charged.</p>
+            <p class="pay-thanks">Thank you. This is your receipt.</p>
+            <Btn label="Save receipt as PDF" icon="download" class="pay-btn pay-btn--soft" data-print />
+          </div>
+
+          <!-- Cancelled invoice / bad link / server trouble -->
+          <div data-view="void" class="pay-view pay-state" hidden>
+            <p>There is nothing to pay. If you think this is a mistake, message us and we'll sort it out.</p>
+            <Btn href={wa} label="Message us on WhatsApp" icon="whatsapp" class="pay-btn pay-btn--soft" data-wa />
+          </div>
+          <div data-view="missing" class="pay-view pay-state" hidden>
+            <p>Please check the link you received, or message us and we'll send it again.</p>
+            <Btn href={wa} label="Message us on WhatsApp" icon="whatsapp" class="pay-btn pay-btn--soft" data-wa />
+          </div>
+          <div data-view="error" class="pay-view pay-state" hidden>
+            <p>We couldn't load this invoice. Please refresh the page in a moment, or message us.</p>
+            <Btn href={wa} label="Message us on WhatsApp" icon="whatsapp" class="pay-btn pay-btn--soft" data-wa />
+          </div>
+
+          <noscript><p class="pay-state">This page needs JavaScript to load your invoice.</p></noscript>
+        </section>
+      </main>
+
+      <footer class="pay-foot pay-wrap">
+        <p>Questions about this invoice? <a class="pay-link" href={wa} data-wa>Message us on WhatsApp</a> or email <a class="pay-link" href={`mailto:${SITE.email}`}>{SITE.email}</a></p>
+        <p>RizcoReach · Dubai, United Arab Emirates · <a class="pay-link" href="/">rizcoreach.ae</a></p>
+      </footer>
+    </div>
   </body>
 </html>
 
@@ -167,17 +173,20 @@ const wa = `${SITE.whatsapp}?text=${encodeURIComponent('Hi, I have a question ab
   const ret = new URLSearchParams(location.search).get('r');
   const api = `/api/pay/${encodeURIComponent(token)}`;
 
-  // Header line per view: plain words, then the chrome italic words.
-  const headings: Record<View, [string, string]> = {
-    loading: ['Your', 'invoice'],
-    invoice: ['Your', 'invoice'],
-    confirming: ['Confirming', 'payment'],
-    paid: ['Payment', 'received'],
-    void: ['Invoice', 'cancelled'],
-    missing: ['Invoice', 'not found'],
-    error: ['Something', 'went wrong'],
+  // "Pay RizcoReach.AE" is the heading on Ziina's own checkout, so the two pages read the same.
+  const headings: Record<View, string> = {
+    loading: ret === 'success' ? 'Confirming your payment' : 'Pay RizcoReach.AE',
+    invoice: 'Pay RizcoReach.AE',
+    confirming: 'Confirming your payment',
+    paid: 'Payment received',
+    void: 'Invoice cancelled',
+    missing: 'Invoice not found',
+    error: 'Something went wrong',
   };
+  // Review, pay with Ziina, receipt.
+  const steps: Partial<Record<View, number>> = { invoice: 1, confirming: 2, paid: 3 };
 
+  let amountText = '';
   const money = (fils: number) => (fils / 100).toLocaleString('en-AE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const dubai = (ms: number, withTime = false) =>
     new Date(ms).toLocaleString('en-GB', {
@@ -189,15 +198,27 @@ const wa = `${SITE.whatsapp}?text=${encodeURIComponent('Hi, I have a question ab
     });
 
   function show(view: View) {
-    $$('main [data-view]').forEach((el) => (el.hidden = el.dataset.view !== view));
+    $$('.pay-panel [data-view]').forEach((el) => (el.hidden = el.dataset.view !== view));
     document.body.dataset.view = view;
-    $('[data-h1]').textContent = headings[view][0];
-    $('[data-h2]').textContent = headings[view][1];
+    $('[data-h]').textContent = headings[view];
+
+    const pill = $('[data-amount-line]');
+    pill.textContent = !amountText ? '' : view === 'invoice' ? `${amountText} to pay` : view === 'paid' ? `${amountText} paid` : view === 'confirming' ? amountText : '';
+    pill.hidden = !pill.textContent;
+
+    const step = steps[view] ?? 0;
+    $('[data-steps]').hidden = !step;
+    $$('[data-steps] li').forEach((li, i) => {
+      li.classList.toggle('is-done', i + 1 < step || step === 3);
+      if (i + 1 === step) li.setAttribute('aria-current', 'step');
+      else li.removeAttribute('aria-current');
+    });
   }
 
   function fill(inv: PublicInvoice) {
     const set = (f: string, v: string) => $$(`[data-f="${f}"]`).forEach((el) => (el.textContent = v));
     const viaZiina = !!inv.reference && inv.reference !== 'manual';
+    amountText = `AED ${money(inv.amount)}`;
     set('number', inv.number);
     set('client', inv.client);
     set('description', inv.description);
@@ -206,7 +227,7 @@ const wa = `${SITE.whatsapp}?text=${encodeURIComponent('Hi, I have a question ab
     set('paid', inv.paidAt ? dubai(inv.paidAt, true) : '');
     set('card', inv.cardLast4 ? `${inv.cardBrand ? inv.cardBrand.charAt(0) + inv.cardBrand.slice(1).toLowerCase() : 'Card'} ending ${inv.cardLast4}` : '');
     set('reference', viaZiina ? inv.reference : '');
-    $$('[data-row="description"], .pay-desc[data-f="description"]').forEach((el) => (el.hidden = !inv.description));
+    $$('[data-row="description"]').forEach((el) => (el.hidden = !inv.description));
     $$('[data-row="card"]').forEach((el) => (el.hidden = !inv.cardLast4));
     $$('[data-row="reference"], [data-row="via"]').forEach((el) => (el.hidden = !viaZiina));
     $('[data-test]').hidden = !inv.testMode;
@@ -312,15 +333,36 @@ const wa = `${SITE.whatsapp}?text=${encodeURIComponent('Hi, I have a question ab
 
   $('[data-print]').addEventListener('click', () => window.print());
 
+  show('loading');
   start();
 </script>
 
 <style is:global>
+  /* Light theme in Ziina's checkout palette, in Archivo (closest open font to Ziina's lettering). */
   .pay {
+    color-scheme: light;
+    --bg: #f3f3f3;
+    --bg-2: #ffffff;
+    --surface: #ffffff;
+    --surface-2: #ebebeb;
+    --surface-3: #dedede;
+    --fg: #0a0a0a;
+    --fg-2: #4a4a4a;
+    --fg-3: #6b6b6b;
+    --line: rgb(0 0 0 / 0.08);
+    --line-2: rgb(0 0 0 / 0.14);
+    --success: #dff3e3;
+    --font-sans: 'Archivo Variable', 'Geist Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+    font-stretch: 104%;
     background: var(--bg);
+    color: var(--fg);
   }
-  .pay-col {
-    width: min(100% - 2 * var(--gutter), 560px);
+  .pay ::selection {
+    background: #000;
+    color: #fff;
+  }
+  .pay-wrap {
+    width: min(100% - 2 * var(--gutter), 1080px);
     margin-inline: auto;
   }
   .pay-test {
@@ -334,44 +376,35 @@ const wa = `${SITE.whatsapp}?text=${encodeURIComponent('Hi, I have a question ab
     font-weight: 600;
     padding: 8px 16px;
   }
+  .pay-page {
+    min-height: 100svh;
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+  }
 
-  /* Header: the home hero's liquid chrome in a short band */
-  .pay-top {
-    position: relative;
-    isolation: isolate;
-    overflow: hidden;
-    min-height: 380px;
+  /* Top bar: our logo where Ziina shows theirs */
+  .pay-bar {
     display: flex;
-    padding-block: calc(env(safe-area-inset-top) + 24px) 92px;
-  }
-  .pay-top__inner {
-    position: relative;
-    z-index: 2;
-    display: flex;
-    flex-direction: column;
+    align-items: center;
     justify-content: space-between;
-    gap: 40px;
-  }
-  .pay-top .chrome__scrim {
-    background:
-      linear-gradient(to top, var(--bg) 0%, rgb(5 5 5 / 0.72) 26%, transparent 62%),
-      linear-gradient(to right, rgb(5 5 5 / 0.55) 0%, transparent 45%) !important;
+    gap: 16px;
+    padding-block: calc(env(safe-area-inset-top) + 18px) 18px;
   }
   .pay-logo {
     display: inline-flex;
     align-items: center;
-    gap: 10px;
-    align-self: flex-start;
+    gap: 9px;
   }
   .pay-logo img {
-    width: 40px;
-    height: 40px;
+    width: 34px;
+    height: 34px;
+    filter: invert(1);
   }
   /* Same lockup as the site nav (Nav.astro) */
   .pay-logo__word {
-    font-family: 'Geist Variable', var(--font-sans);
+    font-family: 'Geist Variable', sans-serif;
     font-weight: 700;
-    font-size: 15px;
+    font-size: 13px;
     letter-spacing: 0.2em;
   }
   .pay-logo__word span {
@@ -379,90 +412,156 @@ const wa = `${SITE.whatsapp}?text=${encodeURIComponent('Hi, I have a question ab
     opacity: 0.5;
     letter-spacing: 0.08em;
   }
-  .pay-top__title {
-    display: grid;
-    gap: 16px;
+  .pay-help {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 36px;
+    padding: 0 14px;
+    border-radius: 999px;
+    background: var(--surface);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.06);
+    font-size: var(--fs-xs);
+    font-weight: 500;
+    transition: background-color var(--t) var(--ease-out);
   }
-  .pay-top__title .label {
-    color: var(--fg-2);
-  }
-  .pay-h {
-    font-size: clamp(2.75rem, 6vw, 4.6rem);
-  }
-  .pay-h em {
-    display: inline-block;
-    padding-inline-end: 0.06em;
+  .pay-help:hover {
+    background: var(--surface-2);
   }
 
-  /* Main column, pulled up into the chrome band */
-  .pay-main {
-    position: relative;
-    z-index: 3;
-    margin-top: -60px;
+  /* Two columns like Ziina: who is asking on the left, the card on the right */
+  .pay-grid {
     display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 480px);
+    align-items: center;
+    gap: 40px 72px;
+    padding-block: 24px 48px;
   }
-  .pay-stack {
+  .pay-intro {
     display: grid;
-    gap: 12px;
+    gap: 22px;
+    max-width: 470px;
   }
-  .pay-card {
-    display: grid;
-    align-content: start;
-    gap: 10px;
-    box-shadow: 0 30px 60px -30px rgb(0 0 0 / 0.8);
-  }
-  .pay-client {
-    font-size: 1.3rem;
-    font-weight: 560;
-    line-height: 1.3;
-    letter-spacing: -0.01em;
-    overflow-wrap: anywhere;
-  }
-  .pay-desc {
-    color: var(--fg-2);
-    font-size: var(--fs-sm);
-    overflow-wrap: anywhere;
-  }
-  .pay-due {
-    display: grid;
-    gap: 10px;
-    margin-top: 14px;
-    padding-top: 22px;
-    border-top: 1px solid var(--line);
-  }
-  .pay-amount {
+  .pay-from {
     display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    font-family: var(--font-display);
-    font-size: clamp(3.4rem, 15vw, 5rem);
-    line-height: 0.95;
-    letter-spacing: -0.02em;
+    align-items: flex-end;
+  }
+  .pay-avatar {
+    flex-shrink: 0;
+    display: grid;
+    place-items: center;
+    width: 58px;
+    height: 58px;
+    border-radius: 50%;
+    background: #0a0a0a;
+  }
+  .pay-avatar img {
+    width: 30px;
+    height: 30px;
+  }
+  .pay-bubble {
+    margin-inline-start: 6px;
+    margin-bottom: -12px;
+    padding: 9px 16px;
+    border-radius: 999px;
+    background: var(--surface);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.05), 0 6px 18px rgb(0 0 0 / 0.07);
+    font-size: var(--fs-sm);
+    color: var(--fg-2);
     overflow-wrap: anywhere;
   }
-  .pay-amount__cur {
-    font-family: var(--font-mono);
-    font-size: 0.875rem;
-    letter-spacing: var(--tracking-label);
+  .pay-h {
+    font-size: clamp(2.3rem, 4.6vw, 3.5rem);
+    font-weight: 700;
+    font-stretch: 113%;
+    line-height: 1.02;
+    letter-spacing: -0.015em;
+    margin-top: 4px;
+  }
+  .pay-banner {
+    position: relative;
+    aspect-ratio: 16 / 9;
+    border-radius: 22px;
+    overflow: hidden;
+    isolation: isolate;
+    background: #050505 url('/pay-assets/banner.webp') center / cover no-repeat;
+  }
+  .pay .pay-banner .chrome {
+    background: none;
+  }
+  .pay .pay-banner .chrome__scrim {
+    display: none;
+  }
+  .pay-banner__amount {
+    position: absolute;
+    z-index: 2;
+    inset-inline-start: 14px;
+    bottom: 14px;
+    padding: 8px 16px;
+    border-radius: 999px;
+    background: var(--surface);
+    box-shadow: 0 4px 14px rgb(0 0 0 / 0.18);
+    font-size: var(--fs-sm);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* The card: same white card and black pill as Ziina's checkout */
+  .pay-panel {
+    display: grid;
+    gap: 22px;
+    background: var(--surface);
+    border-radius: 24px;
+    padding: clamp(22px, 3vw, 34px);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 20px 50px -24px rgb(0 0 0 / 0.18);
+  }
+  .pay-view {
+    display: grid;
+    gap: 22px;
+  }
+  .pay-steps {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    padding: 0;
+    list-style: none;
+    font-size: 0.75rem;
     color: var(--fg-3);
-    margin-top: 0.7em;
+    counter-reset: step;
+  }
+  .pay-steps li {
+    counter-increment: step;
+    padding-top: 9px;
+    border-top: 3px solid var(--surface-2);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .pay-steps li::before {
+    content: counter(step) '  ';
+    font-weight: 600;
+  }
+  .pay-steps li.is-done {
+    border-top-color: var(--fg-3);
+  }
+  .pay-steps li[aria-current] {
+    border-top-color: var(--fg);
+    color: var(--fg);
+    font-weight: 600;
   }
   .pay-rows {
     display: grid;
-    margin-top: 12px;
-    border-top: 1px solid var(--line);
   }
   .pay-rows > div {
     display: grid;
-    grid-template-columns: 104px minmax(0, 1fr);
+    grid-template-columns: 100px minmax(0, 1fr);
     gap: 12px;
-    padding: 13px 0;
+    padding: 12px 0;
     border-bottom: 1px solid var(--line);
     font-size: var(--fs-sm);
   }
-  .pay-rows > div:last-child {
-    border-bottom: 0;
-    padding-bottom: 0;
+  .pay-rows > div:first-child {
+    padding-top: 0;
   }
   .pay-rows dt {
     color: var(--fg-3);
@@ -472,95 +571,106 @@ const wa = `${SITE.whatsapp}?text=${encodeURIComponent('Hi, I have a question ab
     text-align: end;
     overflow-wrap: anywhere;
   }
-  .pay-mono {
-    font-family: var(--font-mono);
-    font-size: var(--fs-xs);
+  .pay-rows .pay-total {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: baseline;
+    border-bottom: 0;
+    padding-bottom: 0;
   }
-  .pay-wide {
-    width: 100%;
-    justify-content: space-between;
+  .pay-rows .pay-total dt {
+    color: var(--fg);
+    font-weight: 600;
+  }
+  .pay-rows .pay-total dd {
+    white-space: nowrap;
+    font-size: clamp(1.3rem, 5.4vw, 1.6rem);
+    font-weight: 700;
+    font-stretch: 113%;
+    letter-spacing: -0.01em;
+    font-variant-numeric: tabular-nums;
+  }
+  .pay-rows > .pay-total:first-child {
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--line);
+  }
+  .pay-ref {
+    font-size: var(--fs-xs);
+    font-variant-numeric: tabular-nums;
   }
 
-  /* Checkout handoff: previews Ziina's own white, black and grey checkout */
-  .zi {
-    --fg: #0a0a0a;
-    --fg-2: #474744;
-    --fg-3: #5f5f5b;
-    --bg: #ffffff;
-    --bg-2: #ffffff;
-    --line: rgb(0 0 0 / 0.1);
-    --line-2: rgb(0 0 0 / 0.16);
-    color-scheme: light;
-    position: relative;
-    background: #fff;
-    color: var(--fg);
-    border-radius: var(--r);
-    padding: clamp(24px, 3vw, 40px);
+  .pay-co {
     display: grid;
-    gap: 18px;
+    gap: 14px;
+    padding-top: 22px;
+    border-top: 1px solid var(--line);
   }
-  .zi ::selection {
-    background: #000;
-    color: #fff;
-  }
-  .zi__head {
+  .pay-co__title {
     display: flex;
     align-items: center;
-    gap: 12px;
-  }
-  .zi__lock {
-    flex-shrink: 0;
-    display: grid;
-    place-items: center;
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    background: var(--fg);
-    color: var(--bg);
-  }
-  .zi__methods {
-    display: flex;
-    flex-wrap: wrap;
     gap: 8px;
+    font-size: 1.0625rem;
+    font-weight: 600;
+    line-height: 1.3;
   }
-  .zi__methods .pill {
-    color: var(--fg);
-    font-weight: 500;
-  }
-  .zi__btn {
+  .pay-btn {
     width: 100%;
     justify-content: space-between;
   }
-  .zi__btn.is-busy {
+  /* Main button: label centred like Ziina's, the left margin balances the arrow circle on the right. */
+  .pay-btn.btn--lg {
+    justify-content: center;
+    padding-inline: 10px;
+  }
+  .pay-btn.btn--lg .btn__label {
+    margin-inline-start: 54px;
+  }
+  .pay-btn.is-busy {
     opacity: 0.85;
   }
-  .zi__notice {
+  .pay-btn--soft {
+    --btn-bg: var(--surface-2);
+    --btn-bd: var(--surface-2);
+  }
+  .pay-methods {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+  }
+  .pay-methods li {
+    padding: 6px 14px;
+    border-radius: 999px;
+    background: var(--surface-2);
+    font-size: var(--fs-xs);
+    font-weight: 500;
+  }
+  .pay-notice {
     padding: 12px 14px;
     border-radius: var(--r-sm);
-    background: #f2f2ef;
-    border: 1px solid var(--line);
+    background: var(--bg);
     color: var(--fg-2);
     font-size: var(--fs-sm);
   }
-  .zi__err {
-    margin-top: -6px;
+  .pay-err {
     color: #b3261e;
     font-size: var(--fs-sm);
+    text-align: center;
   }
-  .zi__err:empty {
+  .pay-err:empty {
     display: none;
   }
-  .zi__partner {
-    padding-top: 18px;
-    border-top: 1px solid var(--line);
+  .pay-partner {
+    margin-top: 4px;
     color: var(--fg-2);
-    font-size: var(--fs-sm);
+    font-size: var(--fs-xs);
     line-height: 1.55;
+    text-align: center;
   }
-  .zi__fine {
-    margin-top: -8px;
+  .pay-fine {
+    margin-top: -6px;
     color: var(--fg-3);
     font-size: var(--fs-xs);
+    text-align: center;
   }
 
   /* Receipt */
@@ -569,7 +679,6 @@ const wa = `${SITE.whatsapp}?text=${encodeURIComponent('Hi, I have a question ab
     align-items: center;
     gap: 8px;
     justify-self: start;
-    margin-bottom: 10px;
     padding: 5px 14px 5px 5px;
     border-radius: 999px;
     background: var(--success);
@@ -587,41 +696,45 @@ const wa = `${SITE.whatsapp}?text=${encodeURIComponent('Hi, I have a question ab
     color: var(--success);
   }
   .pay-testnote {
-    margin-top: 6px;
-    color: #f5c451;
+    margin-top: -8px;
+    color: #6b5000;
     font-size: var(--fs-xs);
+  }
+  .pay-thanks {
+    color: var(--fg-2);
+    font-size: var(--fs-sm);
   }
 
   /* Confirming, cancelled, missing, error */
   .pay-state {
     justify-items: center;
     text-align: center;
-    gap: 18px;
-    padding-block: 40px;
+    padding-block: 18px;
     color: var(--fg-2);
   }
   .pay-spinner {
-    width: 36px;
-    height: 36px;
+    width: 34px;
+    height: 34px;
     border-radius: 50%;
-    border: 3px solid var(--line-2);
+    border: 3px solid var(--surface-2);
     border-top-color: var(--fg);
     animation: pay-spin 0.9s linear infinite;
   }
   .pay-skel {
     height: 14px;
     border-radius: 8px;
-    background: linear-gradient(90deg, var(--surface-2), var(--surface-3), var(--surface-2));
+    background: linear-gradient(90deg, var(--surface-2), var(--bg), var(--surface-2));
     background-size: 200% 100%;
     animation: pay-shimmer 1.4s linear infinite;
   }
   .pay-skel.tall {
-    height: 56px;
-    margin: 12px 0;
+    height: 62px;
+    border-radius: 999px;
+    margin-top: 10px;
   }
-  .pay-skel.w30 { width: 30%; }
-  .pay-skel.w45 { width: 45%; }
-  .pay-skel.w60 { width: 60%; }
+  .pay-skel.w35 { width: 35%; }
+  .pay-skel.w55 { width: 55%; }
+  .pay-skel.w70 { width: 70%; }
   @keyframes pay-shimmer {
     to { background-position: -200% 0; }
   }
@@ -630,14 +743,13 @@ const wa = `${SITE.whatsapp}?text=${encodeURIComponent('Hi, I have a question ab
   }
 
   .pay-foot {
-    display: grid;
-    gap: 8px;
-    padding-block: 36px calc(env(safe-area-inset-bottom) + 36px);
-    text-align: center;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 8px 24px;
+    padding-block: 18px calc(env(safe-area-inset-bottom) + 22px);
+    border-top: 1px solid var(--line);
     color: var(--fg-3);
-    font-size: var(--fs-xs);
-  }
-  .pay-foot__small {
     font-size: 0.75rem;
   }
   .pay-link {
@@ -652,21 +764,37 @@ const wa = `${SITE.whatsapp}?text=${encodeURIComponent('Hi, I have a question ab
     text-decoration-color: currentColor;
   }
 
-  @media (max-width: 760px) {
-    .pay-top {
-      min-height: 300px;
-      padding-bottom: 80px;
+  @media (max-width: 900px) {
+    .pay-grid {
+      grid-template-columns: minmax(0, 1fr);
+      max-width: 560px;
+      align-items: start;
+      gap: 26px;
+      padding-block: 6px 32px;
     }
-    .pay-top .chrome__scrim {
-      background:
-        linear-gradient(to top, var(--bg) 0%, rgb(5 5 5 / 0.78) 30%, transparent 70%),
-        linear-gradient(to right, rgb(5 5 5 / 0.5) 0%, transparent 60%) !important;
+    .pay-intro {
+      max-width: none;
+      gap: 18px;
     }
-    .pay-main {
-      margin-top: -52px;
+    .pay-foot {
+      max-width: 560px;
+      justify-content: center;
+      text-align: center;
+    }
+  }
+  @media (max-width: 420px) {
+    .pay-avatar {
+      width: 50px;
+      height: 50px;
+    }
+    .pay-bubble {
+      font-size: var(--fs-xs);
+    }
+    .pay-banner {
+      border-radius: 18px;
     }
     .pay-rows > div {
-      grid-template-columns: 88px minmax(0, 1fr);
+      grid-template-columns: 86px minmax(0, 1fr);
     }
   }
 
@@ -675,42 +803,35 @@ const wa = `${SITE.whatsapp}?text=${encodeURIComponent('Hi, I have a question ab
       margin: 16mm;
     }
     .pay {
-      --bg: #fff;
-      --fg: #000;
-      --fg-2: #333;
-      --fg-3: #666;
-      --line: #ddd;
-      --line-2: #bbb;
-      --surface: #fff;
       background: #fff;
-      color: #000;
     }
-    .pay .chrome,
     .pay-test,
-    .pay-wide {
+    .pay-help,
+    .pay-from,
+    .pay-banner,
+    .pay-btn {
       display: none !important;
     }
-    .pay-top {
+    .pay-page {
       min-height: 0;
-      padding: 0 0 24px;
     }
-    .pay-logo img {
-      filter: invert(1);
+    .pay-wrap {
+      width: 100%;
+      max-width: none;
     }
-    .pay .chrome-text {
-      background: none;
-      color: #000;
-      -webkit-text-fill-color: #000;
+    .pay-grid {
+      display: block;
+      padding: 0;
     }
-    .pay-main {
-      margin-top: 0;
+    .pay-h {
+      margin: 18px 0 22px;
     }
-    .pay-card {
+    .pay-panel {
       box-shadow: none;
-      border-color: #ccc;
+      border: 1px solid #ccc;
     }
-    .pay-top .pill__dot {
-      display: none;
+    .pay-steps {
+      display: none !important;
     }
     .pay-paid {
       border: 1px solid #0b3b16;
@@ -719,8 +840,9 @@ const wa = `${SITE.whatsapp}?text=${encodeURIComponent('Hi, I have a question ab
       background: none;
       color: #0b3b16;
     }
-    .pay-testnote {
-      color: #6b5000;
+    .pay-foot {
+      border: 0;
+      justify-content: flex-start;
     }
   }
 </style>
