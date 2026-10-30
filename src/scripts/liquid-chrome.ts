@@ -111,6 +111,8 @@ interface Opts {
   centerMobile?: [number, number];
   spread?: number;
   spreadMobile?: number;
+  /** Frame-rate cap on phones (max-width 760px), to save battery. Uncapped when omitted. */
+  fpsMobile?: number;
 }
 
 export function mountChrome(canvas: HTMLCanvasElement, opts: Opts = {}) {
@@ -244,6 +246,11 @@ export function mountChrome(canvas: HTMLCanvasElement, opts: Opts = {}) {
   const loop = (now: number) => {
     raf = 0;
     if (!running) return;
+    const gap = opts.fpsMobile && mobile.matches ? 1000 / opts.fpsMobile : 0;
+    if (gap && now - last < gap - 4) {
+      raf = requestAnimationFrame(loop);
+      return;
+    }
     const real = (now - last) / 1000;
     const dt = Math.min(0.05, real);
     last = now;
@@ -255,7 +262,7 @@ export function mountChrome(canvas: HTMLCanvasElement, opts: Opts = {}) {
     if (frames.length === 40) {
       const avg = frames.reduce((a, b) => a + b, 0) / frames.length;
       frames.length = 0;
-      if (avg > 0.024 && scale > 0.36) {
+      if (avg > Math.max(0.024, (gap / 1000) * 1.3) && scale > 0.36) {
         scale = Math.max(0.36, scale * 0.78);
         resize();
       }
