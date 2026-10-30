@@ -16,7 +16,7 @@ export default defineConfig({
   },
   integrations: [
     sitemap({
-      filter: (page) => !/\/(thankyou|404)(\.html)?$/.test(page),
+      filter: (page) => !/\/(thankyou|404|pay)(\.html)?$/.test(page),
       i18n: {
         defaultLocale: 'en',
         locales: { en: 'en-AE', ar: 'ar-AE' },

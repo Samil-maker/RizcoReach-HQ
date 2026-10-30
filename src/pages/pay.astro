@@ -1,0 +1,541 @@
+---
+/**
+ * Client payment page. Every invoice link (/pay/<token>) is rewritten to this page in netlify.toml;
+ * the script reads the token from the address and talks to netlify/functions/pay.mts.
+ * Ziina sends the client back here with ?r=success, ?r=cancel or ?r=failure.
+ */
+import '@fontsource/instrument-serif/400.css';
+import '@fontsource-variable/geist';
+import '@fontsource-variable/geist-mono';
+import '../styles/global.css';
+import { SITE } from '../i18n/utils';
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="referrer" content="no-referrer" />
+    <meta name="theme-color" content="#050505" />
+    <title>Invoice payment | RizcoReach</title>
+    <meta name="description" content="Secure invoice payment for RizcoReach clients." />
+    <link rel="icon" type="image/png" href="/favicon-48.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  </head>
+  <body class="pay">
+    <div class="test-banner" data-test hidden>Test mode: no real money will be charged.</div>
+
+    <main class="wrap">
+      <header class="brand">
+        <img src="/brand/mark-80.webp" width="40" height="40" alt="" />
+        <span>RizcoReach</span>
+      </header>
+
+      <section class="sheet" aria-live="polite">
+        <!-- Loading -->
+        <div data-view="loading" class="state">
+          <div class="skel w40"></div>
+          <div class="skel w70 tall"></div>
+          <div class="skel w55"></div>
+        </div>
+
+        <!-- Invoice to pay -->
+        <div data-view="invoice" hidden>
+          <p class="label">Invoice <span data-f="number"></span></p>
+          <p class="client" data-f="client"></p>
+          <p class="desc" data-f="description"></p>
+          <p class="amount"><span class="cur">AED</span> <span data-f="amount"></span></p>
+          <p class="issued">Issued <span data-f="created"></span></p>
+
+          <p class="notice" data-notice hidden></p>
+
+          <button type="button" class="pay-btn" data-pay>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="10.5" width="16" height="10" rx="2.5" /><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3" /></svg>
+            <span data-pay-label>Pay securely</span>
+          </button>
+          <p class="err" data-error role="alert"></p>
+
+          <ul class="trust">
+            <li>Pay by card or Apple Pay</li>
+            <li>Payments are processed by Ziina, a payment provider regulated by the Central Bank of the UAE. RizcoReach never sees your card details.</li>
+          </ul>
+        </div>
+
+        <!-- Confirming after Ziina sends the client back -->
+        <div data-view="confirming" class="state" hidden>
+          <div class="spinner" aria-hidden="true"></div>
+          <h1 class="title">Confirming your payment</h1>
+          <p class="muted" data-confirm-note>This takes a few seconds. Please keep this page open.</p>
+        </div>
+
+        <!-- Paid: receipt -->
+        <div data-view="paid" hidden>
+          <div class="tick" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5" /></svg>
+          </div>
+          <h1 class="title">Payment received</h1>
+          <p class="muted">Thank you. This is your receipt.</p>
+          <dl class="receipt">
+            <div><dt>Amount paid</dt><dd>AED <span data-f="amount"></span></dd></div>
+            <div><dt>Invoice</dt><dd data-f="number"></dd></div>
+            <div><dt>Billed to</dt><dd data-f="client"></dd></div>
+            <div data-row="description"><dt>For</dt><dd data-f="description"></dd></div>
+            <div><dt>Paid on</dt><dd data-f="paid"></dd></div>
+            <div data-row="card"><dt>Card</dt><dd data-f="card"></dd></div>
+            <div data-row="reference"><dt>Reference</dt><dd class="mono" data-f="reference"></dd></div>
+          </dl>
+          <p class="test-note" data-paid-test hidden>Test payment: no money was charged.</p>
+          <button type="button" class="ghost-btn" data-print>Save receipt as PDF</button>
+        </div>
+
+        <!-- Cancelled invoice / bad link -->
+        <div data-view="void" class="state" hidden>
+          <h1 class="title">This invoice was cancelled</h1>
+          <p class="muted">There is nothing to pay. If you think this is a mistake, message us below.</p>
+        </div>
+        <div data-view="missing" class="state" hidden>
+          <h1 class="title">We couldn't find this invoice</h1>
+          <p class="muted">Please check the link you received, or message us and we'll send it again.</p>
+        </div>
+        <div data-view="error" class="state" hidden>
+          <h1 class="title">Something went wrong</h1>
+          <p class="muted">We couldn't load this invoice. Please refresh the page in a moment, or message us.</p>
+        </div>
+      </section>
+
+      <footer class="foot">
+        <p>Questions about this invoice? <a href={`${SITE.whatsapp}?text=${encodeURIComponent('Hi, I have a question about my RizcoReach invoice')}`} data-wa>Message us on WhatsApp</a> or email <a href={`mailto:${SITE.email}`}>{SITE.email}</a></p>
+        <p class="small">RizcoReach · Dubai, United Arab Emirates · <a href="/">rizcoreach.ae</a></p>
+      </footer>
+    </main>
+  </body>
+</html>
+
+<script>
+  type View = 'loading' | 'invoice' | 'confirming' | 'paid' | 'void' | 'missing' | 'error';
+  interface PublicInvoice {
+    number: string;
+    client: string;
+    description: string;
+    amount: number;
+    currency: string;
+    status: 'unpaid' | 'paid' | 'void';
+    createdAt: number;
+    paidAt: number | null;
+    paidTest: boolean;
+    reference: string;
+    cardBrand: string;
+    cardLast4: string;
+    testMode: boolean;
+    payable: boolean;
+  }
+
+  const $ = <T extends Element = HTMLElement>(sel: string) => document.querySelector(sel) as T;
+  const $$ = (sel: string) => Array.from(document.querySelectorAll<HTMLElement>(sel));
+  const token = decodeURIComponent(location.pathname.replace(/^\/pay\/?/, '').split('/')[0] || '');
+  const ret = new URLSearchParams(location.search).get('r');
+  const api = `/api/pay/${encodeURIComponent(token)}`;
+
+  const money = (fils: number) => (fils / 100).toLocaleString('en-AE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const dubai = (ms: number, withTime = false) =>
+    new Date(ms).toLocaleString('en-GB', {
+      timeZone: 'Asia/Dubai',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+      ...(withTime ? { hour: '2-digit', minute: '2-digit' } : {}),
+    });
+
+  function show(view: View) {
+    $$('[data-view]').forEach((el) => (el.hidden = el.dataset.view !== view));
+    $('.sheet').classList.toggle('is-centered', view !== 'invoice' && view !== 'paid');
+  }
+
+  function fill(inv: PublicInvoice) {
+    const set = (f: string, v: string) => $$(`[data-f="${f}"]`).forEach((el) => (el.textContent = v));
+    set('number', inv.number);
+    set('client', inv.client);
+    set('description', inv.description);
+    set('amount', money(inv.amount));
+    set('created', dubai(inv.createdAt));
+    set('paid', inv.paidAt ? dubai(inv.paidAt, true) : '');
+    set('card', inv.cardLast4 ? `${inv.cardBrand ? inv.cardBrand.charAt(0) + inv.cardBrand.slice(1).toLowerCase() : 'Card'} ending ${inv.cardLast4}` : '');
+    set('reference', inv.reference && inv.reference !== 'manual' ? inv.reference : '');
+    $$('[data-row="description"]').forEach((el) => (el.hidden = !inv.description));
+    $$('[data-row="card"]').forEach((el) => (el.hidden = !inv.cardLast4));
+    $$('[data-row="reference"]').forEach((el) => (el.hidden = !inv.reference || inv.reference === 'manual'));
+    $$('.desc').forEach((el) => (el.hidden = !inv.description));
+    $('[data-pay-label]').textContent = `Pay AED ${money(inv.amount)} securely`;
+    $('[data-test]').hidden = !inv.testMode;
+    $('[data-paid-test]').hidden = !inv.paidTest;
+    document.title = `Invoice ${inv.number} | RizcoReach`;
+    const wa = $<HTMLAnchorElement>('[data-wa]');
+    wa.href = wa.href.replace(/text=[^&]*/, `text=${encodeURIComponent(`Hi, I have a question about RizcoReach invoice ${inv.number}`)}`);
+  }
+
+  function notice(text: string) {
+    const el = $('[data-notice]');
+    el.textContent = text;
+    el.hidden = !text;
+  }
+
+  function render(inv: PublicInvoice) {
+    fill(inv);
+    if (inv.status === 'paid') return show('paid');
+    if (inv.status === 'void') return show('void');
+    $<HTMLButtonElement>('[data-pay]').disabled = !inv.payable;
+    if (!inv.payable) notice('Online payment is not available for this invoice right now. Please message us and we will help.');
+    show('invoice');
+  }
+
+  async function getJSON(url: string, init?: RequestInit) {
+    const res = await fetch(url, { cache: 'no-store', ...init });
+    const data = await res.json().catch(() => ({}));
+    return { ok: res.ok, status: res.status, data };
+  }
+
+  async function confirm() {
+    show('confirming');
+    const note = $('[data-confirm-note]');
+    for (let i = 0; i < 10; i++) {
+      const { ok, data } = await getJSON(`${api}/status`);
+      if (ok && data.invoice) {
+        if (data.invoice.status === 'paid') {
+          history.replaceState(null, '', location.pathname);
+          return render(data.invoice);
+        }
+        if (['failed', 'canceled'].includes(data.last)) {
+          render(data.invoice);
+          return notice(data.last === 'failed' ? "The payment didn't go through and nothing was charged. You can try again, or use another card." : 'The payment was cancelled and nothing was charged.');
+        }
+      }
+      if (i === 3) note.textContent = 'Still confirming with the bank. Please keep this page open.';
+      await new Promise((r) => setTimeout(r, 2500));
+    }
+    const { data } = await getJSON(api);
+    if (data.invoice) render(data.invoice);
+    notice("We're still waiting for the payment provider to confirm. If money left your account, you don't need to pay again: we'll confirm on WhatsApp shortly.");
+  }
+
+  async function start() {
+    if (!token) return show('missing');
+    const { ok, status, data } = await getJSON(api).catch(() => ({ ok: false, status: 0, data: {} as Record<string, unknown> }));
+    if (!ok || !data.invoice) return show(status === 404 ? 'missing' : 'error');
+    const inv = data.invoice as PublicInvoice;
+    if (inv.status === 'unpaid' && ret === 'success') return confirm();
+    render(inv);
+    if (inv.status === 'unpaid' && ret === 'cancel') notice('Payment cancelled. Nothing was charged.');
+    if (inv.status === 'unpaid' && ret === 'failure') notice("The payment didn't go through and nothing was charged. You can try again, or use another card.");
+    if (ret) history.replaceState(null, '', location.pathname);
+  }
+
+  $('[data-pay]').addEventListener('click', async (e) => {
+    const btn = e.currentTarget as HTMLButtonElement;
+    const err = $('[data-error]');
+    err.textContent = '';
+    btn.disabled = true;
+    btn.classList.add('is-busy');
+    const { ok, data } = await getJSON(`${api}/checkout`, { method: 'POST' }).catch(() => ({ ok: false, data: {} as Record<string, unknown> }));
+    if (ok && typeof data.url === 'string') {
+      location.href = data.url;
+      return;
+    }
+    btn.disabled = false;
+    btn.classList.remove('is-busy');
+    const messages: Record<string, string> = {
+      already_paid: 'This invoice is already paid.',
+      void: 'This invoice was cancelled.',
+      rate_limited: 'Too many tries in a short time. Please wait a few minutes and try again.',
+      not_configured: 'Online payment is not available right now. Please message us and we will help.',
+    };
+    err.textContent = messages[data.error as string] || "We couldn't open the payment page. Please try again in a moment, or message us.";
+    if (data.error === 'already_paid') start();
+  });
+
+  $('[data-print]').addEventListener('click', () => window.print());
+
+  start();
+</script>
+
+<style is:global>
+  body.pay {
+    min-height: 100svh;
+    background:
+      radial-gradient(120% 60% at 50% -10%, rgb(255 255 255 / 0.07), transparent 60%),
+      var(--bg);
+  }
+  .pay [hidden] {
+    display: none !important;
+  }
+  .test-banner {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: #f5c451;
+    color: #1d1500;
+    text-align: center;
+    font-size: var(--fs-xs);
+    font-weight: 600;
+    padding: 8px 16px;
+  }
+  .pay .wrap {
+    width: 100%;
+    max-width: 520px;
+    margin: 0 auto;
+    padding: calc(env(safe-area-inset-top) + 28px) 16px calc(env(safe-area-inset-bottom) + 32px);
+    display: grid;
+    gap: 22px;
+  }
+  .pay .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .pay .brand img {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+  }
+  .pay .sheet {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    padding: 28px 22px 24px;
+    display: grid;
+    gap: 0;
+    min-height: 280px;
+  }
+  .pay .sheet.is-centered {
+    align-content: center;
+  }
+  .pay .sheet > div:not([hidden]) {
+    display: grid;
+    gap: 8px;
+  }
+  .pay .state {
+    text-align: center;
+    justify-items: center;
+  }
+  .pay .client {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-top: 10px;
+    overflow-wrap: anywhere;
+  }
+  .pay .desc,
+  .pay .muted,
+  .pay .issued {
+    color: var(--fg-2);
+    font-size: var(--fs-sm);
+  }
+  .pay .issued {
+    color: var(--fg-3);
+  }
+  .pay .amount {
+    font-family: var(--font-display);
+    font-size: clamp(3.2rem, 15vw, 4.4rem);
+    line-height: 1;
+    letter-spacing: -0.02em;
+    margin: 18px 0 6px;
+    font-variant-numeric: tabular-nums;
+  }
+  .pay .amount .cur {
+    font-family: var(--font-mono);
+    font-size: 0.95rem;
+    letter-spacing: 0.08em;
+    color: var(--fg-3);
+    vertical-align: 0.55em;
+    margin-inline-end: 4px;
+  }
+  .pay .title {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 2.2rem;
+    line-height: 1.05;
+    letter-spacing: -0.01em;
+  }
+  .pay .notice {
+    margin-top: 10px;
+    padding: 12px 14px;
+    border-radius: var(--r-sm);
+    background: var(--surface-2);
+    border: 1px solid var(--line-2);
+    color: var(--fg-2);
+    font-size: var(--fs-sm);
+  }
+  .pay .pay-btn {
+    margin-top: 18px;
+    width: 100%;
+    min-height: 58px;
+    border: 0;
+    border-radius: 999px;
+    background: var(--fg);
+    color: #0b0b0b;
+    font: 600 1.05rem/1 var(--font-sans);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    cursor: pointer;
+    transition: transform var(--t-fast) var(--ease-out), opacity var(--t-fast);
+  }
+  .pay .pay-btn svg {
+    width: 20px;
+    height: 20px;
+  }
+  .pay .pay-btn:hover {
+    transform: translateY(-1px);
+  }
+  .pay .pay-btn:active {
+    transform: translateY(0);
+  }
+  .pay .pay-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+  }
+  .pay .pay-btn.is-busy span::after {
+    content: '…';
+  }
+  .pay .pay-btn:focus-visible,
+  .pay .ghost-btn:focus-visible,
+  .pay a:focus-visible {
+    outline: 2px solid var(--fg);
+    outline-offset: 3px;
+  }
+  .pay .err {
+    color: var(--danger);
+    font-size: var(--fs-sm);
+    text-align: center;
+  }
+  .pay .err:empty {
+    display: none;
+  }
+  .pay .trust {
+    list-style: none;
+    padding: 16px 0 0;
+    margin-top: 10px;
+    border-top: 1px solid var(--line);
+    display: grid;
+    gap: 6px;
+    color: var(--fg-3);
+    font-size: var(--fs-xs);
+    line-height: 1.5;
+  }
+  .pay .trust li:first-child {
+    color: var(--fg-2);
+    font-weight: 500;
+  }
+  .pay .tick {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: var(--success);
+    color: #0b3b16;
+    display: grid;
+    place-items: center;
+    margin-bottom: 8px;
+  }
+  .pay .tick svg {
+    width: 28px;
+    height: 28px;
+  }
+  .pay .receipt {
+    margin: 18px 0 4px;
+    display: grid;
+    border-top: 1px solid var(--line);
+  }
+  .pay .receipt > div {
+    display: grid;
+    grid-template-columns: 110px minmax(0, 1fr);
+    gap: 12px;
+    padding: 11px 0;
+    border-bottom: 1px solid var(--line);
+    font-size: var(--fs-sm);
+  }
+  .pay .receipt dt {
+    color: var(--fg-3);
+  }
+  .pay .receipt dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+  .pay .receipt > div:first-child dd {
+    font-weight: 600;
+  }
+  .pay .mono {
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+  }
+  .pay .test-note {
+    color: #f5c451;
+    font-size: var(--fs-xs);
+  }
+  .pay .ghost-btn {
+    margin-top: 14px;
+    min-height: 48px;
+    border-radius: 999px;
+    border: 1px solid var(--line-2);
+    background: transparent;
+    color: var(--fg);
+    font: 500 0.95rem/1 var(--font-sans);
+    cursor: pointer;
+  }
+  .pay .foot {
+    text-align: center;
+    color: var(--fg-3);
+    font-size: var(--fs-xs);
+    display: grid;
+    gap: 6px;
+  }
+  .pay .foot a {
+    color: var(--fg-2);
+  }
+  .pay .small {
+    font-size: 0.75rem;
+  }
+  .pay .skel {
+    height: 14px;
+    border-radius: 8px;
+    background: linear-gradient(90deg, var(--surface-2), var(--surface-3), var(--surface-2));
+    background-size: 200% 100%;
+    animation: pay-shimmer 1.4s linear infinite;
+  }
+  .pay .skel.tall {
+    height: 48px;
+    margin: 10px 0;
+  }
+  .pay .w40 { width: 40%; }
+  .pay .w55 { width: 55%; }
+  .pay .w70 { width: 70%; }
+  .pay .spinner {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 3px solid var(--line-2);
+    border-top-color: var(--fg);
+    animation: pay-spin 0.9s linear infinite;
+    margin-bottom: 8px;
+  }
+  @keyframes pay-shimmer {
+    to { background-position: -200% 0; }
+  }
+  @keyframes pay-spin {
+    to { transform: rotate(360deg); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pay .skel, .pay .spinner { animation: none; }
+  }
+  @media print {
+    body.pay { background: #fff; color: #000; }
+    .pay .sheet { background: #fff; border-color: #ccc; }
+    .pay .receipt dt, .pay .muted, .pay .foot { color: #444; }
+    .pay .receipt > div, .pay .receipt { border-color: #ddd; }
+    .pay .ghost-btn, .test-banner { display: none !important; }
+    .pay .tick { border: 1px solid #0b3b16; }
+  }
+</style>
