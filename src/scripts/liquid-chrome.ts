@@ -32,6 +32,8 @@ uniform float uHover;
 uniform vec2 uCenter;
 uniform float uSpread;
 uniform float uIntro;
+uniform float uZoom;
+uniform vec2 uFocus;
 varying vec2 vUv;
 
 float field(vec2 p, float t) {
@@ -44,13 +46,13 @@ float field(vec2 p, float t) {
   return 0.5 + 0.5 * sin(q.x * 0.85 + q.y * 1.05 + t * 0.12);
 }
 
-float heightAt(vec2 uv, float t, float aspect) {
+float heightAt(vec2 uv, float t, float aspect, vec2 m) {
   vec2 p = (uv - 0.5) * vec2(aspect, 1.0) * 2.8 * mix(1.7, 1.0, clamp(aspect, 0.0, 1.0));
   float h = field(p, t);
-  // Cursor: a soft lens bulge with a travelling ripple ring.
-  vec2 d = (uv - uMouse) * vec2(aspect, 1.0);
+  // Cursor: a soft lens bulge with a travelling ripple ring (sized to the canvas, not the zoomed field).
+  vec2 d = (uv - m) * vec2(aspect, 1.0) / uZoom;
   float r2 = dot(d, d);
-  h += uHover * (exp(-r2 * 22.0) * 0.26 + sin(sqrt(r2) * 40.0 - t * 6.0) * exp(-r2 * 12.0) * 0.035);
+  h += uHover * uZoom * (exp(-r2 * 22.0) * 0.26 + sin(sqrt(r2) * 40.0 - t * 6.0) * exp(-r2 * 12.0) * 0.035);
   return h;
 }
 
@@ -71,12 +73,14 @@ float envMap(vec3 r) {
 void main() {
   float aspect = uRes.x / uRes.y;
   float t = uTime;
-  vec2 uv = vUv;
+  // uZoom < 1 shows a close-up of the field, so a small canvas keeps the hero's large, smooth folds.
+  vec2 uv = (vUv - 0.5) * uZoom + uFocus;
+  vec2 m = (uMouse - 0.5) * uZoom + uFocus;
 
-  float e = 1.5 / uRes.y;
-  float h = heightAt(uv, t, aspect);
-  float hx = heightAt(uv + vec2(e, 0.0), t, aspect);
-  float hy = heightAt(uv + vec2(0.0, e), t, aspect);
+  float e = 1.5 / uRes.y * uZoom;
+  float h = heightAt(uv, t, aspect, m);
+  float hx = heightAt(uv + vec2(e, 0.0), t, aspect, m);
+  float hy = heightAt(uv + vec2(0.0, e), t, aspect, m);
   vec2 g = vec2(hx - h, hy - h) / e;
   vec3 n = normalize(vec3(-g * 0.3, 1.0));
 
@@ -86,13 +90,13 @@ void main() {
   float c = envMap(r);
 
   // Cursor key light + fresnel rim.
-  vec3 L = normalize(vec3((uMouse - uv) * vec2(aspect, 1.0) * 1.2, 0.9));
+  vec3 L = normalize(vec3((uMouse - vUv) * vec2(aspect, 1.0) * 1.2, 0.9));
   float spec = pow(max(dot(reflect(-L, n), v), 0.0), 90.0) * (0.25 + uHover * 0.8);
   float rim = pow(1.0 - max(n.z, 0.0), 3.0) * 0.6;
   c += spec + rim;
 
   // Shape the liquid into a pool so the headline sits on calm black.
-  vec2 cd = (uv - uCenter) * vec2(aspect, 1.0);
+  vec2 cd = (vUv - uCenter) * vec2(aspect, 1.0);
   float edge = length(cd) / uSpread + (h - 0.5) * 0.7;
   float mask = smoothstep(1.0, 0.35, edge);
   mask *= uIntro;
@@ -111,6 +115,14 @@ interface Opts {
   centerMobile?: [number, number];
   spread?: number;
   spreadMobile?: number;
+  /** Below 1 shows a close-up of the liquid (for small canvases). Default 1, the full hero field. */
+  zoom?: number;
+  /** Centre of the close-up in the full field, 0 to 1. Default [0.5, 0.5]. */
+  focus?: [number, number];
+  /** Fade the liquid in from black on start. Default true. */
+  intro?: boolean;
+  /** Render at full resolution (up to 2x pixel ratio). For small canvases, where it costs little. */
+  sharp?: boolean;
 }
 
 export function mountChrome(canvas: HTMLCanvasElement, opts: Opts = {}) {
@@ -179,11 +191,15 @@ export function mountChrome(canvas: HTMLCanvasElement, opts: Opts = {}) {
     center: gl.getUniformLocation(prog, 'uCenter'),
     spread: gl.getUniformLocation(prog, 'uSpread'),
     intro: gl.getUniformLocation(prog, 'uIntro'),
+    zoom: gl.getUniformLocation(prog, 'uZoom'),
+    focus: gl.getUniformLocation(prog, 'uFocus'),
   };
+  gl.uniform1f(u.zoom, opts.zoom ?? 1);
+  gl.uniform2f(u.focus, ...(opts.focus ?? [0.5, 0.5]));
 
   const mobile = window.matchMedia('(max-width: 760px)');
   const coarse = window.matchMedia('(pointer: coarse)').matches;
-  let scale = coarse ? 0.55 : 0.8;
+  let scale = opts.sharp ? 1 : coarse ? 0.55 : 0.8;
   const rtl = document.documentElement.dir === 'rtl';
 
   const layout = () => {
@@ -195,7 +211,7 @@ export function mountChrome(canvas: HTMLCanvasElement, opts: Opts = {}) {
   };
 
   const resize = () => {
-    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+    const dpr = Math.min(window.devicePixelRatio || 1, opts.sharp ? 2 : 1.5);
     const w = Math.max(1, Math.round(canvas.clientWidth * dpr * scale));
     const h = Math.max(1, Math.round(canvas.clientHeight * dpr * scale));
     if (canvas.width !== w || canvas.height !== h) {
@@ -227,7 +243,7 @@ export function mountChrome(canvas: HTMLCanvasElement, opts: Opts = {}) {
   let raf = 0;
   let last = performance.now();
   let t = 14.0;
-  let intro = still ? 1 : 0;
+  let intro = still || opts.intro === false ? 1 : 0;
   const frames: number[] = [];
 
   const draw = () => {

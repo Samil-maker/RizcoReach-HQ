@@ -1,0 +1,21 @@
+/* Invoices page (public/invoices.html). Builds on /desk-assets/desk.css. */
+.main { padding-top: 16px; }
+.card h2 { font-size: 17px; }
+.grid2 { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 560px) { .grid2 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+input { width: 100%; min-height: 48px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--line-2); background: var(--panel-2); }
+input:focus { border-color: var(--fg-3); outline: none; }
+.field small { font-weight: 400; }
+.banner { border-radius: 14px; padding: 12px 14px; font-size: 14px; font-weight: 600; background: rgb(245 196 81 / 0.12); border: 1px solid rgb(245 196 81 / 0.4); color: var(--warm); }
+.banner.bad { background: rgb(255 107 107 / 0.1); border-color: rgb(255 107 107 / 0.4); color: var(--bad); }
+.list { display: grid; gap: 12px; }
+.inv-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.inv-client { font-weight: 650; font-size: 16.5px; overflow-wrap: anywhere; }
+.inv-amt { font-weight: 700; font-size: 18px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.st { font-size: 12px; font-weight: 700; border-radius: 99px; padding: 2px 9px; border: 1px solid var(--line-2); color: var(--fg-2); }
+.st.paid { color: #052e16; background: var(--wa); border-color: var(--wa); }
+.st.test { color: #1d1500; background: var(--warm); border-color: var(--warm); }
+.st.void { color: var(--fg-3); text-decoration: line-through; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.actions .btn { flex: 1 1 auto; }
+.empty-list { color: var(--fg-3); text-align: center; padding: 28px 0; font-size: 14px; }
