@@ -75,7 +75,8 @@ Worth sending you a couple of examples?""",
 }
 
 FOLLOW_UP = {
-    1: "Hi {greeting_name} just bringing this back up in case it got buried. Happy to send a few examples if you're interested",
+    # The portfolio link goes on its own line (EXAMPLES_LINK in .env). First emails never carry a link.
+    1: "Hi {greeting_name} just bringing this back up in case it got buried.[[ Here are a few sites I've built so you can see the style\n\n{examples_link}]]",
     2: "Last one from me[[ {first_name}]]. If it helps I can put together a quick preview of what a homepage for {business} could look like. No cost and no commitment. Just reply yes",
 }
 

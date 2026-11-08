@@ -119,7 +119,8 @@ There is an empty template in `leads/sample/lead-template.csv`.
   taking turns. Follow ups first, then new leads (new businesses first, since "just opened" goes stale).
 - **Sequence:** day 0, day 3 follow up, day 7 follow up, then stop. Follow ups reply in the same thread. Any real
   reply, bounce or opt out stops that lead. Out of office replies push the next email to the day after they're back.
-- **Copy:** plain text, no links, no images, no tracking, under 80 words, no dashes or semicolons, ends with the
+- **Copy:** plain text, no images, no tracking, no links in the first email (follow up 1 carries your portfolio
+  link), first emails under 80 words, no dashes or semicolons, ends with the
   opt out line. All wording lives in `outreach/templates.py`.
 - **A/B test:** half of each segment gets version A (shows 480 AED), half version B (no price). After 100 sends
   each, the report names the winner and suggests the next test.
