@@ -2,8 +2,8 @@
    1. FIND businesses on Google Maps (Places API, or the Maps page in a tab)
    2. CHECK each one in the Meta Ad Library (in a background tab)
    3. Businesses that are NOT running ads become prospects for the Meta-ads offer.
-   Prospects are stored like leads (`lead:p:…`, kind: 'prospect') so the dashboard, pitches,
-   phone mode, phone queue and CSV export all work on them too. */
+   Prospects are stored like leads (`lead:p:…`, kind: 'prospect') so the dashboard, scoring, the email sender
+   and the exports all work on them too. */
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const jitter = (min, max) => min + Math.random() * (max - min);
@@ -73,48 +73,81 @@ function mergeProspect(lead, item, ctx) {
   lead.updatedAt = now();
 }
 
-/** Add or merge found businesses. Returns ids of new prospects (worth an ad check). */
+/**
+ * Add or merge found businesses. Returns ids of new prospects (worth an ad check).
+ * In a preset search a new business must pass the preset first: its Google review count (read from the results
+ * list, so a listing that fails is never opened or checked) and its exclude words. What was dropped and why is
+ * counted on the run, so every run shows its before and after.
+ */
 async function ingestProspects(items, ctx = {}) {
+  const settings = await getSettings();
+  const preset = ctx.finderId ? LH.presetsFor(settings).find((n) => n.name === ctx.niche) : null;
   const result = await locked(async () => {
-    const { prospectIndex = {}, finder } = await store.get(['prospectIndex', 'finder']);
+    const { prospectIndex = {}, prospectNames = {}, contactHistory = {}, finder } = await store.get(['prospectIndex', 'prospectNames', 'contactHistory', 'finder']);
+    const run = finder && ctx.finderId === finder.id ? finder : null;
+    const stats = run ? (run.stats = { found: 0, duplicate: 0, contacted: 0, fewReviews: 0, manyReviews: 0, excluded: 0, kept: 0, ...(run.stats || {}) }) : null;
     const touched = new Map();
     const fresh = [];
+    let contacted = 0;
     for (const item of items || []) {
       if (!item || !item.name) continue;
       const keys = prospectKeys(item);
       if (!keys.length) continue;
-      let id = keys.map((k) => prospectIndex[k]).find(Boolean);
+      // Same phone, website, Instagram or Maps listing, else nearly the same name in the same area.
+      let id = keys.map((k) => prospectIndex[k]).find(Boolean) || LH.findByName(prospectNames, item.name, ctx.area, settings.nameMatch);
       let lead = id ? touched.get(id) || (await getLead(id)) : null;
       const isNew = !lead;
+      if (stats) stats.found++;
+      if (!isNew && stats) stats.duplicate++;
+      // Contacted, exported or in your imported contacts before: never added again (Reset on the lead undoes it).
+      if (isNew && LH.historyHit({ pageName: item.name, area: ctx.area, phones: [...(item.phones || []), ...(item.whatsapp || [])], website: item.website, sources: item.instagram ? { instagram: item.instagram } : {} }, contactHistory)) {
+        if (stats) stats.contacted++;
+        contacted++;
+        continue;
+      }
+      if (isNew && preset) {
+        const reviews = (item.maps && item.maps.reviews) || 0;
+        const why = reviews < preset.minReviews ? 'fewReviews' : reviews > preset.maxReviews ? 'manyReviews' : LH.excludeHit(preset, item.name, item.category) ? 'excluded' : '';
+        if (why) {
+          stats[why]++;
+          continue;
+        }
+      }
       if (isNew) {
         id = item.maps && item.maps.placeId ? `p:m:${item.maps.placeId}` : `p:i:${item.instagram.username.toLowerCase()}`;
         lead = touched.get(id) || (await getLead(id)) || newProspect(id);
       }
       mergeProspect(lead, item, ctx);
       for (const k of prospectKeys({ ...item, website: lead.website, phones: lead.phones.map((p) => p.number) })) prospectIndex[k] = id;
+      LH.addName(prospectNames, lead);
       touched.set(id, lead);
       if (isNew && !fresh.includes(id)) fresh.push(id);
     }
-    const writes = { prospectIndex };
+    const writes = { prospectIndex, prospectNames };
     for (const [id, l] of touched) writes[leadKey(id)] = l;
     const counted = fresh.filter((id) => !touched.get(id).avoid);
-    if (finder && finder.status === 'running' && ctx.finderId === finder.id) {
-      finder.added += counted.length;
-      finder.found += (items || []).length;
-      finder.lastActivity = now();
-      writes.finder = finder;
+    if (run && ['running', 'paused'].includes(run.status)) {
+      run.added += counted.length;
+      run.found += (items || []).length;
+      stats.kept += counted.length;
+      stats.excluded += fresh.length - counted.length; // the built in "long sales cycle" words
+      run.lastActivity = now();
+      writes.finder = run;
     }
-    // Without a website they get the website script whatever their ads, so their Ad Library check is skipped.
+    // Without a website they get the website offer whatever their ads, so their Ad Library check is skipped
+    // unless Settings asks for it (Phase 4 scores "running ads" on website leads too).
     for (const id of counted) {
       const l = touched.get(id);
-      l.adCheck = { state: l.website ? 'queued' : 'skipped' };
+      l.adCheck = { state: l.website || settings.adCheckAll ? 'queued' : 'skipped' };
       if (l.website) l.site = { state: 'queued' };
     }
     await store.set(writes);
     const websites = counted.filter((id) => touched.get(id).website);
-    return { added: counted.length, ids: counted, websites };
+    const checks = counted.filter((id) => touched.get(id).adCheck.state === 'queued');
+    return { added: counted.length, ids: counted, websites, checks, contacted, leads: counted.map((id) => touched.get(id)) };
   });
-  if (result.websites.length) queueAdChecks(result.websites);
+  if (result.checks.length) queueAdChecks(result.checks);
+  igAuto(result.leads, settings);
   if (result.websites.length) enqueue(result.websites);
   return result;
 }
@@ -146,13 +179,14 @@ async function adCheckTab() {
   return t.id;
 }
 
-/* Ad Library views used by the check. The page view is the reliable one: it lists exactly the
-   ads a Facebook page is running. Keyword search does NOT look at page names, so a name search
-   that finds nothing is never proof that a business isn't advertising. */
-const pageViewUrl = (pageId) =>
-  `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=ALL&is_targeted_country=false&media_type=all&search_type=page&view_all_page_id=${encodeURIComponent(pageId)}`;
-const searchUrl = (q, country = 'ALL') =>
-  `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=${country}&is_targeted_country=false&media_type=all&q=${encodeURIComponent(q)}&search_type=keyword_unordered`;
+/* Ad Library views used by the check, UAE only, live and past ads ("all") so a business that stopped advertising
+   shows up too. The page view is the reliable one: it lists exactly the ads a Facebook page ran. Keyword search
+   does NOT look at page names, so a name search that finds nothing is never proof that a business never advertised. */
+const LIBRARY = 'https://www.facebook.com/ads/library/';
+const pageViewUrl = (pageId, country = 'AE', liveOnly = false) =>
+  `${LIBRARY}?active_status=${liveOnly ? 'active' : 'all'}&ad_type=all&country=${country}&is_targeted_country=false&media_type=all&search_type=page&view_all_page_id=${encodeURIComponent(pageId)}`;
+const searchUrl = (q, country = 'AE', liveOnly = false) =>
+  `${LIBRARY}?active_status=${liveOnly ? 'active' : 'all'}&ad_type=all&country=${country}&is_targeted_country=false&media_type=all&q=${encodeURIComponent(q)}&search_type=keyword_unordered`;
 
 /** The business's Facebook page id, from the Facebook link on its website (if any). */
 async function resolvePageId(lead) {
@@ -185,6 +219,11 @@ async function loadView(lead, url) {
     });
     pendingCheck = null;
     if (res.blocked) return res;
+    // A login or checkpoint page has no Ad Library script to answer: the tab's address says it.
+    if (res.timeout) {
+      const at = await chrome.tabs.get(tabId).then((t) => t.url || '').catch(() => '');
+      if (/facebook\.com\/(login|checkpoint)/.test(at)) return { blocked: true, reason: /checkpoint/.test(at) ? 'Facebook showed a security check' : 'Facebook asked you to log in' };
+    }
     // About 1 load in 4 arrives without the results; one retry fixes most of them.
     if (res.loaded) return res;
     await sleep(jitter(2500, 4500));
@@ -193,55 +232,102 @@ async function loadView(lead, url) {
 }
 
 /**
- * Verdicts: running · none (their Facebook page has no live ads: confirmed) ·
- * likely (no ads found by website or name, but their page could not be checked) · unclear.
+ * Verdicts: running (live ads now) · past (ran ads before, none live) · none (their Facebook page never ran ads in
+ * the UAE: confirmed) · likely (no ads found by website or name, but their page could not be checked) · unclear.
+ * With the newest ad's date (lastAdAt): when it started if live, when the last one stopped if past.
+ * A login wall, checkpoint or block stops the check: { blocked } pauses all checks until you look.
  */
 async function checkOne(lead) {
   const country = lead.countries[0] && lead.countries[0] !== 'ALL' ? lead.countries[0] : 'AE';
-  const base = { checkedAt: now() };
+  const base = { checkedAt: now(), v: 2 }; // v2: live and past ads (before 1.8 only live ads were looked at)
   const steps = [];
-  let blocked = false;
+  const blocked = (r, url) => ({ ...base, blocked: true, reason: r.reason || 'Facebook asked to log in or blocked the search', searchUrl: url });
+  // Only the first ads load. When none of them is live but there are more, load the live ones on their own.
+  // mine: which ads are theirs (all of them on their page view, the matching ones in a search).
+  const addLive = async (h, url, mine) => {
+    const r = await loadView(lead, url);
+    if (r.blocked) return { blocked: r };
+    const ads = r.loaded ? (r.ads || []).filter((a) => a.active !== false && mine(a)) : [];
+    return ads.length ? { ...h, active: ads.length, lastStart: Math.max(h.lastStart || 0, LH.adHistory(ads).lastStart || 0) || null } : h;
+  };
 
-  // 1. Their Facebook page (from the website): an exact live-ad count.
+  // 1. Their Facebook page (from the website): every ad it ran in the UAE.
   const pageId = await resolvePageId(lead);
   if (pageId) {
-    const url = pageViewUrl(pageId);
+    const url = pageViewUrl(pageId, country);
     const r = await loadView(lead, url);
-    blocked = blocked || !!r.blocked;
+    if (r.blocked) return blocked(r, url);
     if (r.loaded && r.pageInfo !== false) {
-      const count = typeof r.count === 'number' ? r.count : (r.ads || []).length;
-      if (count > 0 && !(r.ads || []).length) return { ...base, state: 'unclear', reason: 'Facebook showed an ad count but no ads (it may be slowing searches down)', searchUrl: url, pageId };
-      if (count > 0) return { ...base, state: 'running', activeAds: count, pageId, searchUrl: url, matches: [{ pageId, pageName: (r.ads[0] || {}).pageName || lead.pageName, ads: count, reasons: ['their Facebook page'] }] };
-      return { ...base, state: 'none', pageId, searchUrl: url, evidence: 'Their Facebook page has no active ads in the Ad Library.' };
+      const ads = r.ads || [];
+      const count = typeof r.count === 'number' ? r.count : ads.length;
+      if (count > 0 && !ads.length) return { ...base, state: 'unclear', reason: 'Facebook showed an ad count but no ads (it may be slowing searches down)', searchUrl: url, pageId };
+      if (!count) return { ...base, state: 'none', pageId, searchUrl: url, totalAds: 0, evidence: 'Their Facebook page has never run ads in the UAE (Ad Library, live and past ads).' };
+      let h = { ...LH.adHistory(ads), total: count };
+      if (!h.active && count > ads.length) {
+        h = await addLive(h, pageViewUrl(pageId, country, true), () => true);
+        if (h.blocked) return blocked(h.blocked, url);
+      }
+      const v = LH.adVerdict(h);
+      return { ...base, ...v, pageId, searchUrl: url, matches: [{ pageId, pageName: ads[0].pageName || lead.pageName, ads: v.activeAds, total: count, reasons: ['their Facebook page'] }] };
     }
     steps.push(r.loaded ? 'page not in the Ad Library' : 'page view did not load');
   }
 
-  // 2. Their website domain: ads show where they link to, so this finds advertisers even without a page id.
+  // 2. Their website domain, then 3. their name (weakest: finds ads that mention the business, absence proves little).
   const domain = lead.website ? LH.domainOf(lead.website) : '';
-  if (domain) {
-    const url = searchUrl(domain, 'ALL');
-    const r = await loadView(lead, url);
-    blocked = blocked || !!r.blocked;
+  const searches = [domain && [domain, 'no ads link to their website'], [lead.pageName, 'no ads mention their name']].filter(Boolean);
+  let url = '';
+  let r = {};
+  for (const [q, none] of searches) {
+    url = searchUrl(q, country);
+    r = await loadView(lead, url);
+    if (r.blocked) return blocked(r, url);
     if (r.loaded) {
       const m = matchAds(lead, r.ads);
-      if (m.length) return { ...base, state: 'running', activeAds: m.reduce((s, x) => s + x.ads, 0), matches: m.slice(0, 3), searchUrl: url };
-      steps.push('no ads link to their website');
+      if (m.length) {
+        let h = LH.sumHistory(m);
+        if (!h.active && (r.count || 0) > (r.ads || []).length) {
+          h = await addLive(h, searchUrl(q, country, true), (a) => matchAds(lead, [a]).length > 0);
+          if (h.blocked) return blocked(h.blocked, url);
+        }
+        return { ...base, ...LH.adVerdict(h), matches: m.slice(0, 3).map(({ pageId: id, pageName, ads, total, reasons }) => ({ pageId: id, pageName, ads, total, reasons })), searchUrl: url };
+      }
+      steps.push(none);
     }
-    await sleep(jitter(2000, 4000));
+    if (q === domain) await sleep(jitter(2000, 4000));
   }
+  if (r.loaded) return { ...base, state: 'likely', searchUrl: url, resultsSeen: (r.ads || []).length, evidence: `No ads found, live or past (${steps.join(', ')}). Their Facebook page could not be checked directly, so this is not certain.` };
+  return { ...base, state: 'unclear', searchUrl: url, reason: 'The Ad Library did not load' };
+}
 
-  // 3. Their name (weakest: finds ads that mention the business, but absence proves little).
-  const url = searchUrl(lead.pageName, country);
-  const r = await loadView(lead, url);
-  blocked = blocked || !!r.blocked;
-  if (r.loaded) {
-    const m = matchAds(lead, r.ads);
-    if (m.length) return { ...base, state: 'running', activeAds: m.reduce((s, x) => s + x.ads, 0), matches: m.slice(0, 3), searchUrl: url };
-    steps.push('no ads mention their name');
-    return { ...base, state: 'likely', searchUrl: url, resultsSeen: (r.ads || []).length, evidence: `No ads found (${steps.join(', ')}). Their Facebook page could not be checked directly, so this is not certain.` };
-  }
-  return { ...base, state: 'unclear', searchUrl: url, reason: blocked ? 'Facebook asked to log in or blocked the search' : 'The Ad Library did not load' };
+/* ----------------------------------------------------- per source problems */
+/* Every problem a source hits, newest first (Settings > Your data), and a pause with an alert when a site shows a
+   login wall, checkpoint, captcha or block. Nothing tries to get past it. */
+async function logProblem(source, text) {
+  await locked(async () => {
+    const { problems = {} } = await store.get('problems');
+    problems[source] = [[now(), String(text).slice(0, 300)], ...(problems[source] || [])].slice(0, 20);
+    await store.set({ problems });
+  });
+}
+const SOURCE_NAMES = { adlib: 'Meta Ad Library', maps: 'Google Maps', instagram: 'Instagram API' };
+async function alertSource(source, text, url, hint = 'Open the tab, sort it out, then press Resume in Lead Hunter.') {
+  await logProblem(source, text);
+  await locked(async () => {
+    const { alerts = {} } = await store.get('alerts');
+    alerts[source] = { at: now(), text, url: url || '', hint };
+    await store.set({ alerts });
+  });
+  await refreshBadge();
+  notify(`${SOURCE_NAMES[source] || source} paused`, `${text}. ${hint}`);
+}
+async function clearAlert(source) {
+  await locked(async () => {
+    const { alerts = {} } = await store.get('alerts');
+    delete alerts[source];
+    await store.set({ alerts });
+  });
+  await refreshBadge();
 }
 
 async function runAdChecks() {
@@ -269,6 +355,14 @@ async function runAdChecks() {
       if (lead && lead.kind === 'prospect') {
         await updateLead(id, (l) => (l.adCheck = { ...(l.adCheck || {}), state: 'checking' }));
         const result = await checkOne(lead).catch((e) => ({ state: 'unclear', reason: String(e.message || e), checkedAt: now() }));
+        if (result.blocked) {
+          // Stop here: this business stays first in the queue and every check waits until you press Resume.
+          await updateLead(id, (l) => (l.adCheck = { ...(l.adCheck || {}), state: 'queued' }));
+          await store.set({ adCheckPaused: true });
+          await alertSource('adlib', result.reason, result.searchUrl);
+          break;
+        }
+        if (result.state === 'unclear') logProblem('adlib', `${lead.pageName}: ${result.reason}`);
         await updateLead(id, (l) => (l.adCheck = result));
       }
       await locked(async () => {
@@ -281,6 +375,89 @@ async function runAdChecks() {
     adCheckBusy = false;
   }
 }
+
+/* ---------------------------------------------------- Instagram followers */
+/* Follower counts from Meta's official Instagram Graph API (Business Discovery), with your own token: nothing is
+   read from instagram.com. It only sees business and creator accounts. A personal account, or a handle that does
+   not exist, is saved as not found. A bad token, a missing permission or a rate limit pauses the lookups. */
+async function igApi(settings, path, fields) {
+  const u = new URL(`https://graph.facebook.com/${settings.igApiVersion || 'v23.0'}/${encodeURIComponent(path)}`);
+  u.searchParams.set('fields', fields);
+  u.searchParams.set('access_token', settings.igToken);
+  const res = await fetch(u, { signal: AbortSignal.timeout(20000) });
+  const data = await res.json().catch(() => ({}));
+  if (data && data.error) return { error: data.error.message || 'Instagram API error', code: data.error.code, sub: data.error.error_subcode };
+  if (!res.ok) return { error: `Instagram API answered ${res.status}` };
+  return data;
+}
+// Token expired or wrong (190, 102), no permission (10, 200), rate limits (4, 17, 32, 613, 80002), your account id unknown (100/33).
+const igStop = (r) => [190, 102, 10, 200, 4, 17, 32, 613, 80002].includes(r.code) || (r.code === 100 && r.sub === 33);
+// Business Discovery (other accounts' followers) needs more than reading your own account does.
+const IG_PERMS = 'instagram_basic, instagram_manage_insights, pages_show_list, pages_read_engagement and business_management';
+/** What to do about a stopping error, in words. */
+function igHint(r) {
+  if ([10, 200].includes(r.code)) return `Your token is missing a permission. In the Graph API Explorer make a new token with ${IG_PERMS}, extend it, paste it in Settings > Quality signals, then press Resume.`;
+  if ([190, 102].includes(r.code)) return 'Your token has expired or was changed. Make a new one (Settings > Quality signals has the steps), then press Resume.';
+  if (r.code === 100) return 'Check your Instagram business account id in Settings > Quality signals, then press Resume.';
+  return 'Meta is limiting requests for now. Wait an hour, then press Resume.';
+}
+async function igLookup(handle, settings) {
+  const r = await igApi(settings, settings.igAccountId, `business_discovery.username(${handle}){followers_count,media_count,username,media.limit(1){timestamp}}`);
+  if (r.error) return r;
+  const b = r.business_discovery || {};
+  // "2026-10-20T10:00:00+0000": the newest post, for "active Instagram".
+  const last = (((b.media || {}).data || [])[0] || {}).timestamp || '';
+  const lastPostAt = Date.parse(String(last).replace(/([+-]\d{2})(\d{2})$/, '$1:$2')) || null;
+  return { followers: typeof b.followers_count === 'number' ? b.followers_count : null, media: typeof b.media_count === 'number' ? b.media_count : null, lastPostAt };
+}
+const igReady = (settings) => !!(settings.igToken && settings.igAccountId);
+
+async function queueIg(ids) {
+  if (!ids.length) return;
+  await locked(async () => {
+    const { igQueue = [] } = await store.get('igQueue');
+    await store.set({ igQueue: [...new Set([...igQueue, ...ids])] });
+  });
+  runIg();
+}
+/** New businesses with an Instagram handle and no count yet, when the API is set up and Look up automatically is on. */
+function igAuto(leads, settings) {
+  if (!igReady(settings) || !settings.igAuto) return;
+  queueIg((leads || []).filter((l) => l && l.kind === 'prospect' && LH.igHandle(l) && !l.igStats).map((l) => l.id));
+}
+let igBusy = false;
+async function runIg() {
+  if (igBusy) return;
+  igBusy = true;
+  try {
+    for (;;) {
+      const settings = await getSettings();
+      const { igQueue = [], igPaused } = await store.get(['igQueue', 'igPaused']);
+      if (!igQueue.length || igPaused || !igReady(settings)) break;
+      const id = igQueue[0];
+      const lead = await getLead(id);
+      const handle = lead && LH.igHandle(lead).toLowerCase();
+      if (handle) {
+        const r = await igLookup(handle, settings).catch((e) => ({ error: String(e.message || e) }));
+        if (r.error && igStop(r)) {
+          await store.set({ igPaused: true });
+          await alertSource('instagram', `Instagram API: ${r.error}`, '', igHint(r));
+          break;
+        }
+        if (r.error) logProblem('instagram', `@${handle}: ${r.error}`);
+        await updateLead(id, (l) => (l.igStats = r.error ? { handle, error: r.error, at: now() } : { handle, followers: r.followers, media: r.media, lastPostAt: r.lastPostAt, at: now(), from: 'api' }));
+      }
+      await locked(async () => {
+        const { igQueue: q = [] } = await store.get('igQueue');
+        await store.set({ igQueue: q.filter((x) => x !== id) });
+      });
+      await sleep(jitter(1500, 3000));
+    }
+  } finally {
+    igBusy = false;
+  }
+}
+chrome.alarms.onAlarm.addListener((a) => a.name === 'tick' && runIg());
 
 /* ---------------------------------------------------------- Google Maps */
 const PLACES_FIELDS = [
@@ -340,36 +517,61 @@ async function placesSearch(query, key, pageToken) {
 /* ------------------------------------------------------------- the finder */
 let finderBusy = false;
 
+/* A run works through a preset's keyword x area searches in order ("ppf Al Quoz Industrial Area 3, Dubai"), at most
+   `cap` searches per run. Finished searches are remembered per preset (`searchDone`), so the next run carries on
+   where the last one stopped. */
+const comboKey = (keyword, area) => `${keyword.toLowerCase()}|${area.toLowerCase()}`;
+async function searchesDone(preset) {
+  const { searchDone = {} } = await store.get('searchDone');
+  return searchDone[preset] || {};
+}
+async function markSearchDone(preset, q) {
+  if (!preset) return;
+  await locked(async () => {
+    const { searchDone = {} } = await store.get('searchDone');
+    searchDone[preset] = { ...(searchDone[preset] || {}), [comboKey(q.keyword, q.area)]: now() };
+    await store.set({ searchDone });
+  });
+}
+/** What is left of a preset: its searches in order, minus the finished ones. */
+async function presetQueue(preset, keywords, areas) {
+  const done = await searchesDone(preset.name);
+  const all = keywords.flatMap((keyword) => areas.map((area) => ({ q: `${keyword} ${area}`, keyword, area })));
+  return { all: all.length, left: all.filter((x) => !done[comboKey(x.keyword, x.area)]) };
+}
+
 async function startFinder(cfg) {
   const settings = await getSettings();
-  const preset = LH.nichesFor(settings).find((n) => n.name === cfg.niche);
-  const keywords = LH.parseKeywords(cfg.keywords || (preset && preset.keywords) || []);
-  if (!keywords.length) throw new Error('Pick a niche or add keywords.');
-  // Typed search terms without a niche chip: use the niche they belong to, if any.
-  const niche = cfg.niche || LH.nicheOf({ keywords }, settings) || '';
-  const city = cfg.city || settings.adsCity || 'Dubai';
-  const areas = (cfg.areas && cfg.areas.length ? cfg.areas : LH.AREAS[city] || [city]).slice(0, 150);
-  const sources = { maps: true };
-  const mapsMode = settings.placesKey ? 'api' : 'browser';
-  const mapsQ = [];
-  for (const area of areas) for (const keyword of keywords) mapsQ.push({ q: `${keyword} in ${area}, ${city}`, keyword, area });
+  const presets = LH.presetsFor(settings);
+  const preset = presets.find((n) => n.name === cfg.niche) || presets[0];
+  const keywords = LH.parseKeywords(cfg.keywords && cfg.keywords.length ? cfg.keywords : preset.keywords);
+  if (!keywords.length) throw new Error('Pick a preset or add keywords.');
+  const areas = LH.parseLines(cfg.areas && cfg.areas.length ? cfg.areas : preset.areas).slice(0, 300);
+  if (!areas.length) throw new Error('This preset has no areas. Add some in Settings.');
+  const { all, left } = await presetQueue(preset, keywords, areas);
+  if (!left.length) throw new Error(`Every search of ${preset.name} has been run. Press Start over to run them again.`);
+  const cap = Math.max(1, Math.min(1000, Math.round(Number(cfg.cap)) || 100));
   const finder = {
     id: `f${now().toString(36)}`,
     status: 'running',
-    niche,
+    niche: preset.name,
     keywords,
-    city,
+    city: LH.cityOf(areas[0], settings.adsCity || 'Dubai'),
     country: 'AE',
-    target: Math.max(1, Math.min(1000, Number(cfg.target) || 150)),
-    sources,
-    mapsMode,
-    mapsQ,
+    cap,
+    sources: { maps: true },
+    mapsMode: settings.placesKey ? 'api' : 'browser',
+    mapsQ: left.slice(0, cap),
     mapsI: 0,
     mapsToken: null,
     mapsDone: false,
     mapsNote: '',
+    planned: all,
+    leftBefore: left.length,
     found: 0,
     added: 0,
+    // What happened to everything found: the before and after of the filters.
+    stats: { found: 0, duplicate: 0, fewReviews: 0, manyReviews: 0, excluded: 0, kept: 0 },
     startedAt: now(),
     lastActivity: now(),
   };
@@ -378,16 +580,25 @@ async function startFinder(cfg) {
   return finder;
 }
 
+/** Forget a preset's finished searches, so the next run starts from its first keyword again. */
+async function resetPreset(name) {
+  await locked(async () => {
+    const { searchDone = {} } = await store.get('searchDone');
+    delete searchDone[name];
+    await store.set({ searchDone });
+  });
+}
+
 async function patchFinder(id, patch) {
   return locked(async () => {
     const { finder } = await store.get('finder');
     if (!finder || finder.id !== id) return null;
     Object.assign(finder, typeof patch === 'function' ? patch(finder) || {} : patch);
     finder.lastActivity = now();
-    if (finder.status === 'running' && (finder.mapsDone || finder.added >= finder.target)) {
+    if (finder.status === 'running' && (finder.mapsDone || (finder.target && finder.added >= finder.target))) {
       finder.status = 'done';
       finder.finishedAt = now();
-      notify('Business search finished', `${finder.added} new businesses found. Ad checks continue in the background.`);
+      notify('Business search finished', `${finder.added} new businesses kept from ${(finder.stats || {}).found || finder.found} found. Ad checks continue in the background.`);
     }
     await store.set({ finder });
     return finder;
@@ -414,7 +625,7 @@ async function runFinder() {
 async function runMaps(fid) {
   for (;;) {
     const f = await currentFinder();
-    if (!f || f.id !== fid || f.mapsDone || f.added >= f.target) return;
+    if (!f || f.id !== fid || f.mapsDone || (f.target && f.added >= f.target)) return;
     const q = f.mapsQ[f.mapsI];
     if (!q) return patchFinder(fid, { mapsDone: true });
     const ctx = { finderId: fid, niche: f.niche, keyword: q.keyword, area: q.area, country: f.country };
@@ -423,16 +634,26 @@ async function runMaps(fid) {
         const settings = await getSettings();
         const data = await placesSearch(q.q, settings.placesKey, f.mapsToken);
         await ingestProspects((data.places || []).map((p) => placeToItem(p, f.country)).filter(Boolean), ctx);
+        if (!data.nextPageToken) await markSearchDone(f.niche, q);
         await patchFinder(fid, (x) => (data.nextPageToken ? { mapsToken: data.nextPageToken } : { mapsToken: null, mapsI: x.mapsI + 1 }));
         await sleep(data.nextPageToken ? 1200 : 400);
       } else {
         const items = await mapsBrowserSearch(q.q);
         await ingestProspects(items, ctx);
+        await markSearchDone(f.niche, q);
         await patchFinder(fid, (x) => ({ mapsI: x.mapsI + 1 }));
-        await sleep(jitter(2000, 4000));
+        await sleep(jitter(2500, 5000)); // one search at a time, a human pace between them
       }
     } catch (e) {
-      await patchFinder(fid, { mapsDone: true, mapsNote: String(e.message || e) });
+      const text = String(e.message || e);
+      if (e.blocked) {
+        // Paused, not stopped: Resume carries on from this search once the page is sorted out.
+        await patchFinder(fid, { status: 'paused', mapsNote: text });
+        await alertSource('maps', text);
+      } else {
+        await patchFinder(fid, { mapsDone: true, mapsNote: text });
+        await logProblem('maps', `${q.q}: ${text}`);
+      }
       return;
     }
   }
@@ -460,7 +681,7 @@ async function mapsBrowserSearch(query) {
     chrome.tabs.update(tabId, { url: `https://www.google.com/maps/search/${encodeURIComponent(query)}/?hl=en` }).catch(() => resolve({ error: 'tab', items: [] }));
   });
   pendingMaps = null;
-  if (res.blocked) throw new Error('Google Maps showed a consent or verification page. Open the Maps tab, accept it, then start again.');
+  if (res.blocked) throw Object.assign(new Error('Google Maps showed a consent or verification page'), { blocked: true });
   return (res.items || []).map((x) => ({ ...x, source: 'maps' }));
 }
 
@@ -488,7 +709,7 @@ async function addFromInstagram(p) {
   const settings = await getSettings();
   const niche = LH.nicheOf({ keywords: [`${name} ${bio}`.toLowerCase()] }, settings);
   const r = await ingestProspects([item], { niche, country: 'AE' });
-  return { added: r.added, ids: r.ids };
+  return { added: r.added, ids: r.ids, contacted: r.contacted };
 }
 
 /* ------------------------------------------------------------- messages */
@@ -496,9 +717,34 @@ Object.assign(handlers, {
   'instagram:add': (msg) => addFromInstagram(msg.profile),
   'finder:start': async (msg) => ({ finder: await startFinder(msg.config || {}) }),
   'finder:stop': async () => {
-    const f = await currentFinder();
-    if (f) await patchFinder(f.id, { status: 'stopped', finishedAt: now() });
+    const { finder: f } = await store.get('finder');
+    if (f && ['running', 'paused'].includes(f.status)) await patchFinder(f.id, { status: 'stopped', finishedAt: now() });
     return { ok: true };
+  },
+  'finder:pause': async () => {
+    const f = await currentFinder();
+    if (f) await patchFinder(f.id, { status: 'paused' });
+    return { ok: true };
+  },
+  'finder:resume': async () => {
+    const { finder: f } = await store.get('finder');
+    if (f && f.status === 'paused') {
+      await patchFinder(f.id, { status: 'running', mapsNote: null });
+      await clearAlert('maps');
+      runFinder();
+    }
+    return { ok: true };
+  },
+  'finder:reset': async (msg) => (await resetPreset(String(msg.preset || '')), { ok: true }),
+  /** How far each preset has got: searches in total and finished. */
+  'finder:progress': async () => {
+    const settings = await getSettings();
+    const out = {};
+    for (const p of LH.presetsFor(settings)) {
+      const { all, left } = await presetQueue(p, p.keywords, p.areas);
+      out[p.name] = { total: all, done: all - left.length };
+    }
+    return { progress: out };
   },
   'adcheck:result': async (msg, sender) => {
     if (pendingCheck && sender.tab && sender.tab.id === pendingCheck.tabId && msg.id === pendingCheck.id) pendingCheck.resolve(msg);
@@ -515,12 +761,38 @@ Object.assign(handlers, {
     return { ok: true };
   },
   'adcheck:set': async (msg) => {
-    await updateLead(msg.id, (l) => (l.adCheck = { ...(l.adCheck || {}), state: msg.state === 'running' ? 'running' : 'none', manual: true, checkedAt: now() }));
+    const state = ['running', 'past', 'none'].includes(msg.state) ? msg.state : 'none';
+    await updateLead(msg.id, (l) => (l.adCheck = { ...(l.adCheck || {}), state, manual: true, checkedAt: now() }));
+    return { ok: true };
+  },
+  'ig:lookup': async (msg) => {
+    const settings = await getSettings();
+    if (!igReady(settings)) return { error: 'Add your Instagram account id and token in Settings > Quality signals first.' };
+    const got = await store.get((msg.ids || []).map(leadKey));
+    const ids = Object.values(got).filter((l) => LH.igHandle(l)).map((l) => l.id);
+    await queueIg(ids);
+    return { queued: ids.length, noHandle: (msg.ids || []).length - ids.length };
+  },
+  'ig:test': async () => {
+    const settings = await getSettings();
+    if (!igReady(settings)) return { error: 'Add your Instagram account id and token first, then Save.' };
+    const r = await igApi(settings, settings.igAccountId, 'username,followers_count').catch((e) => ({ error: String(e.message || e) }));
+    if (r.error) return { error: igStop(r) ? `${r.error}. ${igHint(r)}` : r.error };
+    // A real lookup, as on any business (your own account works too): it needs more permissions than the read above.
+    const d = await igLookup(String(r.username || '').toLowerCase(), settings).catch((e) => ({ error: String(e.message || e) }));
+    if (d.error) return { error: `Your account reads fine, but looking up other businesses failed: ${d.error}. ${igStop(d) ? igHint(d) : ''}`.trim() };
+    return { username: r.username, followers: r.followers_count };
+  },
+  'ig:resume': async () => {
+    await store.set({ igPaused: false });
+    await clearAlert('instagram');
+    runIg();
     return { ok: true };
   },
   'adcheck:pause': async () => (await store.set({ adCheckPaused: true }), { ok: true }),
   'adcheck:resume': async () => {
     await store.set({ adCheckPaused: false });
+    await clearAlert('adlib');
     runAdChecks();
     return { ok: true };
   },

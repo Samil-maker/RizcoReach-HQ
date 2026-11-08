@@ -272,6 +272,8 @@
       spa,
       copyrightYear,
       https: !!finalUrl && finalUrl.protocol === 'https:',
+      whatsappButton: waLink,
+      contactForm: forms > 0 || bookingWidget,
       mobile: /width\s*=\s*device-width/i.test(viewport),
       ttfb,
       load,

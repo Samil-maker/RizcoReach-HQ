@@ -68,7 +68,7 @@
     const res = await send({ type: 'instagram:add', profile: await readProfile(handle) });
     btn.disabled = false;
     btn.className = res && !res.error ? 'ok' : '';
-    btn.textContent = !res ? 'Lead Hunter is not running. Reload this page' : res.error ? res.error : res.added ? 'Added to Lead Hunter' : 'Already in Lead Hunter';
+    btn.textContent = !res ? 'Lead Hunter is not running. Reload this page' : res.error ? res.error : res.added ? 'Added to Lead Hunter' : res.contacted ? 'You contacted them before' : 'Already in Lead Hunter';
   });
 
   setInterval(() => {

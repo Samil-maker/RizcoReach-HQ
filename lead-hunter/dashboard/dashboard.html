@@ -17,6 +17,7 @@
         <button role="tab" data-view="leads" aria-selected="true">Website leads</button>
         <button role="tab" data-view="hunt">New hunt</button>
         <button role="tab" data-view="ads">Meta ads</button>
+        <button role="tab" data-view="intent">Intent <span class="count" data-intent-count hidden></span></button>
         <button role="tab" data-view="settings">Settings</button>
       </nav>
       <div class="kpis" data-kpis></div>
@@ -28,15 +29,15 @@
     <main class="view" data-view-panel="leads">
       <section class="welcome" data-welcome hidden>
         <h1>Find businesses that are already spending on ads.</h1>
-        <p>Lead Hunter pulls advertisers from the Meta Ad Library, looks for their website and a phone number, and fills in your website script for the ones with no working website.</p>
+        <p>Lead Hunter finds UAE businesses on Google Maps, Instagram and the Meta Ad Library, checks their website and their ads, scores each one, and hands you a clean list for Google Contacts or a spreadsheet.</p>
         <ol>
-          <li><b>Start a hunt.</b> Pick a niche (say, car detailing studios) and a country. A Facebook Ad Library tab opens and scrolls through the results for every keyword.</li>
-          <li><b>Leads get checked automatically.</b> Each advertiser's website is looked up and audited. Phone numbers come from WhatsApp ads, the website, and Google.</li>
-          <li><b>Message the ones without a website.</b> Open a lead and send the website script on WhatsApp, one bubble at a time. Advertisers with a working website are skipped.</li>
+          <li><b>Find businesses.</b> On the Meta ads tab pick a preset and press Find businesses, or start a hunt in the Ad Library here.</li>
+          <li><b>Leads get checked automatically.</b> Websites are audited, Meta ads are looked up, and phone numbers come from Google, the website and WhatsApp links. Each lead gets a heat score.</li>
+          <li><b>Export the best ones.</b> Press Google Contacts (or Full CSV), import the file at contacts.google.com, and reach out from your phone. Exported numbers are remembered, so they never come back.</li>
         </ol>
         <div class="row">
-          <button class="btn pri" data-goto="hunt">Start your first hunt</button>
-          <button class="btn" data-goto="settings">Niches and scripts</button>
+          <button class="btn pri" data-goto="ads">Find businesses</button>
+          <button class="btn" data-goto="settings">Presets and settings</button>
         </div>
       </section>
 
@@ -67,6 +68,7 @@
           <option>Good reviews</option>
           <option>Growing</option>
           <option>Running ads</option>
+          <option>Contacted before</option>
         </select>
         <select class="inp" data-f="contact" aria-label="Contact">
           <option value="">Any contact</option>
@@ -78,8 +80,10 @@
         <label class="inp days">Running ≥ <input type="number" min="0" step="1" data-f="minDays" placeholder="0" aria-label="Minimum days running" /> days</label>
         <label class="chk"><input type="checkbox" data-f="hideBig" checked /> Hide big brands</label>
         <label class="chk"><input type="checkbox" data-f="skipped" /> Show skipped (running ads)</label>
+        <label class="chk"><input type="checkbox" data-f="contactedBefore" /> Show contacted before</label>
         <select class="inp" data-f="sort" aria-label="Sort">
-          <option value="priority">Sort: priority</option>
+          <option value="heat">Sort: heat score</option>
+          <option value="priority">Sort: old priority</option>
           <option value="days">Sort: running longest</option>
           <option value="ads">Sort: most active ads</option>
           <option value="score">Sort: worst website</option>
@@ -87,21 +91,21 @@
           <option value="name">Sort: name</option>
         </select>
         <div class="spacer"></div>
-        <button class="btn" data-act="phone-mode" title="Step through these leads with a QR code each: scan with your phone and WhatsApp opens with the message ready">Phone mode</button>
         <button class="btn" data-act="export-csv">Export CSV</button>
-        <button class="btn" data-act="export-contacts" title="A file for Google Contacts: import it at contacts.google.com and WhatsApp shows each business by name">Google Contacts</button>
+        <button class="btn" data-act="export-full" title="Every field of every lead shown, with the heat score and signals">Full CSV</button>
+        <button class="btn" data-act="export-contacts" title="A file for Google Contacts: import it at contacts.google.com and each business shows by name on your phone, with its heat score and reasons in the notes">Google Contacts</button>
+        <button class="btn ghost" data-act="export-vcard" title="The same contacts as a vCard file. If Google Contacts will not take the CSV, import this one instead (contacts.google.com &gt; Import). A phone can also open it.">vCard</button>
         <button class="btn" data-act="enrich-pending" hidden>Check websites</button>
       </div>
 
       <div class="bulk" data-bulk hidden>
         <span data-bulk-count></span>
         <select class="inp" data-bulk-status aria-label="Set status for selected"></select>
-        <button class="btn" data-act="bulk-phone-mode">Phone mode</button>
-        <button class="btn" data-act="bulk-queue">Send to phone queue</button>
         <button class="btn" data-act="bulk-email">Send to email queue</button>
         <button class="btn" data-act="bulk-recheck">Re-check websites</button>
         <button class="btn" data-act="bulk-export">Export selected</button>
         <button class="btn" data-act="bulk-contacts">Google Contacts</button>
+        <button class="btn ghost" data-act="bulk-vcard" title="The same contacts as a vCard file. If Google Contacts will not take the CSV, import this one instead (contacts.google.com &gt; Import). A phone can also open it.">vCard</button>
         <button class="btn danger" data-act="bulk-delete">Delete</button>
         <button class="btn ghost" data-act="bulk-clear">Clear selection</button>
       </div>
@@ -144,16 +148,16 @@
         </div>
         <form class="form" data-finder-form>
           <div class="field">
-            <span class="lbl">Niche <small>edit the list in Settings</small></span>
+            <span class="lbl">Preset <small>edit them in Settings</small></span>
             <div class="chips" data-ad-niches></div>
+            <p class="hint" data-preset-progress style="margin:6px 0 0"></p>
           </div>
           <label class="field">
             <span class="lbl">Search terms <small>one per line</small></span>
             <textarea class="inp" name="keywords" rows="4" placeholder="aesthetic clinic&#10;laser hair removal"></textarea>
           </label>
           <div class="grid3">
-            <label class="field"><span class="lbl">City</span><select class="inp" name="city" data-ad-cities></select></label>
-            <label class="field"><span class="lbl">New businesses to find</span><input class="inp" type="number" name="target" min="1" max="1000" value="150" /></label>
+            <label class="field"><span class="lbl">Searches this run <small>one keyword and area each</small></span><input class="inp" type="number" name="cap" min="1" max="1000" value="100" /></label>
             <div class="field">
               <span class="lbl">Search on</span>
               <span class="chk">Google Maps <small data-maps-mode></small></span>
@@ -177,7 +181,8 @@
         <input type="search" class="inp search" placeholder="Search name, area, phone…" data-af="q" aria-label="Search prospects" />
         <select class="inp" data-af="ads" aria-label="Ads">
           <option value="">Any ad status</option>
-          <option value="none">Not running ads</option>
+          <option value="past">Ran ads before</option>
+          <option value="none">Never ran ads</option>
           <option value="pending">Not checked yet</option>
           <option value="unclear">Couldn't check</option>
           <option value="running">Running ads</option>
@@ -185,11 +190,19 @@
         <select class="inp" data-af="niche" aria-label="Niche"></select>
         <select class="inp" data-af="tag" aria-label="Tag">
           <option value="">Any tag</option>
+          <option>Mobile</option>
+          <option>Landline</option>
+          <option>Corporate</option>
+          <option>Chain</option>
           <option>No website</option>
           <option>Site down</option>
           <option>Good reviews</option>
           <option>Growing</option>
           <option>Running ads</option>
+          <option>Contacted before</option>
+          <option>Weak site</option>
+          <option>New business</option>
+          <option>Followers in range</option>
         </select>
         <select class="inp" data-af="heat" aria-label="Priority">
           <option value="">Any priority</option>
@@ -204,28 +217,33 @@
           <option value="wa">Has WhatsApp</option>
           <option value="nophone">No phone yet</option>
         </select>
+        <label class="chk"><input type="checkbox" data-af="mobile" /> Mobile only</label>
+        <label class="chk"><input type="checkbox" data-af="chains" /> Hide chains</label>
         <label class="chk"><input type="checkbox" data-af="skipped" /> Show skipped (running ads)</label>
+        <label class="chk"><input type="checkbox" data-af="contactedBefore" /> Show contacted before</label>
         <select class="inp" data-af="sort" aria-label="Sort">
-          <option value="priority">Sort: priority</option>
+          <option value="heat">Sort: heat score</option>
+          <option value="priority">Sort: old priority</option>
           <option value="reviews">Sort: most Google reviews</option>
           <option value="newest">Sort: newest found</option>
           <option value="name">Sort: name</option>
         </select>
         <div class="spacer"></div>
-        <button class="btn" data-act="ads-phone-mode">Phone mode</button>
         <button class="btn" data-act="ads-export">Export CSV</button>
-        <button class="btn" data-act="ads-contacts" title="A file for Google Contacts: import it at contacts.google.com and WhatsApp shows each business by name">Google Contacts</button>
+        <button class="btn" data-act="ads-export-full" title="Every field of every business shown, with the heat score and signals">Full CSV</button>
+        <button class="btn" data-act="ads-contacts" title="A file for Google Contacts: import it at contacts.google.com and each business shows by name on your phone, with its heat score and reasons in the notes">Google Contacts</button>
+        <button class="btn ghost" data-act="ads-vcard" title="The same contacts as a vCard file. If Google Contacts will not take the CSV, import this one instead (contacts.google.com &gt; Import). A phone can also open it.">vCard</button>
       </div>
 
       <div class="bulk" data-ads-bulk hidden>
         <span data-ads-bulk-count></span>
         <select class="inp" data-ads-bulk-status aria-label="Set status for selected"></select>
-        <button class="btn" data-act="ads-bulk-phone-mode">Phone mode</button>
-        <button class="btn" data-act="ads-bulk-queue">Send to phone queue</button>
         <button class="btn" data-act="ads-bulk-email">Send to email queue</button>
         <button class="btn" data-act="ads-bulk-recheck">Check ads again</button>
+        <button class="btn" data-act="ads-bulk-ig">Get Instagram followers</button>
         <button class="btn" data-act="ads-bulk-export">Export selected</button>
         <button class="btn" data-act="ads-bulk-contacts">Google Contacts</button>
+        <button class="btn ghost" data-act="ads-bulk-vcard" title="The same contacts as a vCard file. If Google Contacts will not take the CSV, import this one instead (contacts.google.com &gt; Import). A phone can also open it.">vCard</button>
         <button class="btn danger" data-act="ads-bulk-delete">Delete</button>
         <button class="btn ghost" data-act="bulk-clear">Clear selection</button>
       </div>
@@ -253,6 +271,41 @@
     </main>
 
     <!-- HUNT -->
+    <!-- INTENT -->
+    <main class="view" data-view-panel="intent" hidden>
+      <section class="card intent-head">
+        <h2>Intent Radar</h2>
+        <p class="hint">People asking for a website or marketing help, owners saying business is slow, and companies hiring for marketing, from the last 14 days. <b>Scan Reddit now</b> opens Reddit in a tab (be logged in there) and reads your subreddits. For Facebook groups and LinkedIn (posts or jobs), open the page yourself and press <b>Scan for leads</b> at the bottom right. Sellers are filtered out. Until the AI check is set up every post is marked unverified: read it before you reach out.</p>
+        <div class="row"><button class="btn pri" data-act="intent-run">Scan Reddit now</button></div>
+        <div class="finder-status" data-intent-status></div>
+      </section>
+      <div class="toolbar">
+        <select class="inp" data-intent-f="status" aria-label="Status">
+          <option value="new">New</option>
+          <option value="contacted">Contacted</option>
+          <option value="dismissed">Dismissed</option>
+          <option value="all">All</option>
+        </select>
+        <select class="inp" data-intent-f="kind" aria-label="Kind">
+          <option value="">Any kind</option>
+          <option value="website">Website buyers</option>
+          <option value="marketing">Marketing buyers</option>
+          <option value="pain">Owner pain</option>
+          <option value="hiring">Hiring for marketing</option>
+        </select>
+        <select class="inp" data-intent-f="source" aria-label="Source">
+          <option value="">Any source</option>
+          <option value="reddit">Reddit</option>
+          <option value="facebook">Facebook groups</option>
+          <option value="linkedin">LinkedIn</option>
+        </select>
+        <label class="chk"><input type="checkbox" data-intent-f="notBuyers" /> Show not buyers</label>
+      </div>
+      <p class="muted" data-intent-count-line></p>
+      <div class="intent-rows" data-intent-rows></div>
+      <p class="empty" data-intent-empty hidden></p>
+    </main>
+
     <main class="view narrow" data-view-panel="hunt" hidden>
       <h1 class="h">New hunt</h1>
       <p class="sub">Lead Hunter opens the Meta Ad Library, searches each keyword, and scrolls until it has collected your target number of new advertisers. Keep the tab it opens on screen while it runs.</p>
@@ -310,7 +363,7 @@
     <main class="view narrow" data-view-panel="settings" hidden>
       <h1 class="h">Settings</h1>
       <form class="card form" data-settings-form>
-        <h2>You (used in scripts)</h2>
+        <h2>You (used in emails)</h2>
         <div class="grid2">
           <label class="field"><span class="lbl">Your name</span><input class="inp" name="myName" placeholder="Samil" /></label>
           <label class="field"><span class="lbl">Agency</span><input class="inp" name="agency" /></label>
@@ -340,11 +393,11 @@
         </div>
         <p class="hint">Both keys come from Google Cloud Console → APIs &amp; Services → Credentials. Enable "Places API (New)" and "PageSpeed Insights API" on the project. Keys are stored only in this browser.</p>
 
-        <h2 id="phone">Phone queue</h2>
-        <p class="hint">Send leads to your phone and work through them anywhere: each one opens WhatsApp on your phone with the message ready, and "sent" syncs back here. Without this you can still use the QR codes in each lead and in Phone mode.</p>
+        <h2 id="site">Your site</h2>
+        <p class="hint">The email sender runs on your site. Lead Hunter talks to it with this key.</p>
         <div class="grid2">
           <label class="field"><span class="lbl">Your site</span><input class="inp" name="queueSite" placeholder="https://www.rizcoreach.ae" /></label>
-          <label class="field"><span class="lbl">Queue key <small>must match LEAD_QUEUE_KEY on Netlify</small></span><input class="inp" name="queueKey" type="password" autocomplete="off" /></label>
+          <label class="field"><span class="lbl">Key <small>must match LEAD_QUEUE_KEY on Netlify</small></span><input class="inp" name="queueKey" type="password" autocomplete="off" /></label>
         </div>
         <div class="row" style="margin-top:0">
           <button type="button" class="btn" data-act="gen-key">Generate a key</button>
@@ -356,46 +409,95 @@
           <li>Press <b>Generate a key</b>, then <b>Copy key</b>.</li>
           <li>In Netlify: Site configuration → Environment variables → add <code>LEAD_QUEUE_KEY</code> with that key. Then Deploys → Trigger deploy.</li>
           <li>Press <b>Save &amp; test connection</b> here.</li>
-          <li>Scan the pairing code below with your phone and open the link. On iPhone, tap Share → Add to Home Screen so it opens like an app.</li>
         </ol>
-        <div class="pair-qr" data-pair hidden>
-          <canvas data-pair-canvas aria-label="Pairing QR code"></canvas>
-          <p class="hint">Scan with your phone's camera to open your outreach queue. Anyone with this code can see your queue, so don't share it.</p>
-        </div>
 
         <h2>Collecting</h2>
         <label class="field">
           <span class="lbl">Delay between scrolls <small>milliseconds; higher is gentler on Facebook</small></span>
           <input class="inp" name="scrollDelayMs" type="number" min="900" step="100" />
         </label>
+        <label class="chk"><input type="checkbox" name="adCheckAll" /> Check the Ad Library for businesses without a website too <small class="muted">(slower: one name search each, and a name alone proves less)</small></label>
+        <label class="field">
+          <span class="lbl">Same business name match <small>0.8 to 1. Two names in the same area this close count as one business. 0.92 is a good start, 1 means exactly the same</small></span>
+          <input class="inp" name="nameMatch" type="number" min="0.8" max="1" step="0.01" />
+        </label>
 
-        <h2 id="outreach">Outreach</h2>
         <div class="grid2">
-          <label class="field"><span class="lbl">City <small>used as {{city}}</small></span><select class="inp" name="adsCity" data-ad-cities></select></label>
-          <label class="field">
-            <span class="lbl">Message bubbles <small>each one is its own WhatsApp message</small></span>
-            <select class="inp" name="bubbles">
-              <option value="3">3 bubbles: greeting · message · closing</option>
-              <option value="2">2 bubbles: greeting and message together · closing</option>
-            </select>
-          </label>
+          <label class="field"><span class="lbl">City <small>used as {{city}} in emails when a lead's area doesn't say</small></span><select class="inp" name="adsCity" data-ad-cities></select></label>
         </div>
 
-        <h2>Niches</h2>
-        <p class="hint">Name it the way it reads in a message, e.g. 'pet groomers'. The name goes into your scripts. Keywords are what New hunt and the Meta ads search look for, separated by commas or new lines.</p>
+        <h2 id="intent">Intent Radar</h2>
+        <p class="hint">Reddit refuses to show posts to anyone not logged in, and new Reddit API apps now need Reddit's approval. So Reddit is read in your own Reddit tab: press <b>Scan Reddit now</b> on the Intent tab (or <b>Scan my subreddits</b> at the bottom right of any Reddit page) while logged in to Reddit in this Chrome profile. It reads the newest posts of each subreddit below, 4 to 12 seconds apart. If you have an approved Reddit app, paste its id here and Reddit is scanned by itself every few hours instead. A block or "too many requests" pauses Reddit and alerts you.</p>
+        <div class="grid2">
+          <label class="field"><span class="lbl">Scan Reddit every <small>hours, only with an approved app id; 0 = only when you press Scan now</small></span><input class="inp" name="radarEveryHours" type="number" min="0" max="48" /></label>
+          <label class="field"><span class="lbl">Only posts from the last <small>days</small></span><input class="inp" name="intentMaxDays" type="number" min="1" max="60" /></label>
+          <label class="field"><span class="lbl">Subreddits <small>one per line</small></span><textarea class="inp" name="subreddits" rows="4"></textarea></label>
+          <label class="field"><span class="lbl">UAE only subreddits <small>a post counts only if it mentions the UAE</small></span><textarea class="inp" name="uaeOnlySubs" rows="4"></textarea></label>
+          <label class="field"><span class="lbl">Posts per subreddit per scan <small>at most 100</small></span><input class="inp" name="intentCap" type="number" min="10" max="100" /></label>
+          <label class="field"><span class="lbl">Reddit app id <small>optional, an app Reddit approved</small></span><input class="inp" name="redditClientId" autocomplete="off" /></label>
+          <label class="field"><span class="lbl">Reddit app secret <small>only for script or web apps</small></span><input class="inp" name="redditSecret" type="password" autocomplete="off" /></label>
+        </div>
+        <p class="hint">Keywords: a post with any of these phrases is saved under that kind. Arabic phrases about websites or marketing count as those too.</p>
+        <div class="grid2" data-intent-lists></div>
+        <label class="field"><span class="lbl">Seller words <small>a post with any of these is someone selling, and is skipped</small></span><textarea class="inp" rows="5" data-seller-words></textarea></label>
+        <h3 class="sub">AI check</h3>
+        <p class="hint">An AI reads every post the keywords catch and says whether the person is really a buyer, what they need, what business they are and where, and how urgent it is. Posts it rules out are hidden (tick Show not buyers to see them). Use a free Google AI Studio key: aistudio.google.com &gt; Get API key &gt; Create API key. On Google's free tier there is a daily limit (the check waits and carries on when it is reached), and Google may use what is sent to improve its products; these are public posts. Or use a Claude key (console.anthropic.com &gt; API keys, about 0.2 US cents a post). If both are filled in, Gemini is used. Keys stay in this browser and are only sent to Google or Anthropic.</p>
+        <div class="grid2">
+          <label class="field"><span class="lbl">Google AI Studio key <small>free</small></span><input class="inp" name="geminiKey" type="password" autocomplete="off" placeholder="AIza…" /></label>
+          <label class="field"><span class="lbl">Gemini model</span><input class="inp" name="geminiModel" placeholder="gemini-flash-lite-latest" /></label>
+          <label class="field"><span class="lbl">Claude API key <small>optional, instead of Gemini</small></span><input class="inp" name="anthropicKey" type="password" autocomplete="off" placeholder="sk-ant-…" /></label>
+          <label class="field"><span class="lbl">Claude model</span><input class="inp" name="aiModel" placeholder="claude-haiku-5-5" /></label>
+        </div>
+        <label class="chk"><input type="checkbox" name="aiAuto" /> Check new posts as they come in</label>
+        <div class="row"><button type="button" class="btn" data-act="ai-test">Save and test</button><span class="hint" data-ai-test></span></div>
+
+        <h2 id="heat">Heat score</h2>
+        <p class="hint">Every lead gets one score from 0 to 100, ranked highest first. A business with a website is scored for the Ads offer, one without a working website for the Website offer, and the bonuses at the bottom add to either. Use a minus number to push a signal down. Businesses running ads are hidden by default (tick Show skipped to see them).</p>
+        <div class="heat-weights" data-heat-weights></div>
+        <div class="grid2">
+          <label class="field"><span class="lbl">Hot <small>score at least</small></span><input class="inp" name="heatHot" type="number" min="1" max="100" /></label>
+          <label class="field"><span class="lbl">Warm <small>score at least</small></span><input class="inp" name="heatWarm" type="number" min="1" max="100" /></label>
+          <label class="field"><span class="lbl">Active Instagram <small>a post in this many days</small></span><input class="inp" name="igActiveDays" type="number" min="1" max="365" /></label>
+        </div>
+        <p class="hint">Your target niches (each one adds the target niche points):</p>
+        <div class="row" data-target-niches></div>
+
+        <h2 id="quality">Quality signals</h2>
+        <p class="hint">Signals shown on every lead and used for scoring. A business with fewer Google reviews than the limit is a new business.</p>
+        <div class="grid2">
+          <label class="field"><span class="lbl">Instagram followers from</span><input class="inp" name="followerMin" type="number" min="0" step="100" /></label>
+          <label class="field"><span class="lbl">Instagram followers up to</span><input class="inp" name="followerMax" type="number" min="0" step="100" /></label>
+          <label class="field"><span class="lbl">New business <small>fewer Google reviews than</small></span><input class="inp" name="newBusinessReviews" type="number" min="1" /></label>
+          <label class="field"><span class="lbl">Weak site <small>weakness score at least</small></span><input class="inp" name="weakSiteMin" type="number" min="1" max="100" /></label>
+          <label class="field"><span class="lbl">PageSpeed mobile <small>a score under this fails</small></span><input class="inp" name="psiMin" type="number" min="1" max="100" /></label>
+          <label class="field"><span class="lbl">Old copyright <small>this many years old or more</small></span><input class="inp" name="copyrightYears" type="number" min="1" max="10" /></label>
+        </div>
+        <p class="hint">Website checks: each one that fails adds its points to the weakness score (at most 100) and is saved as a reason. The failed check with the most points is the lead's top reason, written in its Google Contacts notes.</p>
+        <div class="weak-checks" data-weak-checks></div>
+        <h3 class="sub">Instagram followers (official API)</h3>
+        <p class="hint">Lead Hunter never opens Instagram for this. It asks Meta's Instagram Graph API (Business Discovery) with your own token, and it can only see business and creator accounts. You need an Instagram business or creator account linked to a Facebook page, and a Meta app. In the Graph API Explorer pick your app, add the permissions <b>instagram_basic</b>, <b>instagram_manage_insights</b>, <b>pages_show_list</b>, <b>pages_read_engagement</b> and <b>business_management</b> (if one is not in the list, add the Instagram use case to your app first), press Generate Access Token, then run <code>me/accounts?fields=instagram_business_account</code>: the id it shows is your account id. Tokens from the Explorer stop working after about an hour; swap it for a long lived one (about 60 days) with the Access Token Debugger's Extend button. If the token stops working, lookups pause and you get an alert.</p>
+        <div class="grid2">
+          <label class="field"><span class="lbl">Your Instagram business account id</span><input class="inp" name="igAccountId" placeholder="17841400000000000" autocomplete="off" /></label>
+          <label class="field"><span class="lbl">Access token <small>kept in this browser only</small></span><input class="inp" name="igToken" type="password" autocomplete="off" /></label>
+          <label class="field"><span class="lbl">Graph API version</span><input class="inp" name="igApiVersion" placeholder="v23.0" /></label>
+        </div>
+        <label class="chk"><input type="checkbox" name="igAuto" /> Look up followers automatically for new businesses with an Instagram handle</label>
+        <div class="row"><button type="button" class="btn" data-act="ig-test">Save and test</button><span class="hint" data-ig-test></span></div>
+
+        <h2 id="presets">Presets</h2>
+        <p class="hint">One per kind of business. Searches run as "keyword area", one keyword at a time across every area, in the order you list them. Paste lists one item per line. An exclude word drops any business with it in its name or Google category. Start a line with <b>category:</b> to only check the category. The review range keeps small, owner run businesses: listings outside it are never opened or saved.</p>
         <div class="niches" data-niches></div>
         <div class="row" style="margin-top:0">
-          <button type="button" class="btn" data-act="add-niche">Add niche</button>
-          <button type="button" class="btn ghost" data-act="reset-niches">Reset to the 4 defaults</button>
+          <button type="button" class="btn" data-act="add-niche">Add preset</button>
+          <button type="button" class="btn" data-act="export-presets">Export presets</button>
+          <label class="btn">Import presets<input type="file" accept=".json,application/json" data-import-presets hidden /></label>
+          <button type="button" class="btn ghost" data-act="reset-niches">Reset to the 5 defaults</button>
         </div>
 
-        <h2>Scripts</h2>
-        <p class="hint">Lead Hunter picks the script for each lead. No website, or a site that is down, gets the Website script. A website and no Meta ads gets the Ads script. Leads that run ads and have a working website are skipped. Variables: <code>{{business}}</code> <code>{{niche}}</code> <code>{{city}}</code> <code>{{found_on}}</code> <code>{{website_line}}</code> <code>{{my_name}}</code> <code>{{agency}}</code> <code>{{my_phone}}</code></p>
-        <div data-scripts></div>
 
         <h2 id="email">Email sender</h2>
-        <p class="hint">Sends your emails from your own Gmail, even with Chrome closed. It starts with 15 a day and goes up over two weeks. It stops when someone replies and never emails anyone twice. WhatsApp is never sent for you.</p>
-        <p class="hint" data-email-nokey hidden>The email sender uses the same key as the phone queue. <button type="button" class="linkish" data-goto="settings" data-anchor="phone">Set up the phone queue first</button></p>
+        <p class="hint">Sends your emails from your own Gmail, even with Chrome closed. It starts with 15 a day and goes up over two weeks. It stops when someone replies and never emails anyone twice.</p>
+        <p class="hint" data-email-nokey hidden>The email sender needs your site and its key. <button type="button" class="linkish" data-goto="settings" data-anchor="site">Set them up first</button></p>
         <div data-email-on hidden>
           <div class="email-status" data-email-status></div>
           <div class="row" style="margin-top:0">
@@ -425,7 +527,7 @@
           <label class="field"><span class="lbl">Opt out line <small>at the end of every email</small></span><input class="inp" name="emailOptOut" /></label>
         </div>
         <label class="field"><span class="lbl">Signature</span><textarea class="inp" name="emailSignature" rows="4"></textarea></label>
-        <p class="hint">The first email is the lead's script in one message. The follow ups go as replies in the same thread. Same variables as the scripts.</p>
+        <p class="hint">Each lead gets the emails for its offer: the Website offer when they have no working website, the Ads offer when they have one and are not running Meta ads. Leads running ads with a working website get no emails. The follow ups go as replies in the same thread. Variables: <code>{{business}}</code> <code>{{niche}}</code> <code>{{city}}</code> <code>{{found_on}}</code> <code>{{website_line}}</code> <code>{{my_name}}</code> <code>{{agency}}</code> <code>{{my_phone}}</code></p>
         <div data-emails></div>
         <div class="row">
           <button class="btn pri" type="submit">Save settings</button>
@@ -441,6 +543,16 @@
           <label class="btn file">Restore backup<input type="file" accept="application/json" data-import hidden /></label>
           <button class="btn danger" data-act="wipe">Delete all leads</button>
         </div>
+        <h2 id="problems">Problems by source</h2>
+        <p class="hint">What went wrong lately on each site. A login wall, checkpoint or block pauses that source and shows an alert on the Meta ads tab.</p>
+        <div data-problems></div>
+        <h2 id="memory">Contacted memory</h2>
+        <p class="hint">Everyone you mark contacted, email or export to Google Contacts is remembered here, even after you delete the lead. Searches skip them and matching leads are hidden (tick Show contacted before to see them). Import your own list too: any CSV with phone numbers, like your sheet of contacted numbers or Google Contacts &gt; Export &gt; Google CSV.</p>
+        <p class="hint" data-history-count></p>
+        <div class="row">
+          <label class="btn file">Import contacted numbers (CSV)<input type="file" accept=".csv,text/csv,text/plain" data-import-history hidden /></label>
+          <button class="btn danger" data-act="history-clear">Forget all</button>
+        </div>
       </section>
     </main>
 
@@ -448,15 +560,15 @@
     <div class="scrim" data-scrim hidden></div>
     <aside class="drawer" data-drawer aria-hidden="true" tabindex="-1"></aside>
 
-    <!-- PHONE MODE -->
-    <div class="pm" data-pm hidden role="dialog" aria-modal="true" aria-label="Phone mode"><div class="pm-box" data-pm-box tabindex="-1"></div></div>
 
     <div class="toast" data-toast role="status" aria-live="polite" hidden></div>
 
     <script src="../lib/common.js"></script>
-    <script src="../lib/vendor/qrcode.js"></script>
-    <script src="../lib/qr.js"></script>
+    <script src="../lib/prospects.js"></script>
+    <script src="../lib/intent.js"></script>
+    <script src="../lib/intent-db.js"></script>
     <script src="dashboard.js"></script>
     <script src="prospects.js"></script>
+    <script src="intent.js"></script>
   </body>
 </html>

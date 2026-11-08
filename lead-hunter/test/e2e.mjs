@@ -14,7 +14,7 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { makeAd, searchResponse, memStore } from './fixtures.mjs';
-import { metaHandler, checkLog } from './meta-fixtures.mjs';
+import { metaHandler, checkLog, metaWall, IG_API, CLAUDE, GEMINI, redditCalls, redditMode, PRESET_SEARCHES } from './meta-fixtures.mjs';
 import { handle as queueHandle } from '../../netlify/functions/lead-queue.mts';
 import { handle as emailHandle } from '../../netlify/functions/email-queue.mts';
 
@@ -238,7 +238,7 @@ const ctx = await pw.chromium.launchPersistentContext(path.join(tmp, 'profile'),
   args: [
     `--disable-extensions-except=${EXT}`,
     `--load-extension=${EXT}`,
-    `--host-resolver-rules=MAP www.facebook.com 127.0.0.1:${PORT}, MAP *.example 127.0.0.1:${PORT}, MAP wa.me 127.0.0.1:${PORT}, MAP www.rizcoreach.ae 127.0.0.1:${PORT}, MAP www.google.com 127.0.0.1:${PORT}, MAP places.googleapis.com 127.0.0.1:${PORT}, MAP www.instagram.com 127.0.0.1:${PORT}`,
+    `--host-resolver-rules=MAP www.facebook.com 127.0.0.1:${PORT}, MAP *.example 127.0.0.1:${PORT}, MAP wa.me 127.0.0.1:${PORT}, MAP www.rizcoreach.ae 127.0.0.1:${PORT}, MAP www.google.com 127.0.0.1:${PORT}, MAP places.googleapis.com 127.0.0.1:${PORT}, MAP www.instagram.com 127.0.0.1:${PORT}, MAP graph.facebook.com 127.0.0.1:${PORT}, MAP www.reddit.com 127.0.0.1:${PORT}, MAP www.linkedin.com 127.0.0.1:${PORT}, MAP api.anthropic.com 127.0.0.1:${PORT}, MAP generativelanguage.googleapis.com 127.0.0.1:${PORT}`,
     '--ignore-certificate-errors',
     '--no-proxy-server',
   ],
@@ -257,8 +257,6 @@ try {
   const extId = new URL(sw.url()).host;
   const dashUrl = `chrome-extension://${extId}/dashboard/dashboard.html`;
   const storage = (key) => sw.evaluate((k) => chrome.storage.local.get(k), key);
-  // The number a lead's WhatsApp bubbles go to (WhatsApp sources first), as digits.
-  const LHwa = (l) => (l.phones.find((p) => /whatsapp/.test(p.source)) || l.phones[0]).number.replace(/\D/g, '');
   const waitFor = async (fn, ms = 90000, label = 'condition') => {
     const t0 = Date.now();
     while (Date.now() - t0 < ms) {
@@ -278,40 +276,61 @@ try {
   await dash.click('[data-view="settings"]');
   await dash.fill('[name="myName"]', 'Samil');
   await dash.fill('[name="scrollDelayMs"]', '900');
-  assert.equal(await dash.$$eval('[data-niche-row]', (r) => r.length), 4, 'the 4 default niches');
-  assert.equal(await dash.$$eval('[data-script-card]', (r) => r.length), 2, 'two scripts');
-  assert.equal(await dash.inputValue('[name="bubbles"]'), '3');
-  assert.ok(await dash.isVisible('[data-email-nokey]'), 'the email sender needs the queue key first');
-  assert.equal(await dash.$$eval('[data-email-card]', (c) => c.length), 2, 'subject and follow ups for both scripts');
-  // "Reset to default" brings back the default website script, with {{website_line}}.
-  const webBody = '[data-script="website.body"]';
+  await dash.fill('[name="radarEveryHours"]', '0'); // the Intent Radar runs when the test says so
+  assert.equal(await dash.$$eval('[data-niche-row]', (r) => r.length), 5, 'the 5 default presets');
+  assert.ok(!(await dash.$('[name="bubbles"]')) && !(await dash.$('[data-script-card]')), 'no WhatsApp scripts or bubbles any more');
+  assert.ok(await dash.isVisible('[data-email-nokey]'), 'the email sender needs the site key first');
+  assert.equal(await dash.$$eval('[data-email-card]', (c) => c.length), 2, 'the emails for both offers');
+  // "Reset to default" brings back the default first email of the website offer, with {{website_line}}.
+  const webBody = '[data-email="website.body"]';
   await dash.fill(webBody, 'Something else');
-  await dash.click('[data-script-card="website"] [data-act="reset-script"]');
+  await dash.click('[data-email-card="website"] [data-act="reset-email"]');
   assert.equal(
     await dash.inputValue(webBody),
-    "I came across {{business}} on {{found_on}} and {{website_line}}.\n\nWe build simple websites for {{niche}} in {{city}} that turn visitors into WhatsApp inquiries.\n\nIf this sounds interesting I'd be happy to send you a free mockup of how yours could look.",
+    "Hello {{business}}\n\nI came across {{business}} on {{found_on}} and {{website_line}}.\n\nWe build simple websites for {{niche}} in {{city}} that turn visitors into WhatsApp inquiries.\n\nIf this sounds interesting I'd be happy to send you a free mockup of how yours could look.\n\nLet me know",
   );
   await dash.click('[data-act="add-niche"]');
-  await dash.fill('[data-niche-row]:last-child [data-niche-name]', 'Pet groomers');
-  await dash.fill('[data-niche-row]:last-child [data-niche-kw]', 'dog grooming, Pet Salon');
+  const newPreset = '[data-niche-row]:last-child';
+  await dash.fill(`${newPreset} [data-niche-name]`, 'Pet groomers');
+  await dash.fill(`${newPreset} [data-niche-label]`, 'pet groomers');
+  await dash.fill(`${newPreset} [data-niche-min]`, '3');
+  await dash.fill(`${newPreset} [data-niche-kw]`, 'dog grooming\nPet Salon\n\n');
+  await dash.fill(`${newPreset} [data-niche-ex]`, 'vet clinic');
+  await dash.fill(`${newPreset} [data-niche-areas]`, 'Al Barsha, Dubai\nJLT, Dubai');
   await dash.click('[data-settings-form] button[type="submit"]');
   await waitFor(async () => (await storage('settings')).settings.myName === 'Samil', 5000, 'settings saved');
   const saved = (await storage('settings')).settings;
-  assert.deepEqual(saved.niches[4], { name: 'Pet groomers', keywords: ['dog grooming', 'pet salon'] });
+  assert.equal(saved.niches.length, 6, 'the 5 presets and the new one');
+  assert.deepEqual(saved.niches[5], { name: 'Pet groomers', label: 'pet groomers', minReviews: 3, maxReviews: 100000, keywords: ['dog grooming', 'pet salon'], exclude: ['vet clinic'], areas: ['Al Barsha, Dubai', 'JLT, Dubai'] });
+  // Export presets: the same list as a JSON file.
+  const [presetsDl] = await Promise.all([dash.waitForEvent('download'), dash.click('[data-act="export-presets"]')]);
+  const exported = JSON.parse(fs.readFileSync(await presetsDl.path(), 'utf8'));
+  assert.deepEqual(exported.presets.map((x) => x.name), ['Car', 'Fitness', 'Pets', 'Accountants', 'Used Cars', 'Pet groomers']);
   assert.ok(!('adsOffer' in saved) && !('templates' in saved) && !('adTemplates' in saved), 'old settings are gone');
   if (SHOTS) {
-    await dash.$eval('#outreach', (el) => el.scrollIntoView());
+    await dash.$eval('#presets', (el) => el.scrollIntoView());
     await dash.screenshot({ path: `${SHOTS}/12-settings-niches.png` });
   }
   // The new niche shows up in both niche pickers, and fills in its keywords.
   await dash.click('[data-view="ads"]');
   await dash.click('[data-ad-niche="Pet groomers"]');
   assert.equal(await dash.inputValue('[data-finder-form] [name="keywords"]'), 'dog grooming\npet salon');
-  assert.deepEqual(await dash.$$eval('[data-ad-niche]', (c) => c.map((x) => x.textContent)), ['Car detailing studios', 'Aesthetic clinics', 'Dental clinics', 'Beauty salons', 'Pet groomers']);
+  assert.deepEqual(await dash.$$eval('[data-ad-niche]', (c) => c.map((x) => x.textContent)), ['Car', 'Fitness', 'Pets', 'Accountants', 'Used Cars', 'Pet groomers']);
+  assert.deepEqual(await dash.$$eval('[data-ad-areas] [data-area]', (c) => c.map((x) => x.textContent)), ['Al Barsha, Dubai', 'JLT, Dubai'], 'the preset areas');
   await dash.click('[data-view="hunt"]');
   assert.ok(await dash.$('[data-preset="Pet groomers"]'), 'New hunt chips too');
-  await dash.click('[data-preset="Dental clinics"]');
-  assert.match(await dash.inputValue('[data-hunt-form] [name="keywords"]'), /^cosmetic dentist\nteeth whitening/);
+  // The rest of this test was written for two filter free niches: put them first, ahead of the 5 presets.
+  const open = { exclude: [], minReviews: 0, maxReviews: 100000 };
+  await sw.evaluate(async (extra) => {
+    const { settings } = await chrome.storage.local.get('settings');
+    await chrome.storage.local.set({ settings: { ...settings, niches: [...extra, ...settings.niches] } });
+  }, [
+    { name: 'Car detailing studios', label: 'car detailing studios', keywords: ['ceramic coating', 'paint protection film', 'car detailing', 'window tinting', 'car polishing'], areas: ['Al Quoz'], ...open },
+    { name: 'Aesthetic clinics', label: 'aesthetic clinics', keywords: ['aesthetic clinic', 'laser hair removal'], areas: ['JLT'], ...open },
+  ]);
+  await dash.waitForSelector('[data-preset="Accountants"]');
+  await dash.click('[data-preset="Accountants"]');
+  assert.match(await dash.inputValue('[data-hunt-form] [name="keywords"]'), /^accounting firm\naccounting services/);
 
   // Start a hunt from the dashboard.
   await dash.fill('[data-hunt-form] [name="keywords"]', 'car detailing\nceramic coating');
@@ -385,7 +404,7 @@ try {
   assert.match(await dash.textContent('[data-count]'), /16 skipped \(running ads with a website\)/);
   assert.equal(await dash.textContent(`tr[data-id="${by('Parked Polish').id}"] .tags`), 'Site down');
   assert.equal(await dash.textContent(`tr[data-id="${by('Broken Buff').id}"] .tags`), 'Site down');
-  assert.equal(await dash.textContent(`tr[data-id="${wa.id}"] .tags`), 'No website');
+  assert.deepEqual(await dash.$$eval(`tr[data-id="${wa.id}"] .tags .tag`, (t) => t.map((x) => x.textContent)), ['Mobile', 'No website'], 'phone type first');
   if (SHOTS) await dash.screenshot({ path: `${SHOTS}/3-leads.png` });
   // The website filter: no website, or a site that is down. Nothing else (those would only match skipped leads).
   assert.deepEqual(await dash.$$eval('[data-f="site"] option', (o) => o.map((x) => x.value)), ['', 'none', 'down']);
@@ -398,13 +417,12 @@ try {
   await dash.waitForFunction(() => document.querySelectorAll('[data-rows] tr').length === 6);
   await dash.selectOption('[data-f="tag"]', '');
   await dash.waitForFunction(() => document.querySelectorAll('[data-rows] tr').length === 9);
-  // A site that is down: the website script says it wasn't loading.
+  // A site that is down: the website offer email says it wasn't loading. No WhatsApp message anywhere.
   await dash.click(`tr[data-id="${by('Broken Buff').id}"] [data-open]`);
-  await dash.waitForFunction(() => document.querySelectorAll('.drawer.open [data-bubble]').length === 3);
-  assert.equal(await dash.inputValue('[data-bubble="0"]'), 'Hello Broken Buff');
-  assert.match(await dash.inputValue('[data-bubble="1"]'), /^I came across Broken Buff on Facebook and Instagram and your website wasn't loading when I checked\.\n\nWe build simple websites/);
-  assert.match(await dash.textContent('.drawer .pitch h3'), /Website script\s*Site down/);
-  assert.equal(await dash.$$eval('.drawer .pitch .note', (n) => n.length), 0);
+  await dash.waitForSelector('.drawer.open [data-email-step="0"]', { state: 'attached' });
+  assert.match(await dash.inputValue('[data-email-step="0"]'), /^Hello Broken Buff\n\nI came across Broken Buff on Facebook and Instagram and your website wasn't loading when I checked\.\n\nWe build simple websites/);
+  assert.match(await dash.textContent('.drawer .email-sec h3'), /Email\s*Website offer/);
+  assert.equal(await dash.$$eval('.drawer [data-bubble], .drawer [data-act="open-bubble"], .drawer [data-channel], .drawer [data-pitch-qr]', (n) => n.length), 0, 'no pitching from the dashboard');
   if (SHOTS) {
     await dash.waitForTimeout(500); // let the drawer finish sliding in
     await dash.screenshot({ path: `${SHOTS}/3c-site-down-drawer.png` });
@@ -433,139 +451,68 @@ try {
   const [gdl] = await Promise.all([dash.waitForEvent('download'), dash.click('[data-act="export-contacts"]')]);
   assert.match(gdl.suggestedFilename(), /^google-contacts-\d{4}-\d{2}-\d{2}\.csv$/);
   const [gHead, ...gRows] = parseCsv(fs.readFileSync(await gdl.path(), 'utf8'));
-  assert.deepEqual(gHead.slice(0, 2), ['Name', 'Given Name']);
+  const gRaw = fs.readFileSync(await gdl.path(), 'utf8');
+  assert.ok(!gRaw.startsWith('\ufeff'), "no byte order mark: Google's own files have none");
+  assert.deepEqual(gHead.slice(0, 3), ['First Name', 'Last Name', 'Organization Name']);
   const shineContact = gRows.find((r) => r[0] === 'Shine Auto Spa');
   assert.ok(shineContact, 'Shine Auto Spa is a contact');
   assert.match(shineContact[gHead.indexOf('Phone 1 - Value')] || shineContact[gHead.indexOf('E-mail 1 - Value')], /^\+971|@/);
-  assert.equal(shineContact[gHead.indexOf('Group Membership')], '* myContacts ::: RizcoReach leads');
+  assert.match(shineContact[gHead.indexOf('Labels')], /^LF-\d{4}-\d{2}-\d{2}$/, 'one label per export day');
+  assert.match(shineContact[gHead.indexOf('Notes')], /^Heat \d+ \((ads|website) offer\) · /, 'notes: heat score, signals, top reason');
   assert.ok(gRows.every((r) => r[gHead.indexOf('Phone 1 - Value')] || r[gHead.indexOf('E-mail 1 - Value')]), 'every contact has a phone or an email');
+  // The same contacts as a vCard.
+  const [vdl] = await Promise.all([dash.waitForEvent('download'), dash.click('[data-act="export-vcard"]')]);
+  assert.match(vdl.suggestedFilename(), /^google-contacts-\d{4}-\d{2}-\d{2}\.vcf$/);
+  const vcf = fs.readFileSync(await vdl.path(), 'utf8');
+  assert.equal(vcf.split('BEGIN:VCARD').length - 1, gRows.length, 'one card per contact');
+  assert.match(vcf, /FN:Shine Auto Spa\r\n/);
 
-  // A skipped lead: no message, unless you pitch it anyway with the website script.
+  // A skipped lead (running ads, working website): left out of the emails.
   await dash.click(`tr[data-id="${bad.id}"] [data-open]`);
-  await dash.waitForSelector('.drawer.open .skip-box');
-  assert.match(await dash.textContent('.drawer .skip-box'), /Skipped: running ads/);
-  assert.equal(await dash.$$eval('.drawer [data-bubble]', (b) => b.length), 0);
-  await dash.click('[data-act="pitch-anyway"]');
-  await dash.waitForFunction(() => document.querySelectorAll('.drawer [data-bubble]').length === 3);
-  assert.equal(await dash.inputValue('[data-bubble="0"]'), 'Hello Gloss Garage', 'the city at the end of the page name is left out');
-  assert.match(await dash.inputValue('[data-bubble="1"]'), /^I came across Gloss Garage on Facebook and Instagram/);
-  assert.match(await dash.inputValue('[data-bubble="1"]'), /and couldn't find a website for you\./);
-  assert.equal(await dash.textContent('.drawer .pitch .note'), 'Bubble 2 says they have no website. Edit that line before you send.');
-  if (SHOTS) await dash.screenshot({ path: `${SHOTS}/3d-pitch-anyway.png` });
-  await dash.click('[data-channel="email"]');
-  assert.equal(await dash.inputValue('[data-email-subject]'), 'Website for Gloss Garage');
-  assert.match(await dash.inputValue('[data-email-step="0"]'), /^Hello Gloss Garage\n\nI came across/);
-  assert.equal(await dash.$$eval('.drawer [data-email-step]', (x) => x.length), 3, 'the first email and 2 follow ups');
-  assert.ok(!(await dash.$('.drawer [data-act="email-queue"]')), 'a skipped lead is only pitched by hand');
+  await dash.waitForSelector('.drawer.open .email-sec');
+  assert.match(await dash.textContent('.drawer .email-sec'), /left out of the emails/);
+  assert.ok(!(await dash.$('.drawer [data-act="email-queue"]')));
   await dash.click('[data-act="close"]');
   await dash.uncheck('[data-f="skipped"]');
   await dash.waitForFunction(() => document.querySelectorAll('[data-rows] tr').length === 9);
 
-  /* ------------------------------------------ the drawer: one WhatsApp bubble at a time */
+  /* ------------------------------------------ the drawer: the record, and Mark contacted */
   const desert = wa;
   await dash.click(`tr[data-id="${desert.id}"] [data-open]`);
-  await dash.waitForSelector('.drawer.open [data-bubble]');
-  const bubbles = await dash.$$eval('.drawer [data-bubble]', (b) => b.map((x) => x.value));
-  assert.equal(bubbles.length, 3, 'three bubbles');
-  assert.equal(bubbles[0], 'Hello Desert Detailers');
-  assert.match(bubbles[1], /^I came across Desert Detailers on Facebook and Instagram and couldn't find a website for you\.\n\nWe build simple websites for car detailing studios in Dubai that turn visitors into WhatsApp inquiries\./);
-  assert.equal(bubbles[2], 'Let me know');
-  assert.doesNotMatch(bubbles.join(' '), /\{\{|undefined/);
+  await dash.waitForSelector('.drawer.open [data-quality-sec]');
+  assert.match(await dash.inputValue('[data-email-step="0"]'), /^Hello Desert Detailers\n\nI came across Desert Detailers on Facebook and Instagram and couldn't find a website for you\.\n\nWe build simple websites for car detailing studios in Dubai that turn visitors into WhatsApp inquiries\./);
   if (SHOTS) {
     await dash.waitForTimeout(500); // let the drawer finish sliding in
     await dash.screenshot({ path: `${SHOTS}/4-drawer.png` });
   }
-  // One WhatsApp tab: bubble 1 opens it and bubble 2 loads in it. Bubble 3 opens a new one because that tab was closed.
-  const typedIn = (u) => {
-    const x = new URL(u);
-    return x.origin + x.pathname === 'https://wa.me/971501000001' ? x.searchParams.get('text') : null;
-  };
-  const [waTab] = await Promise.all([ctx.waitForEvent('page'), dash.click('[data-act="open-bubble"][data-i="0"]')]);
-  await waTab.waitForURL((u) => typedIn(u) === bubbles[0]);
-  const tabsOpen = ctx.pages().length;
-  await dash.bringToFront(); // back to the dashboard for the next bubble
-  await dash.waitForSelector('.bubble:nth-child(1) .tick');
-  assert.equal((await lead(desert.id)).status, 'new', 'not contacted before the last bubble');
-  await dash.click('[data-act="open-bubble"][data-i="1"]');
-  await waTab.waitForURL((u) => typedIn(u) === bubbles[1]);
-  assert.equal(ctx.pages().length, tabsOpen, 'bubble 2 loads in the same WhatsApp tab');
-  await dash.waitForSelector('.bubble:nth-child(2) .tick');
-  assert.equal((await lead(desert.id)).status, 'new', 'not contacted before the last bubble');
-  await waTab.close();
-  await dash.bringToFront();
-  const [waTab2] = await Promise.all([ctx.waitForEvent('page'), dash.click('[data-act="open-bubble"][data-i="2"]')]);
-  await waTab2.waitForURL((u) => typedIn(u) === bubbles[2]);
-  await waTab2.close();
-  await dash.bringToFront();
-  await waitFor(async () => (await lead(desert.id)).status === 'contacted', 5000, 'contacted after the last bubble');
-  assert.match(await dash.textContent('[data-toast]'), /Marked “Desert Detailers” as contacted/);
+  // Contacted from your phone (Google Contacts): record it here with the channel.
+  await dash.click('.drawer [data-act="mark-via"][data-via="whatsapp"]');
+  await waitFor(async () => (await lead(desert.id)).status === 'contacted', 5000, 'marked contacted');
+  assert.match(await dash.textContent('[data-toast]'), /Marked “Desert Detailers” as contacted on WhatsApp/);
   const d1 = await lead(desert.id);
-  assert.equal(d1.sentScript, 'website');
+  assert.deepEqual([d1.sentScript, d1.contactedVia], ['website', 'whatsapp']);
   assert.ok(d1.contactedAt > 0);
   await dash.click('[data-act="close"]');
-
-  // QR per bubble, edits update the code, and "Mark as sent".
-  const qrText = (sel) => dash.$eval(sel, (c) => c.dataset.qrText);
+  const markVia = async (l, via = 'whatsapp') => {
+    await dash.click(`tr[data-id="${l.id}"] [data-open]`);
+    await dash.click(`.drawer.open [data-act="mark-via"][data-via="${via}"]`);
+    await waitFor(async () => (await lead(l.id)).status === 'contacted', 5000, `${l.pageName} contacted`);
+    await dash.click('[data-act="close"]');
+  };
   const wash = by('Wash Wizards');
-  const washNum = LHwa(wash);
-  await dash.click(`tr[data-id="${wash.id}"] [data-open]`);
-  await dash.waitForSelector('[data-pitch-qr]');
-  const wb = await dash.$$eval('.drawer [data-bubble]', (b) => b.map((x) => x.value));
-  assert.equal(await qrText('[data-pitch-qr]'), `https://wa.me/${washNum}?text=${encodeURIComponent(wb[0])}`, 'the QR shows bubble 1');
-  await dash.click('[data-qr-i="1"]');
-  assert.equal(await qrText('[data-pitch-qr]'), `https://wa.me/${washNum}?text=${encodeURIComponent(wb[1])}`, 'toggle 2 shows bubble 2');
-  await dash.fill('[data-bubble="1"]', 'Edited message');
-  await dash.waitForFunction(() => document.querySelector('[data-pitch-qr]').dataset.qrText.endsWith('?text=Edited%20message'));
-  if (SHOTS) {
-    await dash.$eval('.qr-wrap', (el) => el.scrollIntoView({ block: 'end' }));
-    await dash.waitForTimeout(400);
-    await dash.screenshot({ path: `${SHOTS}/6-drawer-qr.png` });
-  }
-  await dash.click('[data-act="mark-sent"]');
-  await waitFor(async () => (await lead(wash.id)).status === 'contacted', 5000, 'marked as sent from the drawer');
+  await markVia(wash);
   assert.equal((await lead(wash.id)).sentScript, 'website');
-  await dash.click('[data-act="close"]');
+  const shield = by('Shield & Shine');
+  await markVia(shield, 'instagram');
+  assert.equal((await lead(shield.id)).contactedVia, 'instagram');
 
-  // Phone mode: one QR per bubble. Enter = next bubble, after the last one the lead is contacted.
-  await dash.click('[data-act="phone-mode"]');
-  await dash.waitForSelector('[data-pm-qr]');
-  const pmName = () => dash.$eval('.pm-info h2', (h) => h.firstChild.textContent.trim());
-  const pmFirst = await pmName();
-  assert.equal(pmFirst, 'Shield & Shine', 'leads not contacted yet come first');
-  const shield = by(pmFirst);
-  const shieldNum = LHwa(shield);
-  assert.equal(await dash.textContent('[data-pm-step]'), 'Bubble 1 of 3');
-  assert.equal(await qrText('[data-pm-qr]'), `https://wa.me/${shieldNum}?text=${encodeURIComponent('Hello Shield & Shine')}`);
-  if (SHOTS) await dash.screenshot({ path: `${SHOTS}/7-phone-mode.png` });
-  await dash.keyboard.press('Enter');
-  await dash.waitForFunction(() => document.querySelector('[data-pm-step]').textContent === 'Bubble 2 of 3');
-  assert.match(await qrText('[data-pm-qr]'), /\?text=I%20came%20across%20Shield/);
-  await dash.keyboard.press('Shift+Enter');
-  await dash.waitForFunction(() => document.querySelector('[data-pm-step]').textContent === 'Bubble 1 of 3');
-  await dash.keyboard.press('Enter');
-  await dash.keyboard.press('Enter');
-  await dash.waitForFunction(() => document.querySelector('[data-pm-step]').textContent === 'Bubble 3 of 3');
-  assert.equal((await lead(shield.id)).status, 'new');
-  await dash.keyboard.press('Enter');
-  await dash.waitForFunction((n) => document.querySelector('.pm-info h2').firstChild.textContent.trim() !== n, pmFirst);
-  await waitFor(async () => (await lead(shield.id)).status === 'contacted', 5000, 'phone mode marks contacted after the last bubble');
-  assert.equal((await lead(shield.id)).sentScript, 'website');
-  await dash.keyboard.press('ArrowRight'); // skip a lead
-  await dash.keyboard.press('Escape');
-  assert.ok(await dash.$eval('[data-pm]', (el) => el.hidden));
-
-  // Phone queue: pair.
+  // Your site: the key the email sender uses.
   await dash.click('[data-view="settings"]');
   await dash.click('[data-act="gen-key"]');
   await dash.fill('[name="queueKey"]', QUEUE_KEY);
   await dash.click('[data-act="test-queue"]');
-  await dash.waitForFunction(() => /Connected\. 0 leads waiting/.test(document.querySelector('[data-queue-status]').textContent));
-  const pairUrl = await qrText('[data-pair-canvas]');
-  assert.match(pairUrl, new RegExp(`^https://www\\.rizcoreach\\.ae/outreach#k=${encodeURIComponent(QUEUE_KEY)}&t=\\d{13}$`));
-  if (SHOTS) {
-    await dash.$eval('#phone', (el) => el.scrollIntoView());
-    await dash.screenshot({ path: `${SHOTS}/8-settings-phone.png` });
-  }
+  await dash.waitForFunction(() => /^Connected to your site\.$/.test(document.querySelector('[data-queue-status]').textContent));
+  assert.ok(!(await dash.$('[data-pair]')), 'no phone pairing any more');
 
   /* ------------------------------------------- Meta ads: Google Places mode */
   const setKey = (k) =>
@@ -594,14 +541,19 @@ try {
   assert.equal(pn('Elite Renovation & Detailing').avoid, true);
   const states = Object.fromEntries(['Glossy PPF Studio', 'Armor Shield Detailing', 'Desert Ceramic Care', 'Nano Pro Tint', 'Shiny Wheels Car Spa', 'Wrap Kings JLT'].map((n) => [n, pn(n).adCheck.state]));
   assert.deepEqual(states, {
-    'Glossy PPF Studio': 'none', // their Facebook page: 0 live ads (confirmed)
-    'Armor Shield Detailing': 'running', // their Facebook page: 3 live ads
+    'Glossy PPF Studio': 'none', // their Facebook page never ran ads in the UAE (confirmed)
+    'Armor Shield Detailing': 'running', // their Facebook page: 3 live ads, found after the first load showed only old ones
     'Desert Ceramic Care': 'running', // found by website domain
     'Nano Pro Tint': 'skipped', // no website: the website script either way, so no Ad Library check
     'Shiny Wheels Car Spa': 'skipped',
     'Wrap Kings JLT': 'likely', // page unknown to the Ad Library
   });
-  assert.equal(pn('Armor Shield Detailing').adCheck.activeAds, 3);
+  const armor = pn('Armor Shield Detailing').adCheck;
+  assert.deepEqual([armor.activeAds, armor.totalAds], [3, 5]);
+  assert.ok(Math.abs(armor.lastAdAt - (Date.now() - 10 * 864e5)) < 864e5, 'the date the newest live ad started');
+  assert.ok(checkLog.includes('page:5550002') && checkLog.includes('page:5550002:live'), 'no live ad in the first load: the live ones are asked for');
+  assert.match(pn('Glossy PPF Studio').adCheck.searchUrl, /active_status=all&.*country=AE&/, 'UAE, live and past ads');
+  assert.deepEqual([pn('Glossy PPF Studio').adCheck.totalAds, pn('Wrap Kings JLT').adCheck.state], [0, 'likely']);
   assert.ok(checkLog.includes('page:5550001') && !checkLog.includes('q:glossyppf.example'), 'a confirmed page check needs no further searches');
   const glossyPhones = pn('Glossy PPF Studio').phones.map((p) => p.number);
   assert.equal(glossyPhones[0], '+971507000001', 'the main listing phone comes first');
@@ -621,6 +573,32 @@ try {
   await dash.bringToFront(); // the Maps and Ad Library tabs were in front; background tabs don't run the drawer's slide-in
   ps = await prospectsNow();
   const pure = pn('Pure Derma Studio');
+  // Ran ads before: two old ads link to their website, nothing live. The last one stopped 45 days ago.
+  const pureAd = pure.adCheck;
+  console.log('ad history:', JSON.stringify(Object.fromEntries(ps.filter((l) => l.adCheck.state !== 'skipped').map((l) => [l.pageName, [l.adCheck.state, l.adCheck.lastAdAt ? new Date(l.adCheck.lastAdAt).toISOString().slice(0, 10) : null]]))));
+  assert.deepEqual([pureAd.state, pureAd.activeAds, pureAd.totalAds], ['past', 0, 2]);
+  assert.ok(Math.abs(pureAd.lastAdAt - (Date.now() - 45 * 864e5)) < 864e5, 'the date the last ad stopped');
+  assert.deepEqual(await sw.evaluate((l) => LH.adStatus(l), pure), { status: 'ran_before_inactive_now', sure: true, lastAdAt: pureAd.lastAdAt });
+  // A login wall: the checks pause and say so, and nothing tries to get past it. Resume carries on.
+  metaWall.body = 'You must log in to continue.';
+  await sw.evaluate((id) => handlers['adcheck:recheck']({ ids: [id] }), pure.id);
+  await waitFor(async () => (await storage('adCheckPaused')).adCheckPaused === true, 60000, 'checks paused at the wall');
+  assert.equal((await storage('alerts')).alerts.adlib.text, 'Facebook asked you to log in');
+  assert.equal((await lead(pure.id)).adCheck.state, 'queued', 'waits its turn again');
+  assert.deepEqual((await storage('adCheckQueue')).adCheckQueue, [pure.id]);
+  assert.equal((await storage('problems')).problems.adlib[0][1], 'Facebook asked you to log in');
+  assert.equal(await sw.evaluate(() => chrome.action.getBadgeText({})), '!');
+  await dash.click('[data-view="ads"]');
+  await dash.waitForSelector('[data-alert="adlib"]');
+  assert.match(await dash.textContent('[data-alert="adlib"]'), /Meta Ad Library paused: Facebook asked you to log in\. Open the Ad Library tab/);
+  if (SHOTS) await dash.screenshot({ path: `${SHOTS}/20-adlib-paused.png` });
+  metaWall.body = '';
+  await dash.click('[data-act="adcheck-resume"]');
+  await checksDone('ad check after resume');
+  assert.equal((await lead(pure.id)).adCheck.state, 'past');
+  assert.ok(!(await storage('alerts')).alerts.adlib);
+  assert.equal(await sw.evaluate(() => chrome.action.getBadgeText({})), '');
+  await dash.waitForFunction(() => !document.querySelector('[data-alert]'));
   assert.equal(pure.website, 'https://purederma.example/', 'website read from Maps network data');
   assert.equal(pure.phones[0].number, '+971553334443', 'phone read from Maps network data');
   assert.equal(pure.sources.maps.reviews, 95);
@@ -639,133 +617,63 @@ try {
   await dash.uncheck('[data-af="skipped"]');
   await dash.selectOption('[data-af="ads"]', 'running');
   await dash.waitForFunction(() => document.querySelectorAll('[data-ads-rows] tr').length === 2);
+  await dash.selectOption('[data-af="ads"]', 'past');
+  await dash.waitForFunction(() => document.querySelectorAll('[data-ads-rows] tr').length === 1);
+  assert.match(await dash.textContent(`tr[data-id="${pure.id}"]`), /Ran ads before · stopped/);
   await dash.selectOption('[data-af="ads"]', '');
   await dash.selectOption('[data-af="tag"]', 'No website');
   await dash.waitForFunction(() => document.querySelectorAll('[data-ads-rows] tr').length === 5);
   await dash.selectOption('[data-af="tag"]', '');
   await dash.waitForFunction(() => document.querySelectorAll('[data-ads-rows] tr').length === 9);
 
-  // Ads script for a business with a website and no Meta ads.
+  // The ads offer for a business with a website and no Meta ads: the email it would get.
   await dash.click(`tr[data-id="${pn('Glossy PPF Studio').id}"] [data-open]`);
-  await dash.waitForSelector('.drawer.open [data-bubble]');
-  const gb = await dash.$$eval('.drawer [data-bubble]', (b) => b.map((x) => x.value));
-  assert.equal(gb[0], 'Hello Glossy PPF Studio');
-  assert.ok(gb[1].includes('We help car detailing studios in Dubai get consistent inquiries through Facebook and Instagram ads.'));
-  assert.equal(gb[2], 'Let me know');
-  assert.match(await dash.textContent('.drawer .pitch h3'), /Ads script/);
+  await dash.waitForSelector('.drawer.open [data-email-step="0"]', { state: 'attached' });
+  const gm = await dash.inputValue('[data-email-step="0"]');
+  assert.match(gm, /^Hello Glossy PPF Studio\n\nAre you dependent on word of mouth/);
+  assert.ok(gm.includes('We help car detailing studios in Dubai get consistent inquiries through Facebook and Instagram ads.'));
+  assert.match(await dash.textContent('.drawer .email-sec h3'), /Ads offer/);
   if (SHOTS) {
     await dash.waitForTimeout(500);
     await dash.screenshot({ path: `${SHOTS}/11-meta-ads-drawer.png` });
   }
-  await dash.click('[data-channel="instagram"]');
-  assert.equal(await dash.$$eval('.drawer [data-act="open-bubble"]', (b) => b.length), 0, 'Instagram: copy only');
-  assert.equal(await dash.$$eval('.drawer [data-act="copy-bubble"]', (b) => b.length), 3);
   await dash.click('[data-act="close"]');
-  // Website script for one without a website, with a link to their Instagram.
+  // The website offer for one without a website.
   await dash.click(`tr[data-id="${insta.id}"] [data-open]`);
-  await dash.waitForSelector('.drawer.open [data-bubble]');
-  assert.match(await dash.inputValue('[data-bubble="1"]'), /^I came across Insta Tint Bar on Google Maps and couldn't find a website for you\./);
-  await dash.click('[data-channel="instagram"]');
-  assert.equal(await dash.getAttribute('.drawer .send-to a', 'href'), 'https://www.instagram.com/instatintbar/');
+  await dash.waitForSelector('.drawer.open [data-email-step="0"]', { state: 'attached' });
+  assert.match(await dash.inputValue('[data-email-step="0"]'), /^Hello Insta Tint Bar\n\nI came across Insta Tint Bar on Google Maps and couldn't find a website for you\./);
   await dash.click('[data-act="close"]');
-  // 2 bubbles: greeting and body together.
-  await sw.evaluate(async () => {
-    const { settings } = await chrome.storage.local.get('settings');
-    await chrome.storage.local.set({ settings: { ...settings, bubbles: 2 } });
-  });
-  await dash.click(`tr[data-id="${pn('Nano Pro Tint').id}"] [data-open]`);
-  await dash.waitForFunction(() => document.querySelectorAll('.drawer.open [data-bubble]').length === 2);
-  assert.match(await dash.inputValue('[data-bubble="0"]'), /^Hello Nano Pro Tint\n\nI came across Nano Pro Tint/);
-  await dash.click('[data-act="close"]');
-  await sw.evaluate(async () => {
-    const { settings } = await chrome.storage.local.get('settings');
-    await chrome.storage.local.set({ settings: { ...settings, bubbles: 3 } });
-  });
   const [dl2] = await Promise.all([dash.waitForEvent('download'), dash.click('[data-act="ads-export"]')]);
   const [head2, ...rows2] = parseCsv(fs.readFileSync(await dl2.path(), 'utf8'));
   assert.deepEqual(head2.slice(0, 5), ['priority', 'business', 'niche', 'area', 'meta_ads']);
   assert.ok(head2.includes('instagram') && head2.includes('email'));
+  assert.deepEqual(head2.slice(8, 14), ['website_weakness', 'weakness_reasons', 'instagram_followers', 'followers_in_range', 'new_business', 'top_reason']);
+  assert.ok(!head2.includes('whatsapp_message_link'), 'no message in the export');
+  const instaRow = rows2.find((r) => r[1] === 'Insta Tint Bar');
+  assert.deepEqual([instaRow[head2.indexOf('weakness_reasons')], instaRow[head2.indexOf('top_reason')]], ['No website, only Instagram', 'No website, only Instagram']);
   assert.equal(rows2.length, 9, '9 prospects');
   assert.equal(rows2.find((r) => r[1] === 'Insta Tint Bar')[head2.indexOf('instagram')], 'https://www.instagram.com/instatintbar/');
   assert.equal(rows2.find((r) => r[1] === 'Glossy PPF Studio')[head2.indexOf('niche')], 'Car detailing studios');
+  const pureRow = rows2.find((r) => r[1] === 'Pure Derma Studio');
+  assert.deepEqual([pureRow[head2.indexOf('meta_ads')], pureRow[head2.indexOf('meta_ad_status')], pureRow[head2.indexOf('last_ad_date')]], ['Ran ads before', 'ran_before_inactive_now', new Date(pure.adCheck.lastAdAt || Date.now() - 45 * 864e5).toISOString().slice(0, 10)]);
 
-  /* ------------------------------- phone queue: one button per bubble, synced back */
+  /* ------------------------------- contacted from your phone: recorded here */
   await dash.selectOption('[data-af="status"]', 'new');
   await dash.selectOption('[data-af="contact"]', 'phone');
-  const ids = await dash.$$eval('[data-ads-rows] tr', (trs) => trs.slice(0, 3).map((t) => t.dataset.id));
-  assert.equal(ids.length, 3);
-  for (const id of ids) await dash.click(`tr[data-id="${id}"] [data-sel]`);
-  await dash.click('[data-act="ads-bulk-queue"]');
-  await waitFor(async () => (queueStore.peek() || { items: [] }).items.length === 3, 10000, 'queue to receive 3 leads');
-  await dash.waitForFunction(() => document.querySelectorAll('.tag.phone').length === 3);
-  const queued = queueStore.peek().items;
-  assert.ok(queued.every((i) => i.parts.length === 3 && i.message === i.parts.join('\n\n')), 'each lead goes to the phone as 3 bubbles');
-  assert.ok(queued.every((i) => /^(No website|No Meta ads)/.test(i.issue)), 'the tag line: ' + queued.map((i) => i.issue).join(' | '));
-  await dash.click('[data-ads-bulk] [data-act="bulk-clear"]');
-
-  const phone = await ctx.newPage();
-  await phone.setViewportSize({ width: 390, height: 844 });
-  await phone.goto(pairUrl);
-  await phone.waitForFunction(() => document.querySelectorAll('[data-list] .card').length === 3);
-  const firstCard = await phone.$eval('[data-list] .card', (c) => c.dataset.id);
-  const fc = queued.find((i) => i.id === firstCard);
-  const card = `[data-list] .card[data-id="${firstCard}"]`;
-  const labels = await phone.$$eval(`${card} [data-act="part"]`, (a) => a.map((x) => x.textContent.trim()));
-  assert.deepEqual(labels, [`1 · ${fc.parts[0]}`, '2 · Message', '3 · Let me know'], 'one button per bubble');
-  assert.equal(await phone.$eval(`${card} [data-act="part"]`, (a) => a.href), `https://wa.me/${fc.wa}?text=${encodeURIComponent(fc.parts[0])}`);
-  if (SHOTS) await phone.screenshot({ path: `${SHOTS}/9-phone-queue.png` });
-  for (let k = 0; k < 3; k++) {
-    const [tab] = await Promise.all([ctx.waitForEvent('page'), phone.click(`${card} [data-act="part"][data-k="${k}"]`)]);
-    await tab.close();
-    if (k < 2) {
-      await phone.waitForFunction((sel) => document.querySelector(sel) && document.querySelector(sel).classList.contains('ticked'), `${card} [data-act="part"][data-k="${k}"]`);
-      assert.equal(queueStore.peek().items.find((i) => i.id === firstCard).status, 'queued', 'still to send until the last bubble');
-    }
-  }
-  await waitFor(async () => queueStore.peek().items.find((i) => i.id === firstCard).status === 'sent', 10000, 'last bubble files the lead under Sent');
-  await phone.waitForFunction(() => /2 to send · 1 sent/.test(document.querySelector('[data-sub]').textContent));
-  if (SHOTS) {
-    await phone.click('[data-tab="sent"]');
-    await phone.screenshot({ path: `${SHOTS}/9b-phone-queue-sent.png` });
-    await phone.click('[data-tab="queued"]');
-  }
-
-  // The extension picks up "sent" and marks the lead as contacted, with the script it got.
-  await sw.evaluate(() => syncQueue());
+  const ids = await dash.$$eval('[data-ads-rows] tr', (trs) => trs.slice(0, 2).map((t) => t.dataset.id));
+  assert.equal(ids.length, 2);
+  const [firstCard, second] = ids;
+  await dash.selectOption(`tr[data-id="${firstCard}"] [data-status]`, 'contacted');
+  await waitFor(async () => (await lead(firstCard)).status === 'contacted', 5000, 'contacted by status');
   const synced = await lead(firstCard);
-  assert.equal(synced.status, 'contacted');
-  assert.equal(synced.phoneQueue.state, 'sent');
-  assert.equal(synced.queuedScript, synced.website ? 'ads' : 'website', 'the script its bubbles came from');
-  assert.equal(synced.sentScript, synced.queuedScript);
-  assert.ok(synced.contactedAt > 0 && synced.niche);
-  // A status set by hand afterwards survives later syncs.
+  assert.ok(synced.contactedAt > 0 && synced.niche && synced.sentScript, 'a status change records the contact, the offer and the niche');
   await dash.selectOption('[data-af="status"]', 'all');
+  await dash.selectOption('[data-af="contact"]', '');
   await dash.waitForSelector(`tr[data-id="${firstCard}"]`);
   await dash.selectOption(`tr[data-id="${firstCard}"] [data-status]`, 'followup');
   await waitFor(async () => (await lead(firstCard)).status === 'followup', 5000, 'manual follow-up');
-  await sw.evaluate(() => syncQueue());
-  assert.equal((await lead(firstCard)).status, 'followup', 'sync must not override a manual status');
-
-  // Marking a queued lead as contacted on the computer ticks it off on the phone too.
-  const second = ids.find((id) => id !== firstCard);
   await dash.selectOption(`tr[data-id="${second}"] [data-status]`, 'contacted');
-  await waitFor(async () => queueStore.peek().items.find((i) => i.id === second).status === 'sent', 10000, 'computer status to reach the phone queue');
-  assert.ok((await lead(second)).contactedAt > 0 && (await lead(second)).sentScript, 'a status change records the contact too');
-  await phone.click('[data-refresh]');
-  await phone.waitForFunction(() => /1 to send · 2 sent/.test(document.querySelector('[data-sub]').textContent));
-
-  // A long name ends in … on a 390px phone instead of pushing the page sideways, and bubble 1 still reads "Hello …".
-  const queueCall = (method, body) =>
-    queueHandle(new Request('https://www.rizcoreach.ae/api/lead-queue', { method, headers: { authorization: `Bearer ${QUEUE_KEY}`, 'content-type': 'application/json' }, body: JSON.stringify(body) }), queueStore, QUEUE_KEY);
-  const longName = 'Dr. Smile Dental Clinic - Best Dentist in Dubai Marina';
-  const longParts = [`Hello ${longName}`, 'Line one\n\nLine two', 'Let me know'];
-  await queueCall('PUT', { items: [{ id: 'long-name', name: longName, wa: '971500000099', message: longParts.join('\n\n'), parts: longParts }] });
-  await phone.click('[data-refresh]');
-  await phone.waitForSelector('[data-id="long-name"]');
-  assert.equal(await phone.evaluate(() => document.documentElement.scrollWidth), 390, 'no sideways scrolling at 390px');
-  assert.deepEqual(await phone.$$eval('[data-id="long-name"] [data-act="part"]', (a) => a.map((x) => x.textContent.trim())), [`1 · Hello ${longName}`, '2 · Message', '3 · Let me know']);
-  if (SHOTS) await phone.screenshot({ path: `${SHOTS}/9c-phone-queue-long-name.png`, fullPage: true });
-  await queueCall('DELETE', { ids: ['long-name'] });
+  await waitFor(async () => (await lead(second)).contactedAt > 0 && (await lead(second)).sentScript, 5000, 'second contacted');
 
   /* ------------------------------------------------------ Replied + Results */
   const replied = `tr[data-id="${firstCard}"] [data-replied]`;
@@ -793,7 +701,7 @@ try {
   );
   const webSent = sentLeads.filter((l) => l.sentScript === 'website').length;
   const webReplied = repliedLeads.filter((l) => l.sentScript === 'website').length;
-  assert.ok(rows[1].includes(`Website script|${webSent}|${webReplied}|${Math.round((100 * webReplied) / webSent)}%`), JSON.stringify(rows));
+  assert.ok(rows[1].includes(`Website offer|${webSent}|${webReplied}|${Math.round((100 * webReplied) / webSent)}%`), JSON.stringify(rows));
   assert.ok(rows[0].some((r) => r.startsWith('Car detailing studios|')), JSON.stringify(rows));
   assert.equal(sentLeads.filter((l) => l.niche === 'Car detailing studios').length + sentLeads.filter((l) => l.niche === 'Aesthetic clinics').length, 5);
   if (SHOTS) {
@@ -816,23 +724,20 @@ try {
   await dash.waitForFunction((id) => [...document.querySelectorAll('[data-rows] tr')].map((t) => t.dataset.id).join() === id, bad.id);
   await dash.selectOption('[data-f="status"]', '');
 
-  // A "sent" from the phone records the script that was queued, even if an ad check changes the lead in between.
+  // The offer recorded is the one it had when you contacted it, even if an ad check changes the lead afterwards.
   const adsId = await sw.evaluate(async () =>
     (Object.values(await chrome.storage.local.get(null)).find((x) => x && x.kind === 'prospect' && x.status === 'new' && x.phones.length && LH.scriptFor(x).script === 'ads') || {}).id,
   );
-  assert.ok(adsId, 'a new prospect that gets the ads script');
-  await sw.evaluate((id) => pushToQueue([id]), adsId);
-  assert.equal((await lead(adsId)).queuedScript, 'ads');
+  assert.ok(adsId, 'a new prospect on the ads offer');
+  await dash.evaluate((id) => update(id, { status: 'contacted', via: 'whatsapp' }), adsId);
+  await waitFor(async () => (await lead(adsId)).status === 'contacted', 5000, 'contacted');
   await sw.evaluate(async (id) => {
     const k = `lead:${id}`;
     const { [k]: l } = await chrome.storage.local.get(k);
-    await chrome.storage.local.set({ [k]: { ...l, adCheck: { ...l.adCheck, state: 'running' } } }); // now skipped: no script
+    await chrome.storage.local.set({ [k]: { ...l, adCheck: { ...l.adCheck, state: 'running' } } }); // now skipped
   }, adsId);
-  await queueCall('POST', { updates: [{ id: adsId, status: 'sent', rev: queueStore.peek().items.find((i) => i.id === adsId).addedAt }] });
-  await sw.evaluate(() => syncQueue());
   const late = await lead(adsId);
-  assert.equal(late.status, 'contacted');
-  assert.equal(late.sentScript, 'ads', 'the script that was sent, not the one the lead would get now');
+  assert.deepEqual([late.status, late.sentScript, late.contactedVia], ['contacted', 'ads', 'whatsapp'], 'the offer it got, not the one it would get now');
   // It runs ads now, but you messaged it: it stays in the Meta ads list.
   await dash.click('[data-view="ads"]');
   await dash.selectOption('[data-af="status"]', '');
@@ -910,8 +815,7 @@ try {
   await dash.waitForFunction((id) => (document.querySelector(`tr[data-id="${id}"] .tag.green`) || {}).textContent === 'Emailed', parked.id);
   // The lead panel shows every email and where they stand.
   await dash.click(`tr[data-id="${parked.id}"] [data-open]`);
-  await dash.waitForSelector('.drawer.open [data-bubble]');
-  await dash.click('[data-channel="email"]');
+  await dash.waitForSelector('.drawer.open [data-email-step="0"]', { state: 'attached' });
   assert.equal(await dash.textContent('.drawer .email-to'), 'To owner@parkedpolish.example');
   assert.equal(await dash.inputValue('[data-email-subject]'), 'Website for Parked Polish');
   assert.deepEqual(await dash.$$eval('.drawer [data-email-step]', (x) => x.map((t) => t.value)), mail.steps);
@@ -937,8 +841,7 @@ try {
   await dash.evaluate((id) => update(id, { addEmail: 'hi@brokenbuff.example' }), broken.id);
   await waitFor(async () => (await lead(broken.id)).emails.length === 1, 5000, 'email added');
   await dash.click(`tr[data-id="${broken.id}"] [data-open]`);
-  await dash.waitForSelector('.drawer.open [data-bubble]');
-  await dash.click('[data-channel="email"]');
+  await dash.waitForSelector('.drawer.open [data-email-step="0"]', { state: 'attached' });
   await dash.click('.drawer [data-act="email-queue"]');
   await dash.waitForFunction(() => (document.querySelector('[data-email-state]') || {}).textContent === 'Queued');
   const brokenItem = () => emailStore.peek().items.find((i) => i.id === broken.id);
@@ -951,14 +854,14 @@ try {
   await dash.selectOption('#d-status', 'lost');
   await waitFor(async () => brokenItem().status === 'cancelled', 5000, '"Not interested" stops the emails');
   await dash.click('[data-act="close"]');
-  // A business already messaged on WhatsApp is not emailed as well: one channel per business.
+  // A business you already contacted another way is not emailed as well: one channel per business.
   const washed = by('Wash Wizards');
-  assert.ok((await lead(washed.id)).contactedAt, 'messaged on WhatsApp earlier');
+  assert.ok((await lead(washed.id)).contactedAt, 'marked contacted earlier');
   await dash.evaluate((id) => update(id, { addEmail: 'team@washwizards.example' }), washed.id);
   await waitFor(async () => (await lead(washed.id)).emails.includes('team@washwizards.example'), 5000, 'email added');
   await dash.click(`tr[data-id="${washed.id}"] [data-sel]`);
   await dash.click('[data-act="bulk-email"]');
-  await dash.waitForFunction(() => document.querySelector('[data-toast]').textContent === '0 added to the email queue · 1 already messaged on WhatsApp');
+  await dash.waitForFunction(() => document.querySelector('[data-toast]').textContent === '0 added to the email queue · 1 already contacted');
   assert.ok(!emailStore.peek().items.some((i) => i.id === washed.id));
   await dash.click('[data-bulk] [data-act="bulk-clear"]');
 
@@ -991,6 +894,153 @@ try {
   assert.ok(!emailStore.peek().items.some((i) => i.id === adsId));
   await dash.click('[data-ads-bulk] [data-act="bulk-clear"]');
 
+  /* ----------------------- Presets: the four searches from the brief, before and after the filters */
+  // Meta ads tab, no Places key: each search reads the Maps results list only; failing listings are never opened.
+  const runPreset = async (niche, keyword, area, cap = 100) => {
+    const r = await sw.evaluate((c) => startFinder(c).then((f) => ({ id: f.id })).catch((e) => ({ error: e.message })), { niche, keywords: [keyword], areas: [area], cap });
+    if (r.error) return r;
+    return waitFor(async () => {
+      const { finder } = await storage('finder');
+      return finder && finder.id === r.id && !['running', 'paused'].includes(finder.status) ? finder : null;
+    }, 90000, `${niche} search`);
+  };
+  const briefStats = {};
+  const briefRuns = [['Car', 'ppf', 'Al Quoz Industrial Area 3, Dubai'], ['Fitness', 'boxing gym', 'Al Nahda, Sharjah'], ['Pets', 'dog trainer', 'Al Barsha, Dubai'], ['Accountants', 'accounting firm', 'Business Bay, Dubai']];
+  for (const [niche, kw, area] of briefRuns) {
+    const f = await runPreset(niche, kw, area);
+    const { found, kept, fewReviews, manyReviews, excluded, duplicate } = f.stats;
+    briefStats[`${kw} ${area}`] = { found, kept, fewReviews, manyReviews, excluded, duplicate };
+  }
+  console.log('preset searches (found -> kept):', JSON.stringify(briefStats));
+  assert.deepEqual(briefStats, {
+    'ppf Al Quoz Industrial Area 3, Dubai': { found: 8, kept: 3, fewReviews: 1, manyReviews: 1, excluded: 3, duplicate: 0 },
+    'boxing gym Al Nahda, Sharjah': { found: 5, kept: 2, fewReviews: 0, manyReviews: 1, excluded: 2, duplicate: 0 },
+    'dog trainer Al Barsha, Dubai': { found: 4, kept: 1, fewReviews: 1, manyReviews: 0, excluded: 2, duplicate: 0 },
+    'accounting firm Business Bay, Dubai': { found: 5, kept: 2, fewReviews: 0, manyReviews: 1, excluded: 2, duplicate: 0 },
+  });
+  const keptNames = (await prospectsNow()).filter((l) => ['Car', 'Fitness', 'Pets', 'Accountants'].includes(l.niche)).map((l) => l.pageName).sort();
+  assert.deepEqual(keptNames, ['Al Noor Accounting', 'Gloss Garage', 'Gloss Garage - JLT Branch', 'Happy Paws Training', 'Iron Fist Boxing', 'Key Ledger Bookkeeping', 'Shield PPF Center', 'Spartan Boxing Sharjah']);
+  for (const kept of keptNames) assert.ok(Object.values(PRESET_SEARCHES).flat().some(([n]) => n === kept));
+  const gp = (await prospectsNow()).find((l) => l.pageName === 'Gloss Garage');
+  assert.deepEqual([gp.area, gp.sources.maps.reviews, gp.adCheck.state], ['Al Quoz Industrial Area 3, Dubai', 42, 'skipped']);
+  // Tags on the Meta ads tab: phone type and chains. Mobile only and Hide chains filter them.
+  await dash.bringToFront();
+  await dash.click('[data-view="ads"]');
+  await dash.selectOption('[data-af="niche"]', 'Car');
+  await dash.waitForFunction(() => document.querySelectorAll('[data-ads-rows] tr').length === 3);
+  const tagsOf = (name) => dash.$$eval('[data-ads-rows] tr', (rows, n) => [...rows.find((r) => r.querySelector('.n').textContent === n).querySelectorAll('.tag')].map((t) => t.textContent), name);
+  assert.deepEqual((await tagsOf('Gloss Garage')).slice(0, 2), ['Mobile', 'Chain']);
+  assert.deepEqual((await tagsOf('Gloss Garage - JLT Branch')).slice(0, 2), ['Landline', 'Chain']);
+  assert.deepEqual((await tagsOf('Shield PPF Center')).slice(0, 1), ['Corporate']);
+  assert.match(await dash.textContent('[data-ads-rows]'), /\(150\)/, 'the review count shows on the lead');
+  await dash.check('[data-af="mobile"]');
+  await dash.waitForFunction(() => document.querySelectorAll('[data-ads-rows] tr').length === 1);
+  await dash.uncheck('[data-af="mobile"]');
+  await dash.check('[data-af="chains"]');
+  await dash.waitForFunction(() => document.querySelectorAll('[data-ads-rows] tr').length === 1);
+  assert.match(await dash.textContent('[data-ads-rows]'), /Shield PPF Center/);
+  await dash.uncheck('[data-af="chains"]');
+  await dash.selectOption('[data-af="niche"]', '');
+  // The finder panel shows the last run's before and after.
+  assert.match(await dash.textContent('[data-finder-status]'), /5 found → 2 kept · 1 over 50 reviews · 2 excluded words/);
+  if (SHOTS) await dash.screenshot({ path: `${SHOTS}/17-presets-run.png` });
+  // Finished searches are remembered: running the same one again says so, a new pair runs, and Start over forgets.
+  assert.match((await runPreset('Car', 'ppf', 'Al Quoz Industrial Area 3, Dubai')).error, /Every search of Car has been run/);
+  const progress = await sw.evaluate(() => handlers['finder:progress']({}));
+  assert.deepEqual(progress.progress.Car, { total: 588, done: 1 });
+  // A capped run: 2 pairs left, cap 1, so it runs 1 and the next run carries on with the other.
+  const pausedRun = await sw.evaluate(() => startFinder({ niche: 'Car', keywords: ['ppf', 'ceramic coating'], areas: ['Al Quoz Industrial Area 3, Dubai', 'Al Barsha, Dubai'], cap: 1 }));
+  assert.deepEqual(pausedRun.mapsQ.map((q) => q.q), ['ppf Al Barsha, Dubai'], 'finished pairs are skipped, keywords first, then areas, up to the cap');
+  await sw.evaluate(() => handlers['finder:pause']({}));
+  assert.equal((await storage('finder')).finder.status, 'paused');
+  await sw.evaluate(() => handlers['finder:resume']({}));
+  await waitFor(async () => (await storage('finder')).finder.status === 'done', 90000, 'capped run');
+  assert.deepEqual((await sw.evaluate(() => handlers['finder:progress']({}))).progress.Car, { total: 588, done: 2 });
+  await sw.evaluate(() => handlers['finder:reset']({ preset: 'Car' }));
+  assert.deepEqual((await sw.evaluate(() => handlers['finder:progress']({}))).progress.Car, { total: 588, done: 0 });
+
+  /* ------------------------- One record per business, and a memory of everyone you contacted */
+  // Exports to Google Contacts were remembered earlier on.
+  const memory = async () => (await storage('contactHistory')).contactHistory || {};
+  assert.deepEqual((await memory())['d:shineautospa.example'].slice(1, 3), ['export', '9000'], 'Shine Auto Spa went to Google Contacts');
+  // Import a sheet of numbers you already messaged (any CSV with phones, like a Google Contacts export).
+  await dash.click('[data-view="settings"]');
+  const sheet = 'Name,Phone 1 - Value\nWax Lab,050 777 8801\nIron Fist,"+971 52 222 3301 ::: 04 999 0000"\n';
+  await dash.setInputFiles('[data-import-history]', { name: 'contacted.csv', mimeType: 'text/csv', buffer: Buffer.from(sheet) });
+  await dash.waitForFunction(() => document.querySelector('[data-toast]').textContent === '3 phone numbers found, 3 new. Future searches skip them.');
+  assert.match(await dash.textContent('[data-history-count]'), /^Remembering \d+ phone numbers and \d+ websites/);
+  // A search: "Glos Garage LLC" is Gloss Garage (same area, Jaro-Winkler 0.98) and Wax Lab is in the imported contacts.
+  const memRun = await runPreset('Car', 'ceramic coating', 'Al Quoz Industrial Area 3, Dubai');
+  const pick = ({ found, kept, duplicate, contacted }) => ({ found, kept, duplicate, contacted });
+  console.log('contacted memory search:', JSON.stringify(pick(memRun.stats)));
+  assert.deepEqual(pick(memRun.stats), { found: 3, kept: 1, duplicate: 1, contacted: 1 });
+  const gloss = await lead(gp.id);
+  assert.deepEqual([gloss.pageName, gloss.sources.maps.otherListings.length], ['Gloss Garage', 1], 'one record, both listings');
+  assert.ok(gloss.phones.some((x) => x.number === '+971501112299'), 'with the second listing phone');
+  const names = (await prospectsNow()).map((l) => l.pageName);
+  assert.ok(names.includes('Shine Bay Detailing') && !names.includes('Glos Garage LLC') && !names.includes('Wax Lab Detailing'));
+  await dash.click('[data-view="ads"]');
+  await dash.waitForFunction(() => /3 found → 1 kept · 1 already saved · 1 contacted before/.test(document.querySelector('[data-finder-status]').textContent));
+  // Iron Fist Boxing was already saved, and its number is in the sheet: hidden until you ask for it.
+  await dash.selectOption('[data-af="status"]', '');
+  await dash.selectOption('[data-af="niche"]', 'Fitness');
+  await dash.waitForFunction(() => document.querySelectorAll('[data-ads-rows] tr').length === 1);
+  await dash.check('[data-af="contactedBefore"]');
+  await dash.waitForFunction(() => document.querySelectorAll('[data-ads-rows] tr').length === 2);
+  assert.deepEqual((await tagsOf('Iron Fist Boxing')).slice(0, 1), ['Contacted before']);
+  const iron = (await prospectsNow()).find((l) => l.pageName === 'Iron Fist Boxing');
+  await dash.click(`[data-ads-rows] tr[data-id="${iron.id}"] [data-open]`);
+  await dash.waitForSelector('.drawer.open .contacted-row .tag');
+  assert.match(await dash.textContent('.drawer .contacted-row'), /Contacted before .*· your imported contacts/);
+  if (SHOTS) await dash.screenshot({ path: `${SHOTS}/18-contacted-before.png` });
+  // Reset: new again and findable. The sheet's other numbers stay remembered.
+  await dash.click('.drawer [data-act="reset-contacted"]');
+  await waitFor(async () => !(await memory())['p:+971522223301'], 5000, 'reset forgets the business');
+  assert.ok((await memory())['p:+971507778801'] && (await memory())['p:+97149990000']);
+  await dash.click('[data-act="close"]');
+  await dash.uncheck('[data-af="contactedBefore"]');
+  await dash.waitForFunction(() => document.querySelectorAll('[data-ads-rows] tr').length === 2);
+  // Mark contacted with the channel, change the channel, then delete the lead: searches still skip it.
+  await dash.selectOption('[data-af="niche"]', 'Car');
+  const shine = (await prospectsNow()).find((l) => l.pageName === 'Shine Bay Detailing');
+  await dash.click(`[data-ads-rows] tr[data-id="${shine.id}"] [data-open]`);
+  await dash.click('.drawer.open [data-act="mark-via"][data-via="whatsapp"]');
+  await waitFor(async () => (await lead(shine.id)).contactedVia === 'whatsapp', 5000, 'marked contacted on WhatsApp');
+  assert.equal((await lead(shine.id)).status, 'contacted');
+  await waitFor(async () => ((await memory())['p:+971567778802'] || [])[1] === 'whatsapp', 5000, 'remembered');
+  assert.deepEqual((await memory())['n:shine bay detailing@al quoz industrial area 3, dubai'].slice(1, 3), ['whatsapp', shine.id]);
+  await dash.waitForSelector('.drawer.open [data-act="mark-via"][data-via="whatsapp"].on');
+  await dash.click('.drawer.open [data-act="mark-via"][data-via="instagram"]');
+  await waitFor(async () => (await lead(shine.id)).contactedVia === 'instagram', 5000, 'channel changed');
+  assert.equal((await lead(shine.id)).status, 'contacted');
+  await dash.waitForFunction(() => / on Instagram\. Channel:/.test(document.querySelector('.drawer .contacted-row').textContent));
+  if (SHOTS) await dash.screenshot({ path: `${SHOTS}/19-mark-contacted.png` });
+  await dash.click('[data-act="close"]');
+  await sw.evaluate((id) => handlers['lead:delete']({ ids: [id] }), shine.id);
+  await sw.evaluate(() => handlers['finder:reset']({ preset: 'Car' }));
+  const again = await runPreset('Car', 'ceramic coating', 'Al Quoz Industrial Area 3, Dubai');
+  assert.deepEqual(pick(again.stats), { found: 3, kept: 0, duplicate: 1, contacted: 2 }, 'deleted, still remembered');
+  assert.ok(!(await lead(shine.id)), 'not added back');
+  // Reset on a contacted lead: back to New, and its own memory goes.
+  const paws = (await prospectsNow()).find((l) => l.pageName === 'Happy Paws Training');
+  await sw.evaluate((id) => handlers['lead:update']({ id, patch: { status: 'contacted', via: 'email' } }), paws.id);
+  await waitFor(async () => ((await memory())['p:+971553334401'] || [])[1] === 'email', 5000, 'remembered by email');
+  await sw.evaluate((id) => handlers['lead:reset']({ id }), paws.id);
+  const pawsNow = await lead(paws.id);
+  assert.deepEqual([pawsNow.status, pawsNow.contactedAt, pawsNow.contactedVia], ['new', null, null]);
+  await waitFor(async () => !Object.values(await memory()).some((e) => e[2] === paws.id), 5000, 'its memory is gone');
+  // Ad Library hunts skip a new page whose website you contacted (Shine Auto Spa went to Google Contacts).
+  await sw.evaluate(() => store.remove('lead:9000'));
+  const adIn = await sw.evaluate(() => ingest([{ id: '99001', pageId: '99000', pageName: 'Shine Auto Spa Two', active: true, links: ['https://shineautospa.example/offer'] }], { keyword: 'car wash' }));
+  assert.equal(adIn.added, 0);
+  assert.ok(!(await lead('99000')), 'not saved');
+  // Leads contacted before the memory existed are added once, when the extension updates.
+  await sw.evaluate(() => store.set({ contactHistory: {}, memoryVersion: 0 }));
+  await sw.evaluate(() => seedMemory());
+  assert.ok(Object.values(await memory()).some((e) => e[2] === by('Wash Wizards').id), 'contacted leads are seeded');
+  assert.ok((await storage('prospectNames')).prospectNames['al quoz industrial area 3, dubai'].some(([n]) => n === 'gloss garage'));
+  await dash.selectOption('[data-af="niche"]', '');
+
   /* ------------------------------------- Instagram: Add to Lead Hunter on a profile */
   const ig = await ctx.newPage();
   await ig.goto('https://www.instagram.com/glossy.tint_bar/');
@@ -1018,13 +1068,278 @@ try {
   await igBtn.click();
   await ig.locator('button', { hasText: 'Added to Lead Hunter' }).waitFor();
   const lash = await lead('p:i:luxe.lash.dxb');
-  assert.deepEqual([lash.pageName, lash.niche, lash.website, lash.adCheck.state], ['Luxe Lash Studio', 'Beauty salons', null, 'skipped']);
+  assert.deepEqual([lash.pageName, lash.niche, lash.website, lash.adCheck.state], ['Luxe Lash Studio', '', null, 'skipped'], 'no preset covers lash studios');
   assert.ok(lash.phones.some((x) => x.number === '+971524445566'));
   // Not a profile: no button.
   await ig.evaluate(() => history.pushState({}, '', '/explore/'));
   await igBtn.waitFor({ state: 'detached' });
   if (SHOTS) await ig.screenshot({ path: `${SHOTS}/16-instagram.png` });
   await ig.close();
+
+  /* ---------------- Quality signals: website checks, followers from the official Instagram API, top reason */
+  await dash.bringToFront();
+  await dash.click('[data-view="settings"]');
+  await dash.fill('[name="igAccountId"]', IG_API.account);
+  await dash.fill('[name="igToken"]', IG_API.token);
+  // A token that reads your own account but can't look up others fails the test, and says which permissions.
+  IG_API.noDiscovery = true;
+  await dash.click('[data-act="ig-test"]');
+  await dash.waitForFunction(() => /^Not working: Your account reads fine, but looking up other businesses failed: Application does not have permission for this action\. Your token is missing a permission\. .*instagram_manage_insights/.test(document.querySelector('[data-ig-test]').textContent));
+  IG_API.noDiscovery = false;
+  await dash.click('[data-act="ig-test"]');
+  await dash.waitForFunction(() => document.querySelector('[data-ig-test]').textContent === 'Working: @rizcoreach, 1200 followers.');
+  assert.ok(IG_API.calls.includes('business_discovery.username(rizcoreach){followers_count,media_count,username,media.limit(1){timestamp}}'), 'the test does a real lookup');
+  assert.equal((await storage('settings')).settings.igApiVersion, 'v23.0');
+  const instaLead = (await prospectsNow()).find((l) => l.pageName === 'Insta Tint Bar');
+  const glossyIg = 'p:i:glossy.tint_bar';
+  const lookup = await sw.evaluate((ids) => handlers['ig:lookup']({ ids }), [instaLead.id, glossyIg, 'p:i:luxe.lash.dxb', by('Wash Wizards').id]);
+  assert.deepEqual(lookup, { queued: 3, noHandle: 1 });
+  await waitFor(async () => !((await storage('igQueue')).igQueue || []).length, 30000, 'Instagram lookups');
+  assert.deepEqual([(await lead(instaLead.id)).igStats.followers, (await lead(glossyIg)).igStats.followers], [640, 2345]);
+  assert.equal((await lead(glossyIg)).igStats.from, 'api');
+  assert.match((await lead('p:i:luxe.lash.dxb')).igStats.error, /Invalid user id/, 'a personal account is not found');
+  assert.ok(IG_API.calls.includes('business_discovery.username(instatintbar){followers_count,media_count,username,media.limit(1){timestamp}}'));
+  assert.ok(Math.abs((await lead(instaLead.id)).igStats.lastPostAt - (Date.now() - 3 * 864e5)) < 60000, 'the newest post date, from +0000 time');
+  assert.match((await storage('problems')).problems.instagram[0][1], /^@luxe\.lash\.dxb: Invalid user id/);
+  // The lead panel: no website, only Instagram; followers in range; the top reason.
+  await dash.click('[data-view="ads"]');
+  await dash.selectOption('[data-af="status"]', 'all');
+  await dash.check('[data-af="contactedBefore"]');
+  await dash.click(`[data-ads-rows] tr[data-id="${instaLead.id}"] [data-open]`);
+  await dash.waitForSelector('.drawer.open [data-quality-sec]');
+  const qText = await dash.textContent('.drawer [data-quality-sec]');
+  assert.match(qText, /Top reasonNo website, only Instagram/);
+  assert.doesNotMatch(qText, /I couldn't find|Copy pitch/, 'no message written for you');
+  assert.match(qText, /✗ No website, only Instagram/);
+  assert.match(qText, /640 followers \(official API, .*\) In range 500 to 10K/);
+  assert.match(qText, /18 Google reviews not new/);
+  if (SHOTS) await dash.screenshot({ path: `${SHOTS}/21-quality.png` });
+  // Heat score, website offer: no website +35, active Instagram +5 (posted 3 days ago), WhatsApp is not part of this offer.
+  const instaHeat = await sw.evaluate(async (id) => LH.heatScore((await chrome.storage.local.get('lead:' + id))['lead:' + id], (await chrome.storage.local.get('settings')).settings), instaLead.id);
+  console.log('heat score (Insta Tint Bar):', JSON.stringify(instaHeat));
+  assert.equal(instaHeat.profile, 'website');
+  assert.ok(instaHeat.parts.some((x) => x.id === 'no_website' && x.points === 35) && instaHeat.parts.some((x) => x.id === 'active_instagram'));
+  assert.match(qText, /Heat score40 Website offer\s+\+35 No website\+5 Active Instagram/);
+  await dash.click('[data-act="close"]');
+  // A website that passes: its checks are listed, PageSpeed waits for a key.
+  const glossyPpf = (await prospectsNow()).find((l) => l.pageName === 'Glossy PPF Studio');
+  await dash.click(`[data-ads-rows] tr[data-id="${glossyPpf.id}"] [data-open]`);
+  await dash.waitForSelector('.drawer.open [data-quality-sec]');
+  const gText = await dash.textContent('.drawer [data-quality-sec]');
+  assert.match(gText, /Website weakness0\/100 not weak/);
+  assert.match(gText, /✓ No HTTPS or an SSL error/);
+  assert.match(gText, /PageSpeed mobile score under the limit: needs PageSpeed/);
+  await dash.click('[data-act="close"]');
+  // An expired token: lookups pause with an alert. Fix it and Resume.
+  await sw.evaluate(async () => {
+    const { settings } = await chrome.storage.local.get('settings');
+    await chrome.storage.local.set({ settings: { ...settings, igToken: 'expired' } });
+  });
+  await sw.evaluate((ids) => handlers['ig:lookup']({ ids }), [glossyIg]);
+  await waitFor(async () => (await storage('igPaused')).igPaused === true, 20000, 'lookups paused');
+  assert.match((await storage('alerts')).alerts.instagram.text, /Session has expired/);
+  await dash.waitForSelector('[data-alert="instagram"]');
+  assert.match(await dash.textContent('[data-alert="instagram"]'), /Instagram API paused: .*Your token has expired or was changed\. Make a new one/);
+  await sw.evaluate(async (token) => {
+    const { settings } = await chrome.storage.local.get('settings');
+    await chrome.storage.local.set({ settings: { ...settings, igToken: token } });
+  }, IG_API.token);
+  await dash.click('[data-act="ig-resume"]');
+  await waitFor(async () => !((await storage('igQueue')).igQueue || []).length, 20000, 'lookups after resume');
+  assert.ok(!(await storage('alerts')).alerts.instagram);
+  // Ranked by heat score, highest first.
+  const heats = await dash.$$eval('[data-ads-rows] tr td:nth-child(2) .heat', (b) => b.map((x) => Number(x.textContent)));
+  assert.ok(heats.length > 3 && heats.every((n, i) => i === 0 || heats[i - 1] >= n), `sorted by heat: ${heats}`);
+  // Full CSV: every field, for every business shown.
+  const [fdl] = await Promise.all([dash.waitForEvent('download'), dash.click('[data-act="ads-export-full"]')]);
+  const [fHead, ...fRows] = parseCsv(fs.readFileSync(await fdl.path(), 'utf8'));
+  assert.equal(fHead.length, 40);
+  const instaFull = fRows.find((r) => r[2] === 'Insta Tint Bar');
+  assert.deepEqual(['instagram_handle', 'instagram_followers', 'heat_offer', 'ad_status'].map((c) => instaFull[fHead.indexOf(c)]), ['instatintbar', '640', 'website', '']);
+  console.log('full CSV row:', JSON.stringify(Object.fromEntries(fHead.map((c, i) => [c, instaFull[i]]).filter(([, v]) => v !== ''))));
+  // Your weights in Settings change the scores straight away.
+  await dash.click('[data-view="settings"]');
+  await dash.fill('[data-heat-group="website"][data-heat-id="no_website"]', '50');
+  await dash.click('[data-settings-form] button[type="submit"]');
+  await waitFor(async () => ((await storage('settings')).settings.heatWeights || {}).website?.no_website === 50, 5000, 'heat weight saved');
+  assert.deepEqual((await storage('settings')).settings.heatWeights, { website: { no_website: 50 } }, 'only your change is kept');
+  await dash.fill('[data-heat-group="website"][data-heat-id="no_website"]', '35');
+  await dash.click('[data-settings-form] button[type="submit"]');
+  await waitFor(async () => (await storage('settings')).settings.heatWeights === null, 5000, 'back to the defaults');
+  await dash.click('[data-view="ads"]');
+  await dash.uncheck('[data-af="contactedBefore"]');
+
+  /* ------------------------------ Intent Radar: Reddit, a Facebook group, LinkedIn jobs */
+  await sw.evaluate(async () => {
+    const { settings } = await chrome.storage.local.get('settings');
+    await chrome.storage.local.set({ settings: { ...settings, subreddits: 'dubai\nUAE', uaeOnlySubs: 'smallbusiness' } });
+  });
+  // Without an approved Reddit app id nothing is read in the background: Reddit refuses anyone not logged in.
+  assert.equal((await sw.evaluate(() => handlers['intent:run']({}))).tab, true);
+  assert.deepEqual(redditCalls, [], 'no background Reddit requests without an app id');
+  // Scan Reddit now opens a Reddit tab (where you are logged in) and reads your subreddits there.
+  const rd = await ctx.newPage();
+  await rd.goto('https://www.reddit.com/r/dubai/new/#lead-hunter-scan');
+  await rd.locator('.msg', { hasText: 'Read 8 posts' }).waitFor({ timeout: 45000 });
+  assert.equal(await rd.textContent('.msg'), 'Read 8 posts from 3 subreddits · 3 saved to the Intent tab · 1 sellers · 1 older than 14 days · 1 already saved · 1 not in the UAE');
+  assert.ok(!rd.url().includes('#lead-hunter-scan'), 'the start marker is removed');
+  assert.deepEqual(redditCalls, ['dubai?100', 'UAE?100', 'smallbusiness?100'], 'one request per subreddit, through the Reddit tab');
+  const runStats = ({ seen, saved, duplicates, nomatch, seller, old, foreign }) => ({ seen, saved, duplicates, nomatch, seller, old, foreign });
+  const radarRun = (await storage('intentState')).intentState.runs[0];
+  console.log('Reddit scan:', JSON.stringify(runStats(radarRun)));
+  assert.deepEqual(runStats(radarRun), { seen: 8, saved: 3, duplicates: 1, nomatch: 1, seller: 1, old: 1, foreign: 1 });
+  // Scan this page: the posts on the page (one already saved, one too old).
+  await rd.locator('button', { hasText: 'Scan this page' }).click();
+  await rd.locator('.msg', { hasText: 'Read 2 posts' }).waitFor();
+  assert.equal(await rd.textContent('.msg'), 'Read 2 posts · 0 saved to the Intent tab · 1 older than 14 days · 1 already saved');
+  // Reddit refusing (not logged in): it stops at once and reads the page instead. No alert for that.
+  redditMode.refuse = true;
+  await rd.locator('button', { hasText: 'Scan my subreddits' }).click();
+  await rd.locator('.msg', { hasText: 'From this page' }).waitFor();
+  assert.equal(await rd.textContent('.msg'), 'Reddit did not let Lead Hunter read your subreddits (403). If you are not logged in to Reddit, log in and try again. From this page: Read 2 posts · 0 saved to the Intent tab · 1 older than 14 days · 1 already saved');
+  assert.equal(redditCalls.length, 4, 'one refused request, then it stopped');
+  redditMode.refuse = false;
+  assert.ok(!((await storage('alerts')).alerts || {}).reddit);
+  // A Reddit block page pauses Reddit with an alert; nothing tries to get past it.
+  await rd.goto('https://www.reddit.com/r/blocked/new/');
+  await rd.locator('button', { hasText: 'Scan this page' }).click();
+  await rd.locator('.msg', { hasText: 'paused Reddit' }).waitFor();
+  assert.equal((await storage('alerts')).alerts.reddit.text, 'Reddit blocked this browser (log in to Reddit in this tab)');
+  await rd.locator('button', { hasText: 'Scan my subreddits' }).click();
+  await rd.locator('.msg', { hasText: 'Reddit scans are paused' }).waitFor();
+  assert.equal(redditCalls.length, 4, 'paused: no requests');
+  await sw.evaluate(() => handlers['intent:resume']({ source: 'reddit' }));
+  await rd.close();
+  assert.equal(await sw.evaluate(() => chrome.action.getBadgeText({})), '3', 'new posts on the icon');
+  await dash.bringToFront();
+  await dash.click('[data-view="intent"]');
+  await dash.waitForFunction(() => document.querySelectorAll('[data-intent-rows] .intent-card').length === 3);
+  const sums = await dash.$$eval('.intent-card .sum', (p) => p.map((x) => x.textContent));
+  assert.deepEqual(sums, ['Need a website for my bakery in JLT, any recommendations?', 'Business is slow, ads not working', 'How do I get clients for my cleaning company in Sharjah?'], 'newest first');
+  await waitFor(async () => (await sw.evaluate(() => chrome.action.getBadgeText({}))) === '', 5000, 'the badge clears once you look');
+  const first = await dash.textContent('.intent-card');
+  assert.match(first, /Reddit · r\/dubai\s*3h ago · u\/sarah_dxb\s*Website buyer\s*unverified/);
+  assert.ok(!(await dash.$('.intent-card [data-intent-opener], .intent-card [data-act="intent-copy"]')), 'no opener: you write your own');
+  assert.match(await dash.textContent('[data-intent-status]'), /AI check is off: add a free Google AI Studio key/);
+  assert.match(await dash.textContent('[data-intent-status]'), /Reddit: press Scan Reddit now \(it opens Reddit, where you need to be logged in\), last scan/);
+  const [redditTab] = await Promise.all([ctx.waitForEvent('page'), dash.click('[data-act="intent-run"]')]);
+  await redditTab.waitForLoadState('domcontentloaded');
+  assert.match(redditTab.url(), /^https:\/\/www\.reddit\.com\/r\/dubai\/new\//, 'opens your first subreddit');
+  await redditTab.close();
+  if (SHOTS) await dash.screenshot({ path: `${SHOTS}/22-intent.png` });
+  const firstId = await dash.getAttribute('.intent-card', 'data-intent-id');
+  await dash.click('.intent-card [data-act="intent-contacted"]');
+  await dash.waitForFunction(() => document.querySelectorAll('[data-intent-rows] .intent-card').length === 2);
+  assert.equal((await dash.evaluate((id) => LH.intentDb.get(id), firstId)).status, 'contacted');
+  await dash.click('.intent-card [data-act="intent-dismiss"]');
+  await dash.waitForFunction(() => document.querySelectorAll('[data-intent-rows] .intent-card').length === 1);
+  await dash.selectOption('[data-intent-f="status"]', 'all');
+  await dash.waitForFunction(() => document.querySelectorAll('[data-intent-rows] .intent-card').length === 3);
+  await dash.selectOption('[data-intent-f="status"]', 'new');
+  // A Facebook group you opened yourself: press Scan for leads.
+  const fbg = await ctx.newPage();
+  await fbg.goto('https://www.facebook.com/groups/dubaibiz/');
+  await fbg.locator('button', { hasText: 'Scan for leads' }).click();
+  await fbg.locator('.msg', { hasText: 'Read 3 posts' }).waitFor();
+  assert.equal(await fbg.textContent('.msg'), 'Read 3 posts · 1 saved to the Intent tab · 1 sellers · 1 older than 14 days');
+  const fbPost = await dash.evaluate(() => LH.intentDb.get('facebook:111'));
+  assert.deepEqual([fbPost.place, fbPost.author, fbPost.categories, fbPost.url], ['Dubai Business Owners', 'Sarah Khan', ['marketing'], 'https://www.facebook.com/groups/dubaibiz/posts/111/']);
+  assert.ok(Math.abs(fbPost.createdAt - (Date.now() - 2 * 36e5)) < 6e4, '"2h" read as two hours ago');
+  await fbg.close();
+  // LinkedIn jobs: a marketing role in the UAE is a company hiring for marketing, linked to your lead.
+  const lij = await ctx.newPage();
+  await lij.goto('https://www.linkedin.com/jobs/search/?keywords=marketing');
+  await lij.locator('button', { hasText: 'Scan for leads' }).click();
+  await lij.locator('.msg', { hasText: 'Read 3 jobs' }).waitFor();
+  assert.equal(await lij.textContent('.msg'), 'Read 3 jobs · 1 saved to the Intent tab · 1 not in the UAE');
+  const hire = await dash.evaluate(() => LH.intentDb.get('linkedin:job:901'));
+  assert.deepEqual([hire.categories, hire.title, hire.company], [['hiring'], 'Social Media Executive', 'Gloss Garage']);
+  const hiredLead = await lead(hire.leadId);
+  assert.equal(await sw.evaluate((n) => LH.normName(n), hiredLead.pageName), 'gloss garage');
+  assert.equal(hiredLead.hiring.url, 'https://www.linkedin.com/jobs/view/901/');
+  const hiredHeat = await sw.evaluate(async (id) => LH.heatScore((await chrome.storage.local.get('lead:' + id))['lead:' + id], (await chrome.storage.local.get('settings')).settings), hire.leadId);
+  assert.ok(hiredHeat.parts.some((x) => x.id === 'hiring_marketing' && x.points === 20), 'the lead gets +20 for hiring');
+  // A security check on LinkedIn: that source pauses and says so. Nothing tries to get past it.
+  await lij.goto('https://www.linkedin.com/feed/');
+  await lij.locator('button', { hasText: 'Scan for leads' }).click();
+  await lij.locator('.msg', { hasText: 'security check' }).waitFor();
+  assert.equal((await storage('alerts')).alerts.linkedin.text, 'LinkedIn showed a security check');
+  await dash.bringToFront();
+  await dash.waitForSelector('[data-intent-status] [data-alert="linkedin"]');
+  assert.match(await dash.textContent('[data-alert="linkedin"]'), /LinkedIn paused: LinkedIn showed a security check/);
+  await dash.click('[data-act="intent-resume"][data-source="linkedin"]');
+  await waitFor(async () => !(await storage('alerts')).alerts.linkedin, 5000, 'LinkedIn resumed');
+  await lij.close();
+  await dash.waitForFunction(() => document.querySelectorAll('[data-intent-rows] .intent-card').length === 3, null, { timeout: 5000 });
+
+  /* --------------------------------- AI check: Gemini (or Claude) confirms or rules out each post */
+  await dash.click('[data-view="settings"]');
+  // Claude works too, when it is the only key.
+  await dash.fill('[name="anthropicKey"]', 'sk-ant-wrong');
+  await dash.click('[data-act="ai-test"]');
+  await dash.waitForFunction(() => /^Not working: Claude did not accept your API key \(401\)/.test(document.querySelector('[data-ai-test]').textContent));
+  await dash.fill('[name="anthropicKey"]', CLAUDE.key);
+  await dash.click('[data-act="ai-test"]');
+  await dash.waitForFunction(() => document.querySelector('[data-ai-test]').textContent === 'Working. Claude read a test post: a buyer, needs website, score 90.');
+  const call = CLAUDE.calls.at(-1);
+  assert.deepEqual([call.version, call.browser, call.model, call.effort, call.format], ['2026-10-21', 'true', 'claude-haiku-5-5', 'low', 'json_schema']);
+  // The free Google AI Studio key: used whenever it is filled in.
+  await dash.fill('[name="geminiKey"]', 'AIza-wrong');
+  await dash.click('[data-act="ai-test"]');
+  await dash.waitForFunction(() => /^Not working: Google did not accept your API key \(400\)/.test(document.querySelector('[data-ai-test]').textContent));
+  await dash.fill('[name="geminiKey"]', GEMINI.key);
+  await dash.click('[data-act="ai-test"]');
+  await dash.waitForFunction(() => document.querySelector('[data-ai-test]').textContent === 'Working. Gemini read a test post: a buyer, needs website, score 90.');
+  const gcall = GEMINI.calls.at(-1);
+  assert.deepEqual([gcall.key, gcall.inUrl, gcall.model, gcall.mime, gcall.schema, gcall.system], [GEMINI.key, false, 'gemini-flash-lite-latest', 'application/json', true, true]);
+  // Every post the keywords caught, read by Gemini.
+  await dash.click('[data-view="intent"]');
+  await dash.waitForSelector('[data-act="intent-ai-all"]');
+  assert.match(await dash.textContent('[data-intent-status]'), /AI check \(Gemini\) is on: 5 posts not checked yet/);
+  const before = GEMINI.calls.length;
+  const claudeBefore = CLAUDE.calls.length;
+  await dash.click('[data-act="intent-ai-all"]');
+  await waitFor(async () => (await dash.evaluate(() => LH.intentDb.all())).every((p) => p.verified), 30000, 'every post checked by the AI');
+  assert.equal(GEMINI.calls.length - before, 5, 'one call per post');
+  assert.equal(CLAUDE.calls.length, claudeBefore, 'Gemini is used when both keys are set');
+  // Keys never go into a backup file.
+  await dash.click('[data-view="settings"]');
+  const [backupDl] = await Promise.all([dash.waitForEvent('download'), dash.click('[data-act="backup"]')]);
+  const backup = JSON.parse(fs.readFileSync(await backupDl.path(), 'utf8'));
+  assert.deepEqual(['geminiKey', 'anthropicKey', 'igToken', 'queueKey'].map((k) => backup.settings[k]), ['', '', '', '']);
+  assert.ok(backup.leads.length > 0);
+  await dash.click('[data-view="intent"]');
+  const checked = Object.fromEntries((await dash.evaluate(() => LH.intentDb.all())).map((p) => [p.id, p]));
+  console.log('AI check:', JSON.stringify(Object.values(checked).map((p) => [p.id, p.notBuyer ? 'not a buyer' : 'buyer', p.score, p.summary])));
+  assert.deepEqual([checked['reddit:d1'].ai.business_type, checked['reddit:d1'].score, checked['reddit:d1'].summary], ['bakery', 90, 'A bakery owner in JLT wants a website.']);
+  assert.equal(checked['reddit:s1'].notBuyer, true, 'asking in general, not hiring anyone');
+  // Not buyers are hidden unless you ask for them.
+  await dash.waitForFunction(() => document.querySelectorAll('[data-intent-rows] .intent-card').length === 2);
+  assert.match(await dash.textContent('[data-intent-rows]'), /AI: buyer, urgent[\s\S]*A salon owner in Al Barsha needs a social media manager\./);
+  assert.match(await dash.textContent('[data-intent-rows]'), /salon · Al Barsha, Dubai · needs marketing/);
+  await dash.check('[data-intent-f="notBuyers"]');
+  await dash.waitForFunction(() => document.querySelectorAll('[data-intent-rows] .intent-card').length === 3);
+  assert.match(await dash.textContent('[data-intent-rows]'), /AI: not a buyer/);
+  if (SHOTS) await dash.screenshot({ path: `${SHOTS}/23-intent-ai.png` });
+  await dash.uncheck('[data-intent-f="notBuyers"]');
+  // New posts are checked as they come in.
+  await sw.evaluate(() => saveIntent([{ id: 'reddit:g1', source: 'reddit', place: 'r/dubai', url: 'https://www.reddit.com/r/dubai/comments/g1/x/', author: 'u/omar_fit', title: 'Need a website for my gym in Al Quoz', text: '', createdAt: Date.now() - 36e5 }], 'reddit'));
+  await waitFor(async () => (await dash.evaluate(() => LH.intentDb.get('reddit:g1'))).verified, 20000, 'the new post checked by itself');
+  // A wrong key pauses the checks with an alert. Nothing else runs until you fix it.
+  await sw.evaluate(async () => {
+    const { settings } = await chrome.storage.local.get('settings');
+    await chrome.storage.local.set({ settings: { ...settings, geminiKey: 'AIza-expired' } });
+  });
+  await sw.evaluate(() => handlers['ai:check']({ ids: ['reddit:d1'] }));
+  await waitFor(async () => !!((await storage('alerts')).alerts || {}).ai, 20000, 'AI check paused');
+  await dash.waitForSelector('[data-intent-status] [data-alert="ai"]');
+  assert.match(await dash.textContent('[data-alert="ai"]'), /AI check paused: Google did not accept your API key \(400\)/);
+  await sw.evaluate(async (key) => {
+    const { settings } = await chrome.storage.local.get('settings');
+    await chrome.storage.local.set({ settings: { ...settings, geminiKey: key } });
+  }, GEMINI.key);
+  await dash.click('[data-act="intent-resume"][data-source="ai"]');
+  await waitFor(async () => !((await storage('alerts')).alerts || {}).ai && !((await storage('aiQueue')).aiQueue || []).length, 20000, 'AI check resumed');
 
   // Popup renders stats.
   const popup = await ctx.newPage();
