@@ -41,6 +41,9 @@ FIELDS: Dict[str, List[str]] = {
     "notes": ["notes", "note", "comments", "comment", "remarks"],
     "segment": ["segment"],
     "status": ["status", "lead status", "stage"],
+    "meta_ads": ["meta ads", "meta ads status", "running meta ads", "facebook ads"],
+    "tags": ["tags", "labels"],
+    "campaign": ["campaign"],
 }
 # Rows already handled in Lead Hunter (or a CRM export) are left out: they replied, said no, or are clients.
 HANDLED_STATUS = re.compile(r"^(replied|meeting booked|meeting|won|client|customer|not interested|lost|skip|do not contact|dnc)$", re.I)
@@ -197,6 +200,9 @@ def clean_row(row: Dict[str, str], mapping: Dict[str, str]) -> Tuple[Optional[Di
         "source": get("source"),
         "notes": get("notes"),
         "segment": get("segment"),
+        "meta_ads": get("meta_ads"),
+        "tags": get("tags"),
+        "campaign": get("campaign"),
         "raw_json": json.dumps(row, ensure_ascii=False),
     }
     return lead, ""
@@ -210,12 +216,31 @@ def _existing_keys(con) -> Tuple[set, set]:
     return emails, keys
 
 
+def file_campaign(path: Path, mapping: Dict[str, str], chosen: str = "auto") -> str:
+    """website or ads. "auto": Lead Hunter's Meta ads export (a meta_ads column or a meta-ads file name) is ads."""
+    if chosen in config.CAMPAIGNS:
+        return chosen
+    if "meta_ads" in mapping or re.search(r"meta.?ads", path.name, re.I):
+        return "ads"
+    return "website"
+
+
+def row_campaign(value: str, default: str) -> str:
+    v = (value or "").strip().lower()
+    if v in ("ads", "meta", "meta ads", "facebook ads", "facebook"):
+        return "ads"
+    if v in ("website", "web", "site"):
+        return "website"
+    return default
+
+
 def import_file(con, path: Path, overrides: Optional[Dict[str, str]] = None, check_sites: bool = True,
-                log=print, move: bool = True) -> Dict:
+                log=print, move: bool = True, campaign: str = "auto") -> Dict:
     headers, rows = read_rows(path)
     if not rows:
         raise ValueError("%s has no rows (or no header row)." % path.name)
     mapping = map_columns(headers, overrides)
+    default_campaign = file_campaign(path, mapping, campaign)
     missing = [f for f in ("email", "business_name") if f not in mapping]
     if missing:
         nice = {"email": "email address", "business_name": "business name"}
@@ -224,7 +249,7 @@ def import_file(con, path: Path, overrides: Optional[Dict[str, str]] = None, che
             '    rizco import --map %s="Your Column Name"'
             % (path.name, " and the ".join(nice[m] for m in missing), ", ".join(h for h in headers if h), missing[0])
         )
-    log("\n%s: %d rows" % (path.name, len(rows)))
+    log("\n%s: %d rows (%s campaign)" % (path.name, len(rows), config.CAMPAIGNS[default_campaign]))
     log("  Columns used: " + ", ".join("%s <- %s" % (f, h) for f, h in mapping.items()))
 
     stats = Counter()
@@ -253,6 +278,7 @@ def import_file(con, path: Path, overrides: Optional[Dict[str, str]] = None, che
             continue
         seen_emails.add(lead["email"])
         seen_keys.update(keys)
+        lead["campaign"] = row_campaign(lead["campaign"], default_campaign)
         leads.append(lead)
 
     # MX records, many domains at once
@@ -275,8 +301,8 @@ def import_file(con, path: Path, overrides: Optional[Dict[str, str]] = None, che
         kept.append(lead)
 
     # Website checks for leads that might be segment C
-    to_check = [l for l in kept if l["website"] and (l["segment"] or "").upper() not in ("A", "B", "SKIP")
-                and not segment.is_new_business(l["source"], l["notes"])]
+    to_check = [l for l in kept if l["campaign"] == "website" and l["website"]
+                and (l["segment"] or "").upper() not in ("A", "B", "SKIP") and not segment.is_new_business(l["source"], l["notes"])]
     sites: Dict[str, Dict] = {}
     if to_check and check_sites:
         log("  Checking %d websites (about %d seconds)..." % (len(to_check), max(5, len(to_check) * 2)))
@@ -287,7 +313,10 @@ def import_file(con, path: Path, overrides: Optional[Dict[str, str]] = None, che
     now = clock.iso()
     for lead in kept:
         site = sites.get(lead["email"])
-        decision = segment.decide(lead, site if site else ({"state": "unchecked"} if lead["website"] else None))
+        if lead["campaign"] == "ads":
+            decision = segment.decide_ads(lead)
+        else:
+            decision = segment.decide(lead, site if site else ({"state": "unchecked"} if lead["website"] else None))
         lead.update(decision)
         stats["seg_" + lead["segment"]] += 1
         if lead["segment"] == "SKIP":
@@ -295,14 +324,14 @@ def import_file(con, path: Path, overrides: Optional[Dict[str, str]] = None, che
         con.execute(
             """INSERT OR IGNORE INTO leads(email, business_name, business, first_name, website, instagram, phone, niche, area,
                    address, source, notes, segment, segment_reason, observation, observation_kind, site_json,
-                   site_checked_at, mx_status, status, next_step, next_due, import_file, imported_at, raw_json)
-               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   site_checked_at, mx_status, status, next_step, next_due, import_file, imported_at, raw_json, campaign)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (lead["email"], lead["business_name"], lead["business"], lead["first_name"], lead["website"],
              lead["instagram"], lead["phone"], lead["niche"], lead["area"], lead["address"], lead["source"],
              lead["notes"], lead["segment"], lead["segment_reason"], lead.get("observation"),
              lead.get("observation_kind"), json.dumps(site) if site else None, site["checked_at"] if site else None,
              lead["mx_status"], "skipped" if lead["segment"] == "SKIP" else "queued", 0,
-             clock.today().isoformat(), path.name, now, lead["raw_json"]),
+             clock.today().isoformat(), path.name, now, lead["raw_json"], lead["campaign"]),
         )
     stats["imported"] = len(kept)
     db.log_event(con, "import", "%s: %d imported" % (path.name, len(kept)))
@@ -320,7 +349,7 @@ def import_file(con, path: Path, overrides: Optional[Dict[str, str]] = None, che
                 for row, why in rejected:
                     w.writerow([why] + [row.get(h, "") for h in headers])
     stats["rows"] = len(rows)
-    return {"file": path.name, "stats": stats, "rejected": rejected}
+    return {"file": path.name, "stats": stats, "rejected": rejected, "campaign": default_campaign}
 
 
 def summary_lines(result: Dict) -> List[str]:
@@ -329,8 +358,9 @@ def summary_lines(result: Dict) -> List[str]:
         "  Imported: %d   Skipped: %d duplicates, %d on the suppression list, %d invalid%s"
         % (s["imported"], s["duplicate"], s["suppressed"], s["invalid"],
            ", %d already handled in Lead Hunter" % s["handled"] if s["handled"] else ""),
-        "  Segments: A new business %d | B no website %d | C outdated website %d | Skip %d"
-        % (s["seg_A"], s["seg_B"], s["seg_C"], s["seg_SKIP"]),
+        ("  Segments: A new business %d | B no website %d | C outdated website %d | Skip %d"
+         % (s["seg_A"], s["seg_B"], s["seg_C"], s["seg_SKIP"])) if result.get("campaign") != "ads" else
+        ("  Meta ads: no ads running %d | not checked %d | already running ads, skipped %d" % (s["seg_N"], s["seg_G"], s["seg_SKIP"])),
     ]
     skips = [(k[5:], v) for k, v in s.items() if k.startswith("skip:")]
     if skips:
@@ -357,17 +387,18 @@ def import_lock():
             fcntl.flock(f, fcntl.LOCK_UN)
 
 
-def import_pending(con, log=print, overrides: Optional[Dict[str, str]] = None, check_sites: bool = True) -> List[Dict]:
+def import_pending(con, log=print, overrides: Optional[Dict[str, str]] = None, check_sites: bool = True,
+                   campaign: str = "auto") -> List[Dict]:
     """Imports every file waiting in leads/inbox/. Used by the daily jobs, so you only drop files in."""
     with import_lock():
-        return _import_pending(con, log, overrides, check_sites)
+        return _import_pending(con, log, overrides, check_sites, campaign)
 
 
-def _import_pending(con, log, overrides, check_sites) -> List[Dict]:
+def _import_pending(con, log, overrides, check_sites, campaign="auto") -> List[Dict]:
     results = []
     for path in pending_files():
         try:
-            results.append(import_file(con, path, overrides, check_sites=check_sites, log=log))
+            results.append(import_file(con, path, overrides, check_sites=check_sites, log=log, campaign=campaign))
         except ValueError as e:
             log(str(e))
             bad = config.leads_processed() / ("could-not-import_" + path.name)

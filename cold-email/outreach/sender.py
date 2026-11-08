@@ -306,7 +306,7 @@ class SendRun:
             return 0
 
         day = today if schedule.is_send_day(today) else clock.next_weekday(today)
-        plan = schedule.plan(con, s, day, inboxes, self.limit)
+        plan = schedule.plan(con, s, day, inboxes, self.limit, preview=self.dry)
         if self.dry:
             return self.print_plan(plan, day)
 

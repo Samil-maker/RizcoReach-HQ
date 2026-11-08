@@ -77,7 +77,8 @@ QUOTE_STARTS = [
 OUR_LINES = re.compile(
     r"^\s*(Not relevant\? Just reply no|Had a look at the .* website|I was looking up .* and couldn't find|"
     r"Saw .* just opened|I build websites for|I redesign websites for|just bringing this back up|Last one from me|"
-    r"Hi there just bringing|WhatsApp \+)",
+    r"Hi there just bringing|WhatsApp \+|I was looking at .* (ads|Instagram)|I came across .* Facebook|"
+    r"We run Facebook and Instagram ads|No big setup fee)",
     re.I | re.M,
 )
 

@@ -1,6 +1,6 @@
 """Free warm up: your own inboxes email each other the way people do.
 
-A brand new inbox spends its first 14 days only warming up, then starts cold email at 5 a day, and
+A brand new inbox spends its first 14 days only warming up, then starts cold email at its daily limit, and
 keeps a little warm up going after that. Every inbox takes part once you have two or more.
 
 Every hour (the hourly job), between 9:00 and 18:00 Dubai time:

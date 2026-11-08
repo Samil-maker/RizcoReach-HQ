@@ -141,7 +141,7 @@ def connect(inbox: config.Inbox) -> bool:
     return False
 
 
-def add_inbox_from_form(email: str, password: str, brand_new: bool, provider: str = "") -> Tuple[bool, str]:
+def add_inbox_from_form(email: str, password: str, brand_new: bool, provider: str = "", campaign: str = "website") -> Tuple[bool, str]:
     """The dashboard's "Add inbox" form: checks everything first and only saves an inbox that works."""
     con = db.connect()
     env = read_env()
@@ -179,15 +179,16 @@ def add_inbox_from_form(email: str, password: str, brand_new: bool, provider: st
     except Exception as e:  # noqa: BLE001
         return False, "Sending works but reading replies didn't: %s" % e
     rep = dnscheck.check_inbox(inbox)
-    write_env({key + "_EMAIL": email, key + "_PROVIDER": provider, key + "_APP_PASSWORD": password})
-    note = ""
+    campaign = campaign if campaign in ("website", "ads", "both") else "website"
+    write_env({key + "_EMAIL": email, key + "_PROVIDER": provider, key + "_APP_PASSWORD": password, key + "_CAMPAIGN": campaign})
+    note = "" if campaign == "website" else (" It sends %s emails." % ("Meta ads" if campaign == "ads" else "both website and Meta ads"))
     if not rep.can_send:
         note = " Its domain doesn't pass SPF and DKIM yet, so it won't send until it does (run rizco check for the records)."
     if brand_new:
         db.set_state(con, "warmup_start:inbox%d" % slot, clock.today().isoformat())
         ends = clock.next_weekday(clock.today() + timedelta(days=schedule.WARMUP_DAYS))
-        return True, "Added %s. It warms up for 14 days, then cold emails start on %s at 5 a day.%s" % (email, clock.nice(ends), note)
-    return True, "Added %s. Cold emails start on the next weekday at 5 a day.%s" % (email, note)
+        return True, "Added %s. It warms up for 14 days, then sends %d a day from %s.%s" % (email, inbox.daily_limit, clock.nice(ends), note)
+    return True, "Added %s. It sends %d a day from the next weekday.%s" % (email, inbox.daily_limit, note)
 
 
 def add_inbox() -> int:
@@ -201,7 +202,7 @@ def add_inbox() -> int:
         print("All 9 inbox slots in .env are used.")
         return 1
     bold("Add a sending inbox")
-    print("Each extra inbox adds up to %d emails a day (30 with your own domain), after its warm up." % config.FREE_INBOX_CAP)
+    print("Each extra inbox adds %d emails a day (a brand new one after 14 days of warm up)." % s.daily_limit)
     while True:
         email = ask("The new email address").lower()
         if config.EMAIL_RE.match(email) and email not in taken and email != env.get("TEST_EMAIL_TO", "").lower():
@@ -214,10 +215,14 @@ def add_inbox() -> int:
             if provider in config.PROVIDERS:
                 break
     key = "INBOX%d" % slot
-    write_env({key + "_EMAIL": email, key + "_PROVIDER": provider})
+    while True:
+        campaign = ask("Which emails should it send? website, ads (Meta ads) or both", "website").lower()
+        if campaign in ("website", "ads", "both"):
+            break
+    write_env({key + "_EMAIL": email, key + "_PROVIDER": provider, key + "_CAMPAIGN": campaign})
     inbox = settings_from(read_env()).inbox("inbox%d" % slot)
     if not connect(inbox):
-        write_env({key + "_EMAIL": "", key + "_PROVIDER": "", key + "_APP_PASSWORD": ""})
+        write_env({key + "_EMAIL": "", key + "_PROVIDER": "", key + "_APP_PASSWORD": "", key + "_CAMPAIGN": ""})
         return 1
     inbox = settings_from(read_env()).inbox("inbox%d" % slot)
     try:
@@ -239,9 +244,9 @@ def add_inbox() -> int:
         db.set_state(con, "warmup_start:inbox%d" % slot, clock.today().isoformat())
         ends = clock.next_weekday(clock.today() + timedelta(days=schedule.WARMUP_DAYS))
         print("\nAdded. %s warms up for 14 days: it swaps a few normal emails a day with your other inboxes." % email)
-        print("Cold emails from it start on %s at 5 a day and grow to %d over 4 weeks." % (clock.nice(ends), schedule._cap_for_week(inbox, 99)))
+        print("Cold emails from it start on %s, %d a day." % (clock.nice(ends), inbox.daily_limit))
     else:
-        print("\nAdded. %s starts cold emails on the next weekday at 5 a day, growing to %d over 4 weeks." % (email, schedule._cap_for_week(inbox, 99)))
+        print("\nAdded. %s sends %d cold emails a day from the next weekday." % (email, inbox.daily_limit))
     s = settings_from(read_env())
     f = schedule.forecast(con, s.inboxes)
     print("\nAll your inboxes together:")
@@ -348,8 +353,8 @@ def run(again: bool = False) -> int:
         print("Run setup again in a minute. If it keeps failing, send Claude the line above.")
         return 1
     if inbox.is_free:
-        print("Note: %s is a free Gmail, which spam filters trust less for cold email, so it never sends more than "
-              "%d a day. It starts at 5 a day and grows over 4 weeks." % (sender_email, config.FREE_INBOX_CAP))
+        print("Note: %s is a free Gmail, which spam filters trust less for cold email. It sends %d a day. The automatic "
+              "pauses on bounces, spam complaints and refusals protect it." % (sender_email, inbox.daily_limit))
 
     # ------------------------------------------------------------------ 4. leads and the test email
     bold("4 of 5  Leads and the test email")
@@ -403,7 +408,7 @@ def run(again: bool = False) -> int:
                 db.set_state(con, "approved", {"at": clock.iso(), "test": db.get_state(con, "test_email")})
                 db.log_event(con, "approved", "approved in setup after test email to %s" % test_to)
                 approved = True
-                print("Approved. Real sending is switched on: 5 emails a day in week 1.")
+                print("Approved. Real sending is switched on: %d emails a day from each inbox." % inbox.daily_limit)
         else:
             print("No test sent. Nothing goes to businesses until you send one and approve it (run setup again).")
 

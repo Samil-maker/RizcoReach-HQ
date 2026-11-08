@@ -113,6 +113,7 @@ def test_add_inbox(project, wizard, smtp, capsys):
     setup_wizard.run()
     answers += ["samilatrizcoreach@gmail.com",   # already sending: refused
                 "rizco.two@gmail.com",           # the new one
+                "",                              # sends website emails (the default)
                 "yes"]                           # brand new account
     pw += ["abcdefghijklmnop"]
     assert setup_wizard.add_inbox() == 0
@@ -121,7 +122,8 @@ def test_add_inbox(project, wizard, smtp, capsys):
     assert env["INBOX2_APP_PASSWORD"] == "abcdefghijklmnop" and env["INBOX1_APP_PASSWORD"] == "abcdefghijklmnop"
     assert db.get_state(db.connect(), "warmup_start:inbox2") == clock.today().isoformat()
     out = capsys.readouterr().out
-    assert "warms up for 14 days" in out and "50 a day: needs 1 more inbox" in out
+    assert "warms up for 14 days" in out and "100 a day: Monday 23 November" in out
+    assert env["INBOX2_CAMPAIGN"] == "website"
 
 
 def test_two_imports_at_once_take_turns(project, con, fake_web):
