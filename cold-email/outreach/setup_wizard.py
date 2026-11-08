@@ -90,6 +90,117 @@ def desktop_shortcuts() -> Optional[Path]:
     return desk / "RizcoReach Leads" if ok else None
 
 
+def connect(inbox: config.Inbox) -> bool:
+    """Gets a working App Password for this inbox (keeps one that already works) and saves it in .env."""
+    if inbox.password:
+        try:
+            mailer.login_test(inbox)
+            print("Connected: the App Password you gave before still works.")
+            return True
+        except mailer.SendError as e:
+            if e.kind == "network":
+                print("No internet connection right now (%s). Connect to the internet and try again." % e)
+                return False
+    if inbox.is_google:
+        url = "https://myaccount.google.com/apppasswords?authuser=%s" % inbox.email
+        print("This is the one thing only you can do: give this program an App Password for %s." % inbox.email)
+        print("An App Password is a separate 16 letter password that only works for email. Your real password stays private.\n")
+        print("I'm opening the page in your browser now. On that page:")
+        print("  1. Check the top right shows %s. If not, click the round picture and switch to it." % inbox.email)
+        print("  2. If it says App Passwords are not available, turn on 2-Step Verification first:")
+        print("     https://myaccount.google.com/signinoptions/twosv?authuser=%s  then open the first page again." % inbox.email)
+        print("  3. Type RizcoReach as the name and click Create.")
+        print("  4. Copy the 16 letters Google shows, come back to this window and paste them below.\n")
+        try:
+            webbrowser.open(url)
+        except Exception:  # noqa: BLE001
+            print("Open this page yourself: " + url)
+    else:
+        print("Paste the password for %s. With two factor sign in that is an App Password from your email provider's "
+              "security settings (Zoho: accounts.zoho.com > Security > App Passwords)." % inbox.email)
+    for _ in range(6):
+        pw = re.sub(r"\s", "", getpass.getpass("Paste the App Password and press Enter (nothing shows while you paste, that's normal): "))
+        if not pw:
+            continue
+        if inbox.is_google and not re.fullmatch(r"[a-zA-Z]{16}", pw):
+            print("That's not it: an App Password is exactly 16 letters (Google shows them in 4 groups of 4). Try again.")
+            continue
+        inbox.password = pw
+        try:
+            mailer.login_test(inbox)
+        except mailer.SendError as e:
+            if e.kind == "auth":
+                print("It wasn't accepted. Make sure you made it while signed in as %s, then paste it again." % inbox.email)
+                continue
+            print("Couldn't reach the mail server (%s). Check the internet connection and try again." % e)
+            continue
+        write_env({"%s_APP_PASSWORD" % inbox.key.upper(): pw})
+        print("Connected. The App Password works.")
+        return True
+    print("\nStopping here for now. Run this again once you have the App Password.")
+    return False
+
+
+def add_inbox() -> int:
+    """rizco add-inbox: one more sending inbox. Brand new ones warm up for 14 days first."""
+    con = db.connect()
+    env = read_env()
+    s = settings_from(env)
+    taken = {i.email for i in s.inboxes}
+    slot = next((n for n in range(1, 10) if not env.get("INBOX%d_EMAIL" % n)), None)
+    if slot is None:
+        print("All 9 inbox slots in .env are used.")
+        return 1
+    bold("Add a sending inbox")
+    print("Each extra inbox adds up to %d emails a day (30 with your own domain), after its warm up." % config.FREE_INBOX_CAP)
+    while True:
+        email = ask("The new email address").lower()
+        if config.EMAIL_RE.match(email) and email not in taken and email != env.get("TEST_EMAIL_TO", "").lower():
+            break
+        print("Use a new address that isn't already sending (and isn't your test address).")
+    provider = config.guess_provider(email)
+    if provider == "custom":
+        while True:
+            provider = ask("Which provider is it? workspace (Google), zoho, zoho-eu or zoho-in", "workspace").lower()
+            if provider in config.PROVIDERS:
+                break
+    key = "INBOX%d" % slot
+    write_env({key + "_EMAIL": email, key + "_PROVIDER": provider})
+    inbox = settings_from(read_env()).inbox("inbox%d" % slot)
+    if not connect(inbox):
+        write_env({key + "_EMAIL": "", key + "_PROVIDER": "", key + "_APP_PASSWORD": ""})
+        return 1
+    inbox = settings_from(read_env()).inbox("inbox%d" % slot)
+    try:
+        from .mailbox import login_test
+
+        login_test(inbox)
+    except Exception as e:  # noqa: BLE001
+        print("Reading its replies didn't work (%s). Run  rizco add-inbox  again in a minute." % e)
+        write_env({key + "_EMAIL": "", key + "_PROVIDER": "", key + "_APP_PASSWORD": ""})
+        return 1
+    rep = dnscheck.check_inbox(inbox)
+    if not rep.can_send:
+        print("Saved, but its domain doesn't pass SPF and DKIM yet, so it won't send until it does:")
+        for c in (rep.spf, rep.dkim):
+            for line in c.fix:
+                print("  " + line)
+    new = yes("Is this a brand new account (made in the last month)?")
+    if new:
+        db.set_state(con, "warmup_start:inbox%d" % slot, clock.today().isoformat())
+        ends = clock.next_weekday(clock.today() + timedelta(days=schedule.WARMUP_DAYS))
+        print("\nAdded. %s warms up for 14 days: it swaps a few normal emails a day with your other inboxes." % email)
+        print("Cold emails from it start on %s at 5 a day and grow to %d over 4 weeks." % (clock.nice(ends), schedule._cap_for_week(inbox, 99)))
+    else:
+        print("\nAdded. %s starts cold emails on the next weekday at 5 a day, growing to %d over 4 weeks." % (email, schedule._cap_for_week(inbox, 99)))
+    s = settings_from(read_env())
+    f = schedule.forecast(con, s.inboxes)
+    print("\nAll your inboxes together:")
+    for target, when in f["reach"].items():
+        print("  %d a day: %s" % (target, clock.nice(when) if hasattr(when, "day") else when))
+    return 0
+
+
 def already_set_up(con, env: Dict[str, str]) -> bool:
     """True when setup was finished before and Gmail still accepts the App Password."""
     if not (env.get("INBOX1_APP_PASSWORD") and env.get("TEST_EMAIL_TO") and db.get_state(con, "approved")):
@@ -141,55 +252,8 @@ def run(again: bool = False) -> int:
     # ------------------------------------------------------------------ 2. App Password
     bold("2 of 5  Connect %s" % sender_email)
     s = settings_from(env)
-    inbox = s.inboxes[0]
-    works = False
-    if inbox.password:
-        try:
-            mailer.login_test(inbox)
-            works = True
-            print("Connected: the App Password you gave before still works.")
-        except mailer.SendError as e:
-            if e.kind == "network":
-                print("No internet connection to Gmail right now (%s). Connect to the internet and run setup again." % e)
-                return 1
-    if not works:
-        url = "https://myaccount.google.com/apppasswords?authuser=%s" % sender_email
-        print("This is the one thing only you can do: give this program an App Password for %s." % sender_email)
-        print("An App Password is a separate 16 letter password that only works for email. Your real password stays private.\n")
-        print("I'm opening the page in your browser now. On that page:")
-        print("  1. Check the top right shows %s. If not, click the round picture and switch to it." % sender_email)
-        print("  2. If it says App Passwords are not available, turn on 2-Step Verification first:")
-        print("     https://myaccount.google.com/signinoptions/twosv?authuser=%s  then open the first page again." % sender_email)
-        print("  3. Type RizcoReach as the name and click Create.")
-        print("  4. Copy the 16 letters Google shows, come back to this window and paste them below.\n")
-        try:
-            webbrowser.open(url)
-        except Exception:  # noqa: BLE001
-            print("Open this page yourself: " + url)
-        for _ in range(6):
-            pw = getpass.getpass("Paste the App Password and press Enter (nothing shows while you paste, that's normal): ")
-            pw = re.sub(r"\s", "", pw)
-            if not pw:
-                continue
-            if inbox.is_google and not re.fullmatch(r"[a-zA-Z]{16}", pw):
-                print("That's not it: an App Password is exactly 16 letters (Google shows them in 4 groups of 4). Try again.")
-                continue
-            inbox.password = pw
-            try:
-                mailer.login_test(inbox)
-            except mailer.SendError as e:
-                if e.kind == "auth":
-                    print("Gmail didn't accept it. Make sure you made it while signed in as %s, then paste it again." % sender_email)
-                    continue
-                print("Couldn't reach Gmail (%s). Check the internet connection and try again." % e)
-                continue
-            write_env({"INBOX1_APP_PASSWORD": pw})
-            print("Connected. Gmail accepted the App Password.")
-            works = True
-            break
-        if not works:
-            print("\nStopping here for now. Run the same setup line again once you have the App Password.")
-            return 1
+    if not connect(s.inboxes[0]):
+        return 1
     env = read_env()
     s = settings_from(env)
     inbox = s.inboxes[0]

@@ -74,6 +74,17 @@ CREATE TABLE IF NOT EXISTS events (
 );
 
 CREATE TABLE IF NOT EXISTS state (key TEXT PRIMARY KEY, value TEXT);
+
+CREATE TABLE IF NOT EXISTS warmup (
+    id INTEGER PRIMARY KEY,
+    thread TEXT, depth INTEGER,
+    from_inbox TEXT, to_inbox TEXT,
+    message_id TEXT UNIQUE, refs TEXT,
+    subject TEXT, body TEXT,
+    sent_at TEXT, sent_date TEXT,
+    landed TEXT,
+    processed_at TEXT
+);
 """
 
 

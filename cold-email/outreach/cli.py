@@ -379,6 +379,9 @@ def cmd_status(args) -> int:
     for i in s.inboxes:
         lim = schedule.limits(con, i, today)
         print("%s: %s. Sent today %d." % (i.email, lim["why"], lim["sent"]))
+    f = schedule.forecast(con, s.inboxes)
+    print("Together: up to %d a day. %s" % (f["today"], ", ".join(
+        "%d a day: %s" % (t, clock.nice(d) if hasattr(d, "day") else d) for t, d in f["reach"].items())))
     for row in con.execute("SELECT status, COUNT(*) AS n FROM leads GROUP BY status ORDER BY n DESC"):
         print("  %-11s %d" % (row["status"], row["n"]))
     checked = db.get_state(con, "replies_checked")
@@ -529,6 +532,12 @@ def cmd_auto(args) -> int:
                 launchd.notify("RizcoReach: %d new leads imported" % st["imported"],
                                "A %d, B %d, C %d, skipped %d. They go out from the next 9:00 run."
                                % (st["seg_A"], st["seg_B"], st["seg_C"], st["seg_SKIP"]))
+        from . import warmup
+
+        try:
+            warmup.run(con, s, log=sender.log)
+        except Exception as e:  # noqa: BLE001 - the warm up never stops replies or imports
+            sender.log("Warm up skipped this hour: %s" % e)
         if s.problems or not any(i.has_imap for i in s.inboxes):
             sender.log("Settings incomplete, not checking replies: " + " ".join(s.problems))
         elif sender.Lock.held("send"):
@@ -574,6 +583,16 @@ def cmd_reports(args) -> int:
     return _open_folder(config.reports_dir(), "Your reports folder")
 
 
+def cmd_add_inbox(args) -> int:
+    from . import setup_wizard
+
+    try:
+        return setup_wizard.add_inbox()
+    except KeyboardInterrupt:
+        print("\nStopped. Nothing was added.")
+        return 1
+
+
 def cmd_update(args) -> int:
     from . import updater
 
@@ -588,6 +607,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="command")
     sp = sub.add_parser("setup", help="the one time setup, as a few questions (safe to run again)")
     sp.add_argument("--again", action="store_true", help="ask the questions again even if everything works")
+    sub.add_parser("add-inbox", help="add another sending inbox (new ones warm up for 14 days first)")
     sub.add_parser("leads", help="open the folder where you drop lead files")
     sub.add_parser("reports", help="open the folder with the daily reports")
     sub.add_parser("update", help="get the latest version now (it also updates itself once a day)")
@@ -625,7 +645,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 COMMANDS = {
-    "setup": cmd_setup, "auto": cmd_auto, "leads": cmd_leads, "reports": cmd_reports, "update": cmd_update,
+    "setup": cmd_setup, "auto": cmd_auto, "add-inbox": cmd_add_inbox, "leads": cmd_leads, "reports": cmd_reports, "update": cmd_update,
     "check": cmd_check, "import": cmd_import, "preview": cmd_preview, "test-email": cmd_test_email,
     "approve": cmd_approve, "send": cmd_send, "replies": cmd_replies, "report": cmd_report, "status": cmd_status,
     "resume": cmd_resume, "mark": cmd_mark, "suppress": cmd_suppress, "launchd": cmd_launchd,

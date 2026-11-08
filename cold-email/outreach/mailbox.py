@@ -91,9 +91,39 @@ class Mailbox:
                 return names[guess.lower()]
         return None
 
-    def select(self, folder: str) -> bool:
-        typ, _ = self.conn.select(_quote(folder), readonly=True)
+    def select(self, folder: str, readonly: bool = True) -> bool:
+        typ, _ = self.conn.select(_quote(folder), readonly=readonly)
         return typ == "OK"
+
+    @property
+    def is_gmail(self) -> bool:
+        return self.inbox.imap_host.endswith("gmail.com")
+
+    def ensure_folder(self, name: str) -> str:
+        if not any(n == name for n, _ in self.folders()):
+            self.conn.create(_quote(name))
+            self._folders = None
+        return name
+
+    def add_flags(self, uid: bytes, flags: str) -> None:
+        """For example "\\Seen" (opened) or "\\Flagged" (starred). Needs select(..., readonly=False)."""
+        self.conn.uid("STORE", uid.decode(), "+FLAGS", "(%s)" % flags)
+
+    def mark_important(self, uid: bytes) -> None:
+        if self.is_gmail:
+            self.conn.uid("STORE", uid.decode(), "+X-GM-LABELS", "(\\Important)")
+
+    def move(self, uid: bytes, folder: str) -> bool:
+        """Moves a message to another folder. Out of Spam this counts as "not spam"."""
+        typ, _ = self.conn.uid("MOVE", uid.decode(), _quote(folder))
+        if typ == "OK":
+            return True
+        typ, _ = self.conn.uid("COPY", uid.decode(), _quote(folder))
+        if typ != "OK":
+            return False
+        self.conn.uid("STORE", uid.decode(), "+FLAGS", "(\\Deleted)")
+        self.conn.expunge()
+        return True
 
     def uidvalidity(self) -> str:
         """Changes if the server renumbers the folder (then we start that folder over)."""

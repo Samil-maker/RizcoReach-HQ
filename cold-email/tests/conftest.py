@@ -116,10 +116,11 @@ class NoMailbox:
 
 @pytest.fixture(autouse=True)
 def no_network_mail(monkeypatch):
-    from outreach import mailbox, replies
+    from outreach import mailbox, replies, warmup
 
     monkeypatch.setattr(mailbox, "Mailbox", NoMailbox)
     monkeypatch.setattr(replies, "Mailbox", NoMailbox)
+    monkeypatch.setattr(warmup, "Mailbox", NoMailbox)
     calls = []
     monkeypatch.setattr(replies, "check_inbox", lambda con, s, inbox, log=print: calls.append(inbox.key) or [])
     return calls
