@@ -84,19 +84,13 @@ def test_xlsx_and_missing_columns(project, con, fake_web):
         assert "--map email=" in str(e)
 
 
-def test_warm_up_limits(project, con, settings):
+def test_daily_limits(project, con, settings):
     inbox = settings.inboxes[0]
-    assert inbox.is_free
     day = datetime(2026, 11, 9).date()
-    assert schedule.limits(con, inbox, day)["cap"] == 5
-    con.execute("INSERT INTO messages(inbox, kind, step, status, sent_date, to_email) VALUES('inbox1','campaign',0,'sent','2026-10-01','x@y.ae')")
-    assert schedule.week_number(con, "inbox1", day) == 6
-    assert schedule.limits(con, inbox, day)["cap"] == 20  # 30 in week 5+, but a free gmail never goes over 20
-    workspace = config.load_settings(dict(ENV, INBOX1_EMAIL="samil@rizcoreach-mail.com", INBOX1_PROVIDER="workspace"))
-    assert schedule.limits(con, workspace.inboxes[0], day)["cap"] == 30
-    asks_more = config.load_settings(dict(ENV, INBOX1_DAILY_CAP="200")).inboxes[0]
-    lim = schedule.limits(con, asks_more, datetime(2026, 10, 2).date())
-    assert lim["cap"] == 5 and "warm up limit wins" in lim["why"]
+    assert schedule.limits(con, inbox, day)["cap"] == 50  # your setting: 50 a day per inbox from day one
+    assert schedule.limits(con, config.load_settings(dict(ENV, INBOX1_DAILY_CAP="20")).inboxes[0], day)["cap"] == 20
+    assert schedule.limits(con, config.load_settings(dict(ENV, DAILY_LIMIT="80")).inboxes[0], day)["cap"] == 80
+    assert schedule.limits(con, config.load_settings(dict(ENV, DAILY_LIMIT="500")).inboxes[0], day)["cap"] == 100
 
 
 def run_day(con, settings, fake_clock, when):
@@ -123,7 +117,7 @@ def test_send_day_respects_limits_windows_and_gaps(project, con, settings, smtp,
     assert sent == 0, "nothing is sent before approval"
     approve(con)
     sent = run_day(con, settings, fake_clock, datetime(2026, 11, 9, 9, 0, tzinfo=clock.TZ))
-    assert sent == 5 and len(smtp.outbox) == 5  # week 1
+    assert sent == 12 and len(smtp.outbox) == 12  # all 12 leads fit in today's 50
     assert len(no_network_mail) >= 2  # replies were checked before sending and at the end of the day
     times = [clock.parse(r["sent_at"]) for r in con.execute("SELECT sent_at FROM messages ORDER BY id")]
     assert all(clock.at(times[0].date(), 9) <= t <= clock.at(times[0].date(), 17, 46) for t in times)
@@ -156,7 +150,8 @@ def test_follow_ups_go_first_and_thread(project, con, settings, smtp, dns_pass, 
     smtp.outbox.clear()
     run_day(con, settings, fake_clock, datetime(2026, 11, 12, 9, 0, tzinfo=clock.TZ))  # Thu, day 3: follow ups due
     subjects = [m["Subject"] for m in smtp.outbox]
-    assert len(subjects) == 5 and all(s.startswith("Re: Shop") for s in subjects), subjects  # follow ups use the whole limit
+    assert len(subjects) == 10 and all(x.startswith("Re: Shop") for x in subjects[:5]), subjects  # follow ups first
+    assert not any(x.startswith("Re:") for x in subjects[5:])
     fu = smtp.outbox[0]
     first = con.execute("SELECT message_id FROM messages WHERE step=0 AND to_email=?", (fu["To"],)).fetchone()[0]
     assert fu["In-Reply-To"] == first and first in fu["References"]
@@ -166,8 +161,8 @@ def test_follow_ups_go_first_and_thread(project, con, settings, smtp, dns_pass, 
     assert lead["next_step"] == 2 and lead["next_due"] == "2026-11-16"   # day 7 is Monday the 16th
     smtp.outbox.clear()
     run_day(con, settings, fake_clock, datetime(2026, 11, 16, 9, 0, tzinfo=clock.TZ))  # day 7: follow up 2
-    texts = [m.get_content() for m in smtp.outbox if m["Subject"].startswith("Re:")]
-    assert texts and all("Last one from me" in t for t in texts)
+    texts = [m.get_content() for m in smtp.outbox if m["To"].startswith("owner")]
+    assert len(texts) == 5 and all("Last one from me" in t for t in texts)
     assert con.execute("SELECT COUNT(*) FROM leads WHERE status='done'").fetchone()[0] == len(texts)
 
 
@@ -273,7 +268,7 @@ def test_two_inboxes_share_leads(project, con, smtp, dns_pass, fake_clock):
     add_leads(con, 20)
     run_day(con, s, fake_clock, datetime(2026, 11, 9, 9, 0, tzinfo=clock.TZ))
     by_inbox = dict(con.execute("SELECT inbox, COUNT(*) FROM messages GROUP BY inbox").fetchall())
-    assert by_inbox == {"inbox1": 5, "inbox2": 5}
+    assert by_inbox == {"inbox1": 10, "inbox2": 10}
     senders = [m["From"] for m in smtp.outbox]
     assert senders[0] != senders[1]  # they take turns
 
@@ -298,17 +293,13 @@ def test_weekly_report(project, con, settings, smtp, dns_pass, fake_clock):
     assert "| samilatrizcoreach@gmail.com |" in text
 
 
-def test_fifty_a_day_across_three_inboxes_all_go_out_by_6pm(project, con, smtp, dns_pass, fake_clock):
+def test_fifty_a_day_from_each_inbox_all_go_out_by_6pm(project, con, smtp, dns_pass, fake_clock):
     (project / ".env").write_text("# test\n")
-    env = dict(ENV, INBOX2_EMAIL="rizco.two@gmail.com", INBOX2_APP_PASSWORD="abcdefghijklmnop",
-               INBOX3_EMAIL="rizco.three@gmail.com", INBOX3_APP_PASSWORD="abcdefghijklmnop")
-    s = config.load_settings(env)
-    for key in ("inbox1", "inbox2", "inbox3"):  # all three past their warm up: 20 a day each
-        con.execute("INSERT INTO messages(inbox, kind, step, status, sent_date, to_email) VALUES(?, 'campaign', 0, 'sent', '2026-10-01', 'x@y.ae')", (key,))
+    s = config.load_settings(dict(ENV, INBOX2_EMAIL="rizco.two@gmail.com", INBOX2_APP_PASSWORD="abcdefghijklmnop"))
     approve(con)
-    add_leads(con, 70)
+    add_leads(con, 130)
     sent = run_day(con, s, fake_clock, datetime(2026, 11, 9, 9, 0, tzinfo=clock.TZ))
-    assert sent == 60
+    assert sent == 100
     rows = con.execute("SELECT inbox, sent_at FROM messages WHERE sent_date='2026-11-09' ORDER BY sent_at").fetchall()
     times = [clock.parse(r["sent_at"]) for r in rows]
     assert times[-1] <= clock.at(times[0].date(), 18) and times[0] >= clock.at(times[0].date(), 9)
@@ -319,18 +310,18 @@ def test_fifty_a_day_across_three_inboxes_all_go_out_by_6pm(project, con, smtp, 
     for r in rows:
         by_inbox.setdefault(r["inbox"], []).append(clock.parse(r["sent_at"]))
     for key, ts in by_inbox.items():
-        assert len(ts) == 20 and all((b - a).total_seconds() >= 180 for a, b in zip(ts, ts[1:])), key
+        assert len(ts) == 50 and all((b - a).total_seconds() >= 180 for a, b in zip(ts, ts[1:])), key
 
 
 def test_late_start_catches_up_without_bursts(project, con, settings, smtp, dns_pass, fake_clock):
     con.execute("INSERT INTO messages(inbox, kind, step, status, sent_date, to_email) VALUES('inbox1', 'campaign', 0, 'sent', '2026-10-01', 'x@y.ae')")
     approve(con)
-    add_leads(con, 25)
+    add_leads(con, 60)
     sent = run_day(con, settings, fake_clock, datetime(2026, 11, 9, 16, 30, tzinfo=clock.TZ))  # Mac woke at 16:30
     times = [clock.parse(r[0]) for r in con.execute("SELECT sent_at FROM messages WHERE sent_date='2026-11-09' ORDER BY sent_at")]
-    assert 0 < sent < 20 and times[-1] < clock.at(times[0].date(), 18)
+    assert 0 < sent < 50 and times[-1] < clock.at(times[0].date(), 18)
     assert all((b - a).total_seconds() >= 180 for a, b in zip(times, times[1:]))
-    assert con.execute("SELECT COUNT(*) FROM leads WHERE status='queued'").fetchone()[0] == 25 - sent  # the rest wait
+    assert con.execute("SELECT COUNT(*) FROM leads WHERE status='queued'").fetchone()[0] == 60 - sent  # the rest wait
 
 
 def test_warming_inbox_sends_no_cold_email_and_forecast(project, con, fake_clock):
@@ -341,14 +332,10 @@ def test_warming_inbox_sends_no_cold_email_and_forecast(project, con, fake_clock
     db.set_state(con, "warmup_start:inbox2", "2026-11-09")
     assert schedule.limits(con, two, clock.today())["cap"] == 0
     assert "warming up, day 1 of 14" in schedule.limits(con, two, clock.today())["why"]
-    assert schedule.cap_on(con, two, datetime(2026, 11, 23).date()) == 5    # first weekday after 14 days
-    assert schedule.cap_on(con, one, datetime(2026, 11, 9).date()) == 5
-    f = schedule.forecast(con, [one, two])
-    assert f["today"] == 5 and f["full"] == 40 and f["reach"][100] == "needs 3 more inboxes"
-    assert f["reach"][50] == "needs 1 more inbox"
-    s3 = config.load_settings(dict(ENV, INBOX2_EMAIL="rizco.two@gmail.com", INBOX2_APP_PASSWORD="x",
-                                   INBOX3_EMAIL="rizco.three@gmail.com", INBOX3_APP_PASSWORD="x"))
-    db.set_state(con, "warmup_start:inbox3", "2026-11-09")
-    f = schedule.forecast(con, s3.inboxes)
-    assert f["reach"][50] == datetime(2026, 12, 7).date()   # inbox 1 at 20, inboxes 2 and 3 at 18 in week 3
-    assert f["reach"][100] == "needs 2 more inboxes"
+    assert schedule.cap_on(con, two, datetime(2026, 11, 20).date()) == 0
+    assert schedule.cap_on(con, two, datetime(2026, 11, 23).date()) == 50   # first weekday after 14 days
+    assert schedule.cap_on(con, one, datetime(2026, 11, 9).date()) == 50
+    f = schedule.forecast(con, [one, two], targets=(50, 100, 150))
+    assert f["today"] == 50 and f["full"] == 100
+    assert f["reach"][50] == datetime(2026, 11, 9).date() and f["reach"][100] == datetime(2026, 11, 23).date()
+    assert f["reach"][150] == "needs 1 more inbox"

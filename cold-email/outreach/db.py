@@ -17,7 +17,8 @@ CREATE TABLE IF NOT EXISTS leads (
     first_name TEXT,
     website TEXT, instagram TEXT, phone TEXT, niche TEXT, area TEXT, address TEXT,
     source TEXT, notes TEXT,
-    segment TEXT,                -- A, B, C or SKIP
+    campaign TEXT DEFAULT 'website',  -- website or ads
+    segment TEXT,                -- website: A, B, C. Meta ads: N, G. Or SKIP
     segment_reason TEXT,
     observation TEXT,            -- the true line about their site (segment C)
     observation_kind TEXT,
@@ -95,6 +96,9 @@ def connect(path: Optional[Path] = None) -> sqlite3.Connection:
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA journal_mode=WAL")
     con.executescript(SCHEMA)
+    columns = {r["name"] for r in con.execute("PRAGMA table_info(leads)")}
+    if "campaign" not in columns:  # added with the Meta ads campaign
+        con.execute("ALTER TABLE leads ADD COLUMN campaign TEXT DEFAULT 'website'")
     return con
 
 

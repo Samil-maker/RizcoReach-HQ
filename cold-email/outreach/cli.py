@@ -135,7 +135,8 @@ def cmd_import(args) -> int:
         print("have imported it already: rizco status shows how many leads are waiting.")
         return 0
     overrides = parse_maps(args.map)
-    results = importer.import_pending(con, log=print, overrides=overrides, check_sites=not args.no_site_check)
+    results = importer.import_pending(con, log=print, overrides=overrides, check_sites=not args.no_site_check,
+                                      campaign=args.campaign)
     for result in results:
         for line in importer.summary_lines(result):
             print(line)
@@ -148,7 +149,7 @@ def cmd_import(args) -> int:
 def cmd_preview(args) -> int:
     s = config.load_settings()
     con = db.connect()
-    segments = [args.segment.upper()] if args.segment else ["A", "B", "C"]
+    segments = [args.segment.upper()] if args.segment else list(report.SEGMENTS)
     shown_followups = False
     for seg in segments:
         leads = con.execute("SELECT * FROM leads WHERE segment=? AND status='queued' ORDER BY id", (seg,)).fetchall()
@@ -304,7 +305,7 @@ def cmd_approve(args) -> int:
     db.set_state(con, "approved", {"at": clock.iso(), "test": test})
     db.log_event(con, "approved", "campaign approved after test email to %s" % test["to"])
     s = config.load_settings()
-    print("\nApproved. Week 1 of the warm up starts with your first real email:")
+    print("\nApproved. Real sending is switched on:")
     for i in s.inboxes:
         lim = schedule.limits(con, i, clock.today())
         print("  %s: %s" % (i.email, lim["why"]))
@@ -323,7 +324,7 @@ def cmd_send(args) -> int:
         run.run()
         return 0
     if args.limit is not None:
-        print("Sending at most %d emails today (the warm up limit still applies)." % args.limit)
+        print("Sending at most %d emails today (the daily limit still applies)." % args.limit)
     with sender.Lock():
         sender.log("Send started. Leave this window open, or let the 9:00 job run it. Ctrl+C stops it safely.")
         try:
@@ -567,13 +568,15 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("import", help="import the lead files in leads/inbox/")
     sp.add_argument("--map", action="append", metavar='FIELD="Column"', help='say which column is which, e.g. --map email="Contact Email"')
     sp.add_argument("--no-site-check", action="store_true", help="skip the website checks (leads with a website become Skip)")
+    sp.add_argument("--campaign", choices=["auto", "website", "ads"], default="auto",
+                    help="website or ads (Meta ads). auto: Lead Hunter's Meta ads export is ads, the rest website")
     sp = sub.add_parser("preview", help="show the segments and sample emails")
-    sp.add_argument("--segment", choices=["A", "B", "C", "a", "b", "c"])
+    sp.add_argument("--segment", choices=["A", "B", "C", "N", "G", "a", "b", "c", "n", "g"])
     sp.add_argument("--count", type=int, default=3)
     sp = sub.add_parser("test-email", help="send ONE real test email to yourself (asks first)")
     sp.add_argument("--to")
     sp.add_argument("--inbox", help="inbox1, inbox2...")
-    sub.add_parser("approve", help="after the test email looked right: allow real sending (week 1 starts)")
+    sub.add_parser("approve", help="after the test email looked right: allow real sending")
     sp = sub.add_parser("send", help="send today's emails slowly (use --dry-run to preview)")
     sp.add_argument("--dry-run", action="store_true", help="show exactly what would be sent today, send nothing")
     sp.add_argument("--limit", type=int, help="send fewer than the daily limit today")

@@ -74,6 +74,46 @@ I redesign websites for {city} businesses at a fixed price with nothing upfront.
 Worth sending you a couple of examples?""",
 }
 
+# Meta ads campaign. From the Lead Hunter ads pitch: steady enquiries from Facebook and Instagram ads, every lead
+# screened so only genuine people reach them, no big setup fee, one flat monthly rate. Version A has the
+# pricing line, version B does not. N only goes to businesses Lead Hunter found no Meta ads for.
+ADS_SUBJECT = "{subject_business} enquiries"
+ADS_PITCH = ("We run Facebook and Instagram ads for {city} businesses and screen every enquiry first so the ones "
+             "that reach you are genuine people with real interest")
+ADS_PRICE = "No big setup fee. Just one flat monthly rate so there's little risk on your side"
+ADS_ASK = "Want me to send you a quick explanation of how it works?"
+ADS_OPEN = {
+    "N": "I was looking at {business}[[ in {area}]] and couldn't see any Facebook or Instagram ads running",
+    "G": "I came across {business}[[ in {area}]] and wanted to ask about getting you more enquiries through Facebook and Instagram",
+}
+for _seg, _open in ADS_OPEN.items():
+    FIRST_EMAIL[(_seg, "A")] = "Hi {greeting_name}\n\n%s\n\n%s\n\n%s\n\n%s" % (_open, ADS_PITCH, ADS_PRICE, ADS_ASK)
+    FIRST_EMAIL[(_seg, "B")] = "Hi {greeting_name}\n\n%s\n\n%s\n\n%s" % (_open, ADS_PITCH, ADS_ASK)
+
+ADS_FOLLOW_UP = {
+    1: "Hi {greeting_name} just bringing this back up in case it got buried. Happy to send a quick explanation of how it works if you're interested",
+    2: "Last one from me[[ {first_name}]]. If more enquiries from Facebook and Instagram is ever on your list just reply yes and I'll send the details",
+}
+ADS_DRAFT_INTERESTED = (
+    "Thanks[[ {first_name}]]. Here's how it works in short. We set up and run Facebook and Instagram ads for {business}, "
+    "screen every enquiry so the ones that reach you are genuine people, and it's one flat monthly rate with no big "
+    "setup fee.\n\n[Your monthly rate and what's included]\n\nEasiest if we chat on WhatsApp, I'm on {whatsapp}"
+)
+ADS_QUESTION_ANSWERS = [
+    (r"how much|price|cost|charge|fee|rate|budget|\baed\b|pay|expensive|cheap",
+     "It's one flat monthly rate with no big setup fee. [Your monthly rate, and the ad budget they'd spend on Meta]"),
+    (r"result|how many|guarantee|leads|enquir|inquir|customers|bookings|work for",
+     "[What results to expect and how soon, without promising numbers you can't back up]"),
+    (r"how long|when|start|timeline|setup|set up",
+     "[How long setup takes before the first enquiries come in]"),
+    (r"screen|qualif|genuine|fake|spam|quality",
+     "We screen every enquiry first so the ones that reach you are genuine people with real interest. [How you screen them]"),
+    (r"who are you|company|based|where|legit|examples|clients|portfolio",
+     "[A line about you and RizcoReach]"),
+]
+
+CAMPAIGN_OF_SEGMENT = {"A": "website", "B": "website", "C": "website", "N": "ads", "G": "ads"}
+
 FOLLOW_UP = {
     # The portfolio link goes on its own line (EXAMPLES_LINK in .env). First emails never carry a link.
     1: "Hi {greeting_name} just bringing this back up in case it got buried.[[ Here are a few sites I've built so you can see the style\n\n{examples_link}]]",
@@ -119,6 +159,16 @@ DRAFT_QUESTION_CLOSE = (
 
 # Ideas for the next version once a test has 100 sends per version (shown in the report).
 NEXT_VARIANT_IDEAS = {
+    "N": [
+        "Name their niche: 'most salons near you are running ads right now' (only if you checked)",
+        "Offer to show them 3 ads a competitor is running, as the question",
+        "Shorter: the observation, the screening line and the question",
+    ],
+    "G": [
+        "Open with a question about where their customers come from today",
+        "Lead with the lead screening: 'you only talk to genuine people'",
+        "Ask 'Are you open to a quick explanation of how it works?' instead",
+    ],
     "A": [
         "Swap the question for the free homepage preview: 'Want me to mock up a homepage for {business}?'",
         "Cut the middle paragraph so the email is three short lines",
@@ -178,6 +228,11 @@ def signature(values: Dict[str, str]) -> str:
     return render(SIGNATURE, values)
 
 
+def campaign_of(lead) -> str:
+    keys = lead.keys() if hasattr(lead, "keys") else []
+    return ("campaign" in keys and lead["campaign"]) or CAMPAIGN_OF_SEGMENT.get(lead["segment"], "website")
+
+
 def first_email(lead, variant: str, settings: Settings) -> Tuple[str, str, str]:
     """(subject, body, full text). body is the part counted for the 80 word limit."""
     values = lead_vars(lead, settings)
@@ -185,7 +240,7 @@ def first_email(lead, variant: str, settings: Settings) -> Tuple[str, str, str]:
     body = render(FIRST_EMAIL[(segment, variant)], values)
     if word_count(body) >= 80 and values["area"]:  # a long name and a long area: drop the area
         body = render(FIRST_EMAIL[(segment, variant)], dict(values, area=""))
-    subject = render(SUBJECT, values)
+    subject = render(ADS_SUBJECT if segment in ADS_OPEN else SUBJECT, values)
     full = "%s\n\n%s\n\n%s" % (body, signature(values), OPT_OUT)
     return subject, body, full
 
@@ -193,7 +248,7 @@ def first_email(lead, variant: str, settings: Settings) -> Tuple[str, str, str]:
 def follow_up(lead, step: int, settings: Settings) -> Tuple[str, str]:
     """(body, full text) for follow up 1 or 2, before the quoted original."""
     values = lead_vars(lead, settings)
-    body = render(FOLLOW_UP[step], values)
+    body = render((ADS_FOLLOW_UP if campaign_of(lead) == "ads" else FOLLOW_UP)[step], values)
     return body, "%s\n\n%s\n\n%s" % (body, signature(values), OPT_OUT)
 
 
@@ -212,12 +267,13 @@ def draft_reply(classification: str, lead, their_text: str, settings: Settings) 
     """A reply for you to check and send yourself. Only for interested replies and questions."""
     values = lead_vars(lead, settings)
     sign = values["sender_name"]
+    ads = campaign_of(lead) == "ads"
     if classification == "interested" and "?" not in (their_text or ""):
-        return render(DRAFT_INTERESTED, values) + "\n\n" + sign
+        return render(ADS_DRAFT_INTERESTED if ads else DRAFT_INTERESTED, values) + "\n\n" + sign
     if classification in ("interested", "question"):
         text = (their_text or "").lower()
         answers: List[str] = []
-        for pattern, answer in QUESTION_ANSWERS:
+        for pattern, answer in (ADS_QUESTION_ANSWERS if ads else QUESTION_ANSWERS):
             if re.search(pattern, text) and answer not in answers:
                 answers.append(answer)
         if not answers:

@@ -44,8 +44,12 @@ on your Desktop (or type `rizco dashboard` in Terminal). It runs on your Mac onl
 - **Replies:** everyone waiting for you is at the top with what they wrote and your drafted answer. Press
   **Open Gmail Drafts** to send it (or **Copy reply**, or **WhatsApp**), then **Done, I replied** or **Became a client**.
   Tip: add samilatrizcoreach@gmail.com to the Gmail app on your phone so you see replies the moment they arrive.
-- **More emails a day:** make a new Gmail account, then **Add an inbox** on the dashboard. Each inbox adds up to
-  20 a day once it's warmed up. The dashboard shows the date you'll reach 50 and 100 a day.
+- **Two campaigns: Website and Meta ads.** When you drop a file in, pick who it's for (Auto sends Lead Hunter's Meta
+  ads export to Meta ads and everything else to Website). Meta ads emails stay off until you read them and press
+  **Approve Meta ads emails** under Campaigns, and they only go out from an inbox set to send Meta ads.
+- **More emails a day:** make a new Gmail account, then **Add an inbox** on the dashboard and choose what it sends
+  (Website, Meta ads or Both). Each inbox sends 50 a day (change it under Controls); a brand new account warms up
+  for 14 days first. The dashboard shows the date you'll reach 50 and 100 a day.
 - **Pause or resume** sending, **check replies now**, **start today's sending**, change your **WhatsApp number** or
   **portfolio link**, and read **today's report**, all from the same page.
 
@@ -65,7 +69,7 @@ on your Desktop (or type `rizco dashboard` in Terminal). It runs on your Mac onl
 | Every hour | New lead files are imported, cleaned and segmented. Replies are checked (All Mail and Spam), sequences stop for anyone who replied, answers are drafted into Gmail Drafts, the report is updated, and you get a notification for interested people |
 | Mon to Fri 9:00 to 18:00 Dubai time | The day's emails go out one at a time, spread over the day (more between 10 and 12 and between 1 and 3, when owners read email), inboxes taking turns, follow ups first |
 | Every hour, 9:00 to 18:00 | Warm up: your inboxes swap a few normal emails, open them, rescue any from Spam, reply, and file them in a "RizcoReach Warmup" folder |
-| Every send | SPF and DKIM must pass, the email must pass the style checks, and the daily warm up limit must have room |
+| Every send | SPF and DKIM must pass, the email must pass the style checks, and the inbox's daily limit must have room |
 | Fridays | The report adds a weekly review: what's working, what isn't, what to change |
 
 ---
@@ -125,11 +129,13 @@ There is an empty template in `leads/sample/lead-template.csv`.
 
 ### The rules it always follows
 
-- **Warm up per inbox**, follow ups included: week 1: 5 a day, week 2: 10, week 3: 18, week 4: 25, then 30.
-  A free @gmail.com address never goes above 20. `DAILY_CAP` in `.env` can lower this, never raise it.
-  More a day means more inboxes: leads are shared and each keeps its own limits.
-- **Brand new inboxes** only warm up for their first 14 days, then start cold email at 5 a day. Every inbox keeps
+- **50 a day per inbox**, follow ups included (your choice; change it under Controls on the dashboard, 1 to 100).
+  More a day means more inboxes: leads are shared between the inboxes that send their campaign.
+- **Brand new inboxes** only warm up for their first 14 days, then send their full daily amount. Every inbox keeps
   a little warm up going (about 4 a day) once there are two or more.
+- **Two campaigns.** Website: segments A new business, B no website, C outdated website. Meta ads: N (Lead Hunter
+  found no Meta ads, and the email says so), G (not checked, so the email makes no claim), and businesses already
+  running ads are skipped. Each inbox sends Website, Meta ads or both.
 - **Monday to Friday only, Dubai time:** spread from 9:00 to 17:45, never two emails from one inbox within 3
   minutes or two from any inbox within a minute. Follow ups first, then new leads (new businesses first, since
   "just opened" goes stale).
@@ -138,20 +144,22 @@ There is an empty template in `leads/sample/lead-template.csv`.
 - **Copy:** plain text, no images, no tracking, no links in the first email (follow up 1 carries your portfolio
   link), first emails under 80 words, no dashes or semicolons, ends with the
   opt out line. All wording lives in `outreach/templates.py`.
-- **A/B test:** half of each segment gets version A (shows 480 AED), half version B (no price). After 100 sends
+- **A/B test:** half of each segment gets version A (with the price line), half version B (without). After 100 sends
   each, the report names the winner and suggests the next test.
 - **Automatic pause** (until `rizco resume`): bounces over 3% of a day's emails, a reply that mentions spam or
-  reporting, or Gmail refusing our mail or login. At 5 a day one bounce is 20%, so in week 1 any bounce pauses.
+  reporting, or Gmail refusing our mail or login. At 50 a day, 2 bounces in a day is already 4%.
 - **suppression.csv:** everyone who said no, every hard bounce, anyone you add. Never emailed again.
 - **Never:** the care plan in a cold email, demo sites called client work, made up clients or numbers, or a reply sent for you.
 
 ### About sending from free @gmail.com addresses
 
 Cold email from a free Gmail is a high spam risk: filters trust personal addresses less for this, and a few spam
-reports can get the account limited. That's why each one is capped at 20 a day. Google's rules for free Gmail
-also don't allow bulk unsolicited email or using several accounts to get around sending limits, so the more free
-accounts you add, the bigger the chance one gets suspended. Keep each one at its limit, give each its own
-recovery details, and keep things you can't lose (like your portfolio folder) out of them.
+reports can get the account limited. You chose 50 a day per inbox, which is more than most cold email guides
+advise for a free account (they say 20 to 30). Google's rules for free Gmail also don't allow bulk unsolicited
+email or using several accounts to get around sending limits, so the more you send and the more free accounts you
+add, the bigger the chance one gets suspended. The automatic pauses are your safety net. Watch the warm up "landed
+in Spam" numbers on the dashboard, give each account its own recovery details, and keep things you can't lose
+(like your portfolio folder) out of them.
 
 The cheap way past this: a separate domain only for outreach (about $10 a year, not rizcoreach.ae, so your main
 domain is never at risk) with Zoho Mail Lite inboxes (about $1 an inbox a month; the free Zoho plan has no

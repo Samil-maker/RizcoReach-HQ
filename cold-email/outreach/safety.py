@@ -57,7 +57,7 @@ def after_bounce(con, sent_date: str, log=print) -> None:
             con,
             "bounces are over 3%% (%d of %d emails sent on %s bounced)" % (bounced, sent, sent_date),
             "Bounces hurt your inbox's reputation fast. Look at the bounced addresses in the report: if they "
-            "came from one lead file, that list is bad, so remove its unsent leads before resuming. At 5 emails "
-            "a day a single bounce is 20%, so in week 1 any bounce pauses sending. That is on purpose.",
+            "came from one lead file, that list is bad, so remove its unsent leads before resuming. At 50 emails "
+            "a day 2 bounces is already 4%, so this pauses quickly. That is on purpose.",
             log,
         )

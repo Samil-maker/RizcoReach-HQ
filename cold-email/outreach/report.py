@@ -12,7 +12,9 @@ from . import clock, config, db, names, safety, schedule, templates
 from .classify import LABELS
 from .config import Settings
 
-SEGMENT_NAMES = {"A": "A new business", "B": "B no website", "C": "C outdated website", "SKIP": "Skip"}
+SEGMENT_NAMES = {"A": "A new business", "B": "B no website", "C": "C outdated website",
+                 "N": "Meta ads: none running", "G": "Meta ads: general", "SKIP": "Skip"}
+SEGMENTS = ("A", "B", "C", "N", "G")
 HUMAN = ("interested", "question", "not_now", "opt_out", "other")
 
 
@@ -31,7 +33,7 @@ def _rows(con, sql, *args):
 
 def segment_stats(con) -> List[Dict]:
     out = []
-    for seg in ("A", "B", "C"):
+    for seg in SEGMENTS:
         r = con.execute(
             "SELECT COUNT(*) AS emailed, SUM(reply_class IN %s) AS replied, "
             "SUM(reply_class='interested' OR outcome='client') AS interested, SUM(outcome='client') AS clients, "
@@ -44,7 +46,7 @@ def segment_stats(con) -> List[Dict]:
 
 def variant_stats(con) -> List[Dict]:
     out = []
-    for seg in ("A", "B", "C"):
+    for seg in SEGMENTS:
         for var in ("A", "B"):
             r = con.execute(
                 "SELECT COUNT(*) AS sent, SUM(reply_class IN %s) AS replied, "
@@ -182,7 +184,7 @@ def build(con, settings: Settings, weekly: Optional[bool] = None) -> str:
     for r in segment_stats(con):
         L.append("| %s | %d | %d | %s | %d | %d |" % (SEGMENT_NAMES[r["segment"]], r["emailed"], r["replied"],
                                                        pct(r["replied"], r["emailed"]), r["interested"], r["clients"]))
-    L += ["", "## Reply rate by version (A shows the 480 AED price, B does not)", "",
+    L += ["", "## Reply rate by version (A has the price line, B does not)", "",
           "| Segment | Version | Sent | Replied | Reply rate | Interested |", "|---|---|---|---|---|---|"]
     vs = variant_stats(con)
     for r in vs:
@@ -234,7 +236,7 @@ def build(con, settings: Settings, weekly: Optional[bool] = None) -> str:
 
 def ab_suggestions(vs: List[Dict]) -> List[str]:
     out: List[str] = []
-    for seg in ("A", "B", "C"):
+    for seg in SEGMENTS:
         a = next(r for r in vs if r["segment"] == seg and r["variant"] == "A")
         b = next(r for r in vs if r["segment"] == seg and r["variant"] == "B")
         if a["sent"] >= 100 and b["sent"] >= 100:

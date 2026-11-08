@@ -72,7 +72,18 @@ def overview(con, s: config.Settings) -> Dict:
         lim = schedule.limits(con, i, today)
         w = warmup.summary(con, i.key)
         inboxes.append({"email": i.email, "status": lim["why"], "warming": bool(lim.get("warming")), "sent": lim["sent"],
-                        "cap": lim["cap"], "warm_sent": w["sent"], "warm_spam": w["spam"], "warm_checked": w["checked"]})
+                        "cap": lim["cap"], "warm_sent": w["sent"], "warm_spam": w["spam"], "warm_checked": w["checked"],
+                        "sends": " and ".join(config.CAMPAIGNS[c] for c in i.campaigns)})
+    campaigns = []
+    for key, name in config.CAMPAIGNS.items():
+        row = con.execute(
+            "SELECT SUM(status='queued') AS queued, SUM(first_sent_at IS NOT NULL) AS emailed, "
+            "SUM(reply_class IN ('interested','question','not_now','opt_out','other')) AS replied, "
+            "SUM(reply_class='interested' OR outcome='client') AS interested FROM leads WHERE COALESCE(campaign,'website')=?",
+            (key,)).fetchone()
+        campaigns.append({"key": key, "name": name, "approved": schedule.campaign_approved(con, key),
+                          "inboxes": [i.email for i in s.inboxes if key in i.campaigns],
+                          **{k: row[k] or 0 for k in ("queued", "emailed", "replied", "interested")}})
     f = schedule.forecast(con, s.inboxes) if s.inboxes else {"today": 0, "reach": {}}
     one = lambda sql, *a: con.execute(sql, a).fetchone()[0] or 0  # noqa: E731
     sent_today = one("SELECT COUNT(*) FROM messages WHERE kind='campaign' AND sent_date=? AND status IN ('sent','bounced')", t)
@@ -98,6 +109,7 @@ def overview(con, s: config.Settings) -> Dict:
         "can_start": bool(approved and not paused and not running and schedule.current_window_end(now) and launchd.IS_MAC),
         "problems": s.problems,
         "inboxes": inboxes,
+        "campaigns": campaigns,
         "forecast": {"today": f["today"], "reach": {str(k): (clock.nice(v) if hasattr(v, "day") else v) for k, v in f["reach"].items()}},
         "stats": {
             "sent_today": sent_today, "cap_today": cap_today,
@@ -115,7 +127,7 @@ def overview(con, s: config.Settings) -> Dict:
         },
         "replies_checked": _nice_time(db.get_state(con, "replies_checked")),
         "settings": {"from_name": s.from_name, "whatsapp": names.format_whatsapp(s.whatsapp), "examples_link": s.examples_link,
-                     "test_email_to": s.test_email_to},
+                     "test_email_to": s.test_email_to, "daily_limit": s.daily_limit, "max_daily_limit": config.MAX_DAILY_LIMIT},
     }
 
 
@@ -174,7 +186,7 @@ EVENT_TEXT = {
     "you_replied": lambda e: "You answered %s" % e["who"],
     "paused": lambda e: "Sending paused: %s" % e["detail"],
     "resumed": lambda e: "Sending resumed",
-    "approved": lambda e: "Test email approved, sending switched on",
+    "approved": lambda e: "Meta ads emails approved" if "Meta ads" in e["detail"] else "Test email approved, sending switched on",
     "test_email": lambda e: "Test email sent to %s" % e["detail"],
     "updated": lambda e: "Updated to the latest version",
     "update_failed": lambda e: "An update failed its tests and was skipped",
@@ -193,14 +205,24 @@ def activity(con, limit: int = 40) -> List[Dict]:
     return out
 
 
-def preview(con, s: config.Settings) -> List[Dict]:
+def preview(con, s: config.Settings, campaign: str = "") -> List[Dict]:
     out = []
-    for seg in ("A", "B", "C"):
+    for seg in report.SEGMENTS:
+        if campaign and templates.CAMPAIGN_OF_SEGMENT[seg] != campaign:
+            continue
         rows = con.execute("SELECT * FROM leads WHERE segment=? AND status='queued' ORDER BY id LIMIT 3", (seg,)).fetchall()
         for n, lead in enumerate(rows):
             subject, body, full = templates.first_email(lead, "AB"[n % 2], s)
             out.append({"segment": report.SEGMENT_NAMES[seg], "to": lead["email"], "subject": subject, "text": full,
                         "version": "AB"[n % 2]})
+    if campaign == "ads" and not out:  # nothing imported yet: show what the emails look like for a made up business
+        for seg in ("N", "G"):
+            for v in "AB":
+                sample = {"segment": seg, "campaign": "ads", "business": "Glossy PPF", "first_name": "", "area": "Al Quoz",
+                          "observation": "", "source": "", "instagram": "", "address": ""}
+                subject, body, full = templates.first_email(sample, v, s)
+                out.append({"segment": report.SEGMENT_NAMES[seg], "to": "example (a made up business)", "subject": subject,
+                            "text": full, "version": v})
     return out
 
 
@@ -224,9 +246,9 @@ def _job(fn, *args) -> str:
     return job_id
 
 
-def _import_job(log):
+def _import_job(log, campaign="auto"):
     con = db.connect()
-    results = importer.import_pending(con, log=log)
+    results = importer.import_pending(con, log=log, campaign=campaign)
     out = []
     for r in results:
         st = r["stats"]
@@ -234,7 +256,8 @@ def _import_job(log):
         for _, why in r["rejected"]:
             reasons[why] = reasons.get(why, 0) + 1
         out.append({"file": r["file"], "imported": st["imported"], "rows": st["rows"], "A": st["seg_A"], "B": st["seg_B"],
-                    "C": st["seg_C"], "skip": st["seg_SKIP"], "duplicate": st["duplicate"], "invalid": st["invalid"],
+                    "C": st["seg_C"], "N": st["seg_N"], "G": st["seg_G"], "skip": st["seg_SKIP"],
+                    "campaign": config.CAMPAIGNS[r.get("campaign", "website")], "duplicate": st["duplicate"], "invalid": st["invalid"],
                     "suppressed": st["suppressed"], "handled": st["handled"],
                     "reasons": sorted(reasons.items(), key=lambda kv: -kv[1])[:6]})
     return out
@@ -245,10 +268,10 @@ def _replies_job(log):
     return {"found": len(found), "hot": sum(1 for r in found if r["label"] in ("interested", "question"))}
 
 
-def _add_inbox_job(log, email, password, brand_new):
+def _add_inbox_job(log, email, password, brand_new, campaign="website"):
     from .setup_wizard import add_inbox_from_form
 
-    ok, message = add_inbox_from_form(email, password, brand_new)
+    ok, message = add_inbox_from_form(email, password, brand_new, campaign=campaign)
     if ok and launchd.IS_MAC:
         launchd.install()
     return {"ok": ok, "message": message}
@@ -276,8 +299,17 @@ def post(path: str, body: Dict, raw: bytes, headers) -> Dict:
     if path == "/api/upload":
         from urllib.parse import unquote
 
+        campaign = (headers.get("X-Campaign") or "auto").lower()
         save_upload(unquote(headers.get("X-Filename") or ""), raw)
-        return {"job": _job(_import_job)}
+        return {"job": _job(_import_job, campaign if campaign in config.CAMPAIGNS else "auto")}
+    if path == "/api/approve-campaign":
+        if body.get("campaign") != "ads":
+            return {"ok": False, "message": "The website emails were approved with your test email in setup."}
+        db.set_state(con, "approved:ads", {"at": clock.iso()})
+        db.log_event(con, "approved", "Meta ads emails approved on the dashboard")
+        has_inbox = any("ads" in i.campaigns for i in settings().inboxes)
+        return {"ok": True, "message": "Meta ads emails approved." + ("" if has_inbox else
+                " They start once an inbox sends Meta ads: add one and choose Meta ads (or Both).")}
     if path == "/api/mark":
         ok, message = actions.mark(con, body.get("email", ""), body.get("what", ""), body.get("note") or None)
         return {"ok": ok, "message": message}
@@ -308,11 +340,17 @@ def post(path: str, body: Dict, raw: bytes, headers) -> Dict:
             if not re.match(r"^https://\S+$", link) or names.DASHES[1:] and any(c in link for c in names.DASHES[1:]):
                 return {"ok": False, "message": "The portfolio link must start with https:// (and have no long dashes)."}
             updates["EXAMPLES_LINK"] = link
+        limit = str(body.get("daily_limit") or "").strip()
+        if limit:
+            if not limit.isdigit() or not 1 <= int(limit) <= config.MAX_DAILY_LIMIT:
+                return {"ok": False, "message": "Emails a day per inbox must be between 1 and %d." % config.MAX_DAILY_LIMIT}
+            updates["DAILY_LIMIT"] = str(int(limit))
         if updates:
             write_env(updates)
         return {"ok": True, "message": "Saved."}
     if path == "/api/add-inbox":
-        return {"job": _job(_add_inbox_job, body.get("email", ""), body.get("password", ""), bool(body.get("brand_new")))}
+        campaign = body.get("campaign") if body.get("campaign") in ("website", "ads", "both") else "website"
+        return {"job": _job(_add_inbox_job, body.get("email", ""), body.get("password", ""), bool(body.get("brand_new")), campaign)}
     raise KeyError(path)
 
 
@@ -369,7 +407,7 @@ class Handler(BaseHTTPRequestHandler):
             if url.path == "/api/activity":
                 return self._reply(200, activity(con))
             if url.path == "/api/preview":
-                return self._reply(200, preview(con, s))
+                return self._reply(200, preview(con, s, q.get("campaign", "")))
             if url.path == "/api/report":
                 return self._reply(200, {"text": report.write(con, s).read_text(encoding="utf-8")})
             if url.path == "/api/job":

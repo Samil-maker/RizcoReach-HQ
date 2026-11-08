@@ -94,7 +94,8 @@ input[type=text], input[type=email], input[type=password], input[type=url], inpu
   padding: 10px 12px; border-radius: var(--r-sm); border: 1px solid var(--line-2); background: var(--surface-2); }
 .check { display: flex; gap: 10px; align-items: center; color: var(--fg); }
 ol.steps { margin: 0 0 4px; padding-left: 20px; color: var(--fg-2); }
-.two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+input[type=number] { padding: 10px 12px; border-radius: var(--r-sm); border: 1px solid var(--line-2); background: var(--surface-2); }
 .activity li { padding: 8px 0; border-bottom: 1px solid var(--line); display: flex; gap: 14px; }
 .activity ul { list-style: none; margin: 0; padding: 0; }
 .activity .when { color: var(--fg-3); min-width: 120px; font-size: .85rem; }
@@ -108,7 +109,7 @@ pre.text { white-space: pre-wrap; font: .9rem/1.55 var(--mono); margin: 0; color
 #toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); background: var(--paper); color: var(--ink); padding: 10px 16px; border-radius: var(--r-sm);
   font-size: .9rem; opacity: 0; pointer-events: none; transition: opacity .2s; max-width: 90vw; z-index: 20; }
 #toast.show { opacity: 1; }
-@media (max-width: 760px) { .stats { grid-template-columns: 1fr 1fr; } .two { grid-template-columns: 1fr; } .activity .when { min-width: 90px; } }
+@media (max-width: 760px) { .stats { grid-template-columns: 1fr 1fr; } #campaigns { grid-template-columns: 1fr !important; } .activity .when { min-width: 90px; } }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 </head>
@@ -126,6 +127,12 @@ pre.text { white-space: pre-wrap; font: .9rem/1.55 var(--mono); margin: 0; color
   <div class="drop" id="drop" role="button" tabindex="0" aria-label="Add a lead file">
     <h2>Drop a lead file here</h2>
     <p class="muted">CSV or Excel, for example a Lead Hunter export. Or click to choose one. It's checked and queued straight away.</p>
+    <div class="chips" id="campaignPick" role="radiogroup" aria-label="These leads are for" style="justify-content:center;margin-top:14px">
+      <span class="small muted" style="align-self:center">These leads are for:</span>
+      <button type="button" class="chip on" data-c="auto" role="radio" aria-checked="true" title="Lead Hunter's Meta ads export goes to Meta ads, everything else to Website">Auto</button>
+      <button type="button" class="chip" data-c="website" role="radio" aria-checked="false">Website</button>
+      <button type="button" class="chip" data-c="ads" role="radio" aria-checked="false">Meta ads</button>
+    </div>
     <input type="file" id="file" accept=".csv,.xlsx,.xlsm,.tsv,.txt" hidden>
     <div id="dropResult" class="result" aria-live="polite"></div>
   </div>
@@ -138,18 +145,27 @@ pre.text { white-space: pre-wrap; font: .9rem/1.55 var(--mono); margin: 0; color
   </section>
 
   <section>
+    <div class="sec-head"><h2>Campaigns</h2></div>
+    <div class="stats" id="campaigns" style="grid-template-columns:1fr 1fr;margin-top:0"></div>
+  </section>
+
+  <section>
     <div class="sec-head"><h2>Inboxes</h2><span class="spacer"></span><button class="btn" id="addInboxBtn">Add an inbox</button></div>
-    <div class="card tablewrap"><table><thead><tr><th>Inbox</th><th>Today</th><th>Status</th><th>Warm up, 7 days</th></tr></thead><tbody id="inboxes"></tbody></table></div>
+    <div class="card tablewrap"><table><thead><tr><th>Inbox</th><th>Sends</th><th>Today</th><th>Status</th><th>Warm up, 7 days</th></tr></thead><tbody id="inboxes"></tbody></table></div>
     <p class="small muted" id="forecast"></p>
     <form class="card grid" id="addInbox" hidden>
       <h3>Add a sending inbox</h3>
       <ol class="steps small">
-        <li>Make a new Gmail account and turn on 2-Step Verification for it.</li>
+        <li>Make a new Gmail account, then <a id="tsvLink" href="https://myaccount.google.com/signinoptions/twosv" target="_blank" rel="noopener">turn on 2-Step Verification</a> for it (Google texts your phone a code).</li>
         <li><a id="apLink" href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">Create an App Password</a> while signed in as that account (name it RizcoReach).</li>
         <li>Paste it below. Nothing is saved unless Gmail accepts it.</li>
       </ol>
       <label>New email address<input type="email" id="aiEmail" required autocomplete="off" placeholder="samil.rizcoreach@gmail.com"></label>
       <label>App Password (16 letters)<input type="password" id="aiPass" required autocomplete="off"></label>
+      <label>It sends
+        <select id="aiCampaign" style="padding:10px 12px;border-radius:var(--r-sm);border:1px solid var(--line-2);background:var(--surface-2)">
+          <option value="website">Website emails</option><option value="ads">Meta ads emails</option><option value="both">Both</option>
+        </select></label>
       <label class="check"><input type="checkbox" id="aiNew" checked> It's a brand new account (it warms up for 14 days first)</label>
       <div class="btns"><button class="btn primary" type="submit" id="aiGo">Check and add</button><button class="btn ghost" type="button" id="aiCancel">Cancel</button></div>
       <p class="small" id="aiMsg" aria-live="polite"></p>
@@ -178,6 +194,7 @@ pre.text { white-space: pre-wrap; font: .9rem/1.55 var(--mono); margin: 0; color
         <div class="two">
           <label>WhatsApp number in every email<input type="tel" id="sWa"></label>
           <label>Portfolio link (sent in follow up 1 and replies)<input type="url" id="sLink"></label>
+          <label>Emails a day per inbox (follow ups included)<input type="number" id="sLimit" min="1" max="100"></label>
         </div>
         <div class="btns"><button class="btn" type="submit">Save</button><span class="small muted" id="sMeta"></span></div>
       </form>
@@ -251,8 +268,20 @@ async function loadOverview() {
   );
   $("checked").textContent = o.replies_checked ? "Replies checked " + o.replies_checked : "";
 
+  $("campaigns").replaceChildren(...o.campaigns.map((c) => {
+    const noInbox = !c.inboxes.length;
+    return el("div", { class: "card", style: "display:grid;gap:10px" },
+      el("div", { class: "meta", style: "display:flex;gap:10px;align-items:center;flex-wrap:wrap" }, el("h3", {}, c.name),
+        el("span", { class: "tag" + (c.approved && !noInbox ? " hot" : "") }, !c.approved ? "Off until you approve the emails" : noInbox ? "No inbox sends these yet" : "On")),
+      el("div", { class: "small muted" }, c.queued + " waiting · " + c.emailed + " emailed · " + c.replied + " replied · " + c.interested + " interested"),
+      el("div", { class: "small muted" }, noInbox ? "Add an inbox below and choose " + c.name + " (or Both)." : "Sent from " + c.inboxes.join(", ")),
+      el("div", { class: "btns" },
+        el("button", { class: "btn", onclick: () => showPreview(c.key, c.name) }, "Read the " + c.name + " emails"),
+        !c.approved && c.key === "ads" ? el("button", { class: "btn primary", onclick: () => approveCampaign(c) }, "Approve Meta ads emails") : null));
+  }));
   $("inboxes").replaceChildren(...o.inboxes.map((i) => el("tr", {},
     el("td", {}, i.email),
+    el("td", { class: "note" }, i.sends),
     el("td", {}, i.sent + " / " + i.cap),
     el("td", { class: "note" }, i.status),
     el("td", { class: "note" }, i.warm_sent ? i.warm_sent + " sent, " + i.warm_spam + " of " + i.warm_checked + " landed in Spam" : (o.inboxes.length < 2 ? "starts with 2 inboxes" : "none yet")))));
@@ -264,6 +293,7 @@ async function loadOverview() {
   $("pauseBtn").textContent = o.paused ? "Resume sending" : "Pause sending";
   if (document.activeElement !== $("sWa")) $("sWa").value = o.settings.whatsapp;
   if (document.activeElement !== $("sLink")) $("sLink").value = o.settings.examples_link;
+  if (document.activeElement !== $("sLimit")) $("sLimit").value = o.settings.daily_limit;
   $("sMeta").textContent = "Emails are signed " + o.settings.from_name + ", RizcoReach";
 }
 
@@ -341,23 +371,32 @@ $("repliesBtn").onclick = async () => {
   } finally { btn.disabled = false; btn.textContent = "Check replies now"; refresh(); }
 };
 $("reportBtn").onclick = async () => { const r = await api("/api/report"); openModal("Today's report", el("pre", { class: "text" }, r.text)); };
-$("previewBtn").onclick = async () => {
-  const list = await api("/api/preview");
-  openModal("The next emails it will send", list.length ? list.map((e) => el("div", { class: "email" },
+async function approveCampaign(c) {
+  if (!confirm("Approve the Meta ads emails? Read them first with 'Read the Meta ads emails'. They start going out on the next sending day.")) return;
+  toast((await post("/api/approve-campaign", { campaign: c.key })).message); refresh();
+}
+async function showPreview(campaign, name) {
+  const list = await api("/api/preview?campaign=" + encodeURIComponent(campaign || ""));
+  openModal(name ? "The " + name + " emails" : "The next emails it will send", list.length ? list.map((e) => el("div", { class: "email" },
     el("div", { class: "small muted" }, e.segment + " · version " + e.version + " · to " + e.to),
     el("div", { class: "subj" }, "Subject: " + e.subject), el("pre", { class: "text" }, e.text))) : el("p", { class: "muted" }, "No leads waiting. Drop a lead file first."));
-};
-$("settings").onsubmit = async (ev) => { ev.preventDefault(); const r = await post("/api/settings", { whatsapp: $("sWa").value, examples_link: $("sLink").value }); toast(r.message); refresh(); };
+}
+$("previewBtn").onclick = () => showPreview("", "");
+$("settings").onsubmit = async (ev) => { ev.preventDefault(); const r = await post("/api/settings", { whatsapp: $("sWa").value, examples_link: $("sLink").value, daily_limit: $("sLimit").value }); toast(r.message); refresh(); };
 
 /* add inbox */
 $("addInboxBtn").onclick = () => { $("addInbox").hidden = false; $("aiEmail").focus(); };
 $("aiCancel").onclick = () => { $("addInbox").hidden = true; $("aiMsg").textContent = ""; };
-$("aiEmail").oninput = () => { $("apLink").href = "https://myaccount.google.com/apppasswords?authuser=" + encodeURIComponent($("aiEmail").value.trim()); };
+$("aiEmail").oninput = () => {
+  const who = encodeURIComponent($("aiEmail").value.trim());
+  $("apLink").href = "https://myaccount.google.com/apppasswords?authuser=" + who;
+  $("tsvLink").href = "https://myaccount.google.com/signinoptions/twosv?authuser=" + who;
+};
 $("addInbox").onsubmit = async (ev) => {
   ev.preventDefault();
   $("aiGo").disabled = true; $("aiMsg").textContent = "Checking with Gmail, this takes a few seconds...";
   try {
-    const r = await post("/api/add-inbox", { email: $("aiEmail").value, password: $("aiPass").value, brand_new: $("aiNew").checked });
+    const r = await post("/api/add-inbox", { email: $("aiEmail").value, password: $("aiPass").value, brand_new: $("aiNew").checked, campaign: $("aiCampaign").value });
     const j = await waitJob(r.job);
     const res = j.result || { ok: false, message: j.error };
     $("aiMsg").textContent = res.message;
@@ -366,8 +405,13 @@ $("addInbox").onsubmit = async (ev) => {
 };
 
 /* upload */
+let campaign = "auto";
+document.querySelectorAll("#campaignPick .chip").forEach((b) => b.onclick = () => {
+  campaign = b.dataset.c;
+  document.querySelectorAll("#campaignPick .chip").forEach((x) => { x.classList.toggle("on", x === b); x.setAttribute("aria-checked", x === b ? "true" : "false"); });
+});
 const drop = $("drop");
-drop.onclick = (ev) => { if (!ev.target.closest("button, a")) $("file").click(); };
+drop.onclick = (ev) => { if (!ev.target.closest("button, a, input, select, label")) $("file").click(); };
 drop.onkeydown = (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); $("file").click(); } };
 $("file").onchange = () => { if ($("file").files[0]) upload($("file").files[0]); $("file").value = ""; };
 ["dragenter", "dragover"].forEach((t) => window.addEventListener(t, (ev) => { ev.preventDefault(); drop.classList.add("over"); }));
@@ -378,14 +422,16 @@ async function upload(file) {
   const out = $("dropResult");
   out.replaceChildren(el("p", {}, "Importing " + file.name + ": checking emails and websites. This can take a minute for big files..."));
   try {
-    const r = await api("/api/upload", { method: "POST", headers: { "X-Filename": encodeURIComponent(file.name) }, body: file });
+    const r = await api("/api/upload", { method: "POST", headers: { "X-Filename": encodeURIComponent(file.name), "X-Campaign": campaign }, body: file });
     if (!r.job) { out.replaceChildren(el("p", { class: "muted" }, r.message || "Couldn't upload that file.")); return; }
     const j = await waitJob(r.job);
     if (j.error) { out.replaceChildren(el("p", {}, "Couldn't import: " + j.error)); return; }
     if (!j.result.length) { out.replaceChildren(el("p", {}, "That file couldn't be read. It needs a column with business names and one with email addresses. " + j.lines.join(" "))); return; }
     out.replaceChildren(...j.result.map((x) => el("div", { class: "card", style: "margin-top:8px" },
-      el("h3", {}, x.imported + " new leads from " + x.file),
-      el("p", { class: "small" }, "New business " + x.A + " · No website " + x.B + " · Outdated website " + x.C + " · Skipped (good website) " + x.skip),
+      el("h3", {}, x.imported + " new " + x.campaign + " leads from " + x.file),
+      el("p", { class: "small" }, x.campaign === "Meta ads"
+        ? "No Meta ads running " + x.N + " · Not checked " + x.G + " · Skipped (already running ads) " + x.skip
+        : "New business " + x.A + " · No website " + x.B + " · Outdated website " + x.C + " · Skipped (good website) " + x.skip),
       x.reasons.length ? el("p", { class: "small muted" }, "Not imported: " + x.reasons.map(([why, n]) => why + " (" + n + ")").join(", ")) : null,
       el("p", { class: "small muted" }, x.imported ? "They go out from the next sending day, a few at a time." : ""),
       x.imported ? el("button", { class: "btn", onclick: () => $("previewBtn").click() }, "See the emails it wrote") : null)));

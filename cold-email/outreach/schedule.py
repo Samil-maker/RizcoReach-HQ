@@ -1,9 +1,9 @@
-"""Warm up limits, sending hours, and who is due today.
+"""Daily limits, sending hours, and who is due today.
 
-Limits per inbox (follow ups count too). The week is counted from that inbox's first cold email.
-    week 1: 5 a day    week 2: 10    week 3: 18    week 4: 25    week 5 on: 30
-A free address like @gmail.com never goes above 20 a day. A brand new inbox (rizco add-inbox) sends no
-cold email in its first 14 days: it only warms up (see warmup.py).
+Each inbox sends up to its daily limit (50 by default, DAILY_LIMIT in .env or the dashboard), follow ups
+included. A brand new inbox (added as brand new) sends no cold email in its first 14 days: it only warms
+up (see warmup.py). Each lead goes out from an inbox that sends its campaign (website or Meta ads), and
+only once that campaign's emails are approved.
 Emails go out Monday to Friday, spread from 9:00 to 17:45 Dubai time.
 """
 from __future__ import annotations
@@ -16,8 +16,6 @@ from typing import Dict, List, Optional, Tuple
 from . import clock, config, db, suppression
 from .config import Inbox, Settings
 
-RAMP = {1: 5, 2: 10, 3: 18, 4: 25}
-RAMP_LATER = 30
 WINDOWS = [((9, 0), (18, 0))]   # Dubai time, Monday to Friday
 LAST_PLANNED = (17, 45)         # the day's emails are planned to be out by then
 # How the day's emails are spread: more in the late morning and early afternoon, when owners read email.
@@ -44,8 +42,6 @@ def week_number(con, inbox_key: str, day: date) -> int:
     return (day - start).days // 7 + 1
 
 
-def ramp_cap(week: int) -> int:
-    return RAMP.get(week, RAMP_LATER)
 
 
 def sent_on(con, inbox_key: str, day: date) -> int:
@@ -71,56 +67,36 @@ def warmup_ends(con, inbox_key: str) -> Optional[date]:
 
 def limits(con, inbox: Inbox, day: date) -> Dict:
     ends = warmup_ends(con, inbox.key)
+    sent = sent_on(con, inbox.key, day)
     if ends and day < ends:
         days_in = (day - warmup_start(con, inbox.key)).days + 1
-        return {"week": 0, "cap": 0, "sent": sent_on(con, inbox.key, day), "remaining": 0, "warming": True,
+        return {"week": 0, "cap": 0, "sent": sent, "remaining": 0, "warming": True,
                 "why": "warming up, day %d of %d: no cold emails until %s" % (days_in, WARMUP_DAYS, clock.nice(clock.next_weekday(ends)))}
-    week = week_number(con, inbox.key, day)
-    cap = ramp_cap(week)
-    why = "week %d of warm up: %d a day" % (week, cap)
-    if inbox.is_free and cap > config.FREE_INBOX_CAP:
-        cap = config.FREE_INBOX_CAP
-        why += ", capped at %d because it is a free address" % cap
-    if inbox.cap_override is not None and inbox.cap_override < cap:
-        cap = inbox.cap_override
-        why += ", lowered to %d by DAILY_CAP in .env" % cap
-    elif inbox.cap_override is not None and inbox.cap_override > cap:
-        why += (" (DAILY_CAP in .env says %d, but the warm up limit wins: sending more than this before the inbox "
-                "has a track record is the quickest way to land in spam or get the account locked)" % inbox.cap_override)
-    sent = sent_on(con, inbox.key, day)
-    return {"week": week, "cap": cap, "sent": sent, "remaining": max(0, cap - sent), "why": why, "warming": False}
-
-
-def _cap_for_week(inbox: Inbox, week: int) -> int:
-    cap = ramp_cap(week)
-    if inbox.is_free:
-        cap = min(cap, config.FREE_INBOX_CAP)
-    if inbox.cap_override is not None:
-        cap = min(cap, inbox.cap_override)
-    return cap
+    cap = inbox.daily_limit
+    return {"week": week_number(con, inbox.key, day), "cap": cap, "sent": sent, "remaining": max(0, cap - sent),
+            "why": "%d a day" % cap, "warming": False}
 
 
 def cap_on(con, inbox: Inbox, day: date) -> int:
-    """What this inbox will be allowed to send on a future day, if it keeps sending every weekday."""
+    """What this inbox may send on a future day (nothing while a brand new inbox warms up)."""
     if not is_send_day(day):
         return 0
-    start = ramp_start(con, inbox.key) or warmup_ends(con, inbox.key) or clock.next_weekday(clock.today())
-    start = clock.next_weekday(start)
-    if day < start:
+    ends = warmup_ends(con, inbox.key)
+    if ends and day < clock.next_weekday(ends):
         return 0
-    return _cap_for_week(inbox, (day - start).days // 7 + 1)
+    return inbox.daily_limit
 
 
 def forecast(con, inboxes: List[Inbox], targets=(50, 100)) -> Dict:
-    """Emails a day possible today and when each target is reached with these inboxes."""
+    """Emails a day possible on the next sending day and when each target is reached with these inboxes."""
     today = clock.next_weekday(clock.today())
-    out: Dict = {"today": sum(cap_on(con, i, today) for i in inboxes), "reach": {}, "full": 0}
-    full = sum(_cap_for_week(i, 99) for i in inboxes)
-    out["full"] = full
+    full = sum(i.daily_limit for i in inboxes)
+    out: Dict = {"today": sum(cap_on(con, i, today) for i in inboxes), "reach": {}, "full": full}
+    per = max([i.daily_limit for i in inboxes] or [config.DEFAULT_DAILY_LIMIT])
     for target in targets:
         if full < target:
-            per = config.FREE_INBOX_CAP if all(i.is_free for i in inboxes) else RAMP_LATER
-            out["reach"][target] = ("needs %d more inbox%s" % (-(-(target - full) // per), "" if target - full <= per else "es"))
+            more = -(-(target - full) // per)
+            out["reach"][target] = "needs %d more inbox%s" % (more, "" if more == 1 else "es")
             continue
         day = today
         for _ in range(200):
@@ -189,13 +165,14 @@ def new_leads(con, limit: int) -> List:
     if limit <= 0:
         return []
     return con.execute(
-        "SELECT * FROM leads WHERE status='queued' AND segment IN ('A', 'B', 'C') AND COALESCE(mx_status, '')!='none' "
-        "ORDER BY CASE segment WHEN 'A' THEN 0 WHEN 'B' THEN 1 ELSE 2 END, imported_at, id LIMIT ?",
+        "SELECT * FROM leads WHERE status='queued' AND segment IN ('A', 'B', 'C', 'N', 'G') AND COALESCE(mx_status, '')!='none' "
+        "ORDER BY CASE segment WHEN 'A' THEN 0 WHEN 'N' THEN 1 WHEN 'B' THEN 2 WHEN 'G' THEN 3 ELSE 4 END, imported_at, id LIMIT ?",
         (limit,),
     ).fetchall()
 
 
-def plan(con, settings: Settings, day: date, inboxes: Optional[List[Inbox]] = None, limit: Optional[int] = None) -> Dict:
+def plan(con, settings: Settings, day: date, inboxes: Optional[List[Inbox]] = None, limit: Optional[int] = None,
+         preview: bool = False) -> Dict:
     """What each inbox would send on `day`: follow ups first, then new leads shared across inboxes."""
     inboxes = inboxes if inboxes is not None else settings.inboxes
     entries = suppression.load()
@@ -211,15 +188,24 @@ def plan(con, settings: Settings, day: date, inboxes: Optional[List[Inbox]] = No
     if limit is not None:
         used = sum(len(v["items"]) for v in out.values())
         total_room = max(0, min(total_room, limit - used))
-    candidates = [l for l in new_leads(con, total_room * 2 + 10) if not suppression.is_suppressed(l["email"], entries)]
+    candidates = [l for l in new_leads(con, total_room * 3 + 30) if not suppression.is_suppressed(l["email"], entries)]
+    approved = set(config.CAMPAIGNS) if preview else {c for c in config.CAMPAIGNS if campaign_approved(con, c)}
     order = list(room)
-    for lead in candidates[:total_room]:
-        key = max(order, key=lambda k: room[k]) if order else None
-        if key is None or room[key] <= 0:
+    placed = 0
+    for lead in candidates:
+        if placed >= total_room:
             break
+        campaign = lead_campaign(lead)
+        if campaign not in approved:
+            continue  # this campaign's emails haven't been approved yet
+        fits = [k for k in order if room[k] > 0 and campaign in out[k]["inbox"].campaigns]
+        if not fits:
+            continue  # no inbox with room sends this campaign
+        key = max(fits, key=lambda k: room[k])
         out[key]["items"].append((lead, 0))
         out[key]["new"] += 1
         room[key] -= 1
+        placed += 1
         order.append(order.pop(order.index(key)))  # rotate so ties take turns
     if limit is not None:  # trim follow ups too if a small --limit was asked for
         left = limit
@@ -227,6 +213,17 @@ def plan(con, settings: Settings, day: date, inboxes: Optional[List[Inbox]] = No
             v["items"] = v["items"][: max(0, left)]
             left -= len(v["items"])
     return out
+
+
+def lead_campaign(lead) -> str:
+    keys = lead.keys() if hasattr(lead, "keys") else []
+    value = lead["campaign"] if "campaign" in keys else None
+    return value or ("ads" if lead["segment"] in ("N", "G") else "website")
+
+
+def campaign_approved(con, campaign: str) -> bool:
+    """Website: the test email you approved in setup. Meta ads: the Approve button on the dashboard."""
+    return bool(db.get_state(con, "approved" if campaign == "website" else "approved:" + campaign))
 
 
 def next_due_after(step_sent: int, first_sent: date, today: date) -> Optional[str]:

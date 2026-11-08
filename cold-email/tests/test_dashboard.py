@@ -101,3 +101,23 @@ def test_add_inbox_from_the_dashboard_checks_first(server, monkeypatch):
     assert j["result"]["ok"] is False and "already" in j["result"]["message"]
     status, r = server("/api/add-inbox", body={"email": "new.one@gmail.com", "password": "short", "brand_new": True})
     assert "16 letters" in server.job(r["job"])["result"]["message"]
+
+
+def test_campaigns_on_the_dashboard(server, con):
+    o = server("/api/overview")[1]
+    ads = next(c for c in o["campaigns"] if c["key"] == "ads")
+    assert ads["approved"] is False and ads["inboxes"] == []           # off, and no inbox sends Meta ads yet
+    assert o["settings"]["daily_limit"] == 50
+    preview = server("/api/preview?campaign=ads")[1]
+    assert preview and all("enquiries" in e["subject"] for e in preview)  # sample emails even before any ads leads
+    r = server("/api/approve-campaign", body={"campaign": "ads"})[1]
+    assert r["ok"] and "add one and choose Meta ads" in r["message"]
+    assert next(c for c in server("/api/overview")[1]["campaigns"] if c["key"] == "ads")["approved"]
+
+    csv = b"Business,Email,Area\nSky Cafe,hello@skycafe.ae,Deira\n"
+    j = server.job(server("/api/upload", raw=csv, headers={"X-Filename": "list.csv", "X-Campaign": "ads"})[1]["job"])
+    assert j["result"][0]["campaign"] == "Meta ads" and j["result"][0]["G"] == 1
+
+    assert server("/api/settings", body={"daily_limit": "60"})[1]["ok"]
+    assert server("/api/overview")[1]["settings"]["daily_limit"] == 60
+    assert not server("/api/settings", body={"daily_limit": "900"})[1]["ok"]
