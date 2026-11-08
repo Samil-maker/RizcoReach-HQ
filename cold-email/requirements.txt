@@ -1,0 +1,9 @@
+# Install with:  pip install -r requirements.txt
+dnspython>=2.4        # MX, SPF, DKIM and DMARC lookups
+requests>=2.31        # fetching lead websites for the checks
+urllib3<2; python_version < "3.10"   # the Python that comes with macOS works best with urllib3 1.x
+certifi>=2023.7       # up to date certificates for the secure connection to Gmail
+openpyxl>=3.1         # reading .xlsx lead files
+python-dotenv>=1.0    # reading your .env file
+python-dateutil>=2.8  # reading return dates in out-of-office replies
+tzdata>=2024.1        # Dubai time zone data (already on a Mac, needed on Windows)
