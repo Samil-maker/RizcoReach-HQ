@@ -250,6 +250,20 @@ def check_inbox(con, settings: Settings, inbox: Inbox, log=print) -> List[Dict]:
 
 
 def check_all(con, settings: Settings, log=print, quiet: bool = False) -> List[Dict]:
+    """Every inbox. One check at a time: the others wait for it instead of reading the same emails twice."""
+    import fcntl
+
+    path = config.path("data", "replies.lock")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            return _check_all(con, settings, log, quiet)
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
+
+
+def _check_all(con, settings: Settings, log=print, quiet: bool = False) -> List[Dict]:
     out: List[Dict] = []
     for inbox in settings.inboxes:
         if not inbox.has_imap:

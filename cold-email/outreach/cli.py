@@ -7,7 +7,7 @@ import time
 from typing import List, Optional
 
 from . import clock, config, db, dnscheck, importer, launchd, mailer, names, replies, report, safety, schedule, segment
-from . import sender, suppression, templates
+from . import actions, sender, suppression, templates
 from .config import Settings
 
 SEG = report.SEGMENT_NAMES
@@ -406,73 +406,14 @@ def cmd_resume(args) -> int:
     return 0
 
 
-MARKS = {
-    "interested": "they are interested (waiting for your reply)",
-    "question": "they asked a question (waiting for your reply)",
-    "not-now": "they said not now",
-    "no": "they said no: stop and add to the suppression list",
-    "handled": "you have answered them",
-    "client": "they became a client",
-    "lost": "the deal is off",
-    "skip": "never email this lead",
-    "requeue": "put a skipped or blocked lead back in the queue",
-}
+MARKS = actions.MARKS
 
 
 def cmd_mark(args) -> int:
     con = db.connect()
-    lead = db.lead_by_email(con, args.email)
-    what = args.what.lower()
-    if not lead:
-        print("No lead with the email %s" % args.email)
-        return 1
-    if what not in MARKS:
-        print("Use one of: " + ", ".join(MARKS))
-        return 1
-    stopped = dict(next_due=None)
-    if what in ("interested", "question"):
-        db.update_lead(con, lead["id"], status="replied", reply_class=what, waiting_on_me=1,
-                       replied_at=lead["replied_at"] or clock.iso(), stop_reason="replied (marked by you)", **stopped)
-    elif what == "not-now":
-        db.update_lead(con, lead["id"], status="replied", reply_class="not_now", waiting_on_me=0,
-                       replied_at=lead["replied_at"] or clock.iso(), stop_reason="not now (marked by you)", **stopped)
-    elif what == "no":
-        db.update_lead(con, lead["id"], status="opted_out", reply_class="opt_out", waiting_on_me=0, stop_reason="said no (marked by you)", **stopped)
-        suppression.add(con, lead["email"], "said no")
-    elif what == "handled":
-        db.update_lead(con, lead["id"], waiting_on_me=0)
-    elif what in ("client", "lost"):
-        db.update_lead(con, lead["id"], outcome=what, waiting_on_me=0)
-    elif what == "skip":
-        db.update_lead(con, lead["id"], status="skipped", stop_reason="skipped by you", **stopped)
-    elif what == "requeue":
-        if lead["first_sent_at"]:
-            print("This lead has already been emailed, so it can't go back to the start.")
-            return 1
-        if suppression.is_suppressed(lead["email"], suppression.load()):
-            print("This address is on the suppression list. Remove it from suppression.csv first if that was a mistake.")
-            return 1
-        fields = dict(status="queued", next_step=0, next_due=clock.today().isoformat(), stop_reason=None)
-        if args.note:  # a true line about their site that you checked yourself
-            note = names.no_dashes(args.note.strip().rstrip("."))
-            fields.update(segment="C" if lead["website"] else lead["segment"], observation=note, observation_kind="yours",
-                          segment_reason="requeued by you with your own observation")
-        elif lead["segment"] not in ("A", "B", "C"):
-            if not lead["website"]:
-                fields.update(segment="B", segment_reason="requeued by you")
-            else:
-                fields.update(segment="C", observation=segment.OBSERVATIONS["generic"], observation_kind="generic",
-                              segment_reason="requeued by you (general line, no specific claim)")
-        if fields.get("segment", lead["segment"]) == "C" and not (fields.get("observation") or lead["observation"]):
-            fields.update(observation=segment.OBSERVATIONS["generic"], observation_kind="generic")
-        db.update_lead(con, lead["id"], **fields)
-        lead = db.lead(con, lead["id"])
-        if lead["segment"] == "C":
-            print('It will say: "Had a look at the %s website. %s"' % (lead["business"], lead["observation"]))
-            print('To use your own line instead:  rizco mark %s requeue "It\'s quite hard to use on a phone"' % lead["email"])
-    db.log_event(con, "marked", what, lead["id"])
-    print("%s: %s" % (lead["email"], MARKS[what]))
-    return 0
+    ok, message = actions.mark(con, args.email, args.what, args.note)
+    print(message)
+    return 0 if ok else 1
 
 
 def cmd_suppress(args) -> int:
@@ -592,6 +533,15 @@ def cmd_add_inbox(args) -> int:
         return 1
 
 
+def cmd_dashboard(args) -> int:
+    from . import dashboard
+
+    if args.serve:
+        dashboard.serve()
+        return 0
+    return dashboard.open_dashboard()
+
+
 def cmd_update(args) -> int:
     from . import updater
 
@@ -606,6 +556,8 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="command")
     sp = sub.add_parser("setup", help="the one time setup, as a few questions (safe to run again)")
     sp.add_argument("--again", action="store_true", help="ask the questions again even if everything works")
+    sp = sub.add_parser("dashboard", help="open the dashboard in your browser (http://localhost:8321)")
+    sp.add_argument("--serve", action="store_true", help="run the dashboard service (the background job does this)")
     sub.add_parser("add-inbox", help="add another sending inbox (new ones warm up for 14 days first)")
     sub.add_parser("leads", help="open the folder where you drop lead files")
     sub.add_parser("reports", help="open the folder with the daily reports")
@@ -644,7 +596,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 COMMANDS = {
-    "setup": cmd_setup, "auto": cmd_auto, "add-inbox": cmd_add_inbox, "leads": cmd_leads, "reports": cmd_reports, "update": cmd_update,
+    "setup": cmd_setup, "auto": cmd_auto, "add-inbox": cmd_add_inbox, "dashboard": cmd_dashboard, "leads": cmd_leads, "reports": cmd_reports, "update": cmd_update,
     "check": cmd_check, "import": cmd_import, "preview": cmd_preview, "test-email": cmd_test_email,
     "approve": cmd_approve, "send": cmd_send, "replies": cmd_replies, "report": cmd_report, "status": cmd_status,
     "resume": cmd_resume, "mark": cmd_mark, "suppress": cmd_suppress, "launchd": cmd_launchd,
