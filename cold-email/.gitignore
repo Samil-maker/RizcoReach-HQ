@@ -1,0 +1,23 @@
+# Secrets: never commit these
+.env
+!.env.example
+
+# Your data stays on your Mac: leads, the database, reports, logs, the opt-out list
+data/*
+!data/.gitkeep
+leads/inbox/*
+!leads/inbox/.gitkeep
+leads/processed/*
+!leads/processed/.gitkeep
+reports/*
+!reports/.gitkeep
+logs/
+suppression.csv
+*.lock
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/

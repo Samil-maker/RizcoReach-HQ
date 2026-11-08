@@ -36,6 +36,7 @@ deploy preview.
 | Lead Hunter phone queue (private) | `netlify/functions/lead-queue.mts` (`/api/lead-queue`) + `public/outreach.html` (`/outreach`) |
 | Lead Hunter email sender (private): sends queued cold emails slowly from your own Gmail | `netlify/functions/email-queue.mts` (`/api/email-queue`) + `lead-hunter/email/sender.gs` (Apps Script in your Google account) |
 | Lead Desk: confirm clients' ad leads on one WhatsApp number (private) | `netlify/functions/lead-desk.mts` (`/api/desk`, `/api/desk/in/<token>`) + `public/desk.html` and `public/desk-assets/` (`/desk`) |
+| Cold email system (Python, runs on your Mac, not deployed): imports lead lists, segments them, sends slowly with warm up limits, follows up, reads replies, drafts answers | `cold-email/` (see its README) |
 
 ## Leads
 

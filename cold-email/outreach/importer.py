@@ -1,0 +1,338 @@
+"""Lead import: CSV or XLSX files in leads/inbox/ become clean leads in the database.
+
+Cleaning: trim spaces, lowercase emails, check email syntax and MX records, drop duplicates (in the
+file and against everyone already imported, including two addresses at the same company), drop
+anyone on the suppression list. Then each lead gets its segment. The original file moves to
+leads/processed/, next to a .rejected.csv that says why each skipped row was skipped.
+"""
+from __future__ import annotations
+
+import csv
+import io
+import json
+import re
+import shutil
+from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+from . import clock, config, db, dnscheck, names, segment, sitecheck, suppression
+
+FIELDS: Dict[str, List[str]] = {
+    "business_name": ["business name", "business", "company name", "company", "page name", "place name", "brand",
+                      "brand name", "store name", "shop name", "account name", "organization", "organisation",
+                      "organization 1 name", "title", "business title"],
+    "first_name": ["first name", "firstname", "given name", "contact first name", "owner first name", "first"],
+    "full_name": ["contact name", "contact person", "contact", "owner name", "owner", "full name", "person",
+                  "manager name", "manager", "decision maker"],
+    "email": ["email", "e mail", "email address", "e mail address", "mail", "emails", "contact email",
+              "business email", "email 1", "e mail 1 value", "work email", "email id"],
+    "website": ["website", "web site", "site", "url", "website url", "web", "domain", "homepage", "landing page"],
+    "instagram": ["instagram", "ig", "insta", "instagram url", "instagram handle", "instagram profile", "instagram link"],
+    "phone": ["phone", "mobile", "whatsapp", "phone number", "mobile number", "whatsapp number", "telephone", "tel",
+              "contact number", "number", "phone 1 value", "best phone"],
+    "niche": ["niche", "category", "industry", "business type", "type", "sector", "categories"],
+    "area": ["area", "neighbourhood", "neighborhood", "district", "community", "location", "city"],
+    "address": ["address", "full address", "street address", "formatted address", "address 1 formatted"],
+    "source": ["source", "found on", "lead source", "origin", "platform", "channel"],
+    "notes": ["notes", "note", "comments", "comment", "remarks"],
+    "segment": ["segment"],
+}
+FUZZY = {"email": "email", "website": "website", "instagram": "instagram", "phone": "phone"}
+
+JUNK_DOMAIN = re.compile(
+    r"(^|\.)(example\.(com|org|net)|domain\.com|email\.com|yourdomain\.\w+|yoursite\.\w+|mysite\.com|website\.com|"
+    r"test\.com|sentry\.io|wixpress\.com|wix\.com|godaddy\.com|secureserver\.net|squarespace\.com|weebly\.com|"
+    r"jimdo\.com|shopify\.com|wordpress\.(com|org)|mailchimp\.com|sentry-next\.wixpress\.com)$"
+)
+JUNK_USER = re.compile(
+    r"^(filler|name|your|yourname|you|user|username|email|e-?mail|test|example|sample|someone|john\.?doe|"
+    r"jane\.?doe|no-?reply|do-?not-?reply|donotreply|noreply|mailer-daemon|postmaster|abuse|bounce[s]?|"
+    r"unsubscribe|privacy|legal|dpo|webmaster|hostmaster)$"
+)
+EMAIL_SYNTAX = re.compile(r"^[a-z0-9!#$%&'*+/=?^_`{|}~-]+(\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*@([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$")
+
+
+def norm_header(h) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", str(h or "").lower()).strip()
+
+
+def map_columns(headers: List[str], overrides: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+    """Which file column feeds which field. overrides: {"email": "Contact Email"} from --map."""
+    normalized = {h: norm_header(h) for h in headers if h is not None and str(h).strip()}
+    used, mapping = set(), {}
+    for field, header in (overrides or {}).items():
+        match = next((h for h in normalized if h == header or normalized[h] == norm_header(header)), None)
+        if match is None:
+            raise ValueError('--map %s="%s": the file has no column called "%s"' % (field, header, header))
+        mapping[field] = match
+        used.add(match)
+    for field, synonyms in FIELDS.items():
+        if field in mapping:
+            continue
+        for syn in synonyms:
+            match = next((h for h, n in normalized.items() if n == syn and h not in used), None)
+            if match:
+                mapping[field] = match
+                used.add(match)
+                break
+    if "name" in normalized.values():
+        h = next(h for h, n in normalized.items() if n == "name")
+        if h not in used:
+            mapping.setdefault("business_name" if "business_name" not in mapping else "full_name", h)
+            used.add(h)
+    for field, word in FUZZY.items():
+        if field not in mapping:
+            match = next((h for h, n in normalized.items() if word in n.split() and h not in used and "link" not in n), None)
+            if match:
+                mapping[field] = match
+                used.add(match)
+    return mapping
+
+
+def _cell(value) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    return re.sub(r"\s+", " ", str(value)).strip()
+
+
+def read_rows(path: Path) -> Tuple[List[str], List[Dict[str, str]]]:
+    if path.suffix.lower() in (".xlsx", ".xlsm"):
+        from openpyxl import load_workbook
+
+        wb = load_workbook(str(path), read_only=True, data_only=True)
+        ws = wb.worksheets[0]
+        rows = [[_cell(v) for v in r] for r in ws.iter_rows(values_only=True)]
+        wb.close()
+    elif path.suffix.lower() in (".csv", ".txt", ".tsv"):
+        raw = path.read_bytes()
+        for enc in ("utf-8-sig", "cp1252", "latin-1"):
+            try:
+                text = raw.decode(enc)
+                break
+            except UnicodeDecodeError:
+                continue
+        try:
+            dialect = csv.Sniffer().sniff(text[:4096], delimiters=",;\t|")
+        except csv.Error:
+            dialect = csv.excel
+        rows = [[_cell(v) for v in r] for r in csv.reader(io.StringIO(text), dialect)]
+    else:
+        raise ValueError("%s: only .csv and .xlsx files can be imported. Save it as one of those." % path.name)
+    start = next((i for i, r in enumerate(rows) if sum(1 for v in r if v) >= 2), None)
+    if start is None:
+        return [], []
+    headers = [h or "column %d" % (i + 1) for i, h in enumerate(rows[start])]
+    out = []
+    for r in rows[start + 1:]:
+        if not any(r):
+            continue
+        out.append({headers[i]: (r[i] if i < len(r) else "") for i in range(len(headers))})
+    return headers, out
+
+
+def pick_email(value: str) -> Tuple[str, str]:
+    """(email, problem). Takes the first usable address from a cell that may hold several."""
+    candidates = re.split(r"[\s,;/|]+", (value or "").lower().replace("mailto:", ""))
+    candidates = [c.strip("<>()[]\"'.") for c in candidates if "@" in c]
+    if not candidates:
+        return "", "no email"
+    problem = "invalid email"
+    for c in candidates:
+        if not EMAIL_SYNTAX.match(c) or ".." in c:
+            continue
+        user, domain = c.split("@", 1)
+        if JUNK_DOMAIN.search(domain) or JUNK_USER.match(user) or re.search(r"\.(png|jpe?g|gif|webp|svg|css|js)$", domain):
+            problem = "placeholder or no reply address"
+            continue
+        return c, ""
+    return "", problem
+
+
+def business_key(email: str, website: str) -> List[str]:
+    """Keys that mean "the same business": a company email domain, a website host."""
+    keys = []
+    domain = email.split("@")[-1]
+    if domain and domain not in config.FREE_DOMAINS:
+        keys.append("domain:" + domain)
+    host = sitecheck.host_of(website) if website else ""
+    if host:
+        keys.append("domain:" + (host[4:] if host.startswith("www.") else host))
+    return keys
+
+
+def clean_row(row: Dict[str, str], mapping: Dict[str, str]) -> Tuple[Optional[Dict], str]:
+    get = lambda f: _cell(row.get(mapping[f], "")) if f in mapping else ""  # noqa: E731
+    email, problem = pick_email(get("email"))
+    if not email:
+        return None, problem
+    business_name = get("business_name")
+    business = names.clean_business(business_name)
+    if not business:
+        return None, "no business name"
+    website, ig_from_site = sitecheck.normalize_website(get("website"))
+    instagram = names.instagram_handle(get("instagram")) or ig_from_site
+    first = names.clean_first_name(get("first_name") or get("full_name"), business)
+    lead = {
+        "email": email,
+        "business_name": business_name,
+        "business": business,
+        "first_name": first,
+        "website": website,
+        "instagram": instagram,
+        "phone": get("phone"),
+        "niche": get("niche"),
+        "area": names.clean_area(get("area"), get("address")),
+        "address": get("address"),
+        "source": get("source"),
+        "notes": get("notes"),
+        "segment": get("segment"),
+        "raw_json": json.dumps(row, ensure_ascii=False),
+    }
+    return lead, ""
+
+
+def _existing_keys(con) -> Tuple[set, set]:
+    emails, keys = set(), set()
+    for r in con.execute("SELECT email, website FROM leads"):
+        emails.add(r["email"])
+        keys.update(business_key(r["email"], r["website"] or ""))
+    return emails, keys
+
+
+def import_file(con, path: Path, overrides: Optional[Dict[str, str]] = None, check_sites: bool = True,
+                log=print, move: bool = True) -> Dict:
+    headers, rows = read_rows(path)
+    if not rows:
+        raise ValueError("%s has no rows (or no header row)." % path.name)
+    mapping = map_columns(headers, overrides)
+    missing = [f for f in ("email", "business_name") if f not in mapping]
+    if missing:
+        nice = {"email": "email address", "business_name": "business name"}
+        raise ValueError(
+            "%s: I can't find a column for the %s.\n  Columns in the file: %s\n  Tell me which one it is, for example:\n"
+            '    python run.py import --map %s="Your Column Name"'
+            % (path.name, " and the ".join(nice[m] for m in missing), ", ".join(h for h in headers if h), missing[0])
+        )
+    log("\n%s: %d rows" % (path.name, len(rows)))
+    log("  Columns used: " + ", ".join("%s <- %s" % (f, h) for f, h in mapping.items()))
+
+    stats = Counter()
+    rejected: List[Tuple[Dict, str]] = []
+    suppressed = suppression.load()
+    seen_emails, seen_keys = _existing_keys(con)
+    leads: List[Dict] = []
+    for row in rows:
+        lead, problem = clean_row(row, mapping)
+        if not lead:
+            stats["invalid"] += 1
+            rejected.append((row, problem))
+            continue
+        if suppression.is_suppressed(lead["email"], suppressed):
+            stats["suppressed"] += 1
+            rejected.append((row, "on the suppression list"))
+            continue
+        keys = business_key(lead["email"], lead["website"])
+        if lead["email"] in seen_emails or any(k in seen_keys for k in keys):
+            stats["duplicate"] += 1
+            rejected.append((row, "duplicate (same email or same company domain already imported)"))
+            continue
+        seen_emails.add(lead["email"])
+        seen_keys.update(keys)
+        leads.append(lead)
+
+    # MX records, many domains at once
+    domains = sorted({l["email"].split("@")[1] for l in leads})
+    if domains:
+        log("  Checking MX records for %d email domains..." % len(domains))
+        with ThreadPoolExecutor(max_workers=16) as pool:
+            mx = dict(zip(domains, pool.map(dnscheck.mx_status, domains)))
+    else:
+        mx = {}
+    kept = []
+    for lead in leads:
+        status = mx.get(lead["email"].split("@")[1], "unchecked")
+        if status == "none":
+            stats["invalid"] += 1
+            rejected.append((json.loads(lead["raw_json"]), "email domain has no MX records (cannot receive email)"))
+            continue
+        lead["mx_status"] = status
+        stats["mx_unchecked"] += status == "unchecked"
+        kept.append(lead)
+
+    # Website checks for leads that might be segment C
+    to_check = [l for l in kept if l["website"] and (l["segment"] or "").upper() not in ("A", "B", "SKIP")
+                and not segment.is_new_business(l["source"], l["notes"])]
+    sites: Dict[str, Dict] = {}
+    if to_check and check_sites:
+        log("  Checking %d websites (about %d seconds)..." % (len(to_check), max(5, len(to_check) * 2)))
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            for lead, site in zip(to_check, pool.map(lambda l: sitecheck.check_site(l["website"]), to_check)):
+                sites[lead["email"]] = site
+
+    now = clock.iso()
+    for lead in kept:
+        site = sites.get(lead["email"])
+        decision = segment.decide(lead, site if site else ({"state": "unchecked"} if lead["website"] else None))
+        lead.update(decision)
+        stats["seg_" + lead["segment"]] += 1
+        if lead["segment"] == "SKIP":
+            stats["skip:" + lead["segment_reason"].split(":")[0]] += 1
+        con.execute(
+            """INSERT INTO leads(email, business_name, business, first_name, website, instagram, phone, niche, area,
+                   address, source, notes, segment, segment_reason, observation, observation_kind, site_json,
+                   site_checked_at, mx_status, status, next_step, next_due, import_file, imported_at, raw_json)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (lead["email"], lead["business_name"], lead["business"], lead["first_name"], lead["website"],
+             lead["instagram"], lead["phone"], lead["niche"], lead["area"], lead["address"], lead["source"],
+             lead["notes"], lead["segment"], lead["segment_reason"], lead.get("observation"),
+             lead.get("observation_kind"), json.dumps(site) if site else None, site["checked_at"] if site else None,
+             lead["mx_status"], "skipped" if lead["segment"] == "SKIP" else "queued", 0,
+             clock.today().isoformat(), path.name, now, lead["raw_json"]),
+        )
+    stats["imported"] = len(kept)
+    db.log_event(con, "import", "%s: %d imported" % (path.name, len(kept)))
+
+    if move:
+        dest_dir = config.leads_processed()
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        stamp = clock.now().strftime("%Y%m%d_%H%M%S")
+        dest = dest_dir / ("%s_%s" % (stamp, path.name))
+        shutil.move(str(path), str(dest))
+        if rejected:
+            with (dest_dir / ("%s_%s.rejected.csv" % (stamp, path.stem))).open("w", newline="", encoding="utf-8") as f:
+                w = csv.writer(f)
+                w.writerow(["why skipped"] + headers)
+                for row, why in rejected:
+                    w.writerow([why] + [row.get(h, "") for h in headers])
+    stats["rows"] = len(rows)
+    return {"file": path.name, "stats": stats, "rejected": rejected}
+
+
+def summary_lines(result: Dict) -> List[str]:
+    s = result["stats"]
+    lines = [
+        "  Imported: %d   Skipped: %d duplicates, %d on the suppression list, %d invalid"
+        % (s["imported"], s["duplicate"], s["suppressed"], s["invalid"]),
+        "  Segments: A new business %d | B no website %d | C outdated website %d | Skip %d"
+        % (s["seg_A"], s["seg_B"], s["seg_C"], s["seg_SKIP"]),
+    ]
+    skips = [(k[5:], v) for k, v in s.items() if k.startswith("skip:")]
+    if skips:
+        lines.append("  Skipped because: " + ", ".join("%s (%d)" % kv for kv in sorted(skips, key=lambda kv: -kv[1])))
+    if s["mx_unchecked"]:
+        lines.append("  %d email domains did not answer the MX check. They are checked again before sending." % s["mx_unchecked"])
+    if result["rejected"]:
+        why = Counter(w for _, w in result["rejected"])
+        lines.append("  Rows not imported: " + ", ".join("%s (%d)" % kv for kv in why.most_common()))
+        lines.append("  The file and a .rejected.csv with every skipped row are in leads/processed/")
+    return lines
+
+
+def pending_files() -> List[Path]:
+    folder = config.leads_inbox()
+    folder.mkdir(parents=True, exist_ok=True)
+    return sorted(p for p in folder.iterdir() if p.is_file() and not p.name.startswith((".", "~$")))
