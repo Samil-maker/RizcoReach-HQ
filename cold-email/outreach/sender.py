@@ -1,4 +1,4 @@
-"""python run.py send: sends today's emails one at a time, inside the Dubai sending windows.
+"""rizco send: sends today's emails one at a time, inside the Dubai sending windows.
 
 Order each day: follow ups first, then new leads. Inboxes take turns. Each inbox waits a random
 3 to 9 minutes between its own emails. Replies are checked before the first email and every 20
@@ -27,10 +27,14 @@ def log(*parts) -> None:
 
 
 class Lock:
-    """Stops two send runs at the same time (for example the 9:00 job and you by hand)."""
+    """Stops two runs of the same job at once (for example the 9:00 job and you by hand)."""
 
-    def __init__(self):
-        self.path = config.path("data", "send.lock")
+    MESSAGES = {"send": "Another send is already running (maybe the 9:00 job). Let it finish, or stop it first.",
+                "auto": "The hourly job is already running."}
+
+    def __init__(self, name: str = "send"):
+        self.name = name
+        self.path = config.path("data", "%s.lock" % name)
         self.f = None
 
     def __enter__(self):
@@ -39,7 +43,8 @@ class Lock:
         try:
             fcntl.flock(self.f, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:
-            raise SystemExit("Another send is already running (maybe the 9:00 job). Let it finish, or stop it first.")
+            self.f.close()
+            raise SystemExit(self.MESSAGES.get(self.name, "Already running."))
         self.f.write(str(os.getpid()))
         self.f.flush()
         return self
@@ -47,6 +52,20 @@ class Lock:
     def __exit__(self, *exc):
         fcntl.flock(self.f, fcntl.LOCK_UN)
         self.f.close()
+
+    @staticmethod
+    def held(name: str = "send") -> bool:
+        """True while that job is running."""
+        path = config.path("data", "%s.lock" % name)
+        if not path.exists():
+            return False
+        with open(path, "a") as f:
+            try:
+                fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                return True
+            fcntl.flock(f, fcntl.LOCK_UN)
+        return False
 
 
 # ----------------------------------------------------------------------------- composing
@@ -129,7 +148,7 @@ class SendRun:
                 ok.append(inbox)
             else:
                 bad = [c.name for c in (rep.spf, rep.dkim) if not c.ok]
-                log("%s: not sending, %s %s not pass%s. Run  python run.py check  to see how to fix it."
+                log("%s: not sending, %s %s not pass%s. Run  rizco check  to see how to fix it."
                     % (inbox.email, " and ".join(bad), "does" if len(bad) == 1 else "do",
                        " (the DNS lookup failed: is the internet on?)" if rep.lookup_failed else ""))
         return ok
@@ -254,7 +273,7 @@ class SendRun:
             log("Sending is paused: %s" % p["reason"])
             if p.get("detail"):
                 log(p["detail"])
-            log("When you have looked into it, run:  python run.py resume")
+            log("When you have looked into it, run:  rizco resume")
             return 0
         if s.problems:
             for problem in s.problems:
@@ -262,7 +281,7 @@ class SendRun:
             if not self.dry:
                 return 0
         if not self.dry and not db.get_state(con, "approved"):
-            log("Sending has not been approved yet. First run  python run.py test-email  then  python run.py approve")
+            log("Sending has not been approved yet. First run  rizco test-email  then  rizco approve")
             return 0
         if not schedule.is_send_day(today):
             if not self.dry:
@@ -272,6 +291,12 @@ class SendRun:
             log("Today's sending windows (9:00 to 11:30 and 14:00 to 15:30 Dubai time) are over. Nothing sent.")
             return 0
 
+        if not self.dry:  # lead files you dropped in since yesterday
+            from . import importer
+
+            for result in importer.import_pending(con, log=lambda *m: log(" ".join(str(x) for x in m).strip())):
+                for line in importer.summary_lines(result):
+                    log(line.strip())
         inboxes = s.inboxes if self.dry else self.ready_inboxes()
         if not inboxes:
             log("No inbox is ready to send.")
@@ -353,6 +378,14 @@ class SendRun:
 
         path = report.write(self.con, self.s)
         log("Report written: %s" % path)
+        from . import launchd
+
+        waiting = self.con.execute("SELECT COUNT(*) FROM leads WHERE waiting_on_me=1").fetchone()[0]
+        if self.sent or waiting:
+            msg = "%d emails sent today." % self.sent
+            if waiting:
+                msg += " %d %s waiting for your reply (drafts are in Gmail Drafts)." % (waiting, "person is" if waiting == 1 else "people are")
+            launchd.notify("RizcoReach", msg)
 
     # -- dry run
     def print_plan(self, plan: Dict, day) -> int:
@@ -368,9 +401,9 @@ class SendRun:
         print("with a random 3 to 9 minute gap per inbox. Follow ups first, then new leads.")
         p = safety.paused(con)
         if p:
-            print("\nNOTE: sending is paused right now (%s). Run  python run.py resume  when ready." % p["reason"])
+            print("\nNOTE: sending is paused right now (%s). Run  rizco resume  when ready." % p["reason"])
         if not db.get_state(con, "approved"):
-            print("\nNOTE: real sending starts only after  python run.py test-email  and  python run.py approve")
+            print("\nNOTE: real sending starts only after  rizco test-email  and  rizco approve")
         total = 0
         for key, v in plan.items():
             lim = v["limits"]

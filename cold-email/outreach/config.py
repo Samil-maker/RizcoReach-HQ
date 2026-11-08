@@ -249,6 +249,18 @@ def load_settings(env: Optional[Dict[str, str]] = None) -> Settings:
     return s
 
 
+def tls_context():
+    """Secure connection settings with certifi's certificates, so older Mac Pythons verify Gmail fine."""
+    import ssl
+
+    try:
+        import certifi
+
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:  # pragma: no cover
+        return ssl.create_default_context()
+
+
 def mask(secret: str) -> str:
     """For showing that a password is set without showing it."""
     return "(set, %d characters)" % len(secret) if secret else "(empty)"

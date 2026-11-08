@@ -1,0 +1,4 @@
+#!/bin/bash
+# Shortcut for the RizcoReach commands, from any Terminal window:
+#   ~/RizcoReach-Outreach/cold-email/rizco report
+cd "$(dirname "$0")" && exec .venv/bin/python run.py "$@"

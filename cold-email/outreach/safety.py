@@ -1,4 +1,4 @@
-"""Automatic pauses. While paused nothing is sent until you run:  python run.py resume
+"""Automatic pauses. While paused nothing is sent until you run:  rizco resume
 
 Pauses happen when bounces go over 3% of a day's emails, when a reply mentions spam or reporting,
 or when the mail server starts refusing our emails or the login.
@@ -24,7 +24,10 @@ def pause(con, reason: str, detail: str = "", log=print) -> None:
     log("\n*** SENDING PAUSED: %s" % reason)
     if detail:
         log("    %s" % detail)
-    log("    Nothing more is sent until you have looked into it and run:  python run.py resume\n")
+    log("    Nothing more is sent until you have looked into it and run:  rizco resume\n")
+    from . import launchd
+
+    launchd.notify("RizcoReach: sending paused", reason)
 
 
 def resume(con) -> Optional[dict]:

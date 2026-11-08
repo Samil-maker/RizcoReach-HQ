@@ -1,4 +1,4 @@
-"""python run.py report: writes reports/YYYY-MM-DD.md. Interested people first, then the numbers.
+"""rizco report: writes reports/YYYY-MM-DD.md. Interested people first, then the numbers.
 
 Fridays (or with --weekly) it adds a weekly review in plain words.
 """
@@ -107,7 +107,7 @@ def build(con, settings: Settings, weekly: Optional[bool] = None) -> str:
     p = safety.paused(con)
     if p:
         L += ["> **Sending is PAUSED** since %s: %s" % (p["at"][:16].replace("T", " "), p["reason"]),
-              "> " + (p.get("detail") or ""), "> When you have looked into it run `python run.py resume`.", ""]
+              "> " + (p.get("detail") or ""), "> When you have looked into it run `rizco resume`.", ""]
 
     # 1. People waiting on you
     waiting = _rows(con, "SELECT * FROM leads WHERE waiting_on_me=1 ORDER BY replied_at")
@@ -123,8 +123,8 @@ def build(con, settings: Settings, weekly: Optional[bool] = None) -> str:
                 L += _reply_block(con, lead, settings)
     if waiting:
         L += ["When you have answered someone (email or WhatsApp) the next `replies` run notices if you emailed them. "
-              "If you answered on WhatsApp run `python run.py mark their@email.com handled`. "
-              "When someone becomes a client run `python run.py mark their@email.com client`.", ""]
+              "If you answered on WhatsApp run `rizco mark their@email.com handled`. "
+              "When someone becomes a client run `rizco mark their@email.com client`.", ""]
 
     # 2. Today and this week per inbox
     L += ["## Sent", "", "| Inbox | Today | Today's limit | This week |", "|---|---|---|---|"]
@@ -209,7 +209,7 @@ def build(con, settings: Settings, weekly: Optional[bool] = None) -> str:
           "- In a sequence: %d (%d follow ups due by %s)" % (active, due, clock.nice(nxt)), ""]
     blocked = _rows(con, "SELECT * FROM leads WHERE status='blocked' ORDER BY id DESC LIMIT 20")
     if blocked:
-        L += ["Not sent because the email failed a check (fix the lead data, then run `python run.py mark <email> requeue`):", ""]
+        L += ["Not sent because the email failed a check (fix the lead data, then run `rizco mark <email> requeue`):", ""]
         L += ["- %s: %s" % (l["email"], l["stop_reason"]) for l in blocked]
         L.append("")
 

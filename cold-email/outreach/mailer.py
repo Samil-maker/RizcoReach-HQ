@@ -43,7 +43,9 @@ def build(inbox: Inbox, from_name: str, to: str, subject: str, text: str, messag
 
 
 def _connect(inbox: Inbox, timeout: int = 30) -> smtplib.SMTP:
-    context = ssl.create_default_context()
+    from .config import tls_context
+
+    context = tls_context()
     if inbox.smtp_port == 465:
         server = smtplib.SMTP_SSL(inbox.smtp_host, inbox.smtp_port, timeout=timeout, context=context)
     else:

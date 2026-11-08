@@ -1,4 +1,4 @@
-"""The commands behind  python run.py <command>.  Run  python run.py help  for the list."""
+"""The commands behind  python run.py <command>.  Run  rizco help  for the list."""
 from __future__ import annotations
 
 import argparse
@@ -106,9 +106,9 @@ def cmd_check(args) -> int:
     print()
     if all_ok:
         db.set_state(con, "check_ok", clock.iso())
-        print("All good. Next: drop a lead file in leads/inbox/ and run  python run.py import")
+        print("All good. Next: drop a lead file in leads/inbox/ and run  rizco import")
     else:
-        print("Fix the items above, then run  python run.py check  again.")
+        print("Fix the items above, then run  rizco check  again.")
     return 0 if all_ok else 1
 
 
@@ -142,7 +142,7 @@ def cmd_import(args) -> int:
             continue
         for line in importer.summary_lines(result):
             print(line)
-    print("\nNext: look at the segments and sample emails with  python run.py preview")
+    print("\nNext: look at the segments and sample emails with  rizco preview")
     return 0
 
 
@@ -187,8 +187,8 @@ def cmd_preview(args) -> int:
         print("Skipped (not emailed):")
         for l in skipped:
             print("  - %-28s %-30s %s" % (l["business"][:28], (l["website"] or "")[:30], l["segment_reason"]))
-        print("  To email one anyway:  python run.py mark their@email.com requeue")
-        print('  or with a line you checked yourself:  python run.py mark their@email.com requeue "The site still says 2016 at the bottom"')
+        print("  To email one anyway:  rizco mark their@email.com requeue")
+        print('  or with a line you checked yourself:  rizco mark their@email.com requeue "The site still says 2016 at the bottom"')
     if s.problems:
         print("\nNote: " + " ".join(s.problems))
     return 0
@@ -213,7 +213,7 @@ def cmd_test_email(args) -> int:
         return 1
     rep = dnscheck.check_inbox(inbox)
     if not rep.can_send:
-        print("SPF and DKIM must pass before anything is sent. Run  python run.py check  to see what to fix.")
+        print("SPF and DKIM must pass before anything is sent. Run  rizco check  to see what to fix.")
         return 1
     lead = con.execute("SELECT * FROM leads WHERE status='queued' AND segment IN ('A','B','C') ORDER BY "
                        "CASE segment WHEN 'A' THEN 0 WHEN 'B' THEN 1 ELSE 2 END, id LIMIT 1").fetchone()
@@ -257,7 +257,7 @@ def cmd_test_email(args) -> int:
         print("\nLooking for it in %s (this takes about 20 seconds)..." % to)
         time.sleep(20)
         print("  " + _find_test(own, mid))
-    print("\nIf it all looks right, run:  python run.py approve")
+    print("\nIf it all looks right, run:  rizco approve")
     return 0
 
 
@@ -289,7 +289,7 @@ def cmd_approve(args) -> int:
     con = db.connect()
     test = db.get_state(con, "test_email")
     if not test:
-        print("Send the test email first:  python run.py test-email")
+        print("Send the test email first:  rizco test-email")
         return 1
     if db.get_state(con, "approved"):
         print("Already approved on %s." % db.get_state(con, "approved")["at"][:10])
@@ -309,8 +309,8 @@ def cmd_approve(args) -> int:
     for i in s.inboxes:
         lim = schedule.limits(con, i, clock.today())
         print("  %s: %s" % (i.email, lim["why"]))
-    print("\nPreview the first day:   python run.py send --dry-run")
-    print("Start sending:           python run.py send   (or let the 9:00 job do it, see README step 7)")
+    print("\nPreview the first day:   rizco send --dry-run")
+    print("Start sending:           rizco send   (or let the 9:00 job do it, see README step 7)")
     return 0
 
 
@@ -349,7 +349,7 @@ def cmd_replies(args) -> int:
         print("\nWaiting for your reply:")
         for l in waiting:
             print("  - %-10s %s (%s) %s" % (l["reply_class"], l["business"], l["email"], l["phone"] or ""))
-        print("\nThe full replies and drafted answers are in the report:  python run.py report")
+        print("\nThe full replies and drafted answers are in the report:  rizco report")
     p = safety.paused(con)
     if p:
         print("\nSENDING IS PAUSED: %s" % p["reason"])
@@ -467,7 +467,7 @@ def cmd_mark(args) -> int:
         lead = db.lead(con, lead["id"])
         if lead["segment"] == "C":
             print('It will say: "Had a look at the %s website. %s"' % (lead["business"], lead["observation"]))
-            print('To use your own line instead:  python run.py mark %s requeue "It\'s quite hard to use on a phone"' % lead["email"])
+            print('To use your own line instead:  rizco mark %s requeue "It\'s quite hard to use on a phone"' % lead["email"])
     db.log_event(con, "marked", what, lead["id"])
     print("%s: %s" % (lead["email"], MARKS[what]))
     return 0
@@ -500,11 +500,60 @@ def cmd_launchd(args) -> int:
     return 0
 
 
+def cmd_setup(args) -> int:
+    from . import setup_wizard
+
+    try:
+        return setup_wizard.run()
+    except KeyboardInterrupt:
+        print("\nStopped. Run the same setup line again any time: it keeps what is already done.")
+        return 1
+
+
+def cmd_auto(args) -> int:
+    """The hourly job: new lead files, replies, report, notifications. Quiet when there is nothing new."""
+    s = config.load_settings()
+    con = db.connect()
+    try:
+        lock = sender.Lock("auto")
+        lock.__enter__()
+    except SystemExit:
+        return 0
+    try:
+        sender.log("Hourly check")
+        for result in importer.import_pending(con, log=sender.log):
+            st = result["stats"]
+            for line in importer.summary_lines(result):
+                sender.log(line.strip())
+            if st["imported"]:
+                launchd.notify("RizcoReach: %d new leads imported" % st["imported"],
+                               "A %d, B %d, C %d, skipped %d. They go out from the next 9:00 run."
+                               % (st["seg_A"], st["seg_B"], st["seg_C"], st["seg_SKIP"]))
+        if s.problems or not any(i.has_imap for i in s.inboxes):
+            sender.log("Settings incomplete, not checking replies: " + " ".join(s.problems))
+        elif sender.Lock.held("send"):
+            sender.log("The 9:00 send is running and checks replies itself.")
+        else:
+            found = replies.check_all(con, s, log=sender.log)
+            hot = [r for r in found if r["label"] in ("interested", "question")]
+            if hot:
+                who = ", ".join(r.get("business") or r["lead"] for r in hot[:3])
+                more = " and %d more" % (len(hot) - 3) if len(hot) > 3 else ""
+                launchd.notify("RizcoReach: %s%s replied" % (who, more),
+                               "Your drafted answer is in Gmail Drafts. Check it and press Send.")
+        report.write(con, s)
+    finally:
+        lock.__exit__(None, None, None)
+    return 0
+
+
 # ----------------------------------------------------------------------------- entry
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="python run.py", description="RizcoReach cold email. Everyday commands: send, replies, report.")
+    p = argparse.ArgumentParser(prog="rizco", description="RizcoReach cold email. Everyday commands: send, replies, report.")
     sub = p.add_subparsers(dest="command")
+    sub.add_parser("setup", help="the one time setup, as a few questions (safe to run again)")
+    sub.add_parser("auto", help="what the hourly job runs: new lead files, replies, report")
     sub.add_parser("check", help="check .env, DNS (SPF/DKIM/DMARC) and the SMTP and IMAP logins. Sends nothing")
     sp = sub.add_parser("import", help="import the lead files in leads/inbox/")
     sp.add_argument("--map", action="append", metavar='FIELD="Column"', help='say which column is which, e.g. --map email="Contact Email"')
@@ -538,6 +587,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 COMMANDS = {
+    "setup": cmd_setup, "auto": cmd_auto,
     "check": cmd_check, "import": cmd_import, "preview": cmd_preview, "test-email": cmd_test_email,
     "approve": cmd_approve, "send": cmd_send, "replies": cmd_replies, "report": cmd_report, "status": cmd_status,
     "resume": cmd_resume, "mark": cmd_mark, "suppress": cmd_suppress, "launchd": cmd_launchd,
@@ -549,6 +599,6 @@ def main(argv: Optional[List[str]] = None) -> int:
     args = parser.parse_args(argv)
     if not args.command or args.command == "help":
         parser.print_help()
-        print("\nEvery day:  python run.py send   python run.py replies   python run.py report")
+        print("\nEvery day:  rizco send   rizco replies   rizco report")
         return 0
     return COMMANDS[args.command](args) or 0

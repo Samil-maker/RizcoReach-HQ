@@ -1,4 +1,4 @@
-"""python run.py replies: reads your inbox, matches replies to leads, stops their emails, drafts answers.
+"""rizco replies: reads your inbox, matches replies to leads, stops their emails, drafts answers.
 
 Drafts are never sent. They go in the report and (if SAVE_DRAFTS=yes) in your mailbox's Drafts folder.
 """

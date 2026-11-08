@@ -38,7 +38,10 @@ FIELDS: Dict[str, List[str]] = {
     "source": ["source", "found on", "lead source", "origin", "platform", "channel"],
     "notes": ["notes", "note", "comments", "comment", "remarks"],
     "segment": ["segment"],
+    "status": ["status", "lead status", "stage"],
 }
+# Rows already handled in Lead Hunter (or a CRM export) are left out: they replied, said no, or are clients.
+HANDLED_STATUS = re.compile(r"^(replied|meeting booked|meeting|won|client|customer|not interested|lost|skip|do not contact|dnc)$", re.I)
 FUZZY = {"email": "email", "website": "website", "instagram": "instagram", "phone": "phone"}
 
 JUNK_DOMAIN = re.compile(
@@ -166,6 +169,8 @@ def business_key(email: str, website: str) -> List[str]:
 
 def clean_row(row: Dict[str, str], mapping: Dict[str, str]) -> Tuple[Optional[Dict], str]:
     get = lambda f: _cell(row.get(mapping[f], "")) if f in mapping else ""  # noqa: E731
+    if HANDLED_STATUS.match(get("status")):
+        return None, "already handled (status: %s)" % get("status")
     email, problem = pick_email(get("email"))
     if not email:
         return None, problem
@@ -214,7 +219,7 @@ def import_file(con, path: Path, overrides: Optional[Dict[str, str]] = None, che
         nice = {"email": "email address", "business_name": "business name"}
         raise ValueError(
             "%s: I can't find a column for the %s.\n  Columns in the file: %s\n  Tell me which one it is, for example:\n"
-            '    python run.py import --map %s="Your Column Name"'
+            '    rizco import --map %s="Your Column Name"'
             % (path.name, " and the ".join(nice[m] for m in missing), ", ".join(h for h in headers if h), missing[0])
         )
     log("\n%s: %d rows" % (path.name, len(rows)))
@@ -227,6 +232,10 @@ def import_file(con, path: Path, overrides: Optional[Dict[str, str]] = None, che
     leads: List[Dict] = []
     for row in rows:
         lead, problem = clean_row(row, mapping)
+        if not lead and problem.startswith("already handled"):
+            stats["handled"] += 1
+            rejected.append((row, problem))
+            continue
         if not lead:
             stats["invalid"] += 1
             rejected.append((row, problem))
@@ -315,8 +324,9 @@ def import_file(con, path: Path, overrides: Optional[Dict[str, str]] = None, che
 def summary_lines(result: Dict) -> List[str]:
     s = result["stats"]
     lines = [
-        "  Imported: %d   Skipped: %d duplicates, %d on the suppression list, %d invalid"
-        % (s["imported"], s["duplicate"], s["suppressed"], s["invalid"]),
+        "  Imported: %d   Skipped: %d duplicates, %d on the suppression list, %d invalid%s"
+        % (s["imported"], s["duplicate"], s["suppressed"], s["invalid"],
+           ", %d already handled in Lead Hunter" % s["handled"] if s["handled"] else ""),
         "  Segments: A new business %d | B no website %d | C outdated website %d | Skip %d"
         % (s["seg_A"], s["seg_B"], s["seg_C"], s["seg_SKIP"]),
     ]
@@ -330,6 +340,23 @@ def summary_lines(result: Dict) -> List[str]:
         lines.append("  Rows not imported: " + ", ".join("%s (%d)" % kv for kv in why.most_common()))
         lines.append("  The file and a .rejected.csv with every skipped row are in leads/processed/")
     return lines
+
+
+def import_pending(con, log=print) -> List[Dict]:
+    """Imports every file waiting in leads/inbox/. Used by the daily jobs, so you only drop files in."""
+    results = []
+    for path in pending_files():
+        try:
+            results.append(import_file(con, path, log=log))
+        except ValueError as e:
+            log(str(e))
+            bad = config.leads_processed() / ("could-not-import_" + path.name)
+            bad.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(path), str(bad))  # out of the way, so it doesn't fail every hour
+            from . import launchd
+
+            launchd.notify("RizcoReach: a lead file could not be imported", "%s: no email or business name column" % path.name)
+    return results
 
 
 def pending_files() -> List[Path]:

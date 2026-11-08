@@ -43,7 +43,9 @@ class Mailbox:
 
     def __enter__(self) -> "Mailbox":
         try:
-            self.conn = imaplib.IMAP4_SSL(self.inbox.imap_host, self.inbox.imap_port, timeout=30)
+            from .config import tls_context
+
+            self.conn = imaplib.IMAP4_SSL(self.inbox.imap_host, self.inbox.imap_port, ssl_context=tls_context(), timeout=30)
         except TypeError:  # Python 3.8 has no timeout argument
             socket.setdefaulttimeout(30)
             self.conn = imaplib.IMAP4_SSL(self.inbox.imap_host, self.inbox.imap_port)

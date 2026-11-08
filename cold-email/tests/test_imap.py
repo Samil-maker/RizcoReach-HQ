@@ -13,7 +13,7 @@ class FakeIMAP:
     folders = {}
     appended = []
 
-    def __init__(self, host, port, timeout=None):
+    def __init__(self, host, port, ssl_context=None, timeout=None):
         self.selected = None
 
     def login(self, user, password):
