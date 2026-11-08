@@ -504,7 +504,7 @@ def cmd_setup(args) -> int:
     from . import setup_wizard
 
     try:
-        return setup_wizard.run()
+        return setup_wizard.run(again=getattr(args, "again", False))
     except KeyboardInterrupt:
         print("\nStopped. Run the same setup line again any time: it keeps what is already done.")
         return 1
@@ -542,8 +542,42 @@ def cmd_auto(args) -> int:
                 launchd.notify("RizcoReach: %s%s replied" % (who, more),
                                "Your drafted answer is in Gmail Drafts. Check it and press Send.")
         report.write(con, s)
+        from . import updater
+
+        if updater.due(con) and not sender.Lock.held("send"):
+            sender.log(updater.update(con, log=sender.log))
     finally:
         lock.__exit__(None, None, None)
+    return 0
+
+
+def _open_folder(path, name: str) -> int:
+    import subprocess
+
+    from . import setup_wizard
+
+    path.mkdir(parents=True, exist_ok=True)
+    setup_wizard.desktop_shortcuts()
+    print("%s: %s" % (name, path))
+    if launchd.IS_MAC:
+        subprocess.run(["open", str(path)])
+        print("It's open in Finder now. Tip: drag that folder into the Finder sidebar for one click access.")
+    return 0
+
+
+def cmd_leads(args) -> int:
+    print("Drop CSV or Excel lead files in here. They are imported within the hour.")
+    return _open_folder(config.leads_inbox(), "Your leads folder")
+
+
+def cmd_reports(args) -> int:
+    return _open_folder(config.reports_dir(), "Your reports folder")
+
+
+def cmd_update(args) -> int:
+    from . import updater
+
+    print(updater.update(db.connect()))
     return 0
 
 
@@ -552,7 +586,11 @@ def cmd_auto(args) -> int:
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="rizco", description="RizcoReach cold email. Everyday commands: send, replies, report.")
     sub = p.add_subparsers(dest="command")
-    sub.add_parser("setup", help="the one time setup, as a few questions (safe to run again)")
+    sp = sub.add_parser("setup", help="the one time setup, as a few questions (safe to run again)")
+    sp.add_argument("--again", action="store_true", help="ask the questions again even if everything works")
+    sub.add_parser("leads", help="open the folder where you drop lead files")
+    sub.add_parser("reports", help="open the folder with the daily reports")
+    sub.add_parser("update", help="get the latest version now (it also updates itself once a day)")
     sub.add_parser("auto", help="what the hourly job runs: new lead files, replies, report")
     sub.add_parser("check", help="check .env, DNS (SPF/DKIM/DMARC) and the SMTP and IMAP logins. Sends nothing")
     sp = sub.add_parser("import", help="import the lead files in leads/inbox/")
@@ -587,7 +625,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 COMMANDS = {
-    "setup": cmd_setup, "auto": cmd_auto,
+    "setup": cmd_setup, "auto": cmd_auto, "leads": cmd_leads, "reports": cmd_reports, "update": cmd_update,
     "check": cmd_check, "import": cmd_import, "preview": cmd_preview, "test-email": cmd_test_email,
     "approve": cmd_approve, "send": cmd_send, "replies": cmd_replies, "report": cmd_report, "status": cmd_status,
     "resume": cmd_resume, "mark": cmd_mark, "suppress": cmd_suppress, "launchd": cmd_launchd,

@@ -2,6 +2,7 @@
 Nothing in the tests touches the network or sends a real email."""
 from __future__ import annotations
 
+import os
 import sys
 from datetime import datetime, timedelta
 from email import message_from_bytes, policy
@@ -11,6 +12,8 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+os.environ.setdefault("OUTREACH_NO_NOTIFY", "1")
+os.environ.setdefault("OUTREACH_NO_UPDATE", "1")
 
 from outreach import clock, config, db, dnscheck, mailer, sitecheck  # noqa: E402
 
