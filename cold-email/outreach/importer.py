@@ -8,12 +8,14 @@ leads/processed/, next to a .rejected.csv that says why each skipped row was ski
 from __future__ import annotations
 
 import csv
+import fcntl
 import io
 import json
 import re
 import shutil
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -291,7 +293,7 @@ def import_file(con, path: Path, overrides: Optional[Dict[str, str]] = None, che
         if lead["segment"] == "SKIP":
             stats["skip:" + lead["segment_reason"].split(":")[0]] += 1
         con.execute(
-            """INSERT INTO leads(email, business_name, business, first_name, website, instagram, phone, niche, area,
+            """INSERT OR IGNORE INTO leads(email, business_name, business, first_name, website, instagram, phone, niche, area,
                    address, source, notes, segment, segment_reason, observation, observation_kind, site_json,
                    site_checked_at, mx_status, status, next_step, next_due, import_file, imported_at, raw_json)
                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
@@ -342,12 +344,30 @@ def summary_lines(result: Dict) -> List[str]:
     return lines
 
 
-def import_pending(con, log=print) -> List[Dict]:
+@contextmanager
+def import_lock():
+    """One import at a time: the hourly job, the 9:00 send and you by hand take turns (waiting, not failing)."""
+    path = config.path("data", "import.lock")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
+
+
+def import_pending(con, log=print, overrides: Optional[Dict[str, str]] = None, check_sites: bool = True) -> List[Dict]:
     """Imports every file waiting in leads/inbox/. Used by the daily jobs, so you only drop files in."""
+    with import_lock():
+        return _import_pending(con, log, overrides, check_sites)
+
+
+def _import_pending(con, log, overrides, check_sites) -> List[Dict]:
     results = []
     for path in pending_files():
         try:
-            results.append(import_file(con, path, log=log))
+            results.append(import_file(con, path, overrides, check_sites=check_sites, log=log))
         except ValueError as e:
             log(str(e))
             bad = config.leads_processed() / ("could-not-import_" + path.name)

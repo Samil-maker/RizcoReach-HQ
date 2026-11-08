@@ -129,19 +129,18 @@ def parse_maps(values: Optional[List[str]]) -> dict:
 
 def cmd_import(args) -> int:
     con = db.connect()
-    files = importer.pending_files()
-    if not files:
-        print("No files in leads/inbox/. Put a .csv or .xlsx file there and run this again.")
+    if not importer.pending_files():
+        print("No files in your RizcoReach Leads folder (%s)." % config.leads_inbox())
+        print("Put a .csv or .xlsx file there and run this again. If you just dropped one in, the hourly job may")
+        print("have imported it already: rizco status shows how many leads are waiting.")
         return 0
     overrides = parse_maps(args.map)
-    for path in files:
-        try:
-            result = importer.import_file(con, path, overrides, check_sites=not args.no_site_check)
-        except ValueError as e:
-            print("\n" + str(e))
-            continue
+    results = importer.import_pending(con, log=print, overrides=overrides, check_sites=not args.no_site_check)
+    for result in results:
         for line in importer.summary_lines(result):
             print(line)
+    if not results:
+        print("The hourly job imported those files a moment ago. rizco status shows how many leads are waiting.")
     print("\nNext: look at the segments and sample emails with  rizco preview")
     return 0
 
