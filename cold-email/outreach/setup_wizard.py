@@ -71,22 +71,45 @@ def settings_from(env: Dict[str, str]) -> config.Settings:
 
 
 def desktop_shortcuts() -> Optional[Path]:
+    """"RizcoReach Leads" and "RizcoReach Reports" on the Desktop, pointing at the real folders."""
     desk = Path.home() / "Desktop"
-    if not desk.is_dir():
-        return None
+    ok = True
     for name, target in (("RizcoReach Leads", config.leads_inbox()), ("RizcoReach Reports", config.reports_dir())):
         target.mkdir(parents=True, exist_ok=True)
         link = desk / name
+        if link.exists() or link.is_symlink():
+            continue
         try:
-            if not link.exists() and not link.is_symlink():
-                link.symlink_to(target, target_is_directory=True)
+            link.symlink_to(target, target_is_directory=True)
         except OSError:
-            return None
-    return desk / "RizcoReach Leads"
+            # Terminal may not be allowed on the Desktop. Finder always is: ask it to make an alias.
+            script = ('tell application "Finder" to set a to make new alias file at desktop to (POSIX file "%s" as alias)\n'
+                      'tell application "Finder" to set name of a to "%s"' % (target, name))
+            r = subprocess.run(["osascript", "-e", script], capture_output=True) if launchd.IS_MAC else None
+            ok = ok and bool(r and r.returncode == 0)
+    return desk / "RizcoReach Leads" if ok else None
 
 
-def run() -> int:
+def already_set_up(con, env: Dict[str, str]) -> bool:
+    """True when setup was finished before and Gmail still accepts the App Password."""
+    if not (env.get("INBOX1_APP_PASSWORD") and env.get("TEST_EMAIL_TO") and db.get_state(con, "approved")):
+        return False
+    try:
+        mailer.login_test(settings_from(env).inboxes[0])
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def run(again: bool = False) -> int:
     con = db.connect()
+    if not again and already_set_up(con, read_env()):
+        print(launchd.install())
+        shortcut = desktop_shortcuts()
+        print("\nUpdated. Everything was already set up and is still running.")
+        print("Your leads folder: %s" % (shortcut or config.leads_inbox()))
+        print("To answer the setup questions again:  rizco setup --again")
+        return 0
     print("\nRizcoReach cold email setup. About 5 minutes. Press Enter to accept anything shown in [brackets].")
 
     # ------------------------------------------------------------------ 1. details

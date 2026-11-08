@@ -113,3 +113,11 @@ def test_drafts():
     assert templates.draft_reply("not_now", lead("B"), "later", S) is None
     for cls, text in (("interested", "yes"), ("question", "how much and how long?")):
         assert not templates._DASH.search(templates._URL.sub(" ", templates.draft_reply(cls, lead("C"), text, S)))
+
+
+def test_found_on_never_names_a_page_we_did_not_see():
+    assert names.found_on("Facebook and Instagram", "") == "Facebook"        # Lead Hunter Ad Library lead
+    assert names.found_on("Facebook and Instagram", "glossyppf") == "Instagram"
+    assert names.found_on("Google Maps", "glossyppf") == "Google Maps"
+    assert names.found_on("Instagram", "") == "Instagram"
+    assert names.found_on("", "") == "Google Maps"

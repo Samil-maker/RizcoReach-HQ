@@ -152,10 +152,12 @@ def city_words(area: str, address: str = "") -> Tuple[str, str]:
 def found_on(source: str, instagram: str) -> str:
     """Where we saw them, for "Just the ___ page"."""
     s = (source or "").lower()
-    if "insta" in s:
-        return "Instagram"
     if "google" in s or "maps" in s or "gmb" in s:
         return "Google Maps"
+    if "facebook" in s or "meta" in s or "ad library" in s or s.strip() == "fb":
+        return "Instagram" if instagram else "Facebook"  # we only name Instagram when we know their profile
+    if "insta" in s:
+        return "Instagram"
     return "Instagram" if instagram else "Google Maps"
 
 

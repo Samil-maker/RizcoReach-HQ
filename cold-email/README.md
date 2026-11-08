@@ -30,12 +30,15 @@ If a window asks to install "command line developer tools", click **Install** an
 - whether the test email landed in your **Inbox** (not Spam) and reads right
 - whether your Mac should wake itself at 8:55 on weekdays (it asks for your Mac password)
 
-That's it. To update later, paste the same line again: it keeps your settings, leads and history.
+That's it. It updates itself once a day (outside sending hours, and only to a version whose tests pass).
+Pasting the same line again also updates it right away, without asking the questions again.
 
 ## Your part after that
 
-- **Leads:** drop CSV or Excel files into the **RizcoReach Leads** folder on your Desktop. Lead Hunter exports
-  work as they are. They are imported within the hour.
+- **Leads:** drop CSV or Excel files into the **RizcoReach Leads** folder on your Desktop. Can't find it? Open
+  a new Terminal window and type `rizco leads`: it opens the folder (it lives in
+  `~/RizcoReach-Outreach/cold-email/leads/inbox`) and puts the shortcut back on your Desktop. Lead Hunter exports
+  work as they are. Files are imported within the hour.
 - **Replies:** when your Mac shows "... replied", open samilatrizcoreach@gmail.com, go to **Drafts**, check the
   drafted answer (fill in anything in [brackets]) and press Send. Tip: add that account to the Gmail app on your
   phone so you see replies the moment they arrive.
@@ -48,6 +51,7 @@ That's it. To update later, paste the same line again: it keeps your settings, l
 
 | When | What |
 |---|---|
+| Once a day, evenings or weekends | Updates itself to the latest version, if its tests pass |
 | Every hour | New lead files are imported, cleaned and segmented. Replies are checked (All Mail and Spam), sequences stop for anyone who replied, answers are drafted into Gmail Drafts, the report is updated, and you get a notification for interested people |
 | Mon to Fri 9:00 Dubai time | The day's emails go out one at a time, 3 to 9 minutes apart, follow ups first. Overflow goes out 14:00 to 15:30 |
 | Every send | SPF and DKIM must pass, the email must pass the style checks, and the daily warm up limit must have room |
@@ -68,6 +72,8 @@ Writes today's report now (it also updates every hour by itself).
 
 | Command | What it does |
 |---|---|
+| `rizco leads` | opens the folder where you drop lead files |
+| `rizco reports` | opens the folder with the daily reports |
 | `rizco status` | limits, queue, pause state at a glance |
 | `rizco send --dry-run` | shows exactly what the next send would email, sends nothing |
 | `rizco preview` | every segment with 3 sample emails each, plus the follow ups |
@@ -78,7 +84,8 @@ Writes today's report now (it also updates every hour by itself).
 | `rizco mark their@email.com interested` | fix a reply that was put in the wrong group (also question, not-now, no) |
 | `rizco suppress their@email.com` | never email them again (also `@domain.com` for a whole company) |
 | `rizco mark their@email.com requeue "It's quite hard to use on a phone"` | email a skipped lead, with a line you checked yourself |
-| `rizco setup` | the setup questions again |
+| `rizco update` | gets the latest version now (it also does this by itself daily) |
+| `rizco setup --again` | the setup questions again |
 | `rizco help` | everything else |
 
 (In a Terminal window that was already open during setup, type the full path instead: `~/RizcoReach-Outreach/cold-email/rizco report`.)
