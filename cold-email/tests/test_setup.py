@@ -104,3 +104,21 @@ def test_wake_and_schedule_commands():
     assert cmd[:4] == ["sudo", "pmset", "repeat", "wakeorpoweron"] and len(cmd[4]) == 5
     assert "<string>auto</string>" in launchd.hourly_plist() and "StartInterval" in launchd.hourly_plist()
     assert "<string>send</string>" in launchd.plist() and "caffeinate" in launchd.plist()
+
+
+def test_add_inbox(project, wizard, smtp, capsys):
+    answers, pw, _ = wizard
+    answers += ["", "samil@example.org", "yes", "yes", "yes"]
+    pw += ["abcdefghijklmnop"]
+    setup_wizard.run()
+    answers += ["samilatrizcoreach@gmail.com",   # already sending: refused
+                "rizco.two@gmail.com",           # the new one
+                "yes"]                           # brand new account
+    pw += ["abcdefghijklmnop"]
+    assert setup_wizard.add_inbox() == 0
+    env = setup_wizard.read_env()
+    assert env["INBOX2_EMAIL"] == "rizco.two@gmail.com" and env["INBOX2_PROVIDER"] == "gmail"
+    assert env["INBOX2_APP_PASSWORD"] == "abcdefghijklmnop" and env["INBOX1_APP_PASSWORD"] == "abcdefghijklmnop"
+    assert db.get_state(db.connect(), "warmup_start:inbox2") == clock.today().isoformat()
+    out = capsys.readouterr().out
+    assert "warms up for 14 days" in out and "50 a day: needs 1 more inbox" in out

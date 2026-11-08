@@ -127,13 +127,27 @@ def build(con, settings: Settings, weekly: Optional[bool] = None) -> str:
               "When someone becomes a client run `rizco mark their@email.com client`.", ""]
 
     # 2. Today and this week per inbox
-    L += ["## Sent", "", "| Inbox | Today | Today's limit | This week |", "|---|---|---|---|"]
+    from . import warmup
+
+    L += ["## Sent", "", "| Inbox | Today | Today's limit | This week | Warm up, last 7 days |", "|---|---|---|---|---|"]
     for inbox in settings.inboxes:
         lim = schedule.limits(con, inbox, today)
         week = con.execute(
-            "SELECT COUNT(*) FROM messages WHERE inbox=? AND sent_date>=? AND status IN ('sent','bounced')",
+            "SELECT COUNT(*) FROM messages WHERE inbox=? AND kind='campaign' AND sent_date>=? AND status IN ('sent','bounced')",
             (inbox.key, monday)).fetchone()[0]
-        L.append("| %s | %d | %d (week %d of warm up) | %d |" % (inbox.email, lim["sent"], lim["cap"], lim["week"], week))
+        w = warmup.summary(con, inbox.key)
+        warm = "%d sent, %d of %d landed in Spam" % (w["sent"], w["spam"], w["checked"]) if w["sent"] else (
+            "starts once you have 2 inboxes" if len(settings.inboxes) < 2 else "none yet")
+        status = "warming up, no cold email yet" if lim.get("warming") else "week %d" % lim["week"]
+        L.append("| %s | %d | %d (%s) | %d | %s |" % (inbox.email, lim["sent"], lim["cap"], status, week, warm))
+    f = schedule.forecast(con, settings.inboxes)
+    goals = ", ".join("%d a day: %s" % (t, clock.nice(d) if hasattr(d, "day") else d) for t, d in f["reach"].items())
+    L += ["", "Together: up to %d a day on the next weekday. %s. Add an inbox with `rizco add-inbox`." % (f["today"], goals)]
+    spammy = [i.email for i in settings.inboxes if warmup.summary(con, i.key)["checked"] >= 10
+              and warmup.summary(con, i.key)["spam"] / warmup.summary(con, i.key)["checked"] > 0.2]
+    if spammy:
+        L += ["", "**Warning:** more than 1 in 5 warm up emails from %s landed in Spam this week. Its reputation is "
+              "slipping: keep its volume where it is and check the bounces." % ", ".join(spammy)]
     L.append("")
 
     def replies_since(day: str) -> Dict[str, int]:

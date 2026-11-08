@@ -42,8 +42,10 @@ Pasting the same line again also updates it right away, without asking the quest
 - **Replies:** when your Mac shows "... replied", open samilatrizcoreach@gmail.com, go to **Drafts**, check the
   drafted answer (fill in anything in [brackets]) and press Send. Tip: add that account to the Gmail app on your
   phone so you see replies the moment they arrive.
-- **The Mac:** on, plugged in, lid open on weekday mornings. If it's asleep at 9:00 it sends when it wakes, but
-  only until 15:30.
+- **The Mac:** on, plugged in, lid open 9:00 to 18:00 on weekdays (you can use it as normal). If it sleeps, sending
+  pauses and catches up when it wakes. Whatever doesn't fit before 18:00 goes first the next weekday.
+- **More emails a day:** make a new Gmail account, then type `rizco add-inbox` and follow the questions. Each
+  inbox adds up to 20 a day once it's warmed up. The report shows the date you'll reach 50 and 100 a day.
 - **If it ever says "sending paused":** read why in the report (RizcoReach Reports folder on your Desktop), fix
   it, then paste: `rizco resume`
 
@@ -53,7 +55,8 @@ Pasting the same line again also updates it right away, without asking the quest
 |---|---|
 | Once a day, evenings or weekends | Updates itself to the latest version, if its tests pass |
 | Every hour | New lead files are imported, cleaned and segmented. Replies are checked (All Mail and Spam), sequences stop for anyone who replied, answers are drafted into Gmail Drafts, the report is updated, and you get a notification for interested people |
-| Mon to Fri 9:00 Dubai time | The day's emails go out one at a time, 3 to 9 minutes apart, follow ups first. Overflow goes out 14:00 to 15:30 |
+| Mon to Fri 9:00 to 18:00 Dubai time | The day's emails go out one at a time, spread over the day (more between 10 and 12 and between 1 and 3, when owners read email), inboxes taking turns, follow ups first |
+| Every hour, 9:00 to 18:00 | Warm up: your inboxes swap a few normal emails, open them, rescue any from Spam, reply, and file them in a "RizcoReach Warmup" folder |
 | Every send | SPF and DKIM must pass, the email must pass the style checks, and the daily warm up limit must have room |
 | Fridays | The report adds a weekly review: what's working, what isn't, what to change |
 
@@ -72,6 +75,7 @@ Writes today's report now (it also updates every hour by itself).
 
 | Command | What it does |
 |---|---|
+| `rizco add-inbox` | adds another sending inbox (brand new ones warm up for 14 days first) |
 | `rizco leads` | opens the folder where you drop lead files |
 | `rizco reports` | opens the folder with the daily reports |
 | `rizco status` | limits, queue, pause state at a glance |
@@ -114,9 +118,12 @@ There is an empty template in `leads/sample/lead-template.csv`.
 
 - **Warm up per inbox**, follow ups included: week 1: 5 a day, week 2: 10, week 3: 18, week 4: 25, then 30.
   A free @gmail.com address never goes above 20. `DAILY_CAP` in `.env` can lower this, never raise it.
-  50 a day needs two inboxes: leads are shared and each keeps its own warm up.
-- **Monday to Friday only, Dubai time:** 9:00 to 11:30, overflow 14:00 to 15:30, one email at a time, inboxes
-  taking turns. Follow ups first, then new leads (new businesses first, since "just opened" goes stale).
+  More a day means more inboxes: leads are shared and each keeps its own limits.
+- **Brand new inboxes** only warm up for their first 14 days, then start cold email at 5 a day. Every inbox keeps
+  a little warm up going (about 4 a day) once there are two or more.
+- **Monday to Friday only, Dubai time:** spread from 9:00 to 17:45, never two emails from one inbox within 3
+  minutes or two from any inbox within a minute. Follow ups first, then new leads (new businesses first, since
+  "just opened" goes stale).
 - **Sequence:** day 0, day 3 follow up, day 7 follow up, then stop. Follow ups reply in the same thread. Any real
   reply, bounce or opt out stops that lead. Out of office replies push the next email to the day after they're back.
 - **Copy:** plain text, no images, no tracking, no links in the first email (follow up 1 carries your portfolio
@@ -129,13 +136,18 @@ There is an empty template in `leads/sample/lead-template.csv`.
 - **suppression.csv:** everyone who said no, every hard bounce, anyone you add. Never emailed again.
 - **Never:** the care plan in a cold email, demo sites called client work, made up clients or numbers, or a reply sent for you.
 
-### About sending from a free @gmail.com address
+### About sending from free @gmail.com addresses
 
 Cold email from a free Gmail is a high spam risk: filters trust personal addresses less for this, and a few spam
-reports can get the account limited. That's why it's capped at 20 a day. When you want more: buy a separate
-domain only for outreach (not rizcoreach.ae, so your main domain is never at risk), put a Google Workspace or
-paid Zoho Mail inbox on it, and add it as `INBOX2_...` in `.env`. `rizco check` then prints the exact SPF, DKIM
-and DMARC records to add at your domain host.
+reports can get the account limited. That's why each one is capped at 20 a day. Google's rules for free Gmail
+also don't allow bulk unsolicited email or using several accounts to get around sending limits, so the more free
+accounts you add, the bigger the chance one gets suspended. Keep each one at its limit, give each its own
+recovery details, and keep things you can't lose (like your portfolio folder) out of them.
+
+The cheap way past this: a separate domain only for outreach (about $10 a year, not rizcoreach.ae, so your main
+domain is never at risk) with Zoho Mail Lite inboxes (about $1 an inbox a month; the free Zoho plan has no
+SMTP or IMAP), 30 a day each. Add each with `rizco add-inbox`; it prints the exact SPF, DKIM and DMARC records
+to add at your domain host.
 
 - **Google Workspace:** App Password the same way (signed in as that account), `INBOX2_PROVIDER=workspace`.
 - **Zoho Mail (paid plans only, the free plan has no SMTP or IMAP):** Settings > Mail Accounts > IMAP Access on,

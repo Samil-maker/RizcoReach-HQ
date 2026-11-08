@@ -288,7 +288,7 @@ class SendRun:
                 log("It's %s in Dubai. No emails on Saturdays or Sundays." % today.strftime("%A"))
                 return 0
         if not self.dry and not schedule.current_window_end(clock.now()) and not schedule.next_window_start(clock.now()):
-            log("Today's sending windows (9:00 to 11:30 and 14:00 to 15:30 Dubai time) are over. Nothing sent.")
+            log("Today's sending hours (9:00 to 18:00 Dubai time) are over. Nothing sent.")
             return 0
 
         if not self.dry:  # lead files you dropped in since yesterday
@@ -320,8 +320,16 @@ class SendRun:
             self.finish()
             return 0
 
-        start = clock.now()
-        next_ok = {k: start + timedelta(seconds=random.uniform(0, 180)) for k in queues}
+        # Each inbox gets its own send times for the day, spread from now (or 9:00) to 17:45.
+        begin = max(clock.now(), clock.at(day, 9)) + timedelta(seconds=random.uniform(0, 120))
+        end = clock.at(day, *schedule.LAST_PLANNED)
+        targets = {k: deque(schedule.spread_times(len(q), begin, end)) for k, q in queues.items()}
+        for k, t in targets.items():
+            if t:
+                avg = (t[-1] - t[0]).total_seconds() / 60 / max(1, len(t) - 1)
+                log("%s: %d emails today, spread from %s to %s (about one every %d minutes)"
+                    % (s.inbox(k).email, len(t), t[0].strftime("%H:%M"), t[-1].strftime("%H:%M"), max(3, round(avg))))
+        next_ok = {k: (t[0] if t else begin) for k, t in targets.items()}
         last_send = None
         last_gap = 0.0
         while any(queues.values()):
@@ -333,7 +341,7 @@ class SendRun:
                 nxt = schedule.next_window_start(now)
                 if nxt is None:
                     left = sum(len(q) for q in queues.values())
-                    log("Today's sending windows are over. %d emails move to the next weekday." % left)
+                    log("It's 18:00, today's sending hours are over. %d emails move to the next weekday." % left)
                     break
                 log("Waiting for the next sending window at %s (leave this running)." % nxt.strftime("%H:%M"))
                 self.sleep_until(nxt + timedelta(seconds=random.uniform(0, 240)))
@@ -350,6 +358,8 @@ class SendRun:
                 continue
             key = min(ready, key=lambda k: next_ok[k])
             lead_id, step = queues[key].popleft()
+            if targets[key]:
+                targets[key].popleft()
             if step > 0 and (self.last_reply_check is None or clock.now() - self.last_reply_check > timedelta(minutes=10)):
                 self.check_replies("before a follow up")
             elif self.last_reply_check and clock.now() - self.last_reply_check > REPLY_CHECK_EVERY:
@@ -366,7 +376,12 @@ class SendRun:
             if result == "sent":
                 last_send = clock.now()
                 last_gap = schedule.global_gap()
-                next_ok[key] = last_send + timedelta(seconds=schedule.gap())
+                # the next planned time, but never sooner than 3 minutes (3 to 9 if catching up after a sleep)
+                soonest = last_send + timedelta(seconds=schedule.MIN_GAP_SECONDS)
+                planned = targets[key][0] if targets[key] else soonest
+                next_ok[key] = planned if planned >= soonest else last_send + timedelta(seconds=schedule.gap())
+            elif targets[key]:
+                next_ok[key] = max(targets[key][0], clock.now())
         log("Done for today: %d emails sent." % self.sent)
         self.finish()
         return self.sent
@@ -397,8 +412,8 @@ class SendRun:
                   % (today.strftime("%A"), clock.nice(day)))
         else:
             print("Plan for today, %s (Dubai time). Nothing is being sent: this is a dry run." % clock.nice(day))
-        print("Emails go out one at a time between 9:00 and 11:30 (then 14:00 to 15:30 if needed),")
-        print("with a random 3 to 9 minute gap per inbox. Follow ups first, then new leads.")
+        print("Emails go out one at a time, spread from 9:00 to 17:45 Dubai time (more of them 10 to 12 and 1 to 3),")
+        print("inboxes taking turns. Follow ups first, then new leads.")
         p = safety.paused(con)
         if p:
             print("\nNOTE: sending is paused right now (%s). Run  rizco resume  when ready." % p["reason"])
