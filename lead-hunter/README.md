@@ -1,10 +1,13 @@
 # Lead Hunter (Chrome extension)
 
-Finds UAE businesses to sell Meta ads and websites to, checks and scores each one, and hands you a clean list.
-You reach out yourself, from your phone: export to **Google Contacts** (or a CSV), import the file at
-contacts.google.com, and every business shows up on your phone by name, with its heat score and top reason in
-the notes. Lead Hunter writes no messages and sends nothing on WhatsApp or Instagram. The one thing it can send
-for you is cold email, from your own Gmail and slowly: see [Email sender](#email-sender).
+Finds UAE businesses to sell websites and Meta ads to, and their email addresses, checks and scores each one, and
+hands them over as a file. Lead Hunter writes no messages and sends nothing:
+
+- **Export for cold email** gives the cold email system on your Mac (`cold-email/` in this repo) the businesses
+  with no website or a weak one, with their email. It writes the emails, sends them on its warm up schedule from
+  samilatrizcoreach@gmail.com, follows up and reads the replies. See [Export for cold email](#export-for-cold-email).
+- **Google Contacts** (or a CSV) is for reaching out from your phone: import the file at contacts.google.com and
+  every business shows up on your phone by name, with its heat score and top reason in the notes.
 
 Where leads come from:
 
@@ -26,13 +29,12 @@ Where leads come from:
 | Website, Ad Library check not done yet | Ads offer | *Ad check not done* |
 | Working website and running ads | none: skipped | *Running ads* |
 
-The offer decides how a lead is scored (see [Heat score](#heat-score)) and which emails the email sender would
-send. Skipped leads are not deleted: they are hidden while they are New (tick **Show skipped (running ads)**)
-and never emailed. Leads you are already talking to always show.
+The offer decides how a lead is scored (see [Heat score](#heat-score)) and how Results groups replies. Skipped
+leads are not deleted: they are hidden while they are New (tick **Show skipped (running ads)**). Leads you are
+already talking to always show.
 
 **Presets** are one list for both tabs (Settings → Presets): keywords, exclude words, a review range and areas.
-Write the label the way it reads in an email (*car detailing and protection studios* becomes "We help car
-detailing and protection studios in Dubai…").
+The label is how the preset reads in Settings and Results (*car detailing and protection studios*).
 
 Row tags (*No website*, *Site down*, *Weak site*, *New business*, *Followers in range*, *Running ads*,
 *Contacted before*…) are for sorting and filtering.
@@ -45,8 +47,7 @@ Row tags (*No website*, *Site down*, *Weak site*, *New business*, *Followers in 
 4. Click **Load unpacked** and choose the `lead-hunter` folder.
 5. Pin it: puzzle icon in the toolbar → pin **RizcoReach Lead Hunter**.
 
-The dashboard opens automatically. Go to **Settings** and add your name (it goes in your email signature).
-Works in Chrome, Edge and Brave.
+The dashboard opens automatically. Works in Chrome, Edge and Brave.
 
 To update after pulling new code: `chrome://extensions` → the reload icon on
 the Lead Hunter card. Your leads are kept.
@@ -72,8 +73,10 @@ is saved, with no hunt running.
 
 - Both tabs are ranked by **heat score** (0 to 100). Hover the badge, or open the lead, to see what it is made of.
 - Click **Open** on a row for the lead panel: the heat score and its reasons, the website weakness checks,
-  Instagram followers, Google reviews, every phone number with where it came from, their Instagram and email,
-  the emails the email sender would send them, and (for website leads) their live ads.
+  Instagram followers, Google reviews, every phone number with where it came from, their Instagram, the
+  **Cold email** section (the email the export uses and where it was found, whether they go in the file and why
+  not, and the **Just opened / grand opening** box), and (for website leads) their live ads.
+- **Export for cold email** (above the list, or on selected leads): see [below](#export-for-cold-email).
 - **Google Contacts** (above the list, or on selected leads) saves them as a Google Contacts file: the business
   name as the contact name, the WhatsApp number first, and notes with the heat score, its signals and the top
   reason. Each export gets its own label, `LF-<date>`. Import it at contacts.google.com (Import) and WhatsApp
@@ -87,76 +90,58 @@ is saved, with no hunt running.
   undo). Follow up, Meeting booked, Won, Not interested and Skip track the rest. Add notes in the lead panel.
 - **Results** (top of both tabs) shows contacted, replied and reply rate by niche and by offer.
 
-## Email sender
+## Export for cold email
 
-Lead Hunter can send your cold emails for you, for free, from the Gmail you
-already have. It is slow on purpose so your Gmail stays in good standing.
+Lead Hunter finds the leads and their emails. The cold email system on your Mac does everything after that (see
+`cold-email/README.md`). Lead Hunter's own email sender is gone, so there is only ever one sender on
+samilatrizcoreach@gmail.com and its warm up limits hold.
 
-Select leads and press **Send to email queue** (or **Add to email queue** in a
-lead's Email section). A small script in your own Google account picks them up
-from your site every 5 minutes and sends one email at a time. Chrome does not
-need to be open.
+1. On either tab press **Export for cold email** next to Export CSV. It exports the current view, or the leads you
+   selected (the button in the bar that appears when you tick rows).
+2. Chrome asks where to save `rizcoreach-cold-email-<date>.csv`. Pick your **RizcoReach Leads** folder (Desktop).
+   Chrome remembers it, so next time it is already chosen.
+3. The cold email system imports it within the hour.
 
-Each lead gets up to 3 emails:
+Who goes in:
 
-1. The first email for the lead's offer.
-2. Follow up 1, three working days later, as a reply in the same thread.
-3. Follow up 2, four working days after that.
+- **In:** businesses with no website of their own (or only Instagram, Facebook, a link page or Maps), a website
+  that is down or parked, or one the website check flagged: no HTTPS, not mobile friendly, an old year in the
+  footer, slow, no WhatsApp button or contact form, a free builder address, or a score under 80. A site not
+  checked yet, or one that blocked the check, goes in too: the cold email system checks every site again.
+- **Out:** a clearly good website (HTTPS, works on phones, scores 80 or more, nothing flagged); leads set to
+  Replied, Meeting booked, Won, Not interested or Skip; leads marked **Never email** in their panel; leads Lead
+  Hunter's old email queue already emailed; and leads you exported before (they get an **Exported for cold
+  email** tag). Tick **Include already exported** to put those back in the file.
+- Leads without a usable email are left out, and the message after the export says how many, with every other
+  reason.
 
-Every email ends with your signature and a line saying they can reply no
-thanks. Change the subjects, the first emails, the follow ups, the signature and how many follow ups in
-**Settings → Email sender**. Variables: `{{business}}` (the name the way you'd type it, so *AL NOOR SALON
-L.L.C* becomes *Al Noor Salon*), `{{niche}}`, `{{city}}`, `{{found_on}}`, `{{website_line}}`, `{{my_name}}`,
-`{{agency}}`, `{{my_phone}}`. A lead already marked contacted is not emailed as well.
+The file is UTF-8 CSV with these columns: `business_name`, `first_name` (empty), `email`, `website` (their own
+site, never a social or Maps address), `instagram` (the handle), `phone`, `niche`, `area`, `source` (where we
+saw them: Google Maps, Instagram or Facebook; the first email says "Just the ___ page", so it is always true:
+Ad Library leads say Instagram only when we know their profile), `notes` and `status`. Leads are marked exported
+only once the file is saved: cancel the dialog and nothing changes.
 
-### Setting up the email sender (once, about 5 minutes)
+**Just opened / grand opening:** tick it in a lead's panel only when you know they just opened (a few Google
+reviews is not enough, so Lead Hunter never ticks it for you). The file then says `new business` in notes and the
+cold email system sends its congrats on the launch email.
 
-First connect your site (the sender runs on it, and the latest site code must be deployed):
+### Where the emails come from
 
-1. Lead Hunter → **Settings** → **Your site**: type your site address, then **Generate a key** → **Copy key**.
-2. Netlify → your site → **Site configuration → Environment variables** → add `LEAD_QUEUE_KEY` with that key.
-   Then **Deploys → Trigger deploy**.
-3. Back in Settings, press **Save & test connection**. It should say *Connected to your site*.
+Only addresses the business publishes itself, never template placeholders (GoDaddy's filler@godaddy.com and the
+like), and never one that bounced:
 
-Then the sender itself:
+- **Their website** and its contact pages, read by the website check.
+- **Their Instagram profile**, when you press **+ Add to Lead Hunter** on it: the email in the bio, and the public
+  business email the profile shows (its Email or Contact button, or the profile's own data; an email belonging
+  to a suggested account on the same page is not used).
+- **Their Facebook page**, for leads with no email and no website or a weak one: the page opens in the Ad Library
+  check tab, one every few seconds, and the email in its **Intro** is kept. That covers website leads (their
+  advertiser page), businesses whose website links their page, and Google Maps listings that give a Facebook page
+  as their website. A login wall, checkpoint or block pauses these lookups with an alert and a **Resume** button
+  on the Meta ads tab; nothing tries to get past it. Turn it off in Settings > Collecting (**Look for emails on
+  Facebook pages**), or press **Look on their Facebook page** in a lead's panel.
 
-1. Lead Hunter → **Settings** → **Email sender** → **Copy sender script**.
-   It has your site and key filled in, so keep it private.
-2. Open **script.google.com** and sign in with the Gmail you want to send from.
-3. Click **New project**.
-4. Delete what's there and paste the script.
-5. Click **+** next to Services, pick **Gmail API**, then **Add**.
-6. Pick **setup** at the top and press **Run**, then **Allow**. Google warns
-   the app isn't verified because it's your own script: click **Advanced**,
-   then **Go to**.
-
-The status in Settings then says *Running*. To stop sending press **Pause
-sending** in Settings, or pick **stop** in the script and press **Run**.
-
-### Limits
-
-- Only Monday to Friday, 9 to 6 Dubai time, and at least 10 minutes apart.
-- It starts at 15 a day in the first week and 25 in the second. After that
-  your daily limit decides (default 30, at most 40). This pace suits a Gmail
-  account that has been in normal use for a while.
-  Free Gmail allows about 500 a day. Staying far below that is the point.
-
-### Safety rules
-
-- Plain text emails with no tracking.
-- A reply stops the follow ups and marks the lead *Replied*. A reply that says
-  stop, unsubscribe, no thanks or not interested also puts them on the never
-  email list.
-- Nobody is emailed twice, and nobody on the never email list is emailed at
-  all (people who opted out, bounced addresses and leads you marked **Never
-  email**).
-- A bounced address is marked on the lead and never used again. If 3 of the
-  last 30 first emails bounce, sending pauses until you press **Resume
-  sending**.
-- If Gmail says you hit its daily limit, sending pauses until midnight Dubai time.
-- Setting a lead to Replied, Meeting booked, Won, Not interested or Skip stops
-  its follow ups. So does **Stop emails** in the lead's Email section.
-- Leads skipped for running ads are never emailed.
+The lead panel says where its email came from.
 
 ## Meta ads clients
 
@@ -366,7 +351,7 @@ the PageSpeed and copyright limits, and each check's points.
 
 - **No duplicates.** Two finds count as one business when they share a phone number, a website (`shop.gloss.ae` and `gloss.ae` are the same site; `gloss.wixsite.com` and `other.wixsite.com` are not), an Instagram handle, or a name that is nearly the same in the same area. Names are compared without LLC, FZE, FZCO, FZ-LLC, Trading, Est, Co, Services, Dubai and UAE, using Jaro-Winkler at 0.92 (Settings > Collecting). The second listing is added to the first record, so nothing is lost.
 - **Mark contacted** in a lead's panel, with the channel: WhatsApp, Instagram or Email. Tap another channel to change it, or **Reset** to make the business new again.
-- **Contacted memory.** Everyone you mark contacted, email, or export to Google Contacts is remembered, even after you delete the lead. Searches skip them and the run shows how many ("2 contacted before").
+- **Contacted memory.** Everyone you mark contacted or export to Google Contacts is remembered, even after you delete the lead. Searches skip them and the run shows how many ("2 contacted before").
 - **Import your own list** in Settings > Your data: any CSV with phone numbers, like your sheet of contacted numbers or Google Contacts > Export > Google CSV. Leads already saved that match are tagged **Contacted before** and hidden until you tick **Show contacted before**.
 - A number found in a website's text is not used for this (it can be the web designer's or the mall's); the website itself is.
 - The Facebook advertisers list and the Meta ads list stay separate records, because each list works differently. The memory covers both: contact a business in one and it shows as contacted before in the other.
@@ -443,7 +428,8 @@ out of backups.
   business profile on instagram.com as you normally would (from a hashtag,
   a location or the search) and press **+ Add to Lead Hunter** at the bottom
   right. It saves the profile you are looking at: name, bio, followers, the
-  website and WhatsApp links in the bio, and any phone or email in it. The
+  website and WhatsApp links in the bio, any phone or email in it, and the public business email the profile
+  shows. The
   business lands in the Meta ads tab with the right offer, and its ads are
   checked if it has a website.
 - Leads are stored only in this Chrome profile. Use **Settings → Download
@@ -460,22 +446,22 @@ out of backups.
 | `content/adlib.js` | Collects ads (network data, embedded first page, visible cards as fallback), corner panel, auto-scroll |
 | `lib/extract-ads.js` | Finds ad records in any Ad Library JSON (keys on `ad_archive_id`) |
 | `lib/site-audit.js` | Website audit and contact extraction (same checks as `netlify/functions/audit.mts`, plus ad-specific ones) |
-| `lib/common.js` | Phones, links, presets, offers and emails, quality signals, heat score, tags, results, exports |
-| `background.js` | Lead storage, hunts, enrichment queue, Google lookups, the email queue on your site |
+| `lib/common.js` | Phones, links, presets, offers, quality signals, heat score, tags, results, the exports (cold email, Google Contacts, CSV) |
+| `background.js` | Lead storage, hunts, enrichment queue, Google lookups |
 | `intent.js`, `lib/intent.js`, `lib/intent-db.js` | Intent Radar: Reddit scans, the rules every post goes through, the AI check (Gemini or Claude), and the IndexedDB store |
-| `content/social-scan.js` | The Scan for leads button on Facebook groups and LinkedIn, and Scan my subreddits on Reddit |
-| `finder.js` | Meta ads tab: Google Maps search (Places API or a Maps tab) and the Ad Library check queue |
+| `content/social-scan.js` | The Scan for leads button on Facebook groups and LinkedIn, Scan my subreddits on Reddit, and reading a business's Facebook page Intro for its email |
+| `content/instagram.js` | The + Add to Lead Hunter button on Instagram profiles, with the profile's business email |
+| `finder.js` | Meta ads tab: Google Maps search (Places API or a Maps tab), the Ad Library check queue, and the Facebook page email lookups (same tab) |
 | `lib/prospects.js` | Prospect de-duplication keys, Places results, matching ads to a business |
 | `content/maps-hook.js` · `content/maps.js` | Read Google Maps search results (network data plus the visible list) |
 | `dashboard/prospects.js` | The Meta ads tab UI |
 | `dashboard/` · `popup/` | The UI |
 | `../netlify/functions/lead-queue.mts` · `../public/outreach.html` | The old phone queue and phone page. The extension no longer uses them; they can be removed from the site |
-| `email/sender.gs` | The email sender: an Apps Script that runs in your Google account (copied from Settings) |
-| `../netlify/functions/email-queue.mts` | Email queue API on the site (`/api/email-queue`): every sending rule lives here |
+| `email/sender.gs` · `../netlify/functions/email-queue.mts` | Lead Hunter's old email sender and its queue on the site. The extension no longer uses them (the cold email system sends now); they stay in place and the site tests still run them |
 
 Tests:
 
 ```bash
-node --test lead-hunter/test/*.test.mjs   # parsers, audit, scoring, offers and emails, presets, results, heat score, intent rules, AI check, Meta ads prospects
-node lead-hunter/test/e2e.mjs   # real Chromium + mock Ad Library, Google Maps, Places API, websites, Reddit, Gemini, Claude and email queue (needs Playwright + openssl)
+node --test lead-hunter/test/*.test.mjs   # parsers, audit, scoring, offers, presets, results, heat score, the cold email file, intent rules, AI check, Meta ads prospects
+node lead-hunter/test/e2e.mjs   # real Chromium + mock Ad Library, Google Maps, Places API, websites, Instagram, Facebook pages, Reddit, Gemini and Claude (needs Playwright + openssl)
 ```

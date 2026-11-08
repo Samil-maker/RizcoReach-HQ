@@ -155,9 +155,11 @@ function renderFinderStatus() {
   // A login wall, checkpoint or block paused a source: say so and leave it to you.
   for (const [src, a] of Object.entries(S.alerts)) {
     if (['reddit', 'facebook', 'linkedin', 'ai'].includes(src)) continue; // shown on the Intent tab
-    const resume = { maps: 'finder-resume', adlib: 'adcheck-resume', instagram: 'ig-resume' }[src] || 'adcheck-resume';
+    const resume = { maps: 'finder-resume', adlib: 'adcheck-resume', instagram: 'ig-resume', fbpage: 'fbemail-resume' }[src] || 'adcheck-resume';
     const what =
-      src === 'instagram'
+      src === 'fbpage'
+        ? `${esc(a.hint || 'Sort it out in the Ad Library check tab, then press Resume.')} Nothing tries to get past it.`
+        : src === 'instagram'
         ? esc(a.hint || 'Check the token and account id in Settings > Quality signals, then press Resume.')
         : `Open the ${src === 'maps' ? 'Google Maps' : 'Ad Library'} tab${a.url ? ` (<a href="${esc(safeHref(a.url))}" target="_blank" rel="noopener noreferrer">this search</a>)` : ''}, sort it out, then press Resume. Nothing tries to get past it.`;
     parts.push(`<span class="err alert" style="margin:0" data-alert="${esc(src)}"><b>${esc(SOURCE_LABEL[src] || src)} paused:</b> ${esc(a.text)}. ${what}</span><button class="btn sm" data-act="${resume}">Resume</button>`);
@@ -251,7 +253,7 @@ function prospectDrawerHtml(l) {
       </div>
     </section>
     ${qualitySection(l)}
-    ${emailSection(l)}
+    ${coldEmailSection(l)}
     ${l.website ? siteSection(l) : `<section class="d-sec" data-site-sec><h3>Website</h3><p class="muted">No website listed on Google Maps.</p>
       <form class="inline-form" data-set-website><input class="inp" name="website" placeholder="Know their website? Paste it here" /><button class="btn sm" type="submit">Check it</button></form></section>`}
     ${contactSection(l)}
@@ -450,8 +452,15 @@ async function prospectAction(act, b, l) {
       if (!l) return true;
       await send({ type: 'adcheck:set', id: l.id, state: b.dataset.state });
       return true;
-    case 'ads-bulk-email':
-      await emailLeads(selected(), b);
+    case 'fbemail-resume':
+      await send({ type: 'fbemail:resume' });
+      toast('Facebook page email lookups resumed');
+      return true;
+    case 'ads-export-cold':
+      await exportColdEmail(filteredProspects().map((r) => r.l));
+      return true;
+    case 'ads-bulk-cold':
+      await exportColdEmail(selected().map((id) => S.leads.get(id)).filter(Boolean));
       return true;
     case 'ads-bulk-recheck':
       await send({ type: 'adcheck:recheck', ids: selected() });

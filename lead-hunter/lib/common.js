@@ -528,10 +528,6 @@ Mussafah, Abu Dhabi`),
 
   LH.DEFAULT_SETTINGS = {
     country: 'AE',
-    myName: '',
-    agency: 'RizcoReach',
-    myPhone: '+971 56 846 1835',
-    myWebsite: 'rizcoreach.ae',
     auditLinkBase: 'https://www.rizcoreach.ae/tools/website-audit?url=',
     autoEnrich: true,
     pagespeedKey: '',
@@ -540,9 +536,6 @@ Mussafah, Abu Dhabi`),
     placesAuto: true,
     placesMonthlyCap: 950,
     scrollDelayMs: 1800,
-    queueSite: 'https://www.rizcoreach.ae',
-    queueKey: '',
-    queueKeyAt: 0,
     adsCity: 'Dubai',
     // Quality signals (Phase 3). Points for each website check are in weakChecks (null = defaults).
     followerMin: 500,
@@ -564,6 +557,7 @@ Mussafah, Abu Dhabi`),
     igApiVersion: 'v23.0',
     igAuto: true, // look up followers for new businesses with an Instagram handle
     adCheckAll: false, // also check the Ad Library for businesses without a website (one name search each, slower)
+    fbEmailAuto: true, // read the email on the Facebook page of leads without one (no website or a weak one), in the check tab
     // Intent Radar (Phase 5)
     radarEveryHours: 3, // scan Reddit every this many hours, 0 = only when you press Scan now
     intentMaxDays: 14, // only posts this new
@@ -583,20 +577,14 @@ Mussafah, Abu Dhabi`),
     aiAuto: true, // check new posts as they come in
     nameMatch: 0.92, // how close two names in the same area must be to count as one business (Jaro-Winkler, 0.8 to 1)
     niches: null, // null = use LH.DEFAULT_NICHES
-    emailFromName: 'Samil',
-    emailMaxPerDay: 30, // the email sender's daily limit (1 to 40), also saved on the site where the sender reads it
-    emailFollowups: 2, // follow ups after the first email: 0, 1 or 2
-    emailSignature: 'Samil\nCreative Marketing Director\nRizcoReach · rizcoreach.ae\n+971 56 846 1835',
-    emailOptOut: "If you'd rather not hear from me just reply no thanks and I won't email again.",
-    emails: null, // null = use LH.DEFAULT_EMAILS
   };
   // Settings from earlier versions that no longer do anything.
-  // (1.12: pitching from the dashboard and the phone queue were removed; script edits move into the first email.)
-  const OLD_SETTINGS = ['templates', 'adTemplates', 'adsOffer', 'scripts', 'bubbles', 'intentOpeners'];
+  // (1.12: pitching from the dashboard and the phone queue were removed. 2.3: Lead Hunter no longer writes or sends
+  // emails; the cold email system in cold-email/ does, so the email sender, its texts and your signature went.)
+  const OLD_SETTINGS = ['templates', 'adTemplates', 'adsOffer', 'scripts', 'bubbles', 'intentOpeners', 'emails', 'emailFromName', 'emailMaxPerDay', 'emailFollowups', 'emailSignature', 'emailOptOut', 'queueSite', 'queueKey', 'queueKeyAt', 'myName', 'agency', 'myPhone', 'myWebsite'];
   /** Stored settings over the defaults, without the old keys. */
   LH.withDefaults = (stored) => {
     const s = { ...LH.DEFAULT_SETTINGS, ...(stored || {}) };
-    if (stored && stored.scripts) s.emails = LH.foldScripts(s.emails, stored.scripts);
     for (const k of OLD_SETTINGS) delete s[k];
     return s;
   };
@@ -861,55 +849,10 @@ Mussafah, Abu Dhabi`),
   };
   LH.heat = (p) => (p >= 70 ? 'hot' : p >= 48 ? 'warm' : 'cold');
 
-  /* ------------------------------------------------------------------- Emails */
-  // Two offers, picked per lead by LH.scriptFor: the Ads offer and the Website offer. The email sender sends the
-  // first email, then the follow ups as replies in the same thread a few working days apart. Written the way
-  // Samil writes: short lines, few commas, no dashes.
+  /* ------------------------------------------------------------------- Offers */
+  // Two offers, picked per lead by LH.scriptFor: the Ads offer and the Website offer. They set how a lead is scored
+  // and how Results groups replies. Lead Hunter writes no messages: the cold email system writes the emails.
   LH.OFFER_NAMES = { ads: 'Ads offer', website: 'Website offer' };
-  LH.DEFAULT_EMAILS = {
-    ads: {
-      subject: 'Quick question for {{business}}',
-      body: "Hello {{business}}\n\nAre you dependent on word of mouth for appointments in {{city}}?\n\nWe help {{niche}} in {{city}} get consistent inquiries through Facebook and Instagram ads.\n\nWe personally screen each and every lead so the ones that reach you are genuine people with real interest.\n\nThere's no big setup fee. Just one flat monthly rate so there's minimal risk on your end.\n\nIf this sounds interesting I'd be happy to send you a quick explanation of how it works.\n\nLet me know",
-      followup1: 'Hello {{business}}\n\nJust bringing this back to the top of your inbox. Would a quick explanation of how it works be useful?\n\nLet me know',
-      followup2: "Hello {{business}}\n\nI'll leave it here so I don't fill up your inbox. If more appointments from Facebook and Instagram ads is ever on your list just reply and I'll send the details.",
-    },
-    website: {
-      subject: 'Website for {{business}}',
-      body: "Hello {{business}}\n\nI came across {{business}} on {{found_on}} and {{website_line}}.\n\nWe build simple websites for {{niche}} in {{city}} that turn visitors into WhatsApp inquiries.\n\nIf this sounds interesting I'd be happy to send you a free mockup of how yours could look.\n\nLet me know",
-      followup1: 'Hello {{business}}\n\nJust bringing this back to the top of your inbox. Would you like me to send the free mockup?\n\nLet me know',
-      followup2: "Hello {{business}}\n\nI'll leave it here so I don't fill up your inbox. If you ever want a simple website that brings in WhatsApp inquiries just reply and I'll send a free mockup.",
-    },
-  };
-  LH.EMAIL_PARTS = ['subject', 'body', 'followup1', 'followup2'];
-
-  /** Edits from Settings over the defaults, part by part. */
-  const withEdits = (defaults, parts, saved) => {
-    const out = {};
-    for (const [k, def] of Object.entries(defaults)) {
-      out[k] = { ...def };
-      for (const part of parts) if (saved && saved[k] && typeof saved[k][part] === 'string') out[k][part] = saved[k][part];
-    }
-    return out;
-  };
-  /** The emails in use: your edits from Settings over the defaults. */
-  LH.emailsFor = (settings) => withEdits(LH.DEFAULT_EMAILS, LH.EMAIL_PARTS, settings && settings.emails);
-  /**
-   * Before 1.12 the first email was the WhatsApp script (greeting, body, closing, edited under Scripts). Those edits
-   * become the first email, so nothing you wrote is lost.
-   */
-  LH.foldScripts = (emails, scripts) => {
-    const out = { ...(emails || {}) };
-    for (const k of Object.keys(LH.DEFAULT_EMAILS)) {
-      const t = scripts && scripts[k];
-      if (!t || (out[k] && typeof out[k].body === 'string')) continue;
-      const parts = ['greeting', 'body', 'closing'].map((p) => (typeof t[p] === 'string' ? t[p] : null));
-      if (parts.every((x) => x === null)) continue;
-      const def = LH.DEFAULT_EMAILS[k].body.split('\n\n');
-      const body = [parts[0] ?? def[0], parts[1] ?? def.slice(1, -1).join('\n\n'), parts[2] ?? def[def.length - 1]].filter(Boolean).join('\n\n');
-      out[k] = { ...(out[k] || {}), body };
-    }
-    return out;
-  };
 
   /** They have a website but it is down or parked: for outreach that is no working website. */
   LH.siteDown = (lead) => !!lead && !!lead.website && ((lead.site || {}).state === 'error' || !!(lead.site || {}).parked);
@@ -959,6 +902,8 @@ Mussafah, Abu Dhabi`),
     else if (q.newBusiness) tags.push('New business');
     else if (g.known && g.reviews < 25) tags.push('Growing');
     if (q.inBand) tags.push('Followers in range');
+    if (lead.justOpened) tags.push('Just opened');
+    if (lead.coldEmailExportedAt) tags.push('Exported for cold email');
     return tags;
   };
 
@@ -975,7 +920,7 @@ Mussafah, Abu Dhabi`),
   };
 
   /**
-   * A business name the way you'd type it in a message. Only for {{business}}: the stored name stays as it is.
+   * A business name the way you'd type it, for the exports. The stored name stays as it is.
    *   "Dr. Smile Dental Clinic - Best Dentist in Dubai" -> "Dr. Smile Dental Clinic"
    *   "Glossy PPF | Ceramic Coating | Car Detailing Dubai" -> "Glossy PPF"
    *   "AL NOOR BEAUTY SALON L.L.C" -> "Al Noor Beauty Salon" · "Gloss Garage Dubai" -> "Gloss Garage"
@@ -994,68 +939,6 @@ Mussafah, Abu Dhabi`),
     }
     if (/[A-Z]/.test(s) && !/[a-z]/.test(s)) s = s.replace(/[A-Z][A-Z']*/g, (w) => (ACRONYM(w) ? w : w.charAt(0) + w.slice(1).toLowerCase()));
     return s || full;
-  };
-
-  /** Script variables. Missing data never shows up as "undefined" or {{…}}. */
-  LH.scriptVars = (lead, settings = {}) => {
-    const l = lead || {};
-    const m = (l.sources || {}).maps || {};
-    const ig = (l.sources || {}).instagram || {};
-    const niche = LH.nicheOf(l, settings);
-    return {
-      // No name: their Instagram handle or domain. The emails say "Hello there" and "your business" when there is neither.
-      business: LH.shortName(l.pageName) || LH.igHandle(l) || LH.domainOf(l.website || ''),
-      niche: niche ? LH.nicheText(niche, settings) : 'businesses',
-      city: LH.cityOf(l.area, settings.adsCity || 'Dubai'),
-      found_on: l.kind !== 'prospect' ? 'Facebook and Instagram' : ig.username && !m.placeId ? 'Instagram' : 'Google Maps',
-      website_line: LH.siteDown(l) ? "your website wasn't loading when I checked" : "couldn't find a website for you",
-      my_name: settings.myName || '',
-      agency: settings.agency || '',
-      my_phone: settings.myPhone || '',
-    };
-  };
-
-  LH.render = (tpl, vars) =>
-    String(tpl || '')
-      .replace(/\{\{\s*(\w+)\s*\}\}/g, (_, k) => (vars[k] != null ? vars[k] : ''))
-      .replace(/[ \t]{2,}/g, ' ')
-      .replace(/ ,/g, ',')
-      .replace(/[ \t]+\n/g, '\n')
-      .replace(/, \./g, '.')
-      .trim();
-
-  /** The lead's offer, its variables, and its first email rendered. */
-  const rendered = (lead, settings) => {
-    const pick = LH.scriptFor(lead);
-    if (!pick.script) return { script: null, tag: pick.tag };
-    const t = LH.emailsFor(settings)[pick.script];
-    const vars = LH.scriptVars(lead, settings);
-    // No name at all: "Hello there", and the rest says "I came across your business on…".
-    const nameless = (business) => (vars.business ? vars : { ...vars, business });
-    const [greeting, ...rest] = String(t.body || '').split('\n\n');
-    const first = [LH.render(greeting, nameless('there')), LH.render(rest.join('\n\n'), nameless('your business'))].filter(Boolean).join('\n\n');
-    return { script: pick.script, tag: pick.tag, vars, nameless, first };
-  };
-
-  /**
-   * The emails for a lead: the first email for its offer, then the follow ups (Settings says how many). Each one ends
-   * with the signature and the opt out line. `to` is their first address that has not bounced and is not a
-   * template placeholder, '' when there is none or they are on the never email list. Leads skipped for running ads get no emails.
-   */
-  LH.emailFor = (lead, settings = {}) => {
-    const r = rendered(lead, settings);
-    const to = (lead && !lead.doNotEmail && LH.goodEmails(lead)[0]) || '';
-    if (!r.script) return { script: null, tag: r.tag, to, subject: '', steps: [] };
-    const D = LH.DEFAULT_SETTINGS;
-    const t = LH.emailsFor(settings)[r.script];
-    const end = [settings.emailSignature ?? D.emailSignature, settings.emailOptOut ?? D.emailOptOut].map((x) => LH.render(x, r.vars)).filter(Boolean);
-    const count = Math.max(0, Math.min(2, Math.round(Number(settings.emailFollowups ?? D.emailFollowups)) || 0));
-    const first = r.first;
-    const followups = [t.followup1, t.followup2].slice(0, count).map((x) => LH.render(x, r.nameless('there')));
-    const steps = first ? [first, ...followups].filter(Boolean).map((text) => [text, ...end].join('\n\n')) : [];
-    // No name: "Quick question" or "Your website" instead of a subject ending in "for".
-    const subject = (r.vars.business && LH.render(t.subject, r.vars)) || { ads: 'Quick question', website: 'Your website' }[r.script];
-    return { script: r.script, tag: r.tag, to, subject, steps };
   };
 
   /* ------------------------------------------------------------------ Results */
@@ -1100,6 +983,41 @@ Mussafah, Abu Dhabi`),
   };
   /** The addresses worth emailing: not bounced before, not a placeholder. */
   LH.goodEmails = (lead) => ((lead && lead.emails) || []).filter((e) => !((lead.badEmails || []).includes(e) || LH.isJunkEmail(e)));
+  // Platform addresses found in Facebook and Instagram pages that are never the business's own.
+  const PLATFORM_DOMAIN = /(^|\.)(facebook\.com|fb\.com|fbcdn\.net|meta\.com|instagram\.com|cdninstagram\.com|whatsapp\.com|messenger\.com|w3\.org|schema\.org|google\.com|apple\.com)$/;
+  /**
+   * Email addresses a business publishes on its own Facebook or Instagram page, from the page's text: escaped forms
+   * ("info@x.com", "info&#64;x.com") count, placeholders and platform addresses do not.
+   */
+  LH.emailsInPage = (text) => {
+    const t = String(text || '')
+      .replace(/\\u0040/gi, '@')
+      .replace(/&#0*64;|&#x0*40;/gi, '@')
+      .replace(/%40/g, '@');
+    const out = [];
+    for (const m of t.matchAll(/[a-z0-9][a-z0-9._%+-]{0,63}@[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,24}(?![a-z0-9-])/gi)) {
+      const e = m[0].toLowerCase();
+      if (LH.isJunkEmail(e) || PLATFORM_DOMAIN.test(e.split('@')[1]) || out.includes(e)) continue;
+      out.push(e);
+    }
+    return out.slice(0, 3);
+  };
+  /**
+   * The business's own Facebook page: the one their website or Google Maps links to, or for website leads the
+   * advertiser's page. '' when there is none (a share link, a group or a post is not a page).
+   */
+  LH.facebookPageUrl = (lead) => {
+    const l = lead || {};
+    const u = LH.safeUrl((l.socials || {}).facebook || '');
+    if (u && LH.linkKind(u) === 'facebook') {
+      const first = u.pathname.split('/').filter(Boolean)[0] || '';
+      const id = u.searchParams.get('id') || '';
+      if (first === 'profile.php') return /^\d{5,}$/.test(id) ? `https://www.facebook.com/profile.php?id=${id}` : '';
+      if (first && !/^(sharer|share|plugins|tr|dialog|groups|events|watch|login|hashtag|photo\.php|story\.php|permalink\.php|ads|reel|marketplace|gaming)$/i.test(first)) return `https://www.facebook.com${u.pathname.replace(/\/+$/, '')}`;
+    }
+    if (l.kind !== 'prospect' && /^\d{5,}$/.test(String(l.pageId || ''))) return `https://www.facebook.com/${l.pageId}`;
+    return '';
+  };
 
   /* ------------------------------------------------------- One business, one record */
   // How two finds are recognised as the same business: same phone, same website (root domain), same Instagram
@@ -1532,6 +1450,102 @@ Mussafah, Abu Dhabi`),
           .join('\r\n'),
       )
       .join('\r\n') + '\r\n';
+
+  /* ---------------------------------------------------------------- Cold email */
+  /**
+   * Leads for the cold email system (cold-email/ in this repo, running on Samil's Mac). It imports any CSV dropped in
+   * its RizcoReach Leads folder, checks every email, website and duplicate again, writes the emails and sends them.
+   * Lead Hunter only picks who goes in and says where we saw them; it writes no email text.
+   */
+  LH.COLD_EMAIL_HEAD = ['business_name', 'first_name', 'email', 'website', 'instagram', 'phone', 'niche', 'area', 'source', 'notes', 'status'];
+  // They replied, booked a meeting, signed, said no, or you skipped them: the cold email system leaves them alone.
+  const COLD_CLOSED = ['replied', 'meeting', 'won', 'lost', 'skip'];
+  /** Their own website, '' when there is none: never a Facebook, Instagram, link page, WhatsApp or Google Maps address. */
+  LH.ownWebsite = (lead) => {
+    const u = LH.safeUrl((lead && lead.website) || '');
+    return u && LH.linkKind(u) === 'website' ? u.toString() : '';
+  };
+  /**
+   * What the website check says, for the cold email file:
+   *   none     no website of their own                                        in
+   *   down     down, an error or parked                                       in
+   *   unknown  not checked yet, or the site blocked the check                 in (the cold email system checks it)
+   *   flagged  no HTTPS, not mobile friendly, an old year, slow, no contact
+   *            button, a free builder address, or a score under 80            in
+   *   good     HTTPS, a mobile viewport, a score of 80 or more, nothing else flagged   out
+   */
+  LH.coldEmailSite = (lead, settings = {}) => {
+    const l = lead || {};
+    if (!LH.ownWebsite(l)) return 'none';
+    if (LH.siteDown(l)) return 'down';
+    const site = l.site || {};
+    if (site.state !== 'ok') return 'unknown';
+    const flagged = ((LH.quality(l, settings).website || {}).reasons || []).length > 0;
+    return site.https && site.mobile && site.score >= 80 && !flagged ? 'good' : 'flagged';
+  };
+  /** Where we actually saw them, for the email's "Just the ___ page": Google Maps, Instagram or Facebook. */
+  LH.coldEmailSource = (lead) => {
+    const l = lead || {};
+    const src = l.sources || {};
+    if (l.kind === 'prospect') return !(src.maps || {}).placeId && (src.instagram || {}).username ? 'Instagram' : 'Google Maps';
+    // Ad Library: their ads ran on Facebook and Instagram. Instagram only when we know their profile.
+    return LH.igHandle(l) ? 'Instagram' : 'Facebook';
+  };
+  /** Worth opening their Facebook page for an email: no usable email yet, a page to open, and a cold email lead. */
+  LH.wantsFacebookEmail = (lead, settings = {}) => !!lead && !!LH.facebookPageUrl(lead) && !LH.goodEmails(lead)[0] && !(lead.fbEmail && lead.fbEmail.at) && LH.coldEmailCandidate(lead, settings);
+  // The old email queue (before 2.3) already emailed them. Queued but never sent counts as not emailed: that
+  // sender is gone, so it never will be.
+  const oldQueueSent = (l) => ((l && l.emailQueue) || {}).sent >= 1;
+  /** The lead could go in the file: open, never emailed by the old email queue, and no clearly good website. */
+  LH.coldEmailCandidate = (lead, settings = {}) => {
+    const l = lead || {};
+    return !COLD_CLOSED.includes(l.status) && !l.doNotEmail && !oldQueueSent(l) && LH.coldEmailSite(l, settings) !== 'good';
+  };
+  /**
+   * The cold email file for these leads: one row per lead with a usable email, plus who was left out and why.
+   * Leads exported before stay out unless includeExported is set.
+   */
+  LH.coldEmailExport = (leads, settings = {}, { includeExported = false } = {}) => {
+    const skipped = { closed: 0, emailedBefore: 0, exported: 0, goodSite: 0, noEmail: 0 };
+    const rows = [];
+    const ids = [];
+    for (const l of (leads || []).filter(Boolean)) {
+      const email = LH.goodEmails(l)[0];
+      const why =
+        COLD_CLOSED.includes(l.status) || l.doNotEmail
+          ? 'closed'
+          : oldQueueSent(l)
+            ? 'emailedBefore'
+            : l.coldEmailExportedAt && !includeExported
+              ? 'exported'
+              : LH.coldEmailSite(l, settings) === 'good'
+                ? 'goodSite'
+                : !email
+                  ? 'noEmail'
+                  : '';
+      if (why) {
+        skipped[why]++;
+        continue;
+      }
+      ids.push(l.id);
+      rows.push([
+        oneLine(LH.shortName(l.pageName) || LH.igHandle(l) || LH.domainOf(l.website || '')),
+        '',
+        email,
+        LH.ownWebsite(l),
+        LH.igHandle(l),
+        LH.whatsappTarget(l) || (LH.bestPhone(l) || {}).number || '',
+        LH.nicheOf(l, settings) || '',
+        oneLine(l.area),
+        LH.coldEmailSource(l),
+        l.justOpened ? 'new business' : '',
+        (LH.STATUSES.find((x) => x.id === l.status) || {}).label || l.status || '',
+      ]);
+    }
+    return { head: LH.COLD_EMAIL_HEAD, rows, ids, skipped };
+  };
+  /** "rizcoreach-cold-email-2026-11-08.csv" */
+  LH.coldEmailFilename = (date = new Date()) => `rizcoreach-cold-email-${LH.contactsLabel(date).slice(3)}.csv`;
 
   /* ------------------------------------------------------------------ Full CSV */
   /** Every field of every lead, one row each: the record from the brief plus the scores behind it. */

@@ -1,14 +1,13 @@
-// End to end: Lead Hunter's emails (LH.emailFor), the real email queue (email-queue.mts, in a worker thread) and the
-// real Gmail sender (lead-hunter/email/sender.gs, in node:vm with a fake Gmail and a test clock).
+// End to end: the real email queue (email-queue.mts, in a worker thread) and the real Gmail sender
+// (lead-hunter/email/sender.gs, in node:vm with a fake Gmail and a test clock). Lead Hunter no longer puts emails on
+// the queue (the cold email system in cold-email/ sends them now); the queue and the sender stay on the site, so
+// they are still tested together, with emails written here.
 //   node --test tests/email-flow.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { Worker } from 'node:worker_threads';
 import vm from 'node:vm';
-
-await import('../lead-hunter/lib/common.js');
-const LH = globalThis.LH;
 
 const SITE = 'https://www.rizcoreach.ae';
 const KEY = 'k'.repeat(32);
@@ -17,7 +16,6 @@ const MIN = 60_000;
 const DAY = 24 * 60 * MIN;
 const at = (s) => Date.parse(s.replace(' ', 'T') + ':00+04:00'); // Dubai time
 const SOURCE = readFileSync(new URL('../lead-hunter/email/sender.gs', import.meta.url), 'utf8').replaceAll('__SITE__', SITE).replaceAll('__KEY__', KEY);
-const SETTINGS = { ...LH.DEFAULT_SETTINGS, myName: 'Samil' };
 
 /** The site in a worker, called synchronously like UrlFetchApp does. */
 function site() {
@@ -125,11 +123,21 @@ function gmail(server, clock) {
   return { ctx, box, sends, receive };
 }
 
-/** What Lead Hunter's "Send to email queue" puts on the site for a lead. */
-const queueItem = (lead) => {
-  const e = LH.emailFor(lead, SETTINGS);
-  return { id: lead.id, email: e.to, business: lead.pageName, script: e.script, fromName: SETTINGS.emailFromName, subject: e.subject, steps: e.steps, followupDays: [3, 4] };
-};
+/** What Lead Hunter's old "Send to email queue" put on the site for a lead: a first email and two follow ups. */
+const queueItem = (lead) => ({
+  id: lead.id,
+  email: lead.emails[0],
+  business: lead.pageName,
+  script: 'ads',
+  fromName: 'Samil',
+  subject: `Quick question for ${lead.pageName}`,
+  steps: [
+    `Hello ${lead.pageName}\n\nAre you dependent on word of mouth for appointments?\n\nLet me know\n\nSamil`,
+    `Hello ${lead.pageName}\n\nJust bringing this back to the top of your inbox.\n\nLet me know\n\nSamil`,
+    `Hello ${lead.pageName}\n\nI'll leave it here so I don't fill up your inbox.\n\nSamil`,
+  ],
+  followupDays: [3, 4],
+});
 const prospect = (i) => ({ id: `lead${i}`, kind: 'prospect', pageName: `Glossy ${i}`, phones: [], emails: [`info@glossy${i}.example`], socials: {}, sources: {}, website: `https://glossy${i}.example/`, adCheck: { state: 'none' } });
 
 test('one lead from queue to reply: first email, a threaded follow up, then the reply stops the rest', () => {
@@ -150,7 +158,7 @@ test('one lead from queue to reply: first email, a threaded follow up, then the 
     const first = g.sends[0];
     assert.equal(first.to, 'info@glossy1.example');
     assert.equal(first.subject, 'Quick question for Glossy 1');
-    assert.equal(first.body, LH.emailFor(prospect(1), SETTINGS).steps[0]);
+    assert.equal(first.body, queueItem(prospect(1)).steps[0]);
     assert.equal(first.inReplyTo, '');
     assert.deepEqual([item().status, item().sent, item().threadId, item().messageId], ['active', 1, first.threadId, `<${first.id}@mail.gmail.com>`]);
     assert.equal(item().nextAt, at('2026-10-22 09:00'), 'follow up 1 three working days later');

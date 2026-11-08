@@ -31,7 +31,6 @@ const S = {
   view: 'leads',
   openId: null,
   huntNiche: '',
-  email: null, // the email sender as the site sees it (Settings)
   filters: { q: '', heat: '', status: '', keyword: '', site: '', tag: '', contact: '', minDays: 0, hideBig: true, skipped: false, contactedBefore: false, sort: 'heat', hunt: '' },
   alerts: {}, // sources paused by a login wall, checkpoint or block: { adlib: { at, text, url } }
   problems: {}, // the last problems per source, newest first: { adlib: [[at, text]] }
@@ -214,7 +213,7 @@ function contactCell(l) {
     return ['queued', 'running'].includes(st) ? '<span class="muted">Looking…</span>' : '<span class="muted">No contact yet</span>';
   }
   const eq = l.emailQueue;
-  if (eq && (eq.state === 'queued' || eq.sent)) parts.push(`<div class="p"><span class="tag green" title="${eq.sent ? 'Sent by the email sender' : 'Waiting in your email queue'}">${eq.sent ? 'Emailed' : 'Email queued'}</span></div>`);
+  if (eq && (eq.state === 'queued' || eq.sent)) parts.push(`<div class="p"><span class="tag green" title="${eq.sent ? "Sent by Lead Hunter's old email sender" : "In Lead Hunter's old email queue"}">${eq.sent ? 'Emailed' : 'Email queued'}</span></div>`);
   return `<div class="contact">${parts.join('')}</div>`;
 }
 
@@ -521,47 +520,35 @@ function contactSection(l) {
   </section>`;
 }
 
-const bubbleRows = (t) => Math.min(12, Math.max(1, (String(t).match(/\n/g) || []).length + Math.ceil(String(t).length / 64)));
-
-/* The emails the email sender sends (read only: the wording is edited in Settings), where they stand, and manual sending. */
-const STEP_NAMES = ['First email', 'Follow up 1', 'Follow up 2'];
-const EMAIL_STATE = { queued: 'Queued', replied: 'Replied', bounced: 'Bounced', optout: 'On the never email list', failed: 'Could not send', cancelled: 'Stopped' };
-function emailState(q) {
-  if (q.state === 'active') return `Sent ${q.sent} of ${q.total} · next follow up ${q.nextAt > Date.now() ? new Date(q.nextAt).toLocaleDateString(undefined, { weekday: 'short' }) : 'soon'}`;
-  if (q.state === 'done') return `Sent ${q.sent} of ${q.total}`;
-  return EMAIL_STATE[q.state] || q.state;
+/* Cold email: the address the export hands over and where it was found, whether the lead goes in the cold email
+   file (and why not), and the Just opened box. The cold email system on the Mac writes and sends the emails. */
+const EMAIL_FROM = { facebook: 'their Facebook page', instagram: 'their Instagram profile', manual: 'you' };
+function coldEmailNote(l) {
+  if (['replied', 'meeting', 'won', 'lost', 'skip'].includes(l.status)) return 'Their status says you are talking to them or closed them, so they stay out of the cold email file.';
+  if (l.doNotEmail) return 'Never email is on, so they stay out of the cold email file.';
+  if ((l.emailQueue || {}).sent >= 1) return "Lead Hunter's old email sender already emailed them, so they stay out of the cold email file.";
+  if (LH.coldEmailSite(l, S.settings) === 'good') return 'Their website looks good (HTTPS, works on phones, scores 80 or more), so they stay out of the cold email file.';
+  if (!LH.goodEmails(l)[0]) return 'No email found yet, so they stay out of the cold email file.';
+  if (l.coldEmailExportedAt) return `Exported for cold email on ${fmtDate(l.coldEmailExportedAt)}. Tick Include already exported to export them again.`;
+  return 'They go in the next Export for cold email.';
 }
-function emailQueueRow(l, e) {
-  const q = l.emailQueue;
-  if (q && (q.sent || q.state !== 'cancelled')) {
-    const cls = { replied: 'green', bounced: 'red', failed: 'red', optout: 'red' }[q.state] || '';
-    return `<span class="tag ${cls}" data-email-state>${esc(emailState(q))}</span>${['queued', 'active'].includes(q.state) ? '<button class="btn sm" data-act="email-stop">Stop emails</button>' : ''}`;
-  }
-  if (!e.to || !e.script) return ''; // skipped for running ads: left out of the emails
-  if (l.contactedAt) return ''; // already contacted another way: one channel per business
-  if (!S.settings.queueKey) return '<button class="btn sm ghost" data-goto="settings" data-anchor="email">Set up the email sender</button>';
-  return '<button class="btn sm pri" data-act="email-queue">Add to email queue</button>';
+function fbEmailRow(l) {
+  if (!LH.facebookPageUrl(l) || LH.goodEmails(l)[0]) return '';
+  const f = l.fbEmail || {};
+  const said = f.state === 'queued' ? 'Looking on their Facebook page…' : f.state === 'none' ? `No email on their Facebook page (${fmtDate(f.at)}).` : f.state === 'error' ? `Their Facebook page did not load (${fmtDate(f.at)}).` : '';
+  return `<div class="row">${said ? `<span class="muted">${esc(said)}</span>` : ''}${f.state === 'queued' ? '' : '<button class="btn sm" data-act="fb-email">Look on their Facebook page</button>'}</div>`;
 }
-/** The Email section of a lead: what the email sender will send them, where it stands, and the queue buttons. */
-function emailSection(l) {
-  const e = LH.emailFor(l, S.settings);
-  if (!e.script)
-    return `<section class="d-sec email-sec"><h3>Email</h3><p class="muted">They run ads and have a working website, so they are left out of the emails.</p></section>`;
-  return `<section class="d-sec email-sec"><h3>Email <span class="tag">${esc(LH.OFFER_NAMES[e.script])}</span></h3>${emailBlock(l, e)}
-    <p class="hint">The email sender sends these from your own Gmail, slowly, and stops when they reply. Change the wording in Settings > Email sender.</p></section>`;
-}
-function emailBlock(l, e) {
-  const steps = e.steps
-    .map((t, i) => `<div class="bubble"><div class="bubble-head"><span class="lbl">${STEP_NAMES[i]}</span></div><textarea class="inp" readonly data-email-step="${i}" rows="${bubbleRows(t)}" aria-label="${STEP_NAMES[i]}">${esc(t)}</textarea></div>`)
-    .join('');
-  const queue = emailQueueRow(l, e);
-  const none = l.doNotEmail ? 'Never email is on for them.' : (l.emails || []).length ? 'Their email bounced.' : 'No email found.';
-  return `<p class="email-to">${e.to ? `To <b>${esc(e.to)}</b>` : `<span class="muted">${none}</span>`}</p>
-    ${queue ? `<div class="row email-queue">${queue}</div>` : ''}
-    <details class="email-preview"><summary>What they get</summary>
-      <input class="inp" readonly data-email-subject value="${esc(e.subject)}" aria-label="Email subject" style="margin-bottom:8px" />
-      <div class="bubbles">${steps}</div></details>
-    ${(l.emails || []).length && !l.doNotEmail ? '<div class="row"><button class="linkish" data-act="email-never">Never email</button></div>' : ''}`;
+function coldEmailSection(l) {
+  const email = LH.goodEmails(l)[0] || '';
+  const from = (l.emailFrom || {})[email];
+  return `<section class="d-sec cold-sec"><h3>Cold email</h3>
+    <p class="email-to">${email ? `<b>${esc(email)}</b> <span class="muted">from ${esc(EMAIL_FROM[from] || 'their website')}</span>` : '<span class="muted">No email found</span>'}</p>
+    <p class="muted" data-cold-note>${esc(coldEmailNote(l))}</p>
+    ${fbEmailRow(l)}
+    <label class="chk"><input type="checkbox" data-just-opened ${l.justOpened ? 'checked' : ''} /> Just opened / grand opening</label>
+    <p class="hint">Tick it only when you know they just opened (few Google reviews is not enough). The export then says "new business" and the cold email system sends its congrats on the launch email.</p>
+    <div class="row"><button class="linkish" data-act="never-email">${l.doNotEmail ? 'Allow email again' : 'Never email'}</button></div>
+  </section>`;
 }
 
 function drawerHtml(l) {
@@ -594,7 +581,7 @@ function drawerHtml(l) {
       ${contactedRow(l)}
     </section>
     ${qualitySection(l)}
-    ${emailSection(l)}
+    ${coldEmailSection(l)}
     ${siteSection(l)}
     ${contactSection(l)}
     <section class="d-sec"><h3>Notes</h3><textarea class="inp" rows="3" data-notes placeholder="Who you spoke to, what they said, when to follow up…">${esc(l.notes || '')}</textarea></section>
@@ -781,10 +768,7 @@ function setView(v) {
   S.view = v;
   $$('.tabs [data-view]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.view === v)));
   $$('[data-view-panel]').forEach((p) => (p.hidden = p.dataset.viewPanel !== v));
-  if (v === 'settings') {
-    fillSettings();
-    loadEmailStatus();
-  }
+  if (v === 'settings') fillSettings();
   if (v === 'hunt') renderLastHunt();
   if (v === 'intent') send({ type: 'intent:seen' }); // the badge count goes once you look
   renderAll();
@@ -908,62 +892,6 @@ function readNiches(f) {
   return !list.length || JSON.stringify(list) === JSON.stringify(D) ? null : list;
 }
 
-function emailCard(key, t) {
-  const field = (part, label, rows) =>
-    `<label class="field"><span class="lbl">${label}</span>${rows ? `<textarea class="inp" rows="${rows}" data-email="${key}.${part}">${esc(t[part])}</textarea>` : `<input class="inp" data-email="${key}.${part}" value="${esc(t[part])}" />`}</label>`;
-  return `<div class="tpl" data-email-card="${key}"><div class="tpl-head"><h4>${esc(LH.OFFER_NAMES[key])} emails</h4><button type="button" class="btn sm ghost" data-act="reset-email" data-key="${key}">Reset to default</button></div>
-    ${field('subject', 'Subject', 0)}${field('body', 'First email', 12)}${field('followup1', 'Follow up 1', 5)}${field('followup2', 'Follow up 2', 5)}</div>`;
-}
-function renderEmailsEditor(saved) {
-  $('[data-emails]').innerHTML = Object.entries(LH.emailsFor({ emails: saved }))
-    .map(([k, t]) => emailCard(k, t))
-    .join('');
-}
-/** Only the parts that differ from the defaults are stored; null when nothing was changed. */
-function readEdits(f, attr, defaults) {
-  const out = {};
-  $$(`[data-${attr}]`, f).forEach((el) => {
-    const [k, part] = el.dataset[attr].split('.');
-    const v = el.value.trim();
-    if (defaults[k] && v !== defaults[k][part]) (out[k] = out[k] || {})[part] = v;
-  });
-  return Object.keys(out).length ? out : null;
-}
-
-/* Email sender status, as the site sees it: sent today, paused or not, and when the sender last checked in. */
-const emailPaused = (e) => !!e && !e.error && (e.settings.paused || e.pausedUntil > e.now);
-const PAUSED_WHY = { bounces: '3 emails bounced. Check your list then resume', limit: "Gmail's daily limit. It starts again tomorrow" };
-async function loadEmailStatus() {
-  if (S.settings.queueKey) {
-    const r = await send({ type: 'email:status' });
-    S.email = r && !r.error ? r : { error: (r && r.error) || 'Could not reach your site.' };
-  }
-  renderEmailSender();
-}
-function renderEmailSender() {
-  const on = !!S.settings.queueKey;
-  $('[data-email-nokey]').hidden = on;
-  $('[data-email-on]').hidden = !on;
-  const el = $('[data-email-status]');
-  const e = S.email;
-  if (!on) return;
-  if (!e) return (el.textContent = 'Checking…');
-  if (e.error) return (el.innerHTML = `<span class="err">${esc(e.error)}</span>`);
-  const mins = Math.max(0, Math.round((e.now - e.senderSeenAt) / 60000));
-  const seen = new Date(e.senderSeenAt).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
-  const sender = !e.senderSeenAt ? 'Not set up yet' : mins < 15 ? `Running, last check ${mins ? `${mins} min ago` : 'just now'}` : `Not running since ${seen}`;
-  const s = e.stats;
-  el.innerHTML = `<div><b>${esc(sender)}</b>${emailPaused(e) ? ` <span class="tag amber">Paused: ${esc(PAUSED_WHY[e.pausedReason] || 'you paused it')}</span>` : ''}</div>
-    <div class="muted">Sent today ${s.today} of ${s.cap} · ${s.queued} queued · ${s.replied} replied · ${s.bounced} bounced</div>`;
-  $('[data-act="email-pause"]').textContent = emailPaused(e) ? 'Resume sending' : 'Pause sending';
-}
-async function emailSettings(settings) {
-  const r = await send({ type: 'email:settings', settings });
-  if (r && r.error) return toast(r.error);
-  S.email = r;
-  renderEmailSender();
-}
-
 function fillSettings() {
   const f = $('[data-settings-form]');
   const s = S.settings;
@@ -990,12 +918,10 @@ function fillSettings() {
   $('[data-weak-checks]', f).innerHTML = LH.weakChecksFor(s)
     .map((c) => `<div class="weak-row" data-weak-id="${esc(c.id)}"><span>${esc(c.label)}</span><input class="inp" type="number" min="0" max="100" data-weak-points value="${esc(c.points)}" aria-label="Points" /></div>`)
     .join('');
-  renderEmailsEditor(s.emails);
-  renderEmailSender();
   renderHistory();
   renderProblems();
 }
-const SOURCE_LABEL = { adlib: 'Meta Ad Library', maps: 'Google Maps', instagram: 'Instagram API', reddit: 'Reddit', facebook: 'Facebook groups', linkedin: 'LinkedIn' };
+const SOURCE_LABEL = { adlib: 'Meta Ad Library', maps: 'Google Maps', instagram: 'Instagram API', fbpage: 'Facebook pages', reddit: 'Reddit', facebook: 'Facebook groups', linkedin: 'LinkedIn' };
 /** Settings > Your data: the last problems each source hit. */
 function renderProblems() {
   const el = $('[data-problems]');
@@ -1022,8 +948,6 @@ async function saveSettings() {
     const n = Number(el.value);
     next[el.name] = el.type === 'checkbox' ? el.checked : el.type === 'number' ? (el.value.trim() === '' || !Number.isFinite(n) ? LH.DEFAULT_SETTINGS[el.name] : n) : el.value.trim();
   }
-  next.emailFollowups = Math.max(0, Math.min(2, Math.round(Number(next.emailFollowups)) || 0));
-  next.emailMaxPerDay = Math.max(1, Math.min(40, Math.round(next.emailMaxPerDay)));
   next.nameMatch = Math.max(0.8, Math.min(1, Number(next.nameMatch) || LH.DEFAULT_SETTINGS.nameMatch));
   // Website checks: only what differs from the defaults is kept, so later improvements to the defaults still arrive.
   const edits = $$('[data-weak-id]', f)
@@ -1055,17 +979,9 @@ async function saveSettings() {
   next.targetNiches = niches.every((el) => el.checked) ? null : niches.filter((el) => el.checked).map((el) => el.value);
   if (next.followerMax < next.followerMin) [next.followerMin, next.followerMax] = [next.followerMax, next.followerMin];
   next.niches = readNiches(f);
-  next.emails = readEdits(f, 'email', LH.DEFAULT_EMAILS);
-  if (next.queueKey !== S.settings.queueKey) next.queueKeyAt = Date.now();
-  if (next.queueSite && !/^https?:\/\//i.test(next.queueSite)) next.queueSite = `https://${next.queueSite}`;
-  next.queueSite = (next.queueSite || '').replace(/\/+$/, '');
-  // The daily limit lives on the site too, where the sender reads it.
-  const siteMax = S.email && S.email.settings ? S.email.settings.maxPerDay : S.settings.emailMaxPerDay;
   await chrome.storage.local.set({ settings: next });
   S.settings = next;
   renderNicheChips();
-  renderEmailSender();
-  if (next.queueKey && next.emailMaxPerDay !== siteMax) await emailSettings({ maxPerDay: next.emailMaxPerDay });
   return next;
 }
 
@@ -1103,30 +1019,39 @@ function initSettings() {
   });
 }
 
-async function emailLeads(ids, b) {
-  if (!S.settings.queueKey) {
-    toast('Add your site and key in Settings > Your site first.');
-    return setView('settings');
-  }
-  if (b) b.disabled = true;
-  const r = await send({ type: 'email:push', ids });
-  if (b) b.disabled = false;
-  if (!r || r.error) return toast((r && r.error) || 'Could not reach the email queue.');
+/* Export for cold email: the leads for the cold email system, saved with Chrome's Save As so the file can go
+   straight into the RizcoReach Leads folder (Chrome remembers the folder). Leads are marked exported once the file
+   is saved; cancel the dialog and nothing is marked. */
+S.coldInclude = false; // Include already exported
+async function exportColdEmail(list) {
+  const r = LH.coldEmailExport(list, S.settings, { includeExported: S.coldInclude });
   const k = r.skipped;
-  const n = (reasons) => r.rejected.filter((x) => reasons.includes(x.reason)).length;
-  const already = k.already.length + n(['duplicate', 'already_sent']);
-  const other = r.rejected.length - n(['duplicate', 'already_sent', 'never']);
-  const parts = [
-    `${r.queued} added to the email queue`,
-    k.noEmail.length && `${k.noEmail.length} ${k.noEmail.length === 1 ? 'has' : 'have'} no email`,
-    k.runningAds.length && `${k.runningAds.length} ${k.runningAds.length === 1 ? 'runs' : 'run'} ads`,
-    already && `${already} already emailed`,
-    k.closed.length && `${k.closed.length} replied or closed`,
-    (k.contacted || []).length && `${k.contacted.length} already contacted`,
-    n(['never']) && `${n(['never'])} on the never email list`,
-    other && `${other} could not be added`,
-  ];
-  return toast(parts.filter(Boolean).join(' · '));
+  const out = [
+    k.noEmail && `${k.noEmail} without an email`,
+    k.goodSite && `${k.goodSite} with a good website`,
+    k.exported && `${k.exported} exported before`,
+    k.closed && `${k.closed} replied, closed or skipped`,
+    k.emailedBefore && `${k.emailedBefore} emailed by the old sender`,
+  ].filter(Boolean);
+  if (!r.rows.length) return toast(`No leads for cold email${out.length ? `: ${out.join(', ')}` : ''}.`);
+  const url = URL.createObjectURL(new Blob([`﻿${LH.toCsv([r.head, ...r.rows])}\r\n`], { type: 'text/csv;charset=utf-8' }));
+  let id;
+  try {
+    id = await chrome.downloads.download({ url, filename: LH.coldEmailFilename(), saveAs: true, conflictAction: 'uniquify' });
+  } catch (e) {
+    URL.revokeObjectURL(url);
+    return toast(`Could not save the file: ${e.message || e}`);
+  }
+  const done = async (d) => {
+    if (d.id !== id || !d.state || !['complete', 'interrupted'].includes(d.state.current)) return;
+    chrome.downloads.onChanged.removeListener(done);
+    URL.revokeObjectURL(url);
+    if (d.state.current !== 'complete') return toast('The file was not saved, so nothing was marked as exported.');
+    await send({ type: 'cold:exported', ids: r.ids });
+    toast(`${r.rows.length} lead${r.rows.length === 1 ? '' : 's'} saved for cold email${out.length ? ` · left out: ${out.join(', ')}` : ''}`);
+  };
+  chrome.downloads.onChanged.addListener(done);
+  toast(`${r.rows.length} lead${r.rows.length === 1 ? '' : 's'} ready. Save the file in your RizcoReach Leads folder.`);
 }
 
 /* ------------------------------------------------------------- listeners */
@@ -1206,6 +1131,10 @@ function bind() {
         return closeDrawer();
       case 'export-csv':
         return exportCsv(filtered().map((r) => r.l));
+      case 'export-cold':
+        return exportColdEmail(filtered().map((r) => r.l));
+      case 'bulk-cold':
+        return exportColdEmail([...S.selected].map((id) => S.leads.get(id)).filter(Boolean));
       case 'bulk-export':
         return exportCsv([...S.selected].map((id) => S.leads.get(id)).filter(Boolean));
       case 'export-full':
@@ -1274,21 +1203,8 @@ function bind() {
       case 'reset-niches':
         renderNicheEditor(LH.DEFAULT_PRESETS.map(LH.cleanPreset));
         return toast('Back to the 5 default presets. Save to keep them.');
-      case 'reset-email':
-        b.closest('[data-email-card]').outerHTML = emailCard(b.dataset.key, LH.DEFAULT_EMAILS[b.dataset.key]);
-        return toast('Emails reset. Save to keep them.');
-      case 'email-pause':
-        return emailSettings({ paused: !emailPaused(S.email) });
-      case 'copy-sender': {
-        // The sender script with your site and key filled into its first two lines.
-        const { queueSite, queueKey } = await saveSettings();
-        if (!queueKey || !queueSite) return toast('Add your site and key under Your site first');
-        const text = await (await fetch(chrome.runtime.getURL('email/sender.gs'))).text();
-        const js = (v) => `'${String(v).replace(/[\\']/g, '\\$&')}'`;
-        return copy(text.replace(/var SITE = '__SITE__'/, () => `var SITE = ${js(queueSite)}`).replace(/var KEY = '__KEY__'/, () => `var KEY = ${js(queueKey)}`));
-      }
       case 'backup': {
-        const settings = { ...S.settings, pagespeedKey: '', placesKey: '', queueKey: '', geminiKey: '', anthropicKey: '', igToken: '', redditSecret: '' }; // keep keys out of backups
+        const settings = { ...S.settings, pagespeedKey: '', placesKey: '', geminiKey: '', anthropicKey: '', igToken: '', redditSecret: '' }; // keep keys out of backups
         return download(`lead-hunter-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), settings, leads: [...S.leads.values()] }), 'application/json');
       }
       case 'wipe':
@@ -1318,20 +1234,15 @@ function bind() {
         else toast(r.places && r.places.match ? 'Found on Google Maps' : 'No confident match on Google Maps');
         return;
       }
-      case 'email-queue':
-        if (l) await emailLeads([l.id], b);
-        return;
-      case 'email-stop': {
+      case 'fb-email': {
         if (!l) return;
-        const r = await send({ type: 'email:cancel', ids: [l.id] });
-        return toast(r && r.error ? `${r.error} Lead Hunter keeps trying.` : `No more emails to “${l.pageName}”`);
+        const r = await send({ type: 'fbemail:check', ids: [l.id] });
+        return toast(r && r.error ? r.error : 'Looking for an email on their Facebook page');
       }
-      case 'email-never': {
+      case 'never-email':
         if (!l) return;
-        const r = await send({ type: 'email:never', id: l.id });
-        if (r && r.error) return toast(r.error);
-        return toast(`Lead Hunter will never email “${l.pageName}”`, () => send({ type: 'email:never', id: l.id, remove: true }));
-      }
+        await update(l.id, { doNotEmail: !l.doNotEmail });
+        return toast(l.doNotEmail ? `“${l.pageName}” can go in the cold email file again` : `“${l.pageName}” stays out of the cold email file`);
       case 'ig-lookup': {
         if (!l) return;
         const r = await send({ type: 'ig:lookup', ids: [l.id] });
@@ -1375,30 +1286,6 @@ function bind() {
         await send({ type: 'history:clear' });
         return toast('Contacted memory cleared.');
       }
-      case 'bulk-email':
-        return emailLeads(filtered().map((r) => r.l.id).filter((id) => S.selected.has(id)), b);
-      case 'gen-key': {
-        const bytes = crypto.getRandomValues(new Uint8Array(24));
-        const k = btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-        const input = $('[data-settings-form] [name="queueKey"]');
-        input.value = k;
-        input.type = 'text';
-        return toast('New key made. Copy it into Netlify, then press Save & test.');
-      }
-      case 'copy-key': {
-        const k = $('[data-settings-form] [name="queueKey"]').value.trim();
-        return k ? copy(k) : toast('Generate a key first');
-      }
-      case 'test-queue': {
-        const out = $('[data-queue-status]');
-        await saveSettings();
-        if (!S.settings.queueKey) return (out.textContent = 'Add a key first.');
-        out.textContent = 'Testing…';
-        const r = await send({ type: 'email:status' });
-        out.textContent = r && r.error ? r.error : 'Connected to your site.';
-        out.style.color = r && r.error ? 'var(--poor)' : 'var(--good)';
-        return loadEmailStatus();
-      }
       case 'delete-lead':
         if (!l || !confirm(`Delete ${l.pageName}?`)) return;
         await send({ type: 'lead:delete', ids: [l.id] });
@@ -1420,7 +1307,15 @@ function bind() {
   });
   drawer.addEventListener('change', (e) => {
     if (e.target.matches('[data-status]') && S.openId) update(S.openId, { status: e.target.value });
+    if (e.target.matches('[data-just-opened]') && S.openId) update(S.openId, { justOpened: e.target.checked });
   });
+  // Include already exported: one setting for both tabs.
+  $$('[data-cold-include]').forEach((el) =>
+    el.addEventListener('change', () => {
+      S.coldInclude = el.checked;
+      $$('[data-cold-include]').forEach((x) => (x.checked = el.checked));
+    }),
+  );
   drawer.addEventListener('submit', (e) => {
     e.preventDefault();
     const f = e.target;
@@ -1490,5 +1385,4 @@ function bind() {
   fillSettings();
   const hash = location.hash.replace('#', '');
   setView(['leads', 'hunt', 'settings', 'ads', 'intent'].includes(hash) ? hash : 'leads');
-  if (S.settings.queueKey) send({ type: 'queue:sync' }).catch(() => {});
 })();

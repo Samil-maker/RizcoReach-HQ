@@ -2,8 +2,8 @@
    1. FIND businesses on Google Maps (Places API, or the Maps page in a tab)
    2. CHECK each one in the Meta Ad Library (in a background tab)
    3. Businesses that are NOT running ads become prospects for the Meta-ads offer.
-   Prospects are stored like leads (`lead:p:…`, kind: 'prospect') so the dashboard, scoring, the email sender
-   and the exports all work on them too. */
+   Prospects are stored like leads (`lead:p:…`, kind: 'prospect') so the dashboard, scoring and the exports
+   (cold email, Google Contacts, CSV) all work on them too. */
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const jitter = (min, max) => min + Math.random() * (max - min);
@@ -61,12 +61,14 @@ function mergeProspect(lead, item, ctx) {
   } else if (kind === 'whatsapp') {
     addPhone(lead, LH.whatsappNumber(u), item.source === 'instagram' ? 'whatsapp-ig' : 'whatsapp-site');
   } else if (kind === 'linkinbio' && !lead.socials.linkinbio) lead.socials.linkinbio = LH.cleanUrl(u);
+  else if (kind === 'facebook' && !lead.socials.facebook) lead.socials.facebook = LH.cleanUrl(u);
   lead.destinationKind = lead.website ? 'website' : lead.socials.instagram ? 'instagram' : null;
 
   for (const n of item.whatsapp || []) addPhone(lead, n, item.source === 'instagram' ? 'whatsapp-ig' : 'whatsapp-site');
   for (const n of item.phones || []) addPhone(lead, n, item.source === 'maps' ? 'google' : 'instagram');
   lead.phones = lead.phones.slice(0, 8);
   lead.emails = [...new Set([...(lead.emails || []), ...(item.emails || []).map((e) => e.toLowerCase())])].slice(0, 5);
+  if (item.emailFrom) lead.emailFrom = { ...item.emailFrom, ...(lead.emailFrom || {}) }; // where each email was found
   const ig = lead.sources.instagram || {};
   lead.avoid = LH.AVOID_WORDS.test([lead.pageName, ...lead.categories, ig.bio || ''].join(' '));
   lead.lastSeenAt = now();
@@ -148,6 +150,8 @@ async function ingestProspects(items, ctx = {}) {
   });
   if (result.checks.length) queueAdChecks(result.checks);
   igAuto(result.leads, settings);
+  // No website: nothing else will find an email, so their Facebook page is next. With a website, after its check.
+  fbEmailAuto(result.leads.filter((l) => !LH.ownWebsite(l)), settings);
   if (result.websites.length) enqueue(result.websites);
   return result;
 }
@@ -156,6 +160,13 @@ async function ingestProspects(items, ctx = {}) {
 // For each prospect: search the Ad Library in a background tab and decide whether they run ads.
 let adCheckBusy = false;
 let pendingCheck = null; // { id, tabId, resolve }
+/** The check tab is shared by the Ad Library checks and the Facebook page email lookups: one page at a time. */
+let checkTabChain = Promise.resolve();
+function withCheckTab(fn) {
+  const run = checkTabChain.then(fn, fn);
+  checkTabChain = run.catch(() => {});
+  return run;
+}
 
 async function queueAdChecks(ids, front = false) {
   await locked(async () => {
@@ -310,7 +321,7 @@ async function logProblem(source, text) {
     await store.set({ problems });
   });
 }
-const SOURCE_NAMES = { adlib: 'Meta Ad Library', maps: 'Google Maps', instagram: 'Instagram API' };
+const SOURCE_NAMES = { adlib: 'Meta Ad Library', maps: 'Google Maps', instagram: 'Instagram API', fbpage: 'Facebook pages' };
 async function alertSource(source, text, url, hint = 'Open the tab, sort it out, then press Resume in Lead Hunter.') {
   await logProblem(source, text);
   await locked(async () => {
@@ -354,7 +365,7 @@ async function runAdChecks() {
       const lead = await getLead(id);
       if (lead && lead.kind === 'prospect') {
         await updateLead(id, (l) => (l.adCheck = { ...(l.adCheck || {}), state: 'checking' }));
-        const result = await checkOne(lead).catch((e) => ({ state: 'unclear', reason: String(e.message || e), checkedAt: now() }));
+        const result = await withCheckTab(() => checkOne(lead)).catch((e) => ({ state: 'unclear', reason: String(e.message || e), checkedAt: now() }));
         if (result.blocked) {
           // Stop here: this business stays first in the queue and every check waits until you press Resume.
           await updateLead(id, (l) => (l.adCheck = { ...(l.adCheck || {}), state: 'queued' }));
@@ -458,6 +469,82 @@ async function runIg() {
   }
 }
 chrome.alarms.onAlarm.addListener((a) => a.name === 'tick' && runIg());
+
+/* ------------------------------------------------ emails on Facebook pages */
+/* Leads with no email, and no website or a weak one: their Facebook page opens in the check tab, the way you would
+   open it yourself, and an email shown on it (its Intro) is kept. One page every few seconds. A login wall,
+   checkpoint or block pauses these lookups with an alert: nothing tries to get past it. */
+let fbBusy = false;
+let pendingFb = null; // { id, tabId, resolve }
+async function queueFbEmails(ids, front = false) {
+  if (!ids.length) return;
+  for (const id of ids) await updateLead(id, (l) => (l.fbEmail = { state: 'queued' }));
+  await locked(async () => {
+    const { fbEmailQueue = [] } = await store.get('fbEmailQueue');
+    const rest = fbEmailQueue.filter((x) => !ids.includes(x));
+    await store.set({ fbEmailQueue: front ? [...ids, ...rest] : [...rest, ...ids] });
+  });
+  runFbEmails();
+}
+/** New or newly checked leads worth a look, when Look for emails on Facebook pages is on. */
+function fbEmailAuto(leads, settings) {
+  if (!settings.fbEmailAuto) return;
+  queueFbEmails((leads || []).filter((l) => LH.wantsFacebookEmail(l, settings)).map((l) => l.id));
+}
+/** Open their page in the check tab and wait for the content script (content/social-scan.js) to read it. */
+async function readFacebookPage(lead, url) {
+  const tabId = await adCheckTab();
+  const res = await new Promise((resolve) => {
+    const timer = setTimeout(() => resolve({ timeout: true }), 40000);
+    pendingFb = { id: lead.id, tabId, resolve: (r) => (clearTimeout(timer), resolve(r)) };
+    chrome.tabs.update(tabId, { url }).catch(() => resolve({ error: 'tab' }));
+  });
+  pendingFb = null;
+  if (res.timeout || res.error) {
+    // A login or checkpoint page may never run the reader: the tab's address says it.
+    const at = await chrome.tabs.get(tabId).then((t) => t.url || '').catch(() => '');
+    if (/facebook\.com\/(login|checkpoint)/.test(at)) return { blocked: /checkpoint/.test(at) ? 'Facebook showed a security check' : 'Facebook asked you to log in' };
+    return { loaded: false };
+  }
+  return res;
+}
+async function runFbEmails() {
+  if (fbBusy) return;
+  fbBusy = true;
+  try {
+    for (;;) {
+      const { fbEmailQueue = [], alerts = {} } = await store.get(['fbEmailQueue', 'alerts']);
+      if (!fbEmailQueue.length || alerts.fbpage) break;
+      const id = fbEmailQueue[0];
+      const lead = await getLead(id);
+      const url = lead && LH.facebookPageUrl(lead);
+      if (url && !LH.goodEmails(lead)[0]) {
+        const r = await withCheckTab(() => readFacebookPage(lead, url)).catch((e) => ({ loaded: false, error: String(e.message || e) }));
+        if (r.blocked) {
+          // This lead stays first in the queue and the lookups wait until you press Resume.
+          await alertSource('fbpage', r.blocked, url, 'Sort it out in the Ad Library check tab, then press Resume on the Meta ads tab.');
+          break;
+        }
+        const emails = LH.emailsInPage((r.emails || []).join(' ') + ' ' + (r.text || ''));
+        if (!r.loaded) logProblem('fbpage', `${lead.pageName || url}: the page did not load`);
+        await updateLead(id, (l) => {
+          l.fbEmail = { state: emails.length ? 'found' : r.loaded ? 'none' : 'error', at: now(), url };
+          if (!emails.length) return;
+          l.emails = [...new Set([...(l.emails || []), ...emails])].slice(0, 5);
+          l.emailFrom = { ...Object.fromEntries(emails.map((e) => [e, 'facebook'])), ...(l.emailFrom || {}) };
+        });
+        await sleep(jitter(4000, 9000)); // human pace on Facebook
+      } else if (lead && (lead.fbEmail || {}).state === 'queued') await updateLead(id, (l) => delete l.fbEmail);
+      await locked(async () => {
+        const { fbEmailQueue: q = [] } = await store.get('fbEmailQueue');
+        await store.set({ fbEmailQueue: q.filter((x) => x !== id) });
+      });
+    }
+  } finally {
+    fbBusy = false;
+  }
+}
+chrome.alarms.onAlarm.addListener((a) => a.name === 'tick' && runFbEmails());
 
 /* ---------------------------------------------------------- Google Maps */
 const PLACES_FIELDS = [
@@ -695,6 +782,8 @@ async function addFromInstagram(p) {
   const bio = String(p.bio || '').slice(0, 1000);
   const links = (Array.isArray(p.links) ? p.links : []).map(String).slice(0, 10);
   const contacts = LH.extractContacts(`<p>${escHtml(bio)}</p>${links.map((h) => `<a href="${escHtml(h)}">link</a>`).join('')}`, `https://www.instagram.com/${username}/`, 'AE');
+  // The public business email on the profile (its Email or Contact button, or the profile's own data).
+  const shown = LH.emailsInPage((Array.isArray(p.emails) ? p.emails : []).map(String).join(' '));
   const site = links.map((h) => LH.unwrapLink(h)).find((u) => u && LH.linkKind(u) === 'website');
   const name = String(p.name || '').trim().slice(0, 160) || username;
   const item = {
@@ -704,7 +793,8 @@ async function addFromInstagram(p) {
     website: site ? site.toString() : (links.map((h) => LH.unwrapLink(h)).find((u) => u && ['whatsapp', 'linkinbio'].includes(LH.linkKind(u))) || '').toString(),
     phones: contacts.phones,
     whatsapp: contacts.whatsapp,
-    emails: contacts.emails,
+    emails: [...new Set([...shown, ...contacts.emails])],
+    emailFrom: Object.fromEntries(shown.map((e) => [e, 'instagram'])),
   };
   const settings = await getSettings();
   const niche = LH.nicheOf({ keywords: [`${name} ${bio}`.toLowerCase()] }, settings);
@@ -782,6 +872,29 @@ Object.assign(handlers, {
     const d = await igLookup(String(r.username || '').toLowerCase(), settings).catch((e) => ({ error: String(e.message || e) }));
     if (d.error) return { error: `Your account reads fine, but looking up other businesses failed: ${d.error}. ${igStop(d) ? igHint(d) : ''}`.trim() };
     return { username: r.username, followers: r.followers_count };
+  },
+  /** The check tab loaded a Facebook page: is it one Lead Hunter asked for? */
+  'fbpage:hello': async (msg, sender) => ({ read: !!(pendingFb && sender.tab && sender.tab.id === pendingFb.tabId), id: pendingFb && pendingFb.id }),
+  'fbpage:result': async (msg, sender) => {
+    if (pendingFb && sender.tab && sender.tab.id === pendingFb.tabId && msg.id === pendingFb.id) pendingFb.resolve(msg);
+    return { ok: true };
+  },
+  /** Look on these leads' Facebook pages now (the lead panel button). */
+  'fbemail:check': async (msg) => {
+    const ids = [];
+    for (const id of msg.ids || []) {
+      const l = await getLead(id);
+      if (l && LH.facebookPageUrl(l)) ids.push(id);
+    }
+    if (!ids.length) return { error: 'No Facebook page known for them.' };
+    for (const id of ids) await updateLead(id, (l) => delete l.fbEmail);
+    await queueFbEmails(ids, true);
+    return { queued: ids.length };
+  },
+  'fbemail:resume': async () => {
+    await clearAlert('fbpage');
+    runFbEmails();
+    return { ok: true };
   },
   'ig:resume': async () => {
     await store.set({ igPaused: false });

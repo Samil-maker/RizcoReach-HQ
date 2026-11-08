@@ -31,6 +31,25 @@
     return { username: handle, name: name.trim(), followers: followers.replace(/\s/g, ''), bio: bio.trim() };
   }
 
+  /* The public business email Instagram shows for this profile: its Email or Contact link, and the business or
+     public email in the profile's own data. Data about other accounts on the page (suggested profiles) is left
+     out: an email only counts next to this profile's username. */
+  function profileEmails(doc, handle, header) {
+    const out = [...header.querySelectorAll('a[href^="mailto:"]')].map((a) => (a.getAttribute('href') || '').slice(7).split('?')[0]);
+    const mine = new RegExp(`"username"\\s*:\\s*"${handle.replace(/\./g, '\\.')}"`, 'i');
+    for (const s of doc.querySelectorAll('script')) {
+      const t = s.textContent || '';
+      if (!/"(business|public)_email"/.test(t)) continue;
+      for (const m of t.matchAll(/"(?:business_email|public_email)"\s*:\s*"((?:[^"\\]|\\.)+)"/g)) {
+        if (!mine.test(t.slice(Math.max(0, m.index - 3000), m.index + 3000))) continue;
+        try {
+          out.push(JSON.parse(`"${m[1]}"`));
+        } catch {}
+      }
+    }
+    return [...new Set(out.map((e) => String(e).trim().toLowerCase()).filter((e) => /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(e)))].slice(0, 3);
+  }
+
   async function readProfile(handle) {
     // Moving between profiles inside Instagram can leave the old profile's details in the page: load this one's once.
     let doc = document;
@@ -45,6 +64,7 @@
     const header = document.querySelector('header') || document.body;
     profile.links = [...header.querySelectorAll('a[href]')].map((a) => a.href).filter((h) => !/^https:\/\/(www\.)?instagram\.com\//.test(h)).slice(0, 10);
     if (!profile.bio) profile.bio = (header.innerText || '').slice(0, 600);
+    profile.emails = profileEmails(doc, handle, header);
     return profile;
   }
 

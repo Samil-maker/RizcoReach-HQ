@@ -146,7 +146,7 @@ function site(b, url, res) {
 /* Instagram profile pages the way instagram.com serves them: the profile in the meta tags, bio links wrapped in l.instagram.com. */
 const IG_PROFILES = {
   'glossy.tint_bar': { name: 'Glossy Tint Bar', bio: 'Ceramic coating and window tint in Al Quoz. Call 050 765 4321 or book@glossytint.example', links: ['https://l.instagram.com/?u=https%3A%2F%2Fglossytint.example%2Fbook&e=AT0', 'https://wa.me/971551112233'] },
-  'luxe.lash.dxb': { name: 'Luxe Lash Studio', bio: 'Lash studio in JLT. WhatsApp +971 52 444 5566', links: [] },
+  'luxe.lash.dxb': { name: 'Luxe Lash Studio', bio: 'Lash studio in JLT. WhatsApp +971 52 444 5566', links: [], data: [{ username: 'luxe.lash.dxb', business_email: 'Hello\u0040LuxeLash.example' }, { username: 'someone.else', business_email: 'decoy@other.example' }] },
 };
 function instagramHtml(handle) {
   const p = IG_PROFILES[handle];
@@ -154,7 +154,8 @@ function instagramHtml(handle) {
   const title = `${p.name} (@${handle}) • Instagram photos and videos`;
   const desc = `2,345 Followers, 120 Following, 310 Posts - ${p.name} (@${handle}) on Instagram: "${p.bio}"`.replace(/"/g, '&quot;');
   return `<html><head><title>${title}</title><meta property="og:title" content="${title}"><meta name="description" content="${desc}"></head>
-    <body><main><header><h2>${handle}</h2>${p.links.map((h) => `<a href="${h}">link</a>`).join('')}<a href="https://www.instagram.com/${handle}/followers/">followers</a></header></main></body></html>`;
+    <body><main><header><h2>${handle}</h2>${p.links.map((h) => `<a href="${h}">link</a>`).join('')}<a href="https://www.instagram.com/${handle}/followers/">followers</a></header></main>
+    ${(p.data || []).map((d) => `<script type="application/json">${JSON.stringify({ data: { user: d } })}</script>`).join('')}</body></html>`;
 }
 
 function handler(req, res) {
@@ -166,6 +167,13 @@ function handler(req, res) {
     return res.end(instagramHtml(url.pathname.split('/').filter(Boolean)[0] || ''));
   }
   if (host === 'www.facebook.com') {
+    if (url.pathname === '/brokenbuffuae') {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      return res.end(`<!doctype html><html><head><meta charset="utf-8"><title>Broken Buff | Facebook</title></head><body><div role="main">
+        <div class="intro"><h2><span>Intro</span></h2><div>Car detailing and ceramic coating in Al Quoz. Email hello&#64;brokenbuff.example or call 050 123 4567.</div></div>
+        <div role="article"><div>${'Fresh ceramic coating on a white Range Rover this week. '.repeat(8)} Hiring: send your CV to jobs@otherco.example</div></div>
+      </div></body></html>`);
+    }
     if (url.pathname.startsWith('/ads/library')) {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       return res.end(adLibraryHtml(url.searchParams.get('q') || ''));
@@ -272,23 +280,16 @@ try {
   await dash.waitForSelector('[data-welcome]:not([hidden])');
   if (SHOTS) await dash.screenshot({ path: `${SHOTS}/1-welcome.png` });
 
-  // Settings: name, faster scrolling for the test, and a new niche.
+  // Settings: faster scrolling for the test, and a new niche.
   await dash.click('[data-view="settings"]');
-  await dash.fill('[name="myName"]', 'Samil');
   await dash.fill('[name="scrollDelayMs"]', '900');
+  await dash.uncheck('[name="fbEmailAuto"]'); // Facebook page lookups run when the test asks
   await dash.fill('[name="radarEveryHours"]', '0'); // the Intent Radar runs when the test says so
   assert.equal(await dash.$$eval('[data-niche-row]', (r) => r.length), 5, 'the 5 default presets');
   assert.ok(!(await dash.$('[name="bubbles"]')) && !(await dash.$('[data-script-card]')), 'no WhatsApp scripts or bubbles any more');
-  assert.ok(await dash.isVisible('[data-email-nokey]'), 'the email sender needs the site key first');
-  assert.equal(await dash.$$eval('[data-email-card]', (c) => c.length), 2, 'the emails for both offers');
-  // "Reset to default" brings back the default first email of the website offer, with {{website_line}}.
-  const webBody = '[data-email="website.body"]';
-  await dash.fill(webBody, 'Something else');
-  await dash.click('[data-email-card="website"] [data-act="reset-email"]');
-  assert.equal(
-    await dash.inputValue(webBody),
-    "Hello {{business}}\n\nI came across {{business}} on {{found_on}} and {{website_line}}.\n\nWe build simple websites for {{niche}} in {{city}} that turn visitors into WhatsApp inquiries.\n\nIf this sounds interesting I'd be happy to send you a free mockup of how yours could look.\n\nLet me know",
-  );
+  // Lead Hunter writes and sends no email: the cold email system on the Mac does.
+  assert.equal(await dash.$$eval('[name="queueKey"], [name="myName"], [data-email-card], [data-act="copy-sender"], [data-act="email-pause"], [name="emailSignature"]', (n) => n.length), 0, 'no email sender, email texts or signature');
+  assert.match(await dash.textContent('#email + p'), /cold email system on your Mac/);
   await dash.click('[data-act="add-niche"]');
   const newPreset = '[data-niche-row]:last-child';
   await dash.fill(`${newPreset} [data-niche-name]`, 'Pet groomers');
@@ -298,7 +299,7 @@ try {
   await dash.fill(`${newPreset} [data-niche-ex]`, 'vet clinic');
   await dash.fill(`${newPreset} [data-niche-areas]`, 'Al Barsha, Dubai\nJLT, Dubai');
   await dash.click('[data-settings-form] button[type="submit"]');
-  await waitFor(async () => (await storage('settings')).settings.myName === 'Samil', 5000, 'settings saved');
+  await waitFor(async () => (await storage('settings')).settings.scrollDelayMs === 900, 5000, 'settings saved');
   const saved = (await storage('settings')).settings;
   assert.equal(saved.niches.length, 6, 'the 5 presets and the new one');
   assert.deepEqual(saved.niches[5], { name: 'Pet groomers', label: 'pet groomers', minReviews: 3, maxReviews: 100000, keywords: ['dog grooming', 'pet salon'], exclude: ['vet clinic'], areas: ['Al Barsha, Dubai', 'JLT, Dubai'] });
@@ -419,9 +420,10 @@ try {
   await dash.waitForFunction(() => document.querySelectorAll('[data-rows] tr').length === 9);
   // A site that is down: the website offer email says it wasn't loading. No WhatsApp message anywhere.
   await dash.click(`tr[data-id="${by('Broken Buff').id}"] [data-open]`);
-  await dash.waitForSelector('.drawer.open [data-email-step="0"]', { state: 'attached' });
-  assert.match(await dash.inputValue('[data-email-step="0"]'), /^Hello Broken Buff\n\nI came across Broken Buff on Facebook and Instagram and your website wasn't loading when I checked\.\n\nWe build simple websites/);
-  assert.match(await dash.textContent('.drawer .email-sec h3'), /Email\s*Website offer/);
+  await dash.waitForSelector('.drawer.open .cold-sec');
+  assert.match(await dash.textContent('.drawer .cold-sec h3'), /Cold email/);
+  assert.match(await dash.textContent('.drawer [data-cold-note]'), /No email found yet/);
+  assert.ok(!(await dash.$('.drawer [data-email-step], .drawer [data-act="email-queue"]')), 'Lead Hunter writes no email text');
   assert.equal(await dash.$$eval('.drawer [data-bubble], .drawer [data-act="open-bubble"], .drawer [data-channel], .drawer [data-pitch-qr]', (n) => n.length), 0, 'no pitching from the dashboard');
   if (SHOTS) {
     await dash.waitForTimeout(500); // let the drawer finish sliding in
@@ -467,10 +469,9 @@ try {
   assert.equal(vcf.split('BEGIN:VCARD').length - 1, gRows.length, 'one card per contact');
   assert.match(vcf, /FN:Shine Auto Spa\r\n/);
 
-  // A skipped lead (running ads, working website): left out of the emails.
+  // A skipped lead (running ads, working website): the panel says whether it would go in the cold email file.
   await dash.click(`tr[data-id="${bad.id}"] [data-open]`);
-  await dash.waitForSelector('.drawer.open .email-sec');
-  assert.match(await dash.textContent('.drawer .email-sec'), /left out of the emails/);
+  await dash.waitForSelector('.drawer.open .cold-sec');
   assert.ok(!(await dash.$('.drawer [data-act="email-queue"]')));
   await dash.click('[data-act="close"]');
   await dash.uncheck('[data-f="skipped"]');
@@ -480,7 +481,6 @@ try {
   const desert = wa;
   await dash.click(`tr[data-id="${desert.id}"] [data-open]`);
   await dash.waitForSelector('.drawer.open [data-quality-sec]');
-  assert.match(await dash.inputValue('[data-email-step="0"]'), /^Hello Desert Detailers\n\nI came across Desert Detailers on Facebook and Instagram and couldn't find a website for you\.\n\nWe build simple websites for car detailing studios in Dubai that turn visitors into WhatsApp inquiries\./);
   if (SHOTS) {
     await dash.waitForTimeout(500); // let the drawer finish sliding in
     await dash.screenshot({ path: `${SHOTS}/4-drawer.png` });
@@ -506,13 +506,8 @@ try {
   await markVia(shield, 'instagram');
   assert.equal((await lead(shield.id)).contactedVia, 'instagram');
 
-  // Your site: the key the email sender uses.
   await dash.click('[data-view="settings"]');
-  await dash.click('[data-act="gen-key"]');
-  await dash.fill('[name="queueKey"]', QUEUE_KEY);
-  await dash.click('[data-act="test-queue"]');
-  await dash.waitForFunction(() => /^Connected to your site\.$/.test(document.querySelector('[data-queue-status]').textContent));
-  assert.ok(!(await dash.$('[data-pair]')), 'no phone pairing any more');
+  assert.ok(!(await dash.$('[data-pair], [data-act="test-queue"], #site')), 'no phone pairing or site key any more');
 
   /* ------------------------------------------- Meta ads: Google Places mode */
   const setKey = (k) =>
@@ -626,22 +621,19 @@ try {
   await dash.selectOption('[data-af="tag"]', '');
   await dash.waitForFunction(() => document.querySelectorAll('[data-ads-rows] tr').length === 9);
 
-  // The ads offer for a business with a website and no Meta ads: the email it would get.
+  // A business with a website: the panel's Cold email section, and no email text.
   await dash.click(`tr[data-id="${pn('Glossy PPF Studio').id}"] [data-open]`);
-  await dash.waitForSelector('.drawer.open [data-email-step="0"]', { state: 'attached' });
-  const gm = await dash.inputValue('[data-email-step="0"]');
-  assert.match(gm, /^Hello Glossy PPF Studio\n\nAre you dependent on word of mouth/);
-  assert.ok(gm.includes('We help car detailing studios in Dubai get consistent inquiries through Facebook and Instagram ads.'));
-  assert.match(await dash.textContent('.drawer .email-sec h3'), /Ads offer/);
+  await dash.waitForSelector('.drawer.open .cold-sec');
+  assert.ok(!(await dash.$('.drawer [data-email-step]')));
   if (SHOTS) {
     await dash.waitForTimeout(500);
     await dash.screenshot({ path: `${SHOTS}/11-meta-ads-drawer.png` });
   }
   await dash.click('[data-act="close"]');
-  // The website offer for one without a website.
+  // One without a website, found on Google Maps.
   await dash.click(`tr[data-id="${insta.id}"] [data-open]`);
-  await dash.waitForSelector('.drawer.open [data-email-step="0"]', { state: 'attached' });
-  assert.match(await dash.inputValue('[data-email-step="0"]'), /^Hello Insta Tint Bar\n\nI came across Insta Tint Bar on Google Maps and couldn't find a website for you\./);
+  await dash.waitForSelector('.drawer.open .cold-sec');
+  assert.ok(await dash.$('.drawer [data-just-opened]'), 'the Just opened box');
   await dash.click('[data-act="close"]');
   const [dl2] = await Promise.all([dash.waitForEvent('download'), dash.click('[data-act="ads-export"]')]);
   const [head2, ...rows2] = parseCsv(fs.readFileSync(await dl2.path(), 'utf8'));
@@ -744,155 +736,104 @@ try {
   await dash.waitForSelector(`[data-ads-rows] tr[data-id="${adsId}"]`);
   assert.match(await dash.textContent(`[data-ads-rows] tr[data-id="${adsId}"] .tags`), /Running ads/);
 
-  /* ------------------------------- email queue: sent by the sender in Gmail, synced back */
-  // The sender (lead-hunter/email/sender.gs) talks to the real handler; `at` is its clock.
-  const emailCall = async (body, at = Date.now()) =>
-    (await emailHandle(new Request('https://www.rizcoreach.ae/api/email-queue', { method: 'POST', headers: { authorization: `Bearer ${QUEUE_KEY}`, 'content-type': 'application/json' }, body: JSON.stringify(body) }), emailStore, QUEUE_KEY, () => at)).json();
-  const emailStatus = () => dash.textContent('[data-email-status]');
-  await dash.click('[data-view="settings"]');
-  assert.ok(await dash.isHidden('[data-email-nokey]'));
-  await dash.waitForFunction(() => /Not set up yet/.test(document.querySelector('[data-email-status]').textContent));
-  assert.match(await emailStatus(), /Sent today 0 of 15 · 0 queued · 0 replied · 0 bounced/, 'a new sender starts at 15 a day');
-  assert.equal(await dash.$$eval('[data-email-on] .steps li', (li) => li.length), 6, 'six setup steps');
-  assert.equal((await emailCall({ action: 'claim' })).job, null, 'nothing to send yet');
-  await dash.click('[data-view="leads"]');
-  await dash.click('[data-view="settings"]');
-  await dash.waitForFunction(() => /Running, last check just now/.test(document.querySelector('[data-email-status]').textContent));
-  // Copy sender script: the site and key are filled in.
-  await dash.evaluate(() => Object.defineProperty(navigator.clipboard, 'writeText', { value: async (t) => (window.copied = t) }));
-  await dash.click('[data-act="copy-sender"]');
-  const senderScript = await (await dash.waitForFunction(() => window.copied)).jsonValue();
-  assert.match(senderScript, /^var SITE = 'https:\/\/www\.rizcoreach\.ae';/m);
-  assert.ok(senderScript.includes(`var KEY = '${QUEUE_KEY}';`));
-  assert.ok(senderScript.includes('function tick()'), 'the whole script');
-  // The daily limit goes to the site, where the sender reads it. Pause and resume.
-  await dash.fill('[name="emailMaxPerDay"]', '20');
-  await dash.click('[data-settings-form] button[type="submit"]');
-  await waitFor(async () => emailStore.peek().settings.maxPerDay === 20, 5000, 'daily limit saved on the site');
-  assert.equal((await storage('settings')).settings.emailMaxPerDay, 20);
-  await dash.click('[data-act="email-pause"]');
-  await dash.waitForFunction(() => /Paused: you paused it/.test(document.querySelector('[data-email-status]').textContent));
-  assert.equal(emailStore.peek().settings.paused, true);
-  if (SHOTS) {
-    await dash.$eval('#email', (el) => el.scrollIntoView());
-    await dash.screenshot({ path: `${SHOTS}/14-settings-email.png` });
-  }
-  await dash.click('[data-act="email-pause"]');
-  await dash.waitForFunction(() => !/Paused/.test(document.querySelector('[data-email-status]').textContent));
-  assert.equal(emailStore.peek().settings.paused, false);
-
-  // Send to email queue: only leads with an address go in, as the first email and 2 follow ups.
+  /* ------------------------------- Export for cold email: the file for the cold email system on the Mac */
+  assert.ok(!(emailStore.peek() || {}).items || !emailStore.peek().items.length, 'the extension never put anything on the old email queue');
+  // Chrome's Save As dialog is answered by the test: it records what was asked and says when the file is saved.
+  await dash.evaluate(() => {
+    window.__downloads = [];
+    let listener = null;
+    chrome.downloads.download = async (opts) => (window.__downloads.push(opts), window.__downloads.length);
+    chrome.downloads.onChanged.addListener = (fn) => (listener = fn);
+    chrome.downloads.onChanged.removeListener = () => (listener = null);
+    window.__saveAs = (id, state) => listener && listener({ id, state: { current: state } });
+  });
+  /** Press an export button, read the file it would save, then save it (or cancel the dialog). */
+  const coldFile = async (act, saved = 'complete') => {
+    const before = await dash.evaluate(() => window.__downloads.length);
+    await dash.click(`[data-act="${act}"]`);
+    await dash.waitForFunction((n) => window.__downloads.length > n, before);
+    const opts = await dash.evaluate(() => window.__downloads.at(-1));
+    const text = await dash.evaluate(async (url) => (await fetch(url)).text(), opts.url);
+    await dash.evaluate(([id, st]) => window.__saveAs(id, st), [before + 1, saved]);
+    const [head, ...rows] = parseCsv(text.replace(/^﻿/, ''));
+    return { opts, head, rows, byName: Object.fromEntries(rows.map((r) => [r[0], Object.fromEntries(head.map((h, i) => [h, r[i]]))])) };
+  };
   const parked = by('Parked Polish');
   const broken = by('Broken Buff');
-  await dash.evaluate((id) => update(id, { addEmail: 'Owner@ParkedPolish.example' }), parked.id);
-  await waitFor(async () => (await lead(parked.id)).emails.length === 1, 5000, 'email added');
-  await dash.click('[data-view="leads"]');
-  for (const id of [parked.id, broken.id, desert.id]) await dash.click(`tr[data-id="${id}"] [data-sel]`);
-  await dash.click('[data-act="bulk-email"]');
-  await dash.waitForFunction(() => document.querySelector('[data-toast]').textContent === '1 added to the email queue · 2 have no email');
-  const mail = emailStore.peek().items[0];
-  assert.equal(emailStore.peek().items.length, 1);
-  assert.deepEqual([mail.id, mail.email, mail.subject, mail.script, mail.fromName, mail.status], [parked.id, 'owner@parkedpolish.example', 'Website for Parked Polish', 'website', 'Samil', 'queued']);
-  assert.equal(mail.steps.length, 3);
-  assert.match(mail.steps[0], /^Hello Parked Polish\n\nI came across Parked Polish on Facebook and Instagram and your website wasn't loading when I checked\./);
-  assert.match(mail.steps[1], /^Hello Parked Polish\n\nJust bringing this back to the top of your inbox\./);
-  assert.ok(mail.steps.every((t) => t.endsWith("\n\nIf you'd rather not hear from me just reply no thanks and I won't email again.")), 'every email has the opt out line');
-  await dash.waitForFunction((id) => (document.querySelector(`tr[data-id="${id}"] .tag.green`) || {}).textContent === 'Email queued', parked.id);
-  await dash.click('[data-act="bulk-email"]');
-  await dash.waitForFunction(() => document.querySelector('[data-toast]').textContent === '0 added to the email queue · 2 have no email · 1 already emailed');
-  await dash.click('[data-bulk] [data-act="bulk-clear"]');
-
-  // The sender sends the first email on a Monday morning in Dubai: the lead is contacted, with the script it got.
-  const dubai = new Date(Date.now() + 4 * 3600e3);
-  const monday = Date.UTC(dubai.getUTCFullYear(), dubai.getUTCMonth(), dubai.getUTCDate() + ((8 - dubai.getUTCDay()) % 7 || 7), 6); // 10:00 in Dubai
-  const { job } = await emailCall({ action: 'claim' }, monday);
-  assert.deepEqual([job.id, job.step, job.to, job.subject, job.body], [parked.id, 0, 'owner@parkedpolish.example', 'Website for Parked Polish', mail.steps[0]]);
-  assert.deepEqual(await emailCall({ action: 'report', id: job.id, step: 0, ok: true, threadId: 't1', messageId: '<m1@mail.gmail.com>' }, monday), { ok: true });
-  await sw.evaluate(() => syncEmail());
-  const emailed = await lead(parked.id);
-  assert.deepEqual([emailed.status, emailed.contactedAt, emailed.sentScript], ['contacted', monday, 'website']);
-  assert.deepEqual(emailed.statusHistory.at(-1), { status: 'contacted', at: monday, via: 'email' });
-  await dash.waitForFunction((id) => (document.querySelector(`tr[data-id="${id}"] .tag.green`) || {}).textContent === 'Emailed', parked.id);
-  // The lead panel shows every email and where they stand.
-  await dash.click(`tr[data-id="${parked.id}"] [data-open]`);
-  await dash.waitForSelector('.drawer.open [data-email-step="0"]', { state: 'attached' });
-  assert.equal(await dash.textContent('.drawer .email-to'), 'To owner@parkedpolish.example');
-  assert.equal(await dash.inputValue('[data-email-subject]'), 'Website for Parked Polish');
-  assert.deepEqual(await dash.$$eval('.drawer [data-email-step]', (x) => x.map((t) => t.value)), mail.steps);
-  const nextAt = emailStore.peek().items[0].nextAt;
-  assert.equal(new Date(nextAt + 4 * 3600e3).getUTCDay(), 4, 'follow up 1 goes 3 working days later, on Thursday');
-  const thu = await dash.evaluate((t) => new Date(t).toLocaleDateString(undefined, { weekday: 'short' }), nextAt);
-  assert.equal(await dash.textContent('[data-email-state]'), `Sent 1 of 3 · next follow up ${thu}`);
-  assert.ok(await dash.$('.drawer [data-act="email-stop"]'), 'Stop emails while follow ups are due');
-  if (SHOTS) {
-    await dash.waitForTimeout(500);
-    await dash.screenshot({ path: `${SHOTS}/15-drawer-email.png` });
-  }
-  // They reply: the sender finds it in the inbox and the lead is marked replied.
-  assert.deepEqual(await emailCall({ action: 'events', events: [{ id: parked.id, type: 'replied' }] }, monday + 3600e3), { ok: true });
-  await sw.evaluate(() => syncEmail());
-  const answered = await lead(parked.id);
-  assert.deepEqual([answered.status, answered.repliedAt, answered.emailQueue.state], ['replied', monday + 3600e3, 'replied']);
-  await dash.waitForFunction(() => (document.querySelector('[data-email-state]') || {}).textContent === 'Replied');
-  assert.ok(!(await dash.$('.drawer [data-act="email-stop"]')));
-  await dash.click('[data-act="close"]');
-
-  // Add to email queue from the lead panel, Stop emails, and a status set by hand also stops them.
-  await dash.evaluate((id) => update(id, { addEmail: 'hi@brokenbuff.example' }), broken.id);
-  await waitFor(async () => (await lead(broken.id)).emails.length === 1, 5000, 'email added');
-  await dash.click(`tr[data-id="${broken.id}"] [data-open]`);
-  await dash.waitForSelector('.drawer.open [data-email-step="0"]', { state: 'attached' });
-  await dash.click('.drawer [data-act="email-queue"]');
-  await dash.waitForFunction(() => (document.querySelector('[data-email-state]') || {}).textContent === 'Queued');
-  const brokenItem = () => emailStore.peek().items.find((i) => i.id === broken.id);
-  assert.equal(brokenItem().status, 'queued');
-  await dash.click('.drawer [data-act="email-stop"]');
-  await waitFor(async () => brokenItem().status === 'cancelled', 5000, 'Stop emails reaches the site');
-  await dash.waitForSelector('.drawer [data-act="email-queue"]'); // nothing went out, so it can be queued again
-  await dash.click('.drawer [data-act="email-queue"]');
-  await waitFor(async () => brokenItem().status === 'queued', 5000, 'queued again');
-  await dash.selectOption('#d-status', 'lost');
-  await waitFor(async () => brokenItem().status === 'cancelled', 5000, '"Not interested" stops the emails');
-  await dash.click('[data-act="close"]');
-  // A business you already contacted another way is not emailed as well: one channel per business.
   const washed = by('Wash Wizards');
-  assert.ok((await lead(washed.id)).contactedAt, 'marked contacted earlier');
-  await dash.evaluate((id) => update(id, { addEmail: 'team@washwizards.example' }), washed.id);
-  await waitFor(async () => (await lead(washed.id)).emails.includes('team@washwizards.example'), 5000, 'email added');
-  await dash.click(`tr[data-id="${washed.id}"] [data-sel]`);
-  await dash.click('[data-act="bulk-email"]');
-  await dash.waitForFunction(() => document.querySelector('[data-toast]').textContent === '0 added to the email queue · 1 already contacted');
-  assert.ok(!emailStore.peek().items.some((i) => i.id === washed.id));
+  const oldQueue = by('Tint Masters');
+  const noMail = by('Desert Detailers'); // no website, contacted on WhatsApp earlier
+  const goodSite = by('Ceramic Kings');
+  // Broken Buff has no email: its Facebook page has one in the Intro (a CV address in a post below is not theirs).
+  await sw.evaluate((id) => updateLead(id, (l) => (l.socials = { ...l.socials, facebook: 'https://www.facebook.com/brokenbuffuae/' })), broken.id);
+  await dash.click('[data-view="leads"]');
+  await dash.click(`tr[data-id="${broken.id}"] [data-open]`);
+  await dash.waitForSelector('.drawer.open [data-act="fb-email"]');
+  await dash.click('.drawer [data-act="fb-email"]');
+  await waitFor(async () => ((await lead(broken.id)).fbEmail || {}).state === 'found', 60000, 'email found on their Facebook page');
+  const fbFound = await lead(broken.id);
+  assert.deepEqual([fbFound.emails, fbFound.emailFrom], [['hello@brokenbuff.example'], { 'hello@brokenbuff.example': 'facebook' }]);
+  await dash.waitForFunction(() => /hello@brokenbuff\.example\s*from their Facebook page/.test(document.querySelector('.drawer .email-to').textContent));
+  // Just opened: you tick it, and the file says "new business".
+  await dash.check('.drawer [data-just-opened]');
+  await waitFor(async () => (await lead(broken.id)).justOpened === true, 5000, 'Just opened saved');
+  await dash.click('[data-act="close"]');
+  // A checkpoint on Facebook pauses the page lookups with an alert. Nothing tries to get past it.
+  await sw.evaluate((id) => updateLead(id, (l) => (l.socials = { ...l.socials, facebook: 'https://www.facebook.com/checkpoint/828281' })), noMail.id);
+  await sw.evaluate((id) => handlers['fbemail:check']({ ids: [id] }), noMail.id);
+  await waitFor(async () => !!((await storage('alerts')).alerts || {}).fbpage, 60000, 'Facebook page lookups paused');
+  assert.equal((await storage('alerts')).alerts.fbpage.text, 'Facebook showed a security check');
+  assert.deepEqual((await storage('fbEmailQueue')).fbEmailQueue, [noMail.id], 'that lead waits first in line');
+  await sw.evaluate((id) => updateLead(id, (l) => (l.socials = { ...l.socials, facebook: '' })), noMail.id);
+  await sw.evaluate(() => handlers['fbemail:resume']({}));
+  await waitFor(async () => !((await storage('alerts')).alerts || {}).fbpage && !((await storage('fbEmailQueue')).fbEmailQueue || []).length, 20000, 'resumed');
+  // The others: an email added by hand, one that replied, one the old email queue already sent to, one without an email.
+  // Every lead shows while they are picked (a replied lead leaves the Open leads view, and stays picked).
+  await dash.selectOption('[data-f="status"]', 'all');
+  await dash.check('[data-f="skipped"]');
+  for (const l of [parked, broken, washed, oldQueue, noMail, goodSite]) await dash.click(`tr[data-id="${l.id}"] [data-sel]`);
+  await dash.evaluate((id) => update(id, { addEmail: 'Owner@ParkedPolish.example' }), parked.id);
+  await dash.evaluate((id) => update(id, { addEmail: 'team@washwizards.example', status: 'replied' }), washed.id);
+  await sw.evaluate((id) => updateLead(id, (l) => ((l.emails = ['hi@tintmasters.example']), (l.emailQueue = { state: 'done', sent: 3, total: 3 }))), oldQueue.id);
+  await sw.evaluate((id) => updateLead(id, (l) => (l.emails = [])), noMail.id);
+  await waitFor(async () => (await lead(parked.id)).emails.length === 1 && (await lead(noMail.id)).emails.length === 0, 5000, 'emails set');
+  const coldOne = await coldFile('bulk-cold');
+  assert.match(coldOne.opts.filename, /^rizcoreach-cold-email-\d{4}-\d{2}-\d{2}\.csv$/);
+  assert.equal(coldOne.opts.saveAs, true, 'Save As, so the file can go straight into the RizcoReach Leads folder');
+  assert.deepEqual(coldOne.head, ['business_name', 'first_name', 'email', 'website', 'instagram', 'phone', 'niche', 'area', 'source', 'notes', 'status']);
+  assert.deepEqual(Object.keys(coldOne.byName).sort(), ['Broken Buff', 'Parked Polish']);
+  assert.deepEqual([coldOne.byName['Broken Buff'].email, coldOne.byName['Broken Buff'].notes, coldOne.byName['Parked Polish'].email, coldOne.byName['Parked Polish'].notes], ['hello@brokenbuff.example', 'new business', 'owner@parkedpolish.example', '']);
+  // Down or parked: still their own site, named so the cold email system can see the problem itself.
+  assert.equal(coldOne.byName['Parked Polish'].website, 'https://parkedpolish.example/');
+  for (const row of Object.values(coldOne.byName)) assert.ok(['Facebook', 'Instagram'].includes(row.source), 'website leads come from the Ad Library');
+  await dash.waitForFunction(() => document.querySelector('[data-toast]').textContent === '2 leads saved for cold email · left out: 1 without an email, 1 with a good website, 1 replied, closed or skipped, 1 emailed by the old sender');
+  await waitFor(async () => (await lead(parked.id)).coldEmailExportedAt > 0 && (await lead(broken.id)).coldEmailExportedAt > 0, 5000, 'marked exported once saved');
+  await dash.waitForFunction((id) => /Exported for cold email/.test(document.querySelector(`tr[data-id="${id}"]`).textContent), parked.id);
+  // Exported once: out of the next file, unless Include already exported is ticked. A cancelled dialog marks nothing.
+  await dash.click('[data-act="bulk-cold"]');
+  await dash.waitForFunction(() => document.querySelector('[data-toast]').textContent === 'No leads for cold email: 1 without an email, 1 with a good website, 2 exported before, 1 replied, closed or skipped, 1 emailed by the old sender.');
+  await dash.check('[data-cold-include] >> nth=0');
+  assert.ok(await dash.isChecked('[data-cold-include] >> nth=1'), 'one setting for both tabs');
+  const exportedAt = (await lead(parked.id)).coldEmailExportedAt;
+  const cancelled = await coldFile('bulk-cold', 'interrupted');
+  assert.equal(cancelled.rows.length, 2);
+  await dash.waitForFunction(() => document.querySelector('[data-toast]').textContent === 'The file was not saved, so nothing was marked as exported.');
+  assert.equal((await lead(parked.id)).coldEmailExportedAt, exportedAt);
+  await dash.uncheck('[data-cold-include] >> nth=0');
   await dash.click('[data-bulk] [data-act="bulk-clear"]');
-
-  // "No thanks": the lead is marked not interested and never emailed again.
-  const desertLead = by('Desert Detailers');
-  await dash.evaluate((id) => update(id, { status: 'new', addEmail: 'book@desertdetailers.example' }), desertLead.id);
-  await waitFor(async () => (await lead(desertLead.id)).emails.includes('book@desertdetailers.example'), 5000, 'email added');
-  await dash.click(`tr[data-id="${desertLead.id}"] [data-sel]`);
-  await dash.click('[data-act="bulk-email"]');
-  await dash.waitForFunction(() => /^1 added to the email queue/.test(document.querySelector('[data-toast]').textContent));
-  await dash.click('[data-bulk] [data-act="bulk-clear"]');
-  const tuesday = monday + 24 * 3600e3;
-  const optJob = (await emailCall({ action: 'claim' }, tuesday)).job;
-  assert.equal(optJob.id, desertLead.id);
-  await emailCall({ action: 'report', id: optJob.id, step: 0, ok: true, threadId: 't2', messageId: '<m2@mail.gmail.com>' }, tuesday);
-  await emailCall({ action: 'events', events: [{ id: optJob.id, type: 'optout' }] }, tuesday + 3600e3);
-  await sw.evaluate(() => syncEmail());
-  const declined = await lead(desertLead.id);
-  assert.deepEqual([declined.status, declined.doNotEmail, declined.repliedAt, declined.emailQueue.state], ['lost', true, tuesday + 3600e3, 'optout']);
-  assert.ok(emailStore.peek().never.includes('book@desertdetailers.example'), 'on the never list');
-  assert.equal((await emailCall({ action: 'claim' }, tuesday + 7 * 24 * 3600e3)).job, null, 'no follow up after a no thanks');
-
-  // The Meta ads tab has it too, and a business running ads is never emailed.
-  await dash.evaluate((id) => update(id, { addEmail: 'hello@runsads.example' }), adsId);
-  await waitFor(async () => (await lead(adsId)).emails.includes('hello@runsads.example'), 5000, 'email added');
+  await dash.selectOption('[data-f="status"]', '');
+  await dash.uncheck('[data-f="skipped"]');
+  if (SHOTS) await dash.screenshot({ path: `${SHOTS}/14-cold-email.png` });
+  // The Meta ads tab: the current view, and where we saw them. Insta Tint Bar was found on Google Maps.
+  await dash.evaluate((id) => update(id, { addEmail: 'hi@instatint.example' }), insta.id);
+  await waitFor(async () => (await lead(insta.id)).emails.includes('hi@instatint.example'), 5000, 'email added');
   await dash.click('[data-view="ads"]');
-  await dash.click(`[data-ads-rows] tr[data-id="${adsId}"] [data-sel]`);
-  await dash.click('[data-act="ads-bulk-email"]');
-  await dash.waitForFunction(() => document.querySelector('[data-toast]').textContent === '0 added to the email queue · 1 runs ads');
-  assert.ok(!emailStore.peek().items.some((i) => i.id === adsId));
-  await dash.click('[data-ads-bulk] [data-act="bulk-clear"]');
+  const expected = await dash.evaluate(() => LH.coldEmailExport(filteredProspects().map((r) => r.l), S.settings).rows.length);
+  const adsFile = await coldFile('ads-export-cold');
+  assert.ok(expected > 0);
+  assert.equal(adsFile.rows.length, expected, 'the current view');
+  assert.ok(adsFile.rows.every((r) => r[2]), 'every row has an email');
+  assert.deepEqual([adsFile.byName['Insta Tint Bar'].email, adsFile.byName['Insta Tint Bar'].instagram, adsFile.byName['Insta Tint Bar'].website, adsFile.byName['Insta Tint Bar'].source], ['hi@instatint.example', 'instatintbar', '', 'Google Maps']);
 
   /* ----------------------- Presets: the four searches from the brief, before and after the filters */
   // Meta ads tab, no Places key: each search reads the Maps results list only; failing listings are never opened.
@@ -1070,6 +1011,8 @@ try {
   const lash = await lead('p:i:luxe.lash.dxb');
   assert.deepEqual([lash.pageName, lash.niche, lash.website, lash.adCheck.state], ['Luxe Lash Studio', '', null, 'skipped'], 'no preset covers lash studios');
   assert.ok(lash.phones.some((x) => x.number === '+971524445566'));
+  // The public business email in the profile's own data. A suggested account's email on the same page is not theirs.
+  assert.deepEqual([lash.emails, lash.emailFrom], [['hello@luxelash.example'], { 'hello@luxelash.example': 'instagram' }]);
   // Not a profile: no button.
   await ig.evaluate(() => history.pushState({}, '', '/explore/'));
   await igBtn.waitFor({ state: 'detached' });
@@ -1306,7 +1249,8 @@ try {
   await dash.click('[data-view="settings"]');
   const [backupDl] = await Promise.all([dash.waitForEvent('download'), dash.click('[data-act="backup"]')]);
   const backup = JSON.parse(fs.readFileSync(await backupDl.path(), 'utf8'));
-  assert.deepEqual(['geminiKey', 'anthropicKey', 'igToken', 'queueKey'].map((k) => backup.settings[k]), ['', '', '', '']);
+  assert.deepEqual(['geminiKey', 'anthropicKey', 'igToken'].map((k) => backup.settings[k]), ['', '', '']);
+  assert.ok(!('queueKey' in backup.settings), 'the old site key is gone');
   assert.ok(backup.leads.length > 0);
   await dash.click('[data-view="intent"]');
   const checked = Object.fromEntries((await dash.evaluate(() => LH.intentDb.all())).map((p) => [p.id, p]));

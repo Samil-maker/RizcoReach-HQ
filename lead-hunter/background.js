@@ -3,7 +3,7 @@
    - Runs hunts: walks a list of keywords through the Ad Library in one tab
    - Enriches leads: audits the landing page, finds phones/emails/socials,
      optional Google Places + PageSpeed lookups
-   - Sends leads to the email queue on the user's site, and syncs them back */
+   - Marks leads saved by Export for cold email (the cold email system on the Mac sends the emails) */
 importScripts('lib/common.js', 'lib/site-audit.js', 'lib/prospects.js', 'lib/intent.js', 'lib/intent-db.js');
 const LH = self.LH;
 
@@ -671,165 +671,15 @@ async function enrichOne(id, opts = {}) {
     l.socials = { ...contacts.socials, ...(l.socials || {}) };
     l.enrichedAt = now();
   });
-  igAuto([await getLead(id)], settings); // the website may have linked their Instagram
+  const done = await getLead(id);
+  igAuto([done], settings); // the website may have linked their Instagram
+  fbEmailAuto([done], settings); // still no email, and no website or a weak one: their Facebook page next
 }
 
-/* ------------------------------------------------------------- your site */
-// Talks to /api/email-queue (netlify/functions/email-queue.mts) on the user's site, with the LEAD_QUEUE_KEY.
-const EMAIL_ERRORS = {
-  401: 'The key does not match LEAD_QUEUE_KEY on your site.',
-  404: 'Your site does not have the email sender yet. Deploy the latest site code first.',
-  503: 'The email sender is not switched on yet: add LEAD_QUEUE_KEY in Netlify, then redeploy.',
-};
-async function queueApi(method, body, path) {
-  const s = await getSettings();
-  if (!s.queueKey || !s.queueSite) throw new Error('Add your site address and key in Settings > Your site first.');
-  let url;
-  try {
-    url = new URL(path, s.queueSite).toString();
-  } catch {
-    throw new Error('The site address in Settings is not a valid URL.');
-  }
-  let res;
-  try {
-    res = await fetch(url, {
-      method,
-      cache: 'no-store',
-      credentials: 'omit',
-      signal: AbortSignal.timeout(20000),
-      headers: { authorization: `Bearer ${s.queueKey}`, ...(body ? { 'content-type': 'application/json' } : {}) },
-      body: body ? JSON.stringify(body) : undefined,
-    });
-  } catch {
-    throw new Error(`Could not reach ${new URL(url).host}.`);
-  }
-  const data = await res.json().catch(() => null);
-  if (!res.ok || !data) throw new Error(EMAIL_ERRORS[res.status] || (data && data.error) || `Email sender error (HTTP ${res.status}).`);
-  return data;
-}
-// Reads leave out the email texts: Lead Hunter writes them itself and only needs where each one stands.
-const emailApi = (method, body) => queueApi(method, body, method === 'GET' ? '/api/email-queue?lite=1' : '/api/email-queue');
-
-/* --------------------------------------------------------------- email queue */
-// Cold emails go out from Samil's own Gmail through lead-hunter/email/sender.gs, an Apps Script in his Google account,
-// one at a time and slowly. Every sending rule lives on the site; the extension adds emails and mirrors what happened.
-const STOP_EMAILS = ['replied', 'meeting', 'won', 'lost', 'skip']; // statuses that end a lead's follow ups
-const EMAIL_SYNC_MS = 5 * 60000;
-const EMAIL_WATCH_MS = 21 * LH.DAY; // the sender still picks up replies to finished emails this long
-const emailInfo = (q) => ({ stats: q.stats, settings: q.settings, senderSeenAt: q.senderSeenAt, pausedReason: q.pausedReason, pausedUntil: q.pausedUntil, now: q.now });
-
-/** Mirror the email queue onto leads: the first email marks the lead contacted, a reply marks it replied. */
-async function applyEmail(items) {
-  const settings = await getSettings();
-  return locked(async () => {
-    const { emailQueueIds = [] } = await store.get('emailQueueIds');
-    const list = (items || []).filter((i) => emailQueueIds.includes(i.id));
-    const got = await store.get(list.map((i) => leadKey(i.id)));
-    const writes = {};
-    for (const item of list) {
-      const lead = got[leadKey(item.id)];
-      if (!lead) continue;
-      const before = JSON.stringify([lead.emailQueue, lead.status, lead.badEmails, lead.doNotEmail]);
-      const prev = lead.emailQueue || {};
-      const total = (item.steps && item.steps.length) || item.total || prev.total || item.sent;
-      lead.emailQueue = { state: item.status, sent: item.sent, total, nextAt: item.nextAt, at: item.statusAt, email: item.email };
-      // Each change is applied once, so later syncs never override a status set by hand.
-      if (item.sent >= 1 && !(prev.sent >= 1) && ['new', 'followup'].includes(lead.status)) {
-        lead.status = 'contacted';
-        markSent(lead, item.sentAt[0], item.script, settings, 'email');
-        lead.statusHistory = [...(lead.statusHistory || []), { status: 'contacted', at: item.sentAt[0], via: 'email' }].slice(-20);
-      }
-      if (item.status === 'replied' && prev.state !== 'replied' && ['new', 'contacted', 'followup'].includes(lead.status)) {
-        lead.status = 'replied';
-        lead.repliedAt = lead.repliedAt || item.statusAt;
-        lead.statusHistory = [...(lead.statusHistory || []), { status: 'replied', at: item.statusAt, via: 'email' }].slice(-20);
-      }
-      if (item.status === 'bounced' && prev.state !== 'bounced') lead.badEmails = [...new Set([...(lead.badEmails || []), item.email])];
-      // "No thanks" is a reply too: the lead is not interested and is never emailed again.
-      if (item.status === 'optout' && prev.state !== 'optout') {
-        lead.doNotEmail = true;
-        if (['new', 'contacted', 'followup'].includes(lead.status)) {
-          lead.status = 'lost';
-          lead.repliedAt = lead.repliedAt || item.statusAt;
-          lead.statusHistory = [...(lead.statusHistory || []), { status: 'lost', at: item.statusAt, via: 'email' }].slice(-20);
-        }
-      }
-      if (JSON.stringify([lead.emailQueue, lead.status, lead.badEmails, lead.doNotEmail]) !== before) {
-        lead.updatedAt = now();
-        writes[leadKey(item.id)] = lead;
-      }
-    }
-    // Only emails still going out, or finished recently enough for a reply to come in, need watching.
-    const watch = (i) => got[leadKey(i.id)] && (['queued', 'active'].includes(i.status) || (i.status === 'done' && now() - i.statusAt < EMAIL_WATCH_MS));
-    writes.emailQueueIds = list.filter(watch).map((i) => i.id);
-    writes.emailSyncedAt = now();
-    await store.set(writes);
-    return { waiting: writes.emailQueueIds.length };
-  });
-}
-
-/* Stopping a lead's emails is kept and retried every minute until the site has it, so no follow up goes out by mistake. */
-async function cancelEmails(ids) {
-  await locked(async () => {
-    const { emailCancel = [] } = await store.get('emailCancel');
-    await store.set({ emailCancel: [...new Set([...emailCancel, ...ids])] });
-  });
-  const q = await flushEmailCancel();
-  await applyEmail(q.items);
-  return q;
-}
-async function flushEmailCancel() {
-  const { emailCancel = [] } = await store.get('emailCancel');
-  if (!emailCancel.length) return null;
-  const q = await emailApi('POST', { action: 'cancel', ids: emailCancel }); // throws: the ids stay for the next try
-  await locked(async () => {
-    const { emailCancel: cur = [] } = await store.get('emailCancel');
-    await store.set({ emailCancel: cur.filter((id) => !emailCancel.includes(id)) });
-  });
-  return q;
-}
-
-async function syncEmail() {
-  const q = (await flushEmailCancel().catch(() => null)) || (await emailApi('GET'));
-  await applyEmail(q.items);
-  // Emails queued before Lead Hunter knew an address was a template placeholder: stop them before they bounce.
-  const junk = q.items.filter((i) => i.status === 'queued' && LH.isJunkEmail(i.email)).map((i) => i.id);
-  return junk.length ? cancelEmails(junk) : q;
-}
-
-/* Each lead goes in as its first email and follow ups. Leads skipped for running ads, leads without an address
-   to send to, leads emailed before, leads already messaged another way and leads you are talking to stay out. */
-async function pushToEmail(ids) {
-  const settings = await getSettings();
-  const got = await store.get(ids.map(leadKey));
-  const items = [];
-  const names = {};
-  const skipped = { noEmail: [], runningAds: [], already: [], contacted: [], closed: [] };
-  for (const id of ids) {
-    const lead = got[leadKey(id)];
-    if (!lead) continue;
-    const name = lead.pageName || id;
-    const mail = LH.emailFor(lead, settings);
-    const q = lead.emailQueue;
-    if (!mail.to) skipped.noEmail.push(name);
-    else if (!mail.script) skipped.runningAds.push(name);
-    else if (q && (q.sent >= 1 || q.state !== 'cancelled')) skipped.already.push(name);
-    else if (STOP_EMAILS.includes(lead.status)) skipped.closed.push(name);
-    else if (lead.contactedAt) skipped.contacted.push(name); // already contacted another way: one channel per business
-    else {
-      names[id] = name;
-      items.push({ id, email: mail.to, business: lead.pageName, script: mail.script, fromName: settings.emailFromName, subject: mail.subject, steps: mail.steps, followupDays: [3, 4] });
-    }
-  }
-  if (!items.length) return { queued: 0, rejected: [], skipped };
-  const q = await emailApi('PUT', { items });
-  await locked(async () => {
-    const { emailQueueIds = [] } = await store.get('emailQueueIds');
-    await store.set({ emailQueueIds: [...new Set([...emailQueueIds, ...items.map((i) => i.id)])] });
-  });
-  await applyEmail(q.items);
-  return { queued: q.accepted, rejected: q.rejected.map((r) => ({ name: names[r.id] || r.id, reason: r.reason })), skipped };
-}
+/* ---------------------------------------------------------------- cold email */
+// Lead Hunter no longer sends email. The cold email system (cold-email/, on the Mac) imports the file from
+// Export for cold email and writes, sends and follows up itself. Leads emailed by the old email queue keep their
+// emailQueue record, so they stay out of that file. The Netlify function is left on the site, unused.
 
 /* ------------------------------------------------------------------ messages */
 async function openDashboard(hash = '') {
@@ -869,9 +719,16 @@ const handlers = {
       else if (p.via && SENT_STATUSES.includes(l.status)) markSent(l, l.contactedAt, null, settings, p.via); // the channel, set afterwards
       if ('repliedAt' in p && !p.repliedAt) l.repliedAt = null; // "Replied" tapped again
       for (const k of ['status', 'notes', 'pageName', 'followUpAt']) if (k in p) l[k] = p[k];
+      // Just opened: only ever set by you. Never email: keeps them out of the cold email file.
+      if ('justOpened' in p) l.justOpened = !!p.justOpened;
+      if ('doNotEmail' in p) l.doNotEmail = !!p.doNotEmail;
       if (p.addPhone) addPhone(l, LH.normalizePhone(p.addPhone, l.countries[0] || 'AE'), 'manual');
       if (p.removePhone) l.phones = l.phones.filter((x) => x.number !== p.removePhone);
-      if (p.addEmail) l.emails = [...new Set([...(l.emails || []), String(p.addEmail).trim().toLowerCase()])];
+      if (p.addEmail) {
+        const added = String(p.addEmail).trim().toLowerCase();
+        l.emails = [...new Set([...(l.emails || []), added])];
+        l.emailFrom = { ...(l.emailFrom || {}), [added]: 'manual' };
+      }
       if ('website' in p) {
         const u = LH.safeUrl(p.website);
         l.website = u ? u.origin + '/' : null;
@@ -881,8 +738,6 @@ const handlers = {
       }
     });
     if (msg.patch && 'website' in msg.patch) enqueue([msg.id], true);
-    const eq = lead && lead.emailQueue;
-    if (eq && ['queued', 'active'].includes(eq.state) && STOP_EMAILS.includes(msg.patch && msg.patch.status)) cancelEmails([msg.id]).catch(() => {});
     return { lead };
   },
   /* Contacted memory. Reset: the business is new again and future searches can find it. */
@@ -966,18 +821,10 @@ const handlers = {
     });
     return { imported: n };
   },
-  'email:push': (msg) => pushToEmail(msg.ids || []),
-  'email:sync': async () => emailInfo(await syncEmail()),
-  'email:status': async () => emailInfo(await syncEmail()),
-  'email:settings': async (msg) => emailInfo(await emailApi('POST', { action: 'settings', settings: msg.settings || {} })),
-  'email:cancel': async (msg) => emailInfo(await cancelEmails(msg.ids || [])),
-  // Never email this lead (remove: allow it again). The site's never list also stops emails already queued.
-  'email:never': async (msg) => {
-    const lead = await updateLead(msg.id, (l) => (l.doNotEmail = !msg.remove));
-    const emails = ((lead && lead.emails) || []).filter((e) => !(msg.remove && (lead.badEmails || []).includes(e)));
-    if (!emails.length || !(await getSettings()).queueKey) return { ok: true };
-    const q = await emailApi('POST', { action: 'never', emails, remove: !!msg.remove });
-    await applyEmail(q.items);
+  /** Saved by Export for cold email: they stay out of the next file unless Include already exported is ticked. */
+  'cold:exported': async (msg) => {
+    const t = now();
+    for (const id of msg.ids || []) await updateLead(id, (l) => (l.coldEmailExportedAt = t));
     return { ok: true };
   },
   stats: async () => {
@@ -1018,8 +865,6 @@ chrome.alarms.onAlarm.addListener(async (a) => {
   // Watchdog: a hunt tab that has gone quiet (login wall, crash) moves on.
   const { hunt } = await store.get('hunt');
   if (hunt && hunt.status === 'running' && now() - hunt.lastActivity > 150000) nextKeyword('stalled');
-  const { emailQueueIds = [], emailCancel = [], emailSyncedAt = 0 } = await store.get(['emailQueueIds', 'emailCancel', 'emailSyncedAt']);
-  if (emailCancel.length || (emailQueueIds.length && now() - emailSyncedAt >= EMAIL_SYNC_MS)) syncEmail().catch(() => {});
 });
 
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {
@@ -1028,6 +873,7 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   else if (LH.hasOldSettings(settings)) await store.set({ settings: LH.withDefaults(settings) }); // old templates and offer
   if (reason === 'install') openDashboard('#welcome');
   await store.remove(['phoneQueueIds', 'queuePending', 'phoneQueueSyncedAt']); // the phone queue is gone (1.12)
+  await store.remove(['emailQueueIds', 'emailCancel', 'emailSyncedAt']); // so is the email sender (2.3)
   await seedMemory();
 });
 chrome.runtime.onStartup.addListener(() => pump());

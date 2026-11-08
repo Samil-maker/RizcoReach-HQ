@@ -1,6 +1,8 @@
 /* Lead Hunter: "Scan for leads" on Facebook groups and LinkedIn, "Scan my subreddits" on Reddit (content script).
    Nothing runs by itself. The button reads the posts already on the page you have open, and only when you press it.
    "Scroll and scan" scrolls a few small steps first, 4 to 12 seconds apart, like a person reading.
+   On a business's Facebook page that Lead Hunter opened in its Ad Library check tab, it reads the email shown in the
+   page's Intro and reports it (or the wall it hit), then does nothing else.
    On Reddit (logged in), Scan my subreddits reads the newest posts of each subreddit in your settings through this
    tab, the way Reddit's own pages load them, one subreddit 4 to 12 seconds apart; "Scan this page" reads the page.
    On a login wall, checkpoint, captcha or "temporarily blocked" page it stops and tells Lead Hunter, which pauses
@@ -284,6 +286,37 @@
     if (k && !host.isConnected) document.documentElement.appendChild(host);
     if (!k && host.isConnected) host.remove();
   }, 700);
+  /* The Ad Library check tab opened this Facebook page to find the business's email: the Intro card, any email
+     links, and (when there is no Intro) only the top of the page, so comments further down are left out. */
+  function introText() {
+    const main = document.querySelector('[role="main"]') || document.body;
+    const head = [...main.querySelectorAll('h2, h3, span')].find((el) => /^intro$/i.test((el.textContent || '').trim()));
+    let box = head;
+    while (box && box !== main && txt(box).length < 60) box = box.parentElement;
+    return box && box !== main ? txt(box).slice(0, 4000) : txt(main).slice(0, 3000);
+  }
+  if (site === 'facebook')
+    send({ type: 'fbpage:hello' }).then(async (r) => {
+      if (!r || !r.read) return;
+      let main = '';
+      for (let i = 0; i < 12; i++) {
+        // Up to about 12 seconds for Facebook to draw the page.
+        main = txt(document.querySelector('[role="main"]'));
+        if (main.length > 300 && i >= 2) break;
+        await sleep(1000);
+      }
+      const blocked = wall(main.length > 300);
+      if (blocked) return send({ type: 'fbpage:result', id: r.id, blocked });
+      const links = [...document.querySelectorAll('[role="main"] a[href^="mailto:"]')].map((a) => {
+        try {
+          return decodeURIComponent(a.getAttribute('href').slice(7).split('?')[0]);
+        } catch {
+          return '';
+        }
+      });
+      send({ type: 'fbpage:result', id: r.id, loaded: main.length > 0, emails: links.filter(Boolean), text: introText() });
+    });
+
   // Opened from the dashboard's Scan Reddit now button: that press starts the scan here.
   if (site === 'reddit' && location.hash === '#lead-hunter-scan') {
     history.replaceState(null, '', location.pathname + location.search);

@@ -92,6 +92,8 @@
         </select>
         <div class="spacer"></div>
         <button class="btn" data-act="export-csv">Export CSV</button>
+        <button class="btn pri" data-act="export-cold" title="The leads for the cold email system: no website, or a website that is down or weak, with an email. Save the file in your RizcoReach Leads folder.">Export for cold email</button>
+        <label class="chk inline" title="Leads you exported for cold email before go in the file again"><input type="checkbox" data-cold-include /> Include already exported</label>
         <button class="btn" data-act="export-full" title="Every field of every lead shown, with the heat score and signals">Full CSV</button>
         <button class="btn" data-act="export-contacts" title="A file for Google Contacts: import it at contacts.google.com and each business shows by name on your phone, with its heat score and reasons in the notes">Google Contacts</button>
         <button class="btn ghost" data-act="export-vcard" title="The same contacts as a vCard file. If Google Contacts will not take the CSV, import this one instead (contacts.google.com &gt; Import). A phone can also open it.">vCard</button>
@@ -101,7 +103,7 @@
       <div class="bulk" data-bulk hidden>
         <span data-bulk-count></span>
         <select class="inp" data-bulk-status aria-label="Set status for selected"></select>
-        <button class="btn" data-act="bulk-email">Send to email queue</button>
+        <button class="btn pri" data-act="bulk-cold" title="The leads for the cold email system: no website, or a website that is down or weak, with an email. Save the file in your RizcoReach Leads folder.">Export for cold email</button>
         <button class="btn" data-act="bulk-recheck">Re-check websites</button>
         <button class="btn" data-act="bulk-export">Export selected</button>
         <button class="btn" data-act="bulk-contacts">Google Contacts</button>
@@ -230,6 +232,8 @@
         </select>
         <div class="spacer"></div>
         <button class="btn" data-act="ads-export">Export CSV</button>
+        <button class="btn pri" data-act="ads-export-cold" title="The leads for the cold email system: no website, or a website that is down or weak, with an email. Save the file in your RizcoReach Leads folder.">Export for cold email</button>
+        <label class="chk inline" title="Leads you exported for cold email before go in the file again"><input type="checkbox" data-cold-include /> Include already exported</label>
         <button class="btn" data-act="ads-export-full" title="Every field of every business shown, with the heat score and signals">Full CSV</button>
         <button class="btn" data-act="ads-contacts" title="A file for Google Contacts: import it at contacts.google.com and each business shows by name on your phone, with its heat score and reasons in the notes">Google Contacts</button>
         <button class="btn ghost" data-act="ads-vcard" title="The same contacts as a vCard file. If Google Contacts will not take the CSV, import this one instead (contacts.google.com &gt; Import). A phone can also open it.">vCard</button>
@@ -238,7 +242,7 @@
       <div class="bulk" data-ads-bulk hidden>
         <span data-ads-bulk-count></span>
         <select class="inp" data-ads-bulk-status aria-label="Set status for selected"></select>
-        <button class="btn" data-act="ads-bulk-email">Send to email queue</button>
+        <button class="btn pri" data-act="ads-bulk-cold" title="The leads for the cold email system: no website, or a website that is down or weak, with an email. Save the file in your RizcoReach Leads folder.">Export for cold email</button>
         <button class="btn" data-act="ads-bulk-recheck">Check ads again</button>
         <button class="btn" data-act="ads-bulk-ig">Get Instagram followers</button>
         <button class="btn" data-act="ads-bulk-export">Export selected</button>
@@ -363,13 +367,7 @@
     <main class="view narrow" data-view-panel="settings" hidden>
       <h1 class="h">Settings</h1>
       <form class="card form" data-settings-form>
-        <h2>You (used in emails)</h2>
-        <div class="grid2">
-          <label class="field"><span class="lbl">Your name</span><input class="inp" name="myName" placeholder="Samil" /></label>
-          <label class="field"><span class="lbl">Agency</span><input class="inp" name="agency" /></label>
-          <label class="field"><span class="lbl">Your phone</span><input class="inp" name="myPhone" /></label>
-          <label class="field"><span class="lbl">Your website</span><input class="inp" name="myWebsite" /></label>
-        </div>
+        <h2>General</h2>
         <label class="field"><span class="lbl">Free audit link <small>the lead's domain is added to the end</small></span><input class="inp" name="auditLinkBase" /></label>
         <label class="field"><span class="lbl">Default country</span><select class="inp" name="country" data-countries></select></label>
 
@@ -393,30 +391,13 @@
         </div>
         <p class="hint">Both keys come from Google Cloud Console → APIs &amp; Services → Credentials. Enable "Places API (New)" and "PageSpeed Insights API" on the project. Keys are stored only in this browser.</p>
 
-        <h2 id="site">Your site</h2>
-        <p class="hint">The email sender runs on your site. Lead Hunter talks to it with this key.</p>
-        <div class="grid2">
-          <label class="field"><span class="lbl">Your site</span><input class="inp" name="queueSite" placeholder="https://www.rizcoreach.ae" /></label>
-          <label class="field"><span class="lbl">Key <small>must match LEAD_QUEUE_KEY on Netlify</small></span><input class="inp" name="queueKey" type="password" autocomplete="off" /></label>
-        </div>
-        <div class="row" style="margin-top:0">
-          <button type="button" class="btn" data-act="gen-key">Generate a key</button>
-          <button type="button" class="btn" data-act="copy-key">Copy key</button>
-          <button type="button" class="btn" data-act="test-queue">Save &amp; test connection</button>
-          <span class="hint" data-queue-status></span>
-        </div>
-        <ol class="hint steps">
-          <li>Press <b>Generate a key</b>, then <b>Copy key</b>.</li>
-          <li>In Netlify: Site configuration → Environment variables → add <code>LEAD_QUEUE_KEY</code> with that key. Then Deploys → Trigger deploy.</li>
-          <li>Press <b>Save &amp; test connection</b> here.</li>
-        </ol>
-
         <h2>Collecting</h2>
         <label class="field">
           <span class="lbl">Delay between scrolls <small>milliseconds; higher is gentler on Facebook</small></span>
           <input class="inp" name="scrollDelayMs" type="number" min="900" step="100" />
         </label>
         <label class="chk"><input type="checkbox" name="adCheckAll" /> Check the Ad Library for businesses without a website too <small class="muted">(slower: one name search each, and a name alone proves less)</small></label>
+        <label class="chk"><input type="checkbox" name="fbEmailAuto" /> Look for emails on Facebook pages <small class="muted">(leads with no email and no website or a weak one: their page opens in the Ad Library check tab, one every few seconds, and the email in its Intro is kept)</small></label>
         <label class="field">
           <span class="lbl">Same business name match <small>0.8 to 1. Two names in the same area this close count as one business. 0.92 is a good start, 1 means exactly the same</small></span>
           <input class="inp" name="nameMatch" type="number" min="0.8" max="1" step="0.01" />
@@ -495,40 +476,9 @@
         </div>
 
 
-        <h2 id="email">Email sender</h2>
-        <p class="hint">Sends your emails from your own Gmail, even with Chrome closed. It starts with 15 a day and goes up over two weeks. It stops when someone replies and never emails anyone twice.</p>
-        <p class="hint" data-email-nokey hidden>The email sender needs your site and its key. <button type="button" class="linkish" data-goto="settings" data-anchor="site">Set them up first</button></p>
-        <div data-email-on hidden>
-          <div class="email-status" data-email-status></div>
-          <div class="row" style="margin-top:0">
-            <button type="button" class="btn" data-act="email-pause">Pause sending</button>
-            <button type="button" class="btn" data-act="copy-sender">Copy sender script</button>
-          </div>
-          <ol class="hint steps">
-            <li>Open <b>script.google.com</b> and sign in with the Gmail you want to send from.</li>
-            <li>Click <b>New project</b>.</li>
-            <li>Delete what's there and paste the script.</li>
-            <li>Click <b>+</b> next to Services, pick <b>Gmail API</b>, then <b>Add</b>.</li>
-            <li>Pick <b>setup</b> at the top and press <b>Run</b>, then <b>Allow</b>. Google warns the app isn't verified because it's your own script: click <b>Advanced</b>, then <b>Go to</b>.</li>
-            <li>Done. It checks every 5 minutes and only sends Mon to Fri 9 to 6 Dubai time.</li>
-          </ol>
-        </div>
-        <div class="grid2">
-          <label class="field"><span class="lbl">Emails a day <small>at most 40</small></span><input class="inp" name="emailMaxPerDay" type="number" min="1" max="40" /></label>
-          <label class="field">
-            <span class="lbl">Follow ups <small>sent as replies a few working days apart</small></span>
-            <select class="inp" name="emailFollowups">
-              <option value="2">2 follow ups</option>
-              <option value="1">1 follow up</option>
-              <option value="0">No follow ups</option>
-            </select>
-          </label>
-          <label class="field"><span class="lbl">From name</span><input class="inp" name="emailFromName" /></label>
-          <label class="field"><span class="lbl">Opt out line <small>at the end of every email</small></span><input class="inp" name="emailOptOut" /></label>
-        </div>
-        <label class="field"><span class="lbl">Signature</span><textarea class="inp" name="emailSignature" rows="4"></textarea></label>
-        <p class="hint">Each lead gets the emails for its offer: the Website offer when they have no working website, the Ads offer when they have one and are not running Meta ads. Leads running ads with a working website get no emails. The follow ups go as replies in the same thread. Variables: <code>{{business}}</code> <code>{{niche}}</code> <code>{{city}}</code> <code>{{found_on}}</code> <code>{{website_line}}</code> <code>{{my_name}}</code> <code>{{agency}}</code> <code>{{my_phone}}</code></p>
-        <div data-emails></div>
+        <h2 id="email">Cold email</h2>
+        <p class="hint">Lead Hunter finds leads and their emails. The cold email system on your Mac (cold-email/ in the repo) writes the emails, sends them on its warm up schedule from samilatrizcoreach@gmail.com, follows up and reads the replies. Press <b>Export for cold email</b> on either tab and save the file in your <b>RizcoReach Leads</b> folder: it goes in within the hour.</p>
+        <p class="hint">The file has businesses with no website, or a website that is down or weak, and an email. Businesses with a good website (HTTPS, works on phones, scores 80 or more), leads you replied to, booked, won, lost or skipped, leads emailed by Lead Hunter's old sender, and leads exported before (unless you tick Include already exported) stay out. Tick <b>Just opened / grand opening</b> in a lead's panel and the file says "new business".</p>
         <div class="row">
           <button class="btn pri" type="submit">Save settings</button>
           <span class="saved" data-saved hidden>Saved</span>
