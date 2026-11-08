@@ -8,7 +8,7 @@ import subprocess
 import webbrowser
 from datetime import timedelta
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 
 from . import clock, config, db, dnscheck, importer, launchd, mailer, names, schedule, templates
 
@@ -141,6 +141,55 @@ def connect(inbox: config.Inbox) -> bool:
     return False
 
 
+def add_inbox_from_form(email: str, password: str, brand_new: bool, provider: str = "") -> Tuple[bool, str]:
+    """The dashboard's "Add inbox" form: checks everything first and only saves an inbox that works."""
+    con = db.connect()
+    env = read_env()
+    email = (email or "").strip().lower()
+    password = re.sub(r"\s", "", password or "")
+    if not config.EMAIL_RE.match(email):
+        return False, "That doesn't look like an email address."
+    if email in {i.email for i in settings_from(env).inboxes}:
+        return False, "%s is already one of your sending inboxes." % email
+    if email == env.get("TEST_EMAIL_TO", "").lower():
+        return False, "That's your test address. Use a separate account for sending."
+    slot = next((n for n in range(1, 10) if not env.get("INBOX%d_EMAIL" % n)), None)
+    if slot is None:
+        return False, "All 9 inbox slots are used."
+    provider = (provider or config.guess_provider(email)).lower()
+    if provider == "custom":
+        provider = "workspace"
+    if provider not in config.PROVIDERS:
+        return False, "Unknown provider %r." % provider
+    key = "INBOX%d" % slot
+    trial = dict(env, **{key + "_EMAIL": email, key + "_PROVIDER": provider, key + "_APP_PASSWORD": password})
+    inbox = settings_from(trial).inbox("inbox%d" % slot)
+    if inbox.is_google and not re.fullmatch(r"[a-zA-Z]{16}", password):
+        return False, "An App Password is exactly 16 letters (Google shows them in 4 groups of 4)."
+    try:
+        mailer.login_test(inbox)
+    except mailer.SendError as e:
+        if e.kind == "auth":
+            return False, "Gmail didn't accept that App Password. Make sure you created it while signed in as %s." % email
+        return False, "Couldn't reach the mail server: %s" % e
+    try:
+        from .mailbox import login_test
+
+        login_test(inbox)
+    except Exception as e:  # noqa: BLE001
+        return False, "Sending works but reading replies didn't: %s" % e
+    rep = dnscheck.check_inbox(inbox)
+    write_env({key + "_EMAIL": email, key + "_PROVIDER": provider, key + "_APP_PASSWORD": password})
+    note = ""
+    if not rep.can_send:
+        note = " Its domain doesn't pass SPF and DKIM yet, so it won't send until it does (run rizco check for the records)."
+    if brand_new:
+        db.set_state(con, "warmup_start:inbox%d" % slot, clock.today().isoformat())
+        ends = clock.next_weekday(clock.today() + timedelta(days=schedule.WARMUP_DAYS))
+        return True, "Added %s. It warms up for 14 days, then cold emails start on %s at 5 a day.%s" % (email, clock.nice(ends), note)
+    return True, "Added %s. Cold emails start on the next weekday at 5 a day.%s" % (email, note)
+
+
 def add_inbox() -> int:
     """rizco add-inbox: one more sending inbox. Brand new ones warm up for 14 days first."""
     con = db.connect()
@@ -201,6 +250,24 @@ def add_inbox() -> int:
     return 0
 
 
+def _open_dashboard_soon() -> None:
+    """Puts a RizcoReach Dashboard icon on the Desktop and opens the page once the background job is up."""
+    if not launchd.IS_MAC:
+        return
+    import time
+
+    from . import dashboard
+
+    dashboard.desktop_shortcut()
+    for _ in range(15):
+        if dashboard.running():
+            webbrowser.open(dashboard.URL)
+            print("Your dashboard is open in the browser: %s (there's an icon for it on your Desktop)." % dashboard.URL)
+            return
+        time.sleep(1)
+    print("Your dashboard: %s" % dashboard.URL)
+
+
 def already_set_up(con, env: Dict[str, str]) -> bool:
     """True when setup was finished before and Gmail still accepts the App Password."""
     if not (env.get("INBOX1_APP_PASSWORD") and env.get("TEST_EMAIL_TO") and db.get_state(con, "approved")):
@@ -219,6 +286,7 @@ def run(again: bool = False) -> int:
         shortcut = desktop_shortcuts()
         print("\nUpdated. Everything was already set up and is still running.")
         print("Your leads folder: %s" % (shortcut or config.leads_inbox()))
+        _open_dashboard_soon()
         print("To answer the setup questions again:  rizco setup --again")
         return 0
     print("\nRizcoReach cold email setup. About 5 minutes. Press Enter to accept anything shown in [brackets].")
@@ -371,5 +439,6 @@ def run(again: bool = False) -> int:
     else:
         print("\nEmails are going out now." if started else
               "\nFirst emails go out %s at 9:00." % ("today" if first_run == today else clock.nice(first_run)))
-    print("\nYour part: drop in lead files, answer the interested people from Gmail Drafts, and keep the Mac on.")
+    print("\nYour part: drop lead files into the dashboard, answer the interested people, and keep the Mac on.")
+    _open_dashboard_soon()
     return 0

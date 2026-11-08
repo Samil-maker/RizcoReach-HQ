@@ -33,26 +33,34 @@ If a window asks to install "command line developer tools", click **Install** an
 That's it. It updates itself once a day (outside sending hours, and only to a version whose tests pass).
 Pasting the same line again also updates it right away, without asking the questions again.
 
-## Your part after that
+## Your dashboard
 
-- **Leads:** drop CSV or Excel files into the **RizcoReach Leads** folder on your Desktop. Can't find it? Open
-  a new Terminal window and type `rizco leads`: it opens the folder (it lives in
-  `~/RizcoReach-Outreach/cold-email/leads/inbox`) and puts the shortcut back on your Desktop. Lead Hunter exports
-  work as they are. Files are imported within the hour.
-- **Replies:** when your Mac shows "... replied", open samilatrizcoreach@gmail.com, go to **Drafts**, check the
-  drafted answer (fill in anything in [brackets]) and press Send. Tip: add that account to the Gmail app on your
-  phone so you see replies the moment they arrive.
-- **The Mac:** on, plugged in, lid open 9:00 to 18:00 on weekdays (you can use it as normal). If it sleeps, sending
+Everything you do happens on one page: **http://localhost:8321**. Open it with the **RizcoReach Dashboard** icon
+on your Desktop (or type `rizco dashboard` in Terminal). It runs on your Mac only. Nobody else can open it.
+
+- **Leads:** drag a CSV or Excel file (a Lead Hunter export works as it is) onto the page. It's checked and queued
+  straight away, and you see how many were imported, which segment they went in, and why any were skipped. Press
+  **See the emails it will send** to read them.
+- **Replies:** everyone waiting for you is at the top with what they wrote and your drafted answer. Press
+  **Open Gmail Drafts** to send it (or **Copy reply**, or **WhatsApp**), then **Done, I replied** or **Became a client**.
+  Tip: add samilatrizcoreach@gmail.com to the Gmail app on your phone so you see replies the moment they arrive.
+- **More emails a day:** make a new Gmail account, then **Add an inbox** on the dashboard. Each inbox adds up to
+  20 a day once it's warmed up. The dashboard shows the date you'll reach 50 and 100 a day.
+- **Pause or resume** sending, **check replies now**, **start today's sending**, change your **WhatsApp number** or
+  **portfolio link**, and read **today's report**, all from the same page.
+
+## Your part
+
+- Drop lead files into the dashboard and answer the people who reply.
+- Keep the Mac on, plugged in and awake 9:00 to 18:00 on weekdays (you can use it as normal). If it sleeps, sending
   pauses and catches up when it wakes. Whatever doesn't fit before 18:00 goes first the next weekday.
-- **More emails a day:** make a new Gmail account, then type `rizco add-inbox` and follow the questions. Each
-  inbox adds up to 20 a day once it's warmed up. The report shows the date you'll reach 50 and 100 a day.
-- **If it ever says "sending paused":** read why in the report (RizcoReach Reports folder on your Desktop), fix
-  it, then paste: `rizco resume`
+- If the dashboard ever says **Sending is paused**, read why, fix it, then press **Resume sending**.
 
 ## What happens by itself
 
 | When | What |
 |---|---|
+| Always | The dashboard at http://localhost:8321 (it starts when you log in) |
 | Once a day, evenings or weekends | Updates itself to the latest version, if its tests pass |
 | Every hour | New lead files are imported, cleaned and segmented. Replies are checked (All Mail and Spam), sequences stop for anyone who replied, answers are drafted into Gmail Drafts, the report is updated, and you get a notification for interested people |
 | Mon to Fri 9:00 to 18:00 Dubai time | The day's emails go out one at a time, spread over the day (more between 10 and 12 and between 1 and 3, when owners read email), inboxes taking turns, follow ups first |
@@ -75,6 +83,7 @@ Writes today's report now (it also updates every hour by itself).
 
 | Command | What it does |
 |---|---|
+| `rizco dashboard` | opens the dashboard (and puts its icon on your Desktop) |
 | `rizco add-inbox` | adds another sending inbox (brand new ones warm up for 14 days first) |
 | `rizco leads` | opens the folder where you drop lead files |
 | `rizco reports` | opens the folder with the daily reports |

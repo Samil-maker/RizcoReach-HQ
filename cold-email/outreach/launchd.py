@@ -1,7 +1,8 @@
-"""The Mac side: two background jobs, notifications, and waking the Mac up.
+"""The Mac side: three background jobs, notifications, and waking the Mac up.
 
-Job 1  ae.rizcoreach.coldemail        rizco send   Monday to Friday at 9:00 Dubai time
-Job 2  ae.rizcoreach.coldemail.hourly rizco auto   every hour: new lead files, replies, report
+Job 1  ae.rizcoreach.coldemail            rizco send        Monday to Friday at 9:00 Dubai time
+Job 2  ae.rizcoreach.coldemail.hourly     rizco auto        every hour: new lead files, replies, warm up, report
+Job 3  ae.rizcoreach.coldemail.dashboard  rizco dashboard   the dashboard at http://localhost:8321, always on
 """
 from __future__ import annotations
 
@@ -18,6 +19,7 @@ from . import clock, config
 
 LABEL = "ae.rizcoreach.coldemail"
 HOURLY_LABEL = "ae.rizcoreach.coldemail.hourly"
+DASHBOARD_LABEL = "ae.rizcoreach.coldemail.dashboard"
 IS_MAC = platform.system() == "Darwin"
 
 
@@ -100,6 +102,16 @@ def hourly_plist(python: str = "", root: Path = None) -> str:
     return _plist(HOURLY_LABEL, _program(python, root, "auto", False), root, schedule, "hourly.log")
 
 
+def dashboard_plist(python: str = "", root: Path = None) -> str:
+    """The dashboard page server: starts at login and restarts itself if it ever stops."""
+    python = python or sys.executable
+    root = Path(root or config.ROOT)
+    args = [python, str(root / "run.py"), "dashboard", "--serve"]
+    program = "\n".join("        <string>%s</string>" % a for a in args)
+    schedule = "    <key>RunAtLoad</key>\n    <true/>\n    <key>KeepAlive</key>\n    <true/>\n    <key>ThrottleInterval</key>\n    <integer>30</integer>"
+    return _plist(DASHBOARD_LABEL, program, root, schedule, "dashboard.log")
+
+
 def warnings() -> List[str]:
     out = []
     home = Path.home()
@@ -138,7 +150,7 @@ def install() -> str:
     if not IS_MAC:
         return "This only works on a Mac. Here is the job file so you can see it:\n\n" + plist()
     config.logs_dir().mkdir(parents=True, exist_ok=True)
-    problems = [p for p in (_load(LABEL, plist()), _load(HOURLY_LABEL, hourly_plist())) if p]
+    problems = [p for p in (_load(LABEL, plist()), _load(HOURLY_LABEL, hourly_plist()), _load(DASHBOARD_LABEL, dashboard_plist())) if p]
     if problems:
         return "The jobs could not be loaded: " + "; ".join(problems)
     hour, minute, other_zone = local_start_time()
@@ -147,13 +159,13 @@ def install() -> str:
         note = ("\nYour Mac is not on Dubai time, so the job is set to %02d:%02d your time, which is 9:00 in Dubai. "
                 "If you change time zone, run the setup again." % (hour, minute))
     return ("Installed. Monday to Friday at 9:00 Dubai time your Mac sends the day's emails, and every hour it picks up "
-            "new lead files and checks replies.%s\nLogs: %s" % (note, config.logs_dir()))
+            "new lead files and checks replies. Your dashboard is at http://localhost:8321%s\nLogs: %s" % (note, config.logs_dir()))
 
 
 def uninstall() -> str:
     if not IS_MAC:
         return "This only works on a Mac."
-    for label in (LABEL, HOURLY_LABEL):
+    for label in (LABEL, HOURLY_LABEL, DASHBOARD_LABEL):
         _launchctl("bootout", "gui/%s/%s" % (os.getuid(), label))
         _launchctl("unload", str(plist_path(label)))
         if plist_path(label).exists():
