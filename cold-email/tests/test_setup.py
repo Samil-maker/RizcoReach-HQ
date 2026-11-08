@@ -122,3 +122,25 @@ def test_add_inbox(project, wizard, smtp, capsys):
     assert db.get_state(db.connect(), "warmup_start:inbox2") == clock.today().isoformat()
     out = capsys.readouterr().out
     assert "warms up for 14 days" in out and "50 a day: needs 1 more inbox" in out
+
+
+def test_two_imports_at_once_take_turns(project, con, fake_web):
+    import threading
+
+    (project / "leads" / "inbox" / "list.csv").write_text("business,email\nSky Cafe,hello@skycafe.ae\nBlue Spa,hi@bluespa.ae\n")
+    results, errors = [], []
+
+    def run():
+        try:
+            results.append(importer.import_pending(db.connect(), log=lambda *a: None))
+        except Exception as e:  # noqa: BLE001
+            errors.append(e)
+
+    threads = [threading.Thread(target=run) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert errors == []
+    assert sorted(len(r) for r in results) == [0, 1]   # one imported the file, the other found nothing left
+    assert con.execute("SELECT COUNT(*) FROM leads").fetchone()[0] == 2
