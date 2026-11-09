@@ -121,3 +121,12 @@ def test_campaigns_on_the_dashboard(server, con):
     assert server("/api/settings", body={"daily_limit": "60"})[1]["ok"]
     assert server("/api/overview")[1]["settings"]["daily_limit"] == 60
     assert not server("/api/settings", body={"daily_limit": "900"})[1]["ok"]
+
+
+def test_prices_on_the_dashboard(server):
+    o = server("/api/overview")[1]
+    assert o["settings"]["website_price"] == 1500 and o["settings"]["care_price"] == 480
+    assert server("/api/settings", body={"website_price": "1950", "care_price": "550"})[1]["ok"]
+    o = server("/api/overview")[1]
+    assert o["settings"]["website_price"] == 1950 and o["settings"]["care_price"] == 550
+    assert not server("/api/settings", body={"website_price": "5"})[1]["ok"]

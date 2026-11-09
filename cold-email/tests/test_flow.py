@@ -120,7 +120,7 @@ def test_send_day_respects_limits_windows_and_gaps(project, con, settings, smtp,
     assert sent == 12 and len(smtp.outbox) == 12  # all 12 leads fit in today's 50
     assert len(no_network_mail) >= 2  # replies were checked before sending and at the end of the day
     times = [clock.parse(r["sent_at"]) for r in con.execute("SELECT sent_at FROM messages ORDER BY id")]
-    assert all(clock.at(times[0].date(), 9) <= t <= clock.at(times[0].date(), 17, 46) for t in times)
+    assert all(clock.at(times[0].date(), 9) <= t <= clock.at(times[0].date(), 21, 46) for t in times)
     gaps = [(b - a).total_seconds() for a, b in zip(times, times[1:])]
     assert all(g >= 180 for g in gaps), gaps
     assert (times[-1] - times[0]).total_seconds() > 4 * 3600  # spread over the day, not a morning burst
@@ -134,7 +134,7 @@ def test_send_day_respects_limits_windows_and_gaps(project, con, settings, smtp,
     # weekends: nothing
     assert run_day(con, settings, fake_clock, datetime(2026, 11, 14, 9, 0, tzinfo=clock.TZ)) == 0
     # after the windows: nothing
-    assert run_day(con, settings, fake_clock, datetime(2026, 11, 10, 18, 30, tzinfo=clock.TZ)) == 0
+    assert run_day(con, settings, fake_clock, datetime(2026, 11, 10, 22, 30, tzinfo=clock.TZ)) == 0
     variants = [r[0] for r in con.execute("SELECT variant FROM messages WHERE step=0")]
     assert abs(variants.count("A") - variants.count("B")) <= 1
 
@@ -270,7 +270,7 @@ def test_two_inboxes_share_leads(project, con, smtp, dns_pass, fake_clock):
     by_inbox = dict(con.execute("SELECT inbox, COUNT(*) FROM messages GROUP BY inbox").fetchall())
     assert by_inbox == {"inbox1": 10, "inbox2": 10}
     senders = [m["From"] for m in smtp.outbox]
-    assert senders[0] != senders[1]  # they take turns
+    assert len(set(senders[:4])) == 2  # they take turns from the start
 
 
 def test_dry_run_sends_nothing(project, con, settings, smtp, fake_clock, capsys):
@@ -293,7 +293,7 @@ def test_weekly_report(project, con, settings, smtp, dns_pass, fake_clock):
     assert "| samilatrizcoreach@gmail.com |" in text
 
 
-def test_fifty_a_day_from_each_inbox_all_go_out_by_6pm(project, con, smtp, dns_pass, fake_clock):
+def test_fifty_a_day_from_each_inbox_all_go_out_by_10pm(project, con, smtp, dns_pass, fake_clock):
     (project / ".env").write_text("# test\n")
     s = config.load_settings(dict(ENV, INBOX2_EMAIL="rizco.two@gmail.com", INBOX2_APP_PASSWORD="abcdefghijklmnop"))
     approve(con)
@@ -302,10 +302,12 @@ def test_fifty_a_day_from_each_inbox_all_go_out_by_6pm(project, con, smtp, dns_p
     assert sent == 100
     rows = con.execute("SELECT inbox, sent_at FROM messages WHERE sent_date='2026-11-09' ORDER BY sent_at").fetchall()
     times = [clock.parse(r["sent_at"]) for r in rows]
-    assert times[-1] <= clock.at(times[0].date(), 18) and times[0] >= clock.at(times[0].date(), 9)
+    assert times[-1] <= clock.at(times[0].date(), 22) and times[0] >= clock.at(times[0].date(), 9)
     assert all((b - a).total_seconds() >= 60 for a, b in zip(times, times[1:]))  # never two at once
-    busy = sum(1 for t in times if 10 <= t.hour < 12 or 13 <= t.hour < 15)
-    assert busy > len(times) / 2  # most go out in the sweet spots
+    by_six = sum(1 for t in times if t.hour < 18)
+    assert by_six >= len(times) * 0.65  # most go out during the working day
+    per_hour = lambda hours: sum(1 for t in times if t.hour in hours) / len(hours)  # noqa: E731
+    assert per_hour((10, 11, 13, 14)) > per_hour((18, 19, 20, 21))  # busiest in the sweet spots
     by_inbox = {}
     for r in rows:
         by_inbox.setdefault(r["inbox"], []).append(clock.parse(r["sent_at"]))
@@ -317,9 +319,9 @@ def test_late_start_catches_up_without_bursts(project, con, settings, smtp, dns_
     con.execute("INSERT INTO messages(inbox, kind, step, status, sent_date, to_email) VALUES('inbox1', 'campaign', 0, 'sent', '2026-10-01', 'x@y.ae')")
     approve(con)
     add_leads(con, 60)
-    sent = run_day(con, settings, fake_clock, datetime(2026, 11, 9, 16, 30, tzinfo=clock.TZ))  # Mac woke at 16:30
+    sent = run_day(con, settings, fake_clock, datetime(2026, 11, 9, 20, 45, tzinfo=clock.TZ))  # Mac woke at 20:45
     times = [clock.parse(r[0]) for r in con.execute("SELECT sent_at FROM messages WHERE sent_date='2026-11-09' ORDER BY sent_at")]
-    assert 0 < sent < 50 and times[-1] < clock.at(times[0].date(), 18)
+    assert 0 < sent < 50 and times[-1] < clock.at(times[0].date(), 22)
     assert all((b - a).total_seconds() >= 180 for a, b in zip(times, times[1:]))
     assert con.execute("SELECT COUNT(*) FROM leads WHERE status='queued'").fetchone()[0] == 60 - sent  # the rest wait
 
@@ -339,3 +341,67 @@ def test_warming_inbox_sends_no_cold_email_and_forecast(project, con, fake_clock
     assert f["today"] == 50 and f["full"] == 100
     assert f["reach"][50] == datetime(2026, 11, 9).date() and f["reach"][100] == datetime(2026, 11, 23).date()
     assert f["reach"][150] == "needs 1 more inbox"
+
+
+def test_leads_added_during_the_day_go_out_the_same_day(project, con, settings, smtp, dns_pass, fake_clock, monkeypatch):
+    approve(con)
+    add_leads(con, 3)
+    original = sender.SendRun.send_one
+    added = []
+
+    def send_one(self, inbox, lead_id, step):
+        result = original(self, inbox, lead_id, step)
+        if not added:  # you drop a new lead file in after the first email went out
+            added.append(clock.now())
+            for i in range(4):
+                con.execute("INSERT INTO leads(email, business, segment, status, next_step, imported_at, mx_status) "
+                            "VALUES(?, ?, 'B', 'queued', 0, '2026-11-09', 'ok')", ("late%d@later%d.ae" % (i, i), "Later %d" % i))
+        return result
+
+    monkeypatch.setattr(sender.SendRun, "send_one", send_one)
+    assert run_day(con, settings, fake_clock, datetime(2026, 11, 9, 9, 0, tzinfo=clock.TZ)) == 7
+    late = [clock.parse(r[0]) for r in con.execute("SELECT sent_at FROM messages WHERE to_email LIKE 'late%'")]
+    assert len(late) == 4 and all(t > added[0] and t.hour < 22 for t in late)
+
+
+def test_hourly_job_starts_the_sender_when_there_is_more_to_send(project, con, settings, fake_clock, monkeypatch):
+    from outreach import cli, launchd
+
+    started = []
+    monkeypatch.setattr(launchd, "IS_MAC", True)
+    monkeypatch.setattr(launchd, "start_now", lambda: started.append(clock.now()) or True)
+    add_leads(con, 2)
+    fake_clock.set(datetime(2026, 11, 9, 13, 0, tzinfo=clock.TZ))
+    assert not cli.start_sending_if_needed(con, settings)                 # not approved yet
+    approve(con)
+    assert cli.start_sending_if_needed(con, settings) and len(started) == 1
+    fake_clock.set(datetime(2026, 11, 9, 21, 50, tzinfo=clock.TZ))
+    assert not cli.start_sending_if_needed(con, settings)                 # too late today
+    fake_clock.set(datetime(2026, 11, 14, 11, 0, tzinfo=clock.TZ))
+    assert not cli.start_sending_if_needed(con, settings)                 # Saturday
+    fake_clock.set(datetime(2026, 11, 10, 11, 0, tzinfo=clock.TZ))
+    con.execute("UPDATE leads SET status='done'")
+    assert not cli.start_sending_if_needed(con, settings)                 # nothing left to send
+
+
+def test_the_morning_send_updates_itself_first(project, con, settings, monkeypatch):
+    import os
+
+    from outreach import cli, updater
+
+    class Restarted(Exception):
+        pass
+
+    monkeypatch.delenv("OUTREACH_JUST_UPDATED", raising=False)
+    monkeypatch.setattr(updater, "available", lambda: True)
+    monkeypatch.setattr(updater, "update", lambda con, log=print: "Updated to the latest version (abc1234).")
+    calls = []
+    monkeypatch.setattr(os, "execv", lambda exe, argv: calls.append(argv) or (_ for _ in ()).throw(Restarted()))
+    monkeypatch.setattr(config, "load_settings", lambda env=None: settings)
+    try:
+        cli.main(["send"])
+        assert False, "should have restarted on the new version"
+    except Restarted:
+        pass
+    assert calls and calls[0][-1] == "send" and os.environ["OUTREACH_JUST_UPDATED"] == "1"
+    monkeypatch.delenv("OUTREACH_JUST_UPDATED")

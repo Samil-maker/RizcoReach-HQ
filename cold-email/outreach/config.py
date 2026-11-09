@@ -58,6 +58,8 @@ FREE_INBOX_CAP = 20          # kept for reference in messages; the limit you set
 DEFAULT_DAILY_LIMIT = 50     # emails a day per inbox, follow ups included (DAILY_LIMIT in .env, or the dashboard)
 MAX_DAILY_LIMIT = 100
 CAMPAIGNS = {"website": "Website", "ads": "Meta ads"}
+DEFAULT_WEBSITE_PRICE = 1500  # AED, the website build (WEBSITE_PRICE in .env, or the dashboard)
+DEFAULT_CARE_PRICE = 480      # AED a month, the optional care and SEO plan, only ever in replies (CARE_PLAN_PRICE)
 
 PROVIDERS: Dict[str, dict] = {
     "gmail": {
@@ -148,6 +150,8 @@ class Settings:
     test_email_to: str = ""
     save_drafts: bool = True
     daily_limit: int = DEFAULT_DAILY_LIMIT
+    website_price: int = DEFAULT_WEBSITE_PRICE
+    care_price: int = DEFAULT_CARE_PRICE
     inboxes: List[Inbox] = field(default_factory=list)
     problems: List[str] = field(default_factory=list)   # must be fixed before sending
     warnings: List[str] = field(default_factory=list)   # worth knowing
@@ -197,6 +201,8 @@ def load_settings(env: Optional[Dict[str, str]] = None) -> Settings:
         test_email_to=get("TEST_EMAIL_TO").lower(),
         save_drafts=_yes(env.get("SAVE_DRAFTS"), True),
         daily_limit=min(_int(env.get("DAILY_LIMIT")) or DEFAULT_DAILY_LIMIT, MAX_DAILY_LIMIT),
+        website_price=_int((env.get("WEBSITE_PRICE") or "").replace(",", "")) or DEFAULT_WEBSITE_PRICE,
+        care_price=_int((env.get("CARE_PLAN_PRICE") or "").replace(",", "")) or DEFAULT_CARE_PRICE,
     )
     if not path(".env").exists() and "INBOX1_EMAIL" not in env:
         s.problems.append("There is no .env file yet. Copy .env.example to .env and fill it in (README step 3).")

@@ -195,6 +195,8 @@ pre.text { white-space: pre-wrap; font: .9rem/1.55 var(--mono); margin: 0; color
           <label>WhatsApp number in every email<input type="tel" id="sWa"></label>
           <label>Portfolio link (sent in follow up 1 and replies)<input type="url" id="sLink"></label>
           <label>Emails a day per inbox (follow ups included)<input type="number" id="sLimit" min="1" max="100"></label>
+          <label>Website price in AED (in website emails)<input type="number" id="sPrice" min="100" step="50"></label>
+          <label>Care and SEO plan, AED a month (only in your replies)<input type="number" id="sCare" min="50" step="10"></label>
         </div>
         <div class="btns"><button class="btn" type="submit">Save</button><span class="small muted" id="sMeta"></span></div>
       </form>
@@ -294,6 +296,8 @@ async function loadOverview() {
   if (document.activeElement !== $("sWa")) $("sWa").value = o.settings.whatsapp;
   if (document.activeElement !== $("sLink")) $("sLink").value = o.settings.examples_link;
   if (document.activeElement !== $("sLimit")) $("sLimit").value = o.settings.daily_limit;
+  if (document.activeElement !== $("sPrice")) $("sPrice").value = o.settings.website_price;
+  if (document.activeElement !== $("sCare")) $("sCare").value = o.settings.care_price;
   $("sMeta").textContent = "Emails are signed " + o.settings.from_name + ", RizcoReach";
 }
 
@@ -382,7 +386,7 @@ async function showPreview(campaign, name) {
     el("div", { class: "subj" }, "Subject: " + e.subject), el("pre", { class: "text" }, e.text))) : el("p", { class: "muted" }, "No leads waiting. Drop a lead file first."));
 }
 $("previewBtn").onclick = () => showPreview("", "");
-$("settings").onsubmit = async (ev) => { ev.preventDefault(); const r = await post("/api/settings", { whatsapp: $("sWa").value, examples_link: $("sLink").value, daily_limit: $("sLimit").value }); toast(r.message); refresh(); };
+$("settings").onsubmit = async (ev) => { ev.preventDefault(); const r = await post("/api/settings", { whatsapp: $("sWa").value, examples_link: $("sLink").value, daily_limit: $("sLimit").value, website_price: $("sPrice").value, care_price: $("sCare").value }); toast(r.message); refresh(); };
 
 /* add inbox */
 $("addInboxBtn").onclick = () => { $("addInbox").hidden = false; $("aiEmail").focus(); };

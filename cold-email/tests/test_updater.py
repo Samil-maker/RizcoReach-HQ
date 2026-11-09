@@ -54,7 +54,7 @@ def test_update_applies_good_versions_and_rolls_back_bad_ones(tmp_path, monkeypa
         assert "kept" in updater.update(con)
         assert (mac / "cold-email" / "version.txt").read_text() == "2\n"  # still the working version
 
-        fake_clock.set(datetime(2026, 11, 12, 10, 0, tzinfo=clock.TZ))  # Thursday 10:00: emails are going out
-        assert not updater.due(con)
+        fake_clock.set(datetime(2026, 11, 12, 10, 0, tzinfo=clock.TZ))  # a new day: due again
+        assert updater.due(con)
     finally:
         config.set_root(config.Path(__file__).resolve().parent.parent)

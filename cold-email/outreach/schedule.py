@@ -4,7 +4,7 @@ Each inbox sends up to its daily limit (50 by default, DAILY_LIMIT in .env or th
 included. A brand new inbox (added as brand new) sends no cold email in its first 14 days: it only warms
 up (see warmup.py). Each lead goes out from an inbox that sends its campaign (website or Meta ads), and
 only once that campaign's emails are approved.
-Emails go out Monday to Friday, spread from 9:00 to 17:45 Dubai time.
+Emails go out Monday to Friday, spread from 9:00 to 21:45 Dubai time.
 """
 from __future__ import annotations
 
@@ -16,10 +16,12 @@ from typing import Dict, List, Optional, Tuple
 from . import clock, config, db, suppression
 from .config import Inbox, Settings
 
-WINDOWS = [((9, 0), (18, 0))]   # Dubai time, Monday to Friday
-LAST_PLANNED = (17, 45)         # the day's emails are planned to be out by then
-# How the day's emails are spread: more in the late morning and early afternoon, when owners read email.
-HOUR_WEIGHTS = {9: 0.8, 10: 1.4, 11: 1.4, 12: 0.7, 13: 1.4, 14: 1.4, 15: 0.8, 16: 0.8, 17: 0.6}
+WINDOWS = [((9, 0), (22, 0))]   # Dubai time, Monday to Friday
+LAST_PLANNED = (21, 45)         # the day's emails are planned to be out by then
+# How the day's emails are spread: most during the working day (busiest 10 to 12 and 1 to 3, when owners read
+# email), fewer in the evening. About three quarters are out by 18:00.
+HOUR_WEIGHTS = {9: 1.0, 10: 1.5, 11: 1.5, 12: 1.0, 13: 1.5, 14: 1.5, 15: 1.1, 16: 1.1, 17: 1.0,
+                18: 0.7, 19: 0.6, 20: 0.6, 21: 0.5}
 MIN_GAP_SECONDS = 180                                 # never two emails from one inbox within 3 minutes
 GAP_SECONDS = (180, 540)                              # catching up after the Mac slept: 3 to 9 minutes apart
 GLOBAL_GAP_SECONDS = (60, 120)                        # and never two emails within a minute of each other

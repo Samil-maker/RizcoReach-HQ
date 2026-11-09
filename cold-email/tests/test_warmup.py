@@ -135,7 +135,7 @@ def test_warm_up_between_two_inboxes(project, con, smtp, fake_clock, monkeypatch
 
     # evenings: nothing new is sent, but what arrived is still opened and filed
     deliver_outbox()
-    fake_clock.set(datetime(2026, 11, 9, 20, 0, tzinfo=clock.TZ))
+    fake_clock.set(datetime(2026, 11, 9, 21, 30, tzinfo=clock.TZ))
     stats = warmup.run(con, s, log=lambda *a: None, rng=Dice())
     assert stats["sent"] == 0 and stats["received"] >= 2
     assert warmup.summary(con, "inbox1")["spam"] + warmup.summary(con, "inbox2")["spam"] == 1

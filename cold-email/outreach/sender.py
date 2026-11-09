@@ -19,6 +19,7 @@ from .config import Inbox, Settings
 from .mailbox import Mailbox
 
 REPLY_CHECK_EVERY = timedelta(minutes=20)
+REPLAN_EVERY = timedelta(minutes=15)
 SITE_RECHECK_AFTER = timedelta(days=14)
 
 
@@ -288,7 +289,7 @@ class SendRun:
                 log("It's %s in Dubai. No emails on Saturdays or Sundays." % today.strftime("%A"))
                 return 0
         if not self.dry and not schedule.current_window_end(clock.now()) and not schedule.next_window_start(clock.now()):
-            log("Today's sending hours (9:00 to 18:00 Dubai time) are over. Nothing sent.")
+            log("Today's sending hours (9:00 to 22:00 Dubai time) are over. Nothing sent.")
             return 0
 
         if not self.dry:  # lead files you dropped in since yesterday
@@ -310,29 +311,41 @@ class SendRun:
         if self.dry:
             return self.print_plan(plan, day)
 
-        queues = {k: deque((l["id"], step) for l, step in v["items"]) for k, v in plan.items()}
-        for k, v in plan.items():
-            lim = v["limits"]
-            log("%s: %s. Already sent today: %d. Plan: %d follow ups, %d new."
-                % (v["inbox"].email, lim["why"], lim["sent"], len(v["items"]) - v["new"], v["new"]))
-        if not any(queues.values()):
+        queues: Dict[str, deque] = {}
+        targets: Dict[str, deque] = {}
+        next_ok: Dict = {}
+        last_by_inbox: Dict = {}
+
+        def replan(first: bool = False) -> int:
+            """Today's remaining emails, spread over the rest of the day. Picks up leads you added since."""
+            left = None if self.limit is None else max(0, self.limit - self.sent)
+            fresh = plan if first else schedule.plan(con, s, day, inboxes, left)
+            begin = max(clock.now(), clock.at(day, 9)) + timedelta(seconds=random.uniform(0, 120 if first else 20))
+            end = clock.at(day, *schedule.LAST_PLANNED)
+            for k, v in fresh.items():
+                queues[k] = deque((l["id"], step) for l, step in v["items"])
+                targets[k] = deque(schedule.spread_times(len(queues[k]), begin, end))
+                soonest = last_by_inbox.get(k, begin) + timedelta(seconds=schedule.MIN_GAP_SECONDS if k in last_by_inbox else 0)
+                next_ok[k] = max(targets[k][0], soonest) if targets[k] else begin
+                if first:
+                    lim = v["limits"]
+                    log("%s: %s. Already sent today: %d. Plan: %d follow ups, %d new."
+                        % (v["inbox"].email, lim["why"], lim["sent"], len(v["items"]) - v["new"], v["new"]))
+                    t = targets[k]
+                    if t:
+                        avg = (t[-1] - t[0]).total_seconds() / 60 / max(1, len(t) - 1)
+                        log("%s: %d emails today, spread from %s to %s (about one every %d minutes)"
+                            % (v["inbox"].email, len(t), t[0].strftime("%H:%M"), t[-1].strftime("%H:%M"), max(3, round(avg))))
+            return sum(len(q) for q in queues.values())
+
+        if not replan(first=True):
             log("Nothing to send today: no follow ups due and no new leads (or today's limit is reached).")
             self.finish()
             return 0
-
-        # Each inbox gets its own send times for the day, spread from now (or 9:00) to 17:45.
-        begin = max(clock.now(), clock.at(day, 9)) + timedelta(seconds=random.uniform(0, 120))
-        end = clock.at(day, *schedule.LAST_PLANNED)
-        targets = {k: deque(schedule.spread_times(len(q), begin, end)) for k, q in queues.items()}
-        for k, t in targets.items():
-            if t:
-                avg = (t[-1] - t[0]).total_seconds() / 60 / max(1, len(t) - 1)
-                log("%s: %d emails today, spread from %s to %s (about one every %d minutes)"
-                    % (s.inbox(k).email, len(t), t[0].strftime("%H:%M"), t[-1].strftime("%H:%M"), max(3, round(avg))))
-        next_ok = {k: (t[0] if t else begin) for k, t in targets.items()}
+        last_plan = clock.now()
         last_send = None
         last_gap = 0.0
-        while any(queues.values()):
+        while True:
             if safety.paused(con):
                 break
             now = clock.now()
@@ -341,12 +354,22 @@ class SendRun:
                 nxt = schedule.next_window_start(now)
                 if nxt is None:
                     left = sum(len(q) for q in queues.values())
-                    log("It's 18:00, today's sending hours are over. %d emails move to the next weekday." % left)
+                    if left:
+                        log("It's %s, today's sending hours are over. %d emails move to the next weekday."
+                            % (now.strftime("%H:%M"), left))
                     break
-                log("Waiting for the next sending window at %s (leave this running)." % nxt.strftime("%H:%M"))
+                log("Waiting until %s to start sending (leave this running)." % nxt.strftime("%H:%M"))
                 self.sleep_until(nxt + timedelta(seconds=random.uniform(0, 240)))
                 continue
+            if now - last_plan >= REPLAN_EVERY:  # new leads, or catching up after the Mac slept
+                before = sum(len(q) for q in queues.values())
+                after = replan()
+                last_plan = now
+                if after > before:
+                    log("%d more emails added to today's plan (new leads or follow ups)." % (after - before))
             busy = [k for k, q in queues.items() if q]
+            if not busy:
+                break  # all done for now. The hourly job starts sending again if new leads arrive today.
             ready = [k for k in busy if next_ok[k] <= now]
             wake = min(next_ok[k] for k in busy)
             if last_send is not None:
@@ -354,7 +377,7 @@ class SendRun:
                 if ready and now < last_send + timedelta(seconds=last_gap):
                     ready = []
             if not ready:
-                self.sleep_until(min(wake, window_end))
+                self.sleep_until(min(wake, window_end, last_plan + REPLAN_EVERY))
                 continue
             key = min(ready, key=lambda k: next_ok[k])
             lead_id, step = queues[key].popleft()
@@ -372,17 +395,19 @@ class SendRun:
                 break
             if result == "stop_inbox":
                 queues[key].clear()
+                targets[key].clear()
                 continue
             if result == "sent":
                 last_send = clock.now()
+                last_by_inbox[key] = last_send
                 last_gap = schedule.global_gap()
-                # the next planned time, but never sooner than 3 minutes (3 to 9 if catching up after a sleep)
-                soonest = last_send + timedelta(seconds=schedule.MIN_GAP_SECONDS)
+                # the next planned time, but never sooner than 3 minutes after this one
+                soonest = last_send + timedelta(seconds=schedule.MIN_GAP_SECONDS + random.uniform(0, 60))
                 planned = targets[key][0] if targets[key] else soonest
-                next_ok[key] = planned if planned >= soonest else last_send + timedelta(seconds=schedule.gap())
+                next_ok[key] = max(planned, soonest)
             elif targets[key]:
                 next_ok[key] = max(targets[key][0], clock.now())
-        log("Done for today: %d emails sent." % self.sent)
+        log("Done for now: %d emails sent." % self.sent)
         self.finish()
         return self.sent
 
@@ -412,7 +437,7 @@ class SendRun:
                   % (today.strftime("%A"), clock.nice(day)))
         else:
             print("Plan for today, %s (Dubai time). Nothing is being sent: this is a dry run." % clock.nice(day))
-        print("Emails go out one at a time, spread from 9:00 to 17:45 Dubai time (more of them 10 to 12 and 1 to 3),")
+        print("Emails go out one at a time, spread from 9:00 to 21:45 Dubai time (most of them during the day),")
         print("inboxes taking turns. Follow ups first, then new leads.")
         p = safety.paused(con)
         if p:
