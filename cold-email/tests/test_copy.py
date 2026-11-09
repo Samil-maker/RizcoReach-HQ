@@ -1,5 +1,6 @@
 """The email copy: names, templates, the house style checks."""
 import itertools
+import re
 
 import pytest
 
@@ -43,6 +44,9 @@ def test_city_words():
     assert names.clean_area("", "Shop 4, Al Barsha 1, Dubai") == "Al Barsha"
 
 
+FIRST_PERSON = re.compile(r"\bI\b|\bI'(m|ve|ll|d)\b")
+
+
 def lead(segment, first="", area="", business="Glossy PPF", obs="The site still says 2017 at the bottom", source="", ig=""):
     return {"segment": segment, "business": business, "first_name": first, "area": area, "observation": obs,
             "source": source, "instagram": ig, "address": ""}
@@ -62,8 +66,9 @@ def test_every_first_email_passes_the_house_style(seg, variant, first, area, bus
     assert full.endswith(templates.OPT_OUT)
     assert "Samil\nRizcoReach\nWhatsApp +971 50 123 4567" in full
     assert ("749 AED" in body) == (variant == "A")
-    assert ("480 AED a month" in body) == (variant == "A")       # version A shows both prices
-    assert "SEO" in body and "Google Maps" in body                # the monthly plan, in both versions
+    assert "480" not in body and "After that" not in body          # the monthly price is only in your replies
+    assert "We also" in body and "SEO" in body and "Google Maps" in body   # SEO and management, in both versions
+    assert not FIRST_PERSON.search(full)                           # "we", like a proper business
     assert body.startswith("Hi %s\n" % (first or "there"))
 
 
@@ -85,11 +90,12 @@ def test_follow_ups():
     b1, f1 = templates.follow_up(lead("B"), 1, S)
     assert b1.startswith("Hi there just bringing this back up")
     b2, f2 = templates.follow_up(lead("B", first="Sara"), 2, S)
-    assert b2.startswith("Last one from me Sara. If it helps")
+    assert b2.startswith("One last note Sara. If it helps we can")
     b2, _ = templates.follow_up(lead("B"), 2, S)
-    assert b2.startswith("Last one from me. If it helps")
+    assert b2.startswith("One last note. If it helps")
     for b, f in ((b1, f1), (b2, f2)):
         assert templates.lint("Re: Glossy PPF website", b, f, 1)[0] == []
+        assert not FIRST_PERSON.search(f)
 
 
 def test_lint_catches_problems():
@@ -105,7 +111,7 @@ def test_lint_catches_problems():
 
 def test_drafts():
     d = templates.draft_reply("interested", lead("B", first="Ali"), "Yes please send", S)
-    assert d.startswith("Thanks Ali. Here are some sites I've built: https://drive.google.com/")
+    assert d.startswith("Thanks Ali. Here are some sites we've built: https://drive.google.com/")
     assert "+971 50 123 4567" in d and "480" not in d
     d = templates.draft_reply("question", lead("B"), "How much is it and do you do updates later?", S)
     assert "749 AED" in d and "SEO and management plan is 480 AED a month" in d and "Google Maps updates" in d
@@ -126,7 +132,7 @@ def test_found_on_never_names_a_page_we_did_not_see():
 
 def test_follow_up_1_carries_the_portfolio_link():
     body, full = templates.follow_up(lead("B"), 1, S)
-    assert body == ("Hi there just bringing this back up in case it got buried. Here are a few sites I've built so you "
+    assert body == ("Hi there just bringing this back up in case it got buried. Here are a few sites we've built so you "
                     "can see the style\n\n" + config.DEFAULT_EXAMPLES_LINK)
     assert templates.lint("Re: Glossy PPF website", body, full, 1)[0] == []
     assert full.endswith(templates.OPT_OUT)
@@ -140,7 +146,7 @@ def test_follow_up_1_carries_the_portfolio_link():
 def test_prices_come_from_settings():
     s = config.Settings(whatsapp="0501234567", website_price=1950, care_price=600)
     _, body, _ = templates.first_email(lead("B"), "A", s)
-    assert "for 1,950 AED" in body and "600 AED a month" in body
+    assert "for 1,950 AED" in body and "600" not in body
     d = templates.draft_reply("question", lead("B"), "how much, and do you do SEO after?", s)
     assert "1,950 AED" in d and "600 AED a month" in d
     env_s = config.load_settings({"WHATSAPP_NUMBER": "1", "WEBSITE_PRICE": "2,000", "CARE_PLAN_PRICE": "450"})
@@ -168,3 +174,25 @@ def test_the_plan_line_shortens_before_dropping_the_area():
     assert "just opened in Al Quoz" in body and "SEO" in body and templates.word_count(body) < 80
     _, body, _ = templates.first_email(lead("B"), "A", S)
     assert "Google Maps updates, edits, fixes and any changes you need" in body  # room for the full line
+
+
+def test_the_new_wording_reads_like_a_business():
+    _, body, full = templates.first_email(lead("B", area="Al Quoz"), "A", S)
+    assert "We came across Glossy PPF and couldn't find a website" in body
+    assert "We also offer SEO and management. That includes Google Maps updates, edits, fixes and any changes you need" in body
+    assert body.endswith("Want me to show you what your website could look like?")
+    assert templates.first_email(lead("A"), "A", S)[1].endswith("Want me to send you a few examples?")
+    assert full.endswith("Not relevant? Just reply no and we won't email again")
+    for seg in "NG":  # Meta ads emails too
+        ads = dict(lead(seg), campaign="ads", niche="")
+        assert not FIRST_PERSON.search(templates.first_email(ads, "A", S)[2])
+        assert not FIRST_PERSON.search(templates.follow_up(ads, 2, S)[1])
+
+
+def test_leads_saved_with_the_old_wording_are_brought_up_to_date():
+    for old, new in (("It took about 7 seconds to load when I opened it", "when we opened it"),
+                     ("It wasn't loading when I tried to open it", "when we tried to open it"),
+                     ("I couldn't see an easy way to call or book from the homepage", "We couldn't see an easy way"),
+                     ("I think a fresh modern version could bring you a lot more enquiries", "We think a fresh")):
+        _, body, _ = templates.first_email(lead("C", obs=old), "A", S)
+        assert new in body and not FIRST_PERSON.search(body)

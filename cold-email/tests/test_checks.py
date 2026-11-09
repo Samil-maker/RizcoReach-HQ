@@ -70,7 +70,7 @@ def test_check_site_down_blocked_slow(fake_web, fake_clock):
     assert site["state"] == "blocked" and segment.observation(site)[0] is None  # we never guess
     fake_web["slow.ae"] = ("ok", MODERN_SITE, 7.4)
     kind, line, _ = segment.observation(sitecheck.check_site("slow.ae"))
-    assert line == "It took about 7 seconds to load when I opened it"
+    assert line == "It took about 7 seconds to load when we opened it"
     # tries www. when the bare domain does not resolve
     fake_web["www.onlywww.ae"] = ("ok", MODERN_SITE)
     assert sitecheck.check_site("onlywww.ae")["state"] == "ok"
@@ -122,6 +122,14 @@ def test_quoted_email_is_ignored():
     # Outlook style: our text pasted under theirs without ">"
     body = "Interested, call me\n\nHad a look at the Glossy PPF website. It's quite hard to use on a phone\nNot relevant? Just reply no"
     assert classify.classify(msg(body)).label == "interested"
+    # The "we" wording pasted the same way: none of it counts as their reply
+    for ours in ("We came across Glossy PPF and couldn't find a website. Just the Instagram page",
+                 "We build websites for Dubai businesses for 749 AED. Nothing upfront",
+                 "We also offer SEO and management. That includes Google Maps updates",
+                 "One last note Sara. If it helps we can put together a quick preview"):
+        r = classify.classify(msg("Sounds good, send examples\n\n" + ours + "\nNot relevant? Just reply no and we won't email again"))
+        assert r.label == "interested" and r.text == "Sounds good, send examples", ours
+    assert classify.strip_quoted("One last note: we already have a website") == "One last note: we already have a website"
 
 
 def test_out_of_office_with_return_date(fake_clock):
