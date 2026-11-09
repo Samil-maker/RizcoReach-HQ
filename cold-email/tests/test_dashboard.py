@@ -125,8 +125,24 @@ def test_campaigns_on_the_dashboard(server, con):
 
 def test_prices_on_the_dashboard(server):
     o = server("/api/overview")[1]
-    assert o["settings"]["website_price"] == 1500 and o["settings"]["care_price"] == 480
+    assert o["settings"]["website_price"] == 749 and o["settings"]["care_price"] == 480
     assert server("/api/settings", body={"website_price": "1950", "care_price": "550"})[1]["ok"]
     o = server("/api/overview")[1]
     assert o["settings"]["website_price"] == 1950 and o["settings"]["care_price"] == 550
     assert not server("/api/settings", body={"website_price": "5"})[1]["ok"]
+
+
+def test_send_the_rest_now_button(server, con, fake_clock):
+    from datetime import datetime
+
+    from outreach import clock, schedule
+
+    con.execute("INSERT INTO leads(email, business, segment, status, next_step, imported_at, mx_status) "
+                "VALUES('a@shop.ae', 'Shop', 'B', 'queued', 0, '2026-11-01', 'ok')")
+    fake_clock.set(datetime(2026, 11, 9, 11, 0, tzinfo=clock.TZ))
+    assert not server("/api/send-fast", body={})[1]["ok"]                        # not approved yet
+    db.set_state(con, "approved", {"at": clock.iso()})
+    r = server("/api/send-fast", body={})[1]
+    assert r["ok"] and "1 email now, about one a minute" in r["message"] and schedule.fast_today(con)
+    fake_clock.set(datetime(2026, 11, 9, 23, 0, tzinfo=clock.TZ))
+    assert "9:00 to 22:00" in server("/api/send-fast", body={})[1]["message"]  # outside sending hours

@@ -124,11 +124,12 @@ def recheck(con, lead) -> Optional[str]:
 # ----------------------------------------------------------------------------- the run
 
 class SendRun:
-    def __init__(self, con, settings: Settings, dry_run: bool = False, limit: Optional[int] = None):
+    def __init__(self, con, settings: Settings, dry_run: bool = False, limit: Optional[int] = None, fast: bool = False):
         self.con = con
         self.s = settings
         self.dry = dry_run
         self.limit = limit
+        self.fast = fast
         self.sent = 0
         self.last_reply_check = None
 
@@ -258,10 +259,14 @@ class SendRun:
         self.con.execute("INSERT INTO messages(%s) VALUES(%s)" % (", ".join(cols), ", ".join("?" * len(cols))),
                          (*row.values(), status, error))
 
+    def fast_switched_on(self) -> bool:
+        """You pressed "Send the rest now" on the dashboard while this was running."""
+        return not self.fast and not self.dry and schedule.fast_today(self.con)
+
     def sleep_until(self, when) -> None:
         while True:
             left = (when - clock.now()).total_seconds()
-            if left <= 0:
+            if left <= 0 or self.fast_switched_on():
                 return
             clock.sleep(min(left, 60))
 
@@ -307,6 +312,8 @@ class SendRun:
             return 0
 
         day = today if schedule.is_send_day(today) else clock.next_weekday(today)
+        if not self.dry and schedule.fast_today(con):
+            self.fast = True
         plan = schedule.plan(con, s, day, inboxes, self.limit, preview=self.dry)
         if self.dry:
             return self.print_plan(plan, day)
@@ -322,17 +329,23 @@ class SendRun:
             fresh = plan if first else schedule.plan(con, s, day, inboxes, left)
             begin = max(clock.now(), clock.at(day, 9)) + timedelta(seconds=random.uniform(0, 120 if first else 20))
             end = clock.at(day, *schedule.LAST_PLANNED)
+            gap = schedule.FAST_GAP_SECONDS if self.fast else schedule.MIN_GAP_SECONDS
             for k, v in fresh.items():
                 queues[k] = deque((l["id"], step) for l, step in v["items"])
-                targets[k] = deque(schedule.spread_times(len(queues[k]), begin, end))
-                soonest = last_by_inbox.get(k, begin) + timedelta(seconds=schedule.MIN_GAP_SECONDS if k in last_by_inbox else 0)
+                if self.fast:  # everything is due now: the gaps below set the pace, about one a minute
+                    targets[k] = deque([clock.now()] * len(queues[k]))
+                else:
+                    targets[k] = deque(schedule.spread_times(len(queues[k]), begin, end))
+                soonest = last_by_inbox.get(k, begin) + timedelta(seconds=gap if k in last_by_inbox else 0)
                 next_ok[k] = max(targets[k][0], soonest) if targets[k] else begin
                 if first:
                     lim = v["limits"]
                     log("%s: %s. Already sent today: %d. Plan: %d follow ups, %d new."
                         % (v["inbox"].email, lim["why"], lim["sent"], len(v["items"]) - v["new"], v["new"]))
                     t = targets[k]
-                    if t:
+                    if t and self.fast:
+                        log("%s: %d emails, about one a minute (Send the rest now)" % (v["inbox"].email, len(t)))
+                    elif t:
                         avg = (t[-1] - t[0]).total_seconds() / 60 / max(1, len(t) - 1)
                         log("%s: %d emails today, spread from %s to %s (about one every %d minutes)"
                             % (v["inbox"].email, len(t), t[0].strftime("%H:%M"), t[-1].strftime("%H:%M"), max(3, round(avg))))
@@ -361,6 +374,11 @@ class SendRun:
                 log("Waiting until %s to start sending (leave this running)." % nxt.strftime("%H:%M"))
                 self.sleep_until(nxt + timedelta(seconds=random.uniform(0, 240)))
                 continue
+            if self.fast_switched_on():
+                self.fast = True
+                left = replan()
+                last_plan = now
+                log("Send the rest now: %d emails going out about one a minute." % left)
             if now - last_plan >= REPLAN_EVERY:  # new leads, or catching up after the Mac slept
                 before = sum(len(q) for q in queues.values())
                 after = replan()
@@ -400,9 +418,13 @@ class SendRun:
             if result == "sent":
                 last_send = clock.now()
                 last_by_inbox[key] = last_send
-                last_gap = schedule.global_gap()
-                # the next planned time, but never sooner than 3 minutes after this one
-                soonest = last_send + timedelta(seconds=schedule.MIN_GAP_SECONDS + random.uniform(0, 60))
+                if self.fast:
+                    last_gap = schedule.FAST_GAP_SECONDS + random.uniform(0, 10)
+                    soonest = last_send + timedelta(seconds=schedule.FAST_GAP_SECONDS)
+                else:
+                    last_gap = schedule.global_gap()
+                    # the next planned time, but never sooner than 3 minutes after this one
+                    soonest = last_send + timedelta(seconds=schedule.MIN_GAP_SECONDS + random.uniform(0, 60))
                 planned = targets[key][0] if targets[key] else soonest
                 next_ok[key] = max(planned, soonest)
             elif targets[key]:

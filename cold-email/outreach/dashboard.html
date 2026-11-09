@@ -184,6 +184,7 @@ pre.text { white-space: pre-wrap; font: .9rem/1.55 var(--mono); margin: 0; color
     <div class="sec-head"><h2>Controls</h2></div>
     <div class="card" style="display:grid;gap:18px">
       <div class="btns">
+        <button class="btn primary" id="fastBtn">Send the rest now (1 a minute)</button>
         <button class="btn" id="startBtn">Start sending now</button>
         <button class="btn" id="pauseBtn">Pause sending</button>
         <button class="btn" id="repliesBtn">Check replies now</button>
@@ -368,6 +369,10 @@ $("pauseBtn").onclick = async () => {
   toast((await post("/api/pause")).message); refresh();
 };
 $("startBtn").onclick = async () => { toast((await post("/api/start")).message); setTimeout(refresh, 1500); };
+$("fastBtn").onclick = async () => {
+  if (!confirm("Send all of today's remaining emails now, about one a minute, instead of spreading them over the day? Still within each inbox's daily limit. It goes back to normal tomorrow.")) return;
+  toast((await post("/api/send-fast")).message); setTimeout(refresh, 1500);
+};
 $("repliesBtn").onclick = async () => {
   const btn = $("repliesBtn"); btn.disabled = true; btn.textContent = "Checking replies...";
   try { const r = await post("/api/check-replies"); const j = await waitJob(r.job);

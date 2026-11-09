@@ -105,7 +105,7 @@ def test_check_inbox_finds_replies_bounces_and_spam(project, con, monkeypatch, f
     assert ali["status"] == "replied" and ali["waiting_on_me"] == 1
     folder, flags, data = FakeIMAP.appended[0]
     assert folder == "[Gmail]/Drafts" and flags == "(\\Draft)"
-    assert b"In-Reply-To: <r1@cafe.ae>" in data and b"Subject: Re: Biz website" in data and b"1,500 AED" in data
+    assert b"In-Reply-To: <r1@cafe.ae>" in data and b"Subject: Re: Biz website" in data and b"749 AED" in data
     assert db.lead_by_email(con, "gone@salon.ae")["status"] == "bounced"
 
     # running again finds nothing new

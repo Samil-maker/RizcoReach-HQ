@@ -22,6 +22,7 @@ LAST_PLANNED = (21, 45)         # the day's emails are planned to be out by then
 # email), fewer in the evening. About three quarters are out by 18:00.
 HOUR_WEIGHTS = {9: 1.0, 10: 1.5, 11: 1.5, 12: 1.0, 13: 1.5, 14: 1.5, 15: 1.1, 16: 1.1, 17: 1.0,
                 18: 0.7, 19: 0.6, 20: 0.6, 21: 0.5}
+FAST_GAP_SECONDS = 60                                 # "Send the rest now": about one email a minute
 MIN_GAP_SECONDS = 180                                 # never two emails from one inbox within 3 minutes
 GAP_SECONDS = (180, 540)                              # catching up after the Mac slept: 3 to 9 minutes apart
 GLOBAL_GAP_SECONDS = (60, 120)                        # and never two emails within a minute of each other
@@ -215,6 +216,16 @@ def plan(con, settings: Settings, day: date, inboxes: Optional[List[Inbox]] = No
             v["items"] = v["items"][: max(0, left)]
             left -= len(v["items"])
     return out
+
+
+def fast_today(con) -> bool:
+    """True after you pressed "Send the rest now" today: the rest of today's emails go about one a minute."""
+    return db.get_state(con, "fast") == clock.today().isoformat()
+
+
+def set_fast(con) -> None:
+    db.set_state(con, "fast", clock.today().isoformat())
+    db.log_event(con, "fast", "send the rest of today's emails about one a minute")
 
 
 def lead_campaign(lead) -> str:

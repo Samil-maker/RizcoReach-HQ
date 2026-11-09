@@ -61,8 +61,9 @@ def test_every_first_email_passes_the_house_style(seg, variant, first, area, bus
     assert 2 <= len(subject.split()) <= 4
     assert full.endswith(templates.OPT_OUT)
     assert "Samil\nRizcoReach\nWhatsApp +971 50 123 4567" in full
-    assert ("1,500 AED" in body) == (variant == "A")
-    assert "480" not in full and "care" not in full.lower()  # the care and SEO plan is never in a cold email
+    assert ("749 AED" in body) == (variant == "A")
+    assert ("480 AED a month" in body) == (variant == "A")       # version A shows both prices
+    assert "SEO" in body and "Google Maps" in body                # the monthly plan, in both versions
     assert body.startswith("Hi %s\n" % (first or "there"))
 
 
@@ -107,7 +108,7 @@ def test_drafts():
     assert d.startswith("Thanks Ali. Here are some sites I've built: https://drive.google.com/")
     assert "+971 50 123 4567" in d and "480" not in d
     d = templates.draft_reply("question", lead("B"), "How much is it and do you do updates later?", S)
-    assert "1,500 AED" in d and "care and SEO plan for 480 AED a month" in d
+    assert "749 AED" in d and "SEO and management plan is 480 AED a month" in d and "Google Maps updates" in d
     d = templates.draft_reply("question", lead("B"), "Who are you?", S)
     assert "[A line about you and RizcoReach]" in d
     assert templates.draft_reply("not_now", lead("B"), "later", S) is None
@@ -139,7 +140,7 @@ def test_follow_up_1_carries_the_portfolio_link():
 def test_prices_come_from_settings():
     s = config.Settings(whatsapp="0501234567", website_price=1950, care_price=600)
     _, body, _ = templates.first_email(lead("B"), "A", s)
-    assert "for 1,950 AED" in body
+    assert "for 1,950 AED" in body and "600 AED a month" in body
     d = templates.draft_reply("question", lead("B"), "how much, and do you do SEO after?", s)
     assert "1,950 AED" in d and "600 AED a month" in d
     env_s = config.load_settings({"WHATSAPP_NUMBER": "1", "WEBSITE_PRICE": "2,000", "CARE_PLAN_PRICE": "450"})
@@ -160,3 +161,10 @@ def test_meta_ads_offer_by_niche():
     assert "Nothing upfront" not in templates.first_email(ads("Dental clinics"), "B", s)[1]  # B has no offer line
     assert "first genuine lead" in templates.draft_reply("interested", ads("Gyms"), "yes", s)
     assert "[Your monthly rate" in templates.draft_reply("interested", ads("Interior designers"), "yes", s)
+
+
+def test_the_plan_line_shortens_before_dropping_the_area():
+    _, body, _ = templates.first_email(lead("A", first="Sara", area="Al Quoz"), "A", S)
+    assert "just opened in Al Quoz" in body and "SEO" in body and templates.word_count(body) < 80
+    _, body, _ = templates.first_email(lead("B"), "A", S)
+    assert "Google Maps updates, edits, fixes and any changes you need" in body  # room for the full line
