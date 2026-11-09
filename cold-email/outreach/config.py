@@ -58,7 +58,7 @@ FREE_INBOX_CAP = 20          # kept for reference in messages; the limit you set
 DEFAULT_DAILY_LIMIT = 50     # emails a day per inbox, follow ups included (DAILY_LIMIT in .env, or the dashboard)
 MAX_DAILY_LIMIT = 100
 CAMPAIGNS = {"website": "Website", "ads": "Meta ads"}
-DEFAULT_WEBSITE_PRICE = 1500  # AED, the website build (WEBSITE_PRICE in .env, or the dashboard)
+DEFAULT_WEBSITE_PRICE = 749   # AED, the website build (WEBSITE_PRICE in .env, or the dashboard)
 DEFAULT_CARE_PRICE = 480      # AED a month, the optional care and SEO plan, only ever in replies (CARE_PLAN_PRICE)
 
 PROVIDERS: Dict[str, dict] = {

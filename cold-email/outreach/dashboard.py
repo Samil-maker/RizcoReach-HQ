@@ -95,6 +95,8 @@ def overview(con, s: config.Settings) -> Dict:
         nxt = "Paused"
     elif not approved:
         nxt = "Off until a test email is approved (rizco setup)"
+    elif running and schedule.fast_today(con):
+        nxt = "Sending now, about one a minute"
     elif running:
         nxt = "Sending now, spread until about 21:45"
     elif schedule.is_send_day(today) and now < clock.at(today, 9):
@@ -188,6 +190,7 @@ EVENT_TEXT = {
     "paused": lambda e: "Sending paused: %s" % e["detail"],
     "resumed": lambda e: "Sending resumed",
     "approved": lambda e: "Meta ads emails approved" if "Meta ads" in e["detail"] else "Test email approved, sending switched on",
+    "fast": lambda e: "You pressed Send the rest now: about one a minute for the rest of today",
     "test_email": lambda e: "Test email sent to %s" % e["detail"],
     "updated": lambda e: "Updated to the latest version",
     "update_failed": lambda e: "An update failed its tests and was skipped",
@@ -322,6 +325,24 @@ def post(path: str, body: Dict, raw: bytes, headers) -> Dict:
         return {"ok": True, "message": "Sending resumed."}
     if path == "/api/check-replies":
         return {"job": _job(_replies_job)}
+    if path == "/api/send-fast":
+        s = settings()
+        now = clock.now()
+        if safety.paused(con):
+            return {"ok": False, "message": "Sending is paused. Resume it first."}
+        if not db.get_state(con, "approved"):
+            return {"ok": False, "message": "Sending isn't approved yet (run the setup line once more)."}
+        if not schedule.is_send_day(now.date()) or not schedule.current_window_end(now):
+            return {"ok": False, "message": "Emails only go out 9:00 to 22:00, Monday to Friday. Try again then."}
+        left = sum(len(v["items"]) for v in schedule.plan(con, s, now.date(), [i for i in s.inboxes if i.password]).values())
+        if not left:
+            return {"ok": False, "message": "Nothing left to send today: no new leads waiting, or today's limit is used up."}
+        schedule.set_fast(con)
+        if not sender.Lock.held("send"):
+            launchd.start_now()
+        done = now + timedelta(minutes=left + 2)
+        return {"ok": True, "message": "Sending %d email%s now, about one a minute. Done by about %s."
+                % (left, "" if left == 1 else "s", done.strftime("%H:%M"))}
     if path == "/api/start":
         ov = overview(con, settings())
         if not ov["can_start"]:

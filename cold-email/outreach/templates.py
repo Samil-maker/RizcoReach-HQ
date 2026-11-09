@@ -21,55 +21,73 @@ from .config import Settings
 SUBJECT = "{subject_business} website"
 
 # (segment, version): version A states the price, version B does not.
+# Website emails. Version A shows both prices (the website and the monthly SEO and management plan),
+# version B describes the same offer without numbers.
+# The monthly plan line: the full one, and a shorter one used when a long business name would push past 80 words.
+PLAN_LINE = {
+    "A": ("After that it's {care_price} AED a month for SEO and management. Google Maps updates, edits, fixes and any changes you need",
+          "After that it's {care_price} AED a month for SEO, Google Maps and any changes you need"),
+    "B": ("After that I can handle your SEO and management every month. Google Maps updates, edits, fixes and any changes you need",
+          "After that I can look after your SEO, Google Maps and any changes every month"),
+}
+
 FIRST_EMAIL: Dict[Tuple[str, str], str] = {
     ("A", "A"): """Hi {greeting_name}
 
 Saw {business} just opened[[ in {area}]]. Congrats on the launch
 
-When people hear about a new place the first thing they do is look it up. A proper website is what turns that first look into a booking
+People look up a new place before they visit. A proper website turns that into bookings
 
-I build websites for new businesses in {in_city} for {price} AED. Nothing upfront and you only pay once you've seen it and you're happy
+I build websites for new businesses in {in_city} for {price} AED. Nothing upfront and you only pay once you're happy with it
+
+{plan}
 
 Want me to send you a few examples?""",
     ("A", "B"): """Hi {greeting_name}
 
 Saw {business} just opened[[ in {area}]]. Congrats on the launch
 
-When people hear about a new place the first thing they do is look it up. A proper website is what turns that first look into a booking
+People look up a new place before they visit. A proper website turns that into bookings
 
-I build websites for new businesses in {in_city} at a fixed price with nothing upfront. You only pay once you've seen it and you're happy
+I build websites for new businesses in {in_city} at a fixed price with nothing upfront. You only pay once you're happy with it
+
+{plan}
 
 Want me to send you a few examples?""",
     ("B", "A"): """Hi {greeting_name}
 
-I was looking up {business} and couldn't find a website. Just the {found_on} page
+I was looking up {business} and couldn't find a website. Just the {found_on} page. Most people check for one before they call
 
-A lot of people check the website before they call or book so not having one can quietly cost you customers
+I build websites for {city} businesses for {price} AED. Nothing upfront and you only pay once you're happy with it
 
-I build websites for {city} businesses for {price} AED. Nothing upfront and you only pay once you've seen it and approved it
+{plan}
 
 Want me to show you what yours could look like?""",
     ("B", "B"): """Hi {greeting_name}
 
-I was looking up {business} and couldn't find a website. Just the {found_on} page
+I was looking up {business} and couldn't find a website. Just the {found_on} page. Most people check for one before they call
 
-A lot of people check the website before they call or book so not having one can quietly cost you customers
+I build websites for {city} businesses at a fixed price with nothing upfront. You only pay once you're happy with it
 
-I build websites for {city} businesses at a fixed price with nothing upfront. You only pay once you've seen it and approved it
+{plan}
 
 Want me to show you what yours could look like?""",
     ("C", "A"): """Hi {greeting_name}
 
 Had a look at the {business} website. {observation}
 
-I redesign websites for {city} businesses for {price} AED. Nothing upfront and you only pay once you've seen the new one and you're happy with it
+I redesign websites for {city} businesses for {price} AED. Nothing upfront and you only pay once you're happy with the new one
+
+{plan}
 
 Worth sending you a couple of examples?""",
     ("C", "B"): """Hi {greeting_name}
 
 Had a look at the {business} website. {observation}
 
-I redesign websites for {city} businesses at a fixed price with nothing upfront. You only pay once you've seen the new one and you're happy with it
+I redesign websites for {city} businesses at a fixed price with nothing upfront. You only pay once you're happy with the new one
+
+{plan}
 
 Worth sending you a couple of examples?""",
 }
@@ -164,7 +182,7 @@ QUESTION_ANSWERS = [
     (r"how much|price|cost|charge|fee|budget|\baed\b|rate|quote|expensive|cheap|pay",
      "It's {price} AED for the website with nothing upfront. You only pay once you've seen it and you're happy with it"),
     (r"maintain|maintenance|update|upkeep|seo|after it|after launch|support|changes|edit|monthly",
-     "Once it's live there's an optional care and SEO plan for {care_price} AED a month that keeps you showing up on Google and covers edits, fixes and upkeep. Totally up to you"),
+     "Once it's live the SEO and management plan is {care_price} AED a month. That covers your SEO, Google Maps updates, edits, fixes and any changes you need. Totally up to you"),
     (r"how long|when can|timeline|time frame|timeframe|deadline|days|weeks|ready by|quick",
      "[How long it takes, for example: a first version within X days]"),
     (r"hosting|domain|server|email address|\.com|\.ae",
@@ -267,9 +285,13 @@ def first_email(lead, variant: str, settings: Settings) -> Tuple[str, str, str]:
     """(subject, body, full text). body is the part counted for the 80 word limit."""
     values = lead_vars(lead, settings)
     segment = lead["segment"]
-    body = render(FIRST_EMAIL[(segment, variant)], values)
-    if word_count(body) >= 80 and values["area"]:  # a long name and a long area: drop the area
-        body = render(FIRST_EMAIL[(segment, variant)], dict(values, area=""))
+    template = FIRST_EMAIL[(segment, variant)]
+    full_plan, short_plan = PLAN_LINE[variant]
+    # Under 80 words: keep their area if we can (it shows we looked), then the full plan line if it fits.
+    for area, plan in ((values["area"], full_plan), (values["area"], short_plan), ("", full_plan), ("", short_plan)):
+        body = render(template, dict(values, area=area, plan=render(plan, values)))
+        if word_count(body) < 80:
+            break
     subject = render(ADS_SUBJECT if segment in ADS_OPEN else SUBJECT, values)
     full = "%s\n\n%s\n\n%s" % (body, signature(values), OPT_OUT)
     return subject, body, full

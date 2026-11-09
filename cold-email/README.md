@@ -50,6 +50,9 @@ on your Desktop (or type `rizco dashboard` in Terminal). It runs on your Mac onl
 - **More emails a day:** make a new Gmail account, then **Add an inbox** on the dashboard and choose what it sends
   (Website, Meta ads or Both). Each inbox sends 50 a day (change it under Controls); a brand new account warms up
   for 14 days first. The dashboard shows the date you'll reach 50 and 100 a day.
+- **Send the rest now (1 a minute):** one click sends all of today's remaining emails about one a minute instead of
+  spreading them over the day (still within each inbox's daily limit, 9:00 to 22:00 on weekdays). It goes back to
+  normal the next day.
 - **Pause or resume** sending, **check replies now**, **start today's sending**, change your **WhatsApp number** or
   **portfolio link**, set your **prices** (website, and the care and SEO plan you mention in replies), and read
   **today's report**, all from the same page.
@@ -137,7 +140,9 @@ There is an empty template in `leads/sample/lead-template.csv`.
 - **Brand new inboxes** only warm up for their first 14 days, then send their full daily amount. Every inbox keeps
   a little warm up going (about 4 a day) once there are two or more.
 - **Two campaigns.** Website: segments A new business, B no website, C outdated website, at the website price
-  (1,500 AED unless you change it), nothing upfront, paid once they've seen it and approve. Meta ads: N (Lead Hunter
+  (749 AED unless you change it), nothing upfront, paid once they're happy with it, plus the SEO and management plan
+  (480 AED a month: SEO, Google Maps updates, edits, fixes and any changes). Version A shows both prices, version B
+  describes the same offer without numbers. Meta ads: N (Lead Hunter
   found no Meta ads, and the email says so), G (not checked, so the email makes no claim), and businesses already
   running ads are skipped. Each inbox sends Website, Meta ads or both.
 - **Meta ads emails sell the system:** most agencies forward every form fill (job seekers, suppliers and all), your
@@ -158,7 +163,7 @@ There is an empty template in `leads/sample/lead-template.csv`.
 - **Automatic pause** (until `rizco resume`): bounces over 3% of a day's emails, a reply that mentions spam or
   reporting, or Gmail refusing our mail or login. At 50 a day, 2 bounces in a day is already 4%.
 - **suppression.csv:** everyone who said no, every hard bounce, anyone you add. Never emailed again.
-- **Never:** the care plan in a cold email, demo sites called client work, made up clients or numbers, or a reply sent for you.
+- **Never:** demo sites called client work, made up clients or numbers, or a reply sent for you.
 
 ### About sending from free @gmail.com addresses
 

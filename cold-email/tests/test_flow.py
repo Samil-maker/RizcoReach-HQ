@@ -405,3 +405,37 @@ def test_the_morning_send_updates_itself_first(project, con, settings, monkeypat
         pass
     assert calls and calls[0][-1] == "send" and os.environ["OUTREACH_JUST_UPDATED"] == "1"
     monkeypatch.delenv("OUTREACH_JUST_UPDATED")
+
+
+def test_send_the_rest_now_goes_about_one_a_minute(project, con, settings, smtp, dns_pass, fake_clock):
+    approve(con)
+    add_leads(con, 20)
+    fake_clock.set(datetime(2026, 11, 9, 10, 0, tzinfo=clock.TZ))
+    schedule.set_fast(con)
+    assert sender.SendRun(con, settings).run() == 20
+    times = [clock.parse(r[0]) for r in con.execute("SELECT sent_at FROM messages ORDER BY sent_at")]
+    gaps = [(b - a).total_seconds() for a, b in zip(times, times[1:])]
+    assert all(55 <= g <= 75 for g in gaps), gaps                      # about a minute apart
+    assert (times[-1] - times[0]).total_seconds() < 25 * 60          # all 20 out in under half an hour
+    tomorrow = datetime(2026, 11, 10, 9, 0, tzinfo=clock.TZ)
+    fake_clock.set(tomorrow)
+    assert not schedule.fast_today(con)                              # back to normal the next day
+
+
+def test_pressing_send_the_rest_now_during_a_normal_day(project, con, settings, smtp, dns_pass, fake_clock, monkeypatch):
+    approve(con)
+    add_leads(con, 12)
+    original = sender.SendRun.send_one
+    pressed = []
+
+    def send_one(self, inbox, lead_id, step):
+        result = original(self, inbox, lead_id, step)
+        if not pressed:
+            pressed.append(clock.now())
+            schedule.set_fast(con)  # you press the button after the first email went out
+        return result
+
+    monkeypatch.setattr(sender.SendRun, "send_one", send_one)
+    assert run_day(con, settings, fake_clock, datetime(2026, 11, 9, 9, 0, tzinfo=clock.TZ)) == 12
+    times = [clock.parse(r[0]) for r in con.execute("SELECT sent_at FROM messages ORDER BY sent_at")]
+    assert (times[-1] - pressed[0]).total_seconds() < 15 * 60       # the other 11 within about 12 minutes

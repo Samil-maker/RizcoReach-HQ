@@ -329,9 +329,11 @@ def cmd_send(args) -> int:
             if message.startswith("Updated"):  # start again on the new version before sending anything
                 sender.log(message + " Starting again on the new version.")
                 os.environ["OUTREACH_JUST_UPDATED"] = "1"
-                again = ["send"] + (["--limit", str(args.limit)] if args.limit is not None else [])
+                again = ["send"] + (["--limit", str(args.limit)] if args.limit is not None else []) + (["--fast"] if args.fast else [])
                 os.execv(sys.executable, [sys.executable, str(config.ROOT / "run.py")] + again)
-    run = sender.SendRun(con, s, dry_run=args.dry_run, limit=args.limit)
+    if args.fast and not args.dry_run:
+        schedule.set_fast(con)
+    run = sender.SendRun(con, s, dry_run=args.dry_run, limit=args.limit, fast=args.fast)
     if args.dry_run:
         run.run()
         return 0
@@ -608,6 +610,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("send", help="send today's emails slowly (use --dry-run to preview)")
     sp.add_argument("--dry-run", action="store_true", help="show exactly what would be sent today, send nothing")
     sp.add_argument("--limit", type=int, help="send fewer than the daily limit today")
+    sp.add_argument("--fast", action="store_true", help="send the rest of today's emails about one a minute")
     sub.add_parser("replies", help="check the inbox for replies, stop sequences, draft answers")
     sp = sub.add_parser("report", help="write today's report to reports/")
     sp.add_argument("--weekly", action="store_true", help="include the weekly review (added on Fridays anyway)")
