@@ -34,18 +34,32 @@ def available() -> bool:
 
 
 def due(con) -> bool:
-    """Once a day, and never while emails are going out (weekdays 8:30 to 16:00 Dubai)."""
+    """Once a day. (The hourly job never updates while emails are going out, and the send updates first thing.)"""
     if not available():
         return False
-    now = clock.now()
-    if now.weekday() < 5 and clock.at(now.date(), 8, 30) <= now < clock.at(now.date(), 16):
-        return False
-    return db.get_state(con, "updated_on") != now.date().isoformat()
+    return db.get_state(con, "updated_on") != clock.today().isoformat()
 
 
 def update(con, log=print) -> str:
+    """Gets the latest version if there is one. One update at a time."""
+    import fcntl
+
     if not available():
         return "Automatic updates only work in the folder the one line setup made."
+    lock_path = config.path("data", "update.lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(lock_path, "w") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            return "Another update is running."
+        try:
+            return _update(con, log)
+        finally:
+            fcntl.flock(lock, fcntl.LOCK_UN)
+
+
+def _update(con, log=print) -> str:
     old = _git("rev-parse", "HEAD").stdout.strip()
     fetch = _git("fetch", "--quiet", "--depth", "1", "origin", BRANCH)
     db.set_state(con, "updated_on", clock.today().isoformat())

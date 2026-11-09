@@ -317,8 +317,20 @@ def cmd_approve(args) -> int:
 # ----------------------------------------------------------------------------- daily commands
 
 def cmd_send(args) -> int:
+    import os
+
     s = config.load_settings()
     con = db.connect()
+    if not args.dry_run and not os.environ.get("OUTREACH_JUST_UPDATED"):
+        from . import updater
+
+        if updater.available() and not sender.Lock.held("send"):
+            message = updater.update(con, log=sender.log)
+            if message.startswith("Updated"):  # start again on the new version before sending anything
+                sender.log(message + " Starting again on the new version.")
+                os.environ["OUTREACH_JUST_UPDATED"] = "1"
+                again = ["send"] + (["--limit", str(args.limit)] if args.limit is not None else [])
+                os.execv(sys.executable, [sys.executable, str(config.ROOT / "run.py")] + again)
     run = sender.SendRun(con, s, dry_run=args.dry_run, limit=args.limit)
     if args.dry_run:
         run.run()
@@ -496,9 +508,25 @@ def cmd_auto(args) -> int:
 
         if updater.due(con) and not sender.Lock.held("send"):
             sender.log(updater.update(con, log=sender.log))
+        start_sending_if_needed(con, s)
     finally:
         lock.__exit__(None, None, None)
     return 0
+
+
+def start_sending_if_needed(con, s: Settings) -> bool:
+    """During sending hours: if emails can still go out today and the sender isn't running, start it."""
+    now = clock.now()
+    today = now.date()
+    if not launchd.IS_MAC or sender.Lock.held("send") or safety.paused(con) or not db.get_state(con, "approved"):
+        return False
+    if not schedule.is_send_day(today) or not schedule.current_window_end(now) or now >= clock.at(today, *schedule.LAST_PLANNED):
+        return False
+    left = sum(len(v["items"]) for v in schedule.plan(con, s, today, [i for i in s.inboxes if i.password]).values())
+    if not left:
+        return False
+    sender.log("%d emails can still go out today. Starting the sender." % left)
+    return launchd.start_now()
 
 
 def _open_folder(path, name: str) -> int:

@@ -242,7 +242,7 @@ def ab_suggestions(vs: List[Dict]) -> List[str]:
         if a["sent"] >= 100 and b["sent"] >= 100:
             ra, rb = a["replied"] / a["sent"], b["replied"] / b["sent"]
             if abs(ra - rb) < 0.01:
-                verdict = "Both versions of segment %s reply about the same (%s vs %s). The price line makes no difference, keep A (it filters out people who would never pay 480 AED)." % (seg, pct(a["replied"], a["sent"]), pct(b["replied"], b["sent"]))
+                verdict = "Both versions of segment %s reply about the same (%s vs %s). The price line makes no difference, keep A (it filters out people who would never pay)." % (seg, pct(a["replied"], a["sent"]), pct(b["replied"], b["sent"]))
                 loser = "B"
             else:
                 win, lose = ("A", "B") if ra > rb else ("B", "A")

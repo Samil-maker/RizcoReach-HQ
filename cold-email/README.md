@@ -51,13 +51,15 @@ on your Desktop (or type `rizco dashboard` in Terminal). It runs on your Mac onl
   (Website, Meta ads or Both). Each inbox sends 50 a day (change it under Controls); a brand new account warms up
   for 14 days first. The dashboard shows the date you'll reach 50 and 100 a day.
 - **Pause or resume** sending, **check replies now**, **start today's sending**, change your **WhatsApp number** or
-  **portfolio link**, and read **today's report**, all from the same page.
+  **portfolio link**, set your **prices** (website, and the care and SEO plan you mention in replies), and read
+  **today's report**, all from the same page.
 
 ## Your part
 
 - Drop lead files into the dashboard and answer the people who reply.
-- Keep the Mac on, plugged in and awake 9:00 to 18:00 on weekdays (you can use it as normal). If it sleeps, sending
-  pauses and catches up when it wakes. Whatever doesn't fit before 18:00 goes first the next weekday.
+- Keep the Mac on, plugged in and awake 9:00 to 22:00 on weekdays (you can use it as normal). If it sleeps, sending
+  pauses, and when it wakes the rest of the day's emails are spread over the time that's left. Whatever doesn't
+  fit before 22:00 goes first the next weekday. Leads you add during the day go out the same day.
 - If the dashboard ever says **Sending is paused**, read why, fix it, then press **Resume sending**.
 
 ## What happens by itself
@@ -67,8 +69,9 @@ on your Desktop (or type `rizco dashboard` in Terminal). It runs on your Mac onl
 | Always | The dashboard at http://localhost:8321 (it starts when you log in) |
 | Once a day, evenings or weekends | Updates itself to the latest version, if its tests pass |
 | Every hour | New lead files are imported, cleaned and segmented. Replies are checked (All Mail and Spam), sequences stop for anyone who replied, answers are drafted into Gmail Drafts, the report is updated, and you get a notification for interested people |
-| Mon to Fri 9:00 to 18:00 Dubai time | The day's emails go out one at a time, spread over the day (more between 10 and 12 and between 1 and 3, when owners read email), inboxes taking turns, follow ups first |
-| Every hour, 9:00 to 18:00 | Warm up: your inboxes swap a few normal emails, open them, rescue any from Spam, reply, and file them in a "RizcoReach Warmup" folder |
+| Mon to Fri 9:00 to 22:00 Dubai time | The day's emails go out one at a time, spread over the day (busiest 10 to 12 and 1 to 3, about three quarters out by 18:00), inboxes taking turns, follow ups first. The plan is refreshed every 15 minutes, so new leads join the same day |
+| Every hour, sending hours | If there's more to send today and the sender isn't running (say you added leads after it finished), it starts it |
+| Every hour, 9:00 to 21:00 | Warm up: your inboxes swap a few normal emails, open them, rescue any from Spam, reply, and file them in a "RizcoReach Warmup" folder |
 | Every send | SPF and DKIM must pass, the email must pass the style checks, and the inbox's daily limit must have room |
 | Fridays | The report adds a weekly review: what's working, what isn't, what to change |
 
@@ -133,10 +136,16 @@ There is an empty template in `leads/sample/lead-template.csv`.
   More a day means more inboxes: leads are shared between the inboxes that send their campaign.
 - **Brand new inboxes** only warm up for their first 14 days, then send their full daily amount. Every inbox keeps
   a little warm up going (about 4 a day) once there are two or more.
-- **Two campaigns.** Website: segments A new business, B no website, C outdated website. Meta ads: N (Lead Hunter
+- **Two campaigns.** Website: segments A new business, B no website, C outdated website, at the website price
+  (1,500 AED unless you change it), nothing upfront, paid once they've seen it and approve. Meta ads: N (Lead Hunter
   found no Meta ads, and the email says so), G (not checked, so the email makes no claim), and businesses already
   running ads are skipped. Each inbox sends Website, Meta ads or both.
-- **Monday to Friday only, Dubai time:** spread from 9:00 to 17:45, never two emails from one inbox within 3
+- **Meta ads emails sell the system:** most agencies forward every form fill (job seekers, suppliers and all), your
+  team messages each enquiry on WhatsApp first and only passes on the genuine ones. The offer depends on the
+  business: home improvement (interior design, fit out, renovation, landscaping and similar, see `HOME_IMPROVEMENT`
+  in `outreach/templates.py`) get "one flat monthly rate and no big setup fee", everyone else gets "nothing upfront,
+  you only pay once you've had your first genuine lead".
+- **Monday to Friday only, Dubai time:** spread from 9:00 to 21:45, never two emails from one inbox within 3
   minutes or two from any inbox within a minute. Follow ups first, then new leads (new businesses first, since
   "just opened" goes stale).
 - **Sequence:** day 0, day 3 follow up, day 7 follow up, then stop. Follow ups reply in the same thread. Any real

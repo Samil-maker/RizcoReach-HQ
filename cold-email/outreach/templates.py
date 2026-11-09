@@ -28,7 +28,7 @@ Saw {business} just opened[[ in {area}]]. Congrats on the launch
 
 When people hear about a new place the first thing they do is look it up. A proper website is what turns that first look into a booking
 
-I build websites for new businesses in {in_city} for 480 AED. Nothing upfront and you only pay once you've seen it and you're happy
+I build websites for new businesses in {in_city} for {price} AED. Nothing upfront and you only pay once you've seen it and you're happy
 
 Want me to send you a few examples?""",
     ("A", "B"): """Hi {greeting_name}
@@ -46,7 +46,7 @@ I was looking up {business} and couldn't find a website. Just the {found_on} pag
 
 A lot of people check the website before they call or book so not having one can quietly cost you customers
 
-I build websites for {city} businesses for 480 AED. Nothing upfront and you only pay once you've seen it and approved it
+I build websites for {city} businesses for {price} AED. Nothing upfront and you only pay once you've seen it and approved it
 
 Want me to show you what yours could look like?""",
     ("B", "B"): """Hi {greeting_name}
@@ -62,7 +62,7 @@ Want me to show you what yours could look like?""",
 
 Had a look at the {business} website. {observation}
 
-I redesign websites for {city} businesses for 480 AED. Nothing upfront and you only pay once you've seen the new one and you're happy with it
+I redesign websites for {city} businesses for {price} AED. Nothing upfront and you only pay once you've seen the new one and you're happy with it
 
 Worth sending you a couple of examples?""",
     ("C", "B"): """Hi {greeting_name}
@@ -74,43 +74,69 @@ I redesign websites for {city} businesses at a fixed price with nothing upfront.
 Worth sending you a couple of examples?""",
 }
 
-# Meta ads campaign. From the Lead Hunter ads pitch: steady enquiries from Facebook and Instagram ads, every lead
-# screened so only genuine people reach them, no big setup fee, one flat monthly rate. Version A has the
-# pricing line, version B does not. N only goes to businesses Lead Hunter found no Meta ads for.
+# Meta ads campaign. Sells the system, not just the ads: most agencies forward every form fill (job seekers,
+# suppliers and all), RizcoReach's own team messages each enquiry on SMS or WhatsApp first and only passes on
+# the genuine ones. Two offers:
+#   pay_after   nothing upfront, they pay once they've had their first genuine lead (most businesses)
+#   standard    one flat monthly rate, no big setup fee (home improvement businesses, see HOME_IMPROVEMENT)
+# Version A has the offer line, version B does not. N only goes to businesses Lead Hunter found no Meta ads for.
 ADS_SUBJECT = "{subject_business} enquiries"
-ADS_PITCH = ("We run Facebook and Instagram ads for {city} businesses and screen every enquiry first so the ones "
-             "that reach you are genuine people with real interest")
-ADS_PRICE = "No big setup fee. Just one flat monthly rate so there's little risk on your side"
+ADS_PITCH = ("Most agencies just forward every form fill and a lot of those are job seekers or suppliers. Our team "
+             "messages each enquiry on WhatsApp first so you only get the genuine ones")
+ADS_OFFER = {
+    "pay_after": "Nothing upfront. You only pay once you've had your first genuine lead",
+    "standard": "One flat monthly rate and no big setup fee",
+}
 ADS_ASK = "Want me to send you a quick explanation of how it works?"
 ADS_OPEN = {
     "N": "I was looking at {business}[[ in {area}]] and couldn't see any Facebook or Instagram ads running",
-    "G": "I came across {business}[[ in {area}]] and wanted to ask about getting you more enquiries through Facebook and Instagram",
+    "G": "I came across {business}[[ in {area}]] and had a quick question about Facebook and Instagram ads",
 }
 for _seg, _open in ADS_OPEN.items():
-    FIRST_EMAIL[(_seg, "A")] = "Hi {greeting_name}\n\n%s\n\n%s\n\n%s\n\n%s" % (_open, ADS_PITCH, ADS_PRICE, ADS_ASK)
+    FIRST_EMAIL[(_seg, "A")] = "Hi {greeting_name}\n\n%s\n\n%s\n\n{ads_offer}\n\n%s" % (_open, ADS_PITCH, ADS_ASK)
     FIRST_EMAIL[(_seg, "B")] = "Hi {greeting_name}\n\n%s\n\n%s\n\n%s" % (_open, ADS_PITCH, ADS_ASK)
+
+# Home improvement businesses get the standard offer (no pay after first lead). Matched in the niche and business name.
+HOME_IMPROVEMENT = re.compile(
+    r"interior|fit ?out|renovat|refurbish|remodel|home improvement|contracting|contractor|construction|joinery|"
+    r"carpent|kitchen|bathroom|flooring|parquet|painting|painter|landscap|garden|swimming pool|pool (build|construct)|"
+    r"gypsum|partition|curtain|blind|wallpaper|marble|tiles|waterproof|alumin|smart home|decor",
+    re.I,
+)
 
 ADS_FOLLOW_UP = {
     1: "Hi {greeting_name} just bringing this back up in case it got buried. Happy to send a quick explanation of how it works if you're interested",
-    2: "Last one from me[[ {first_name}]]. If more enquiries from Facebook and Instagram is ever on your list just reply yes and I'll send the details",
+    2: "Last one from me[[ {first_name}]]. If more genuine enquiries from Facebook and Instagram is ever on your list just reply yes and I'll send the details",
 }
-ADS_DRAFT_INTERESTED = (
-    "Thanks[[ {first_name}]]. Here's how it works in short. We set up and run Facebook and Instagram ads for {business}, "
-    "screen every enquiry so the ones that reach you are genuine people, and it's one flat monthly rate with no big "
-    "setup fee.\n\n[Your monthly rate and what's included]\n\nEasiest if we chat on WhatsApp, I'm on {whatsapp}"
-)
+ADS_HOW = ("We set up and run Facebook and Instagram ads for {business}. Our team contacts every enquiry by SMS or WhatsApp "
+           "to confirm what they need, and only the genuine ones get passed to you on WhatsApp or email, whichever you prefer.")
+ADS_DRAFT_INTERESTED = {
+    "pay_after": "Thanks[[ {first_name}]]. Here's how it works in short. " + ADS_HOW + " You don't pay anything upfront. "
+                 "You only pay once you've had your first genuine lead.\n\n[What it costs after that]\n\n"
+                 "Easiest if we chat on WhatsApp, I'm on {whatsapp}",
+    "standard": "Thanks[[ {first_name}]]. Here's how it works in short. " + ADS_HOW + " It's one flat monthly rate with no "
+                "big setup fee.\n\n[Your monthly rate and what's included]\n\nEasiest if we chat on WhatsApp, I'm on {whatsapp}",
+}
 ADS_QUESTION_ANSWERS = [
     (r"how much|price|cost|charge|fee|rate|budget|\baed\b|pay|expensive|cheap",
-     "It's one flat monthly rate with no big setup fee. [Your monthly rate, and the ad budget they'd spend on Meta]"),
+     "{ads_offer_sentence} [What it costs, and the ad budget they'd spend on Meta]"),
     (r"result|how many|guarantee|leads|enquir|inquir|customers|bookings|work for",
      "[What results to expect and how soon, without promising numbers you can't back up]"),
     (r"how long|when|start|timeline|setup|set up",
      "[How long setup takes before the first enquiries come in]"),
-    (r"screen|qualif|genuine|fake|spam|quality",
-     "We screen every enquiry first so the ones that reach you are genuine people with real interest. [How you screen them]"),
+    (r"screen|qualif|genuine|fake|spam|quality|job seeker|supplier",
+     "Our team contacts every enquiry by SMS or WhatsApp first to confirm what they need, so only genuine people reach you."),
     (r"who are you|company|based|where|legit|examples|clients|portfolio",
      "[A line about you and RizcoReach]"),
 ]
+
+
+def ads_offer(lead) -> str:
+    """pay_after for most businesses, standard for home improvement ones."""
+    get = (lambda k: (lead[k] if k in lead.keys() else "") or "") if hasattr(lead, "keys") else (lambda k: lead.get(k) or "")
+    text = " ".join([get("niche"), get("business"), get("business_name")])
+    return "standard" if HOME_IMPROVEMENT.search(text) else "pay_after"
+
 
 CAMPAIGN_OF_SEGMENT = {"A": "website", "B": "website", "C": "website", "N": "ads", "G": "ads"}
 
@@ -135,10 +161,10 @@ DRAFT_INTERESTED = (
 
 # Short answers for common questions. Anything in [brackets] is for you to fill in before sending.
 QUESTION_ANSWERS = [
-    (r"how much|price|cost|charge|fee|budget|\baed\b|\b480\b|rate|quote|expensive|cheap|pay",
-     "It's 480 AED for the website with nothing upfront. You only pay once you've seen it and you're happy with it"),
+    (r"how much|price|cost|charge|fee|budget|\baed\b|rate|quote|expensive|cheap|pay",
+     "It's {price} AED for the website with nothing upfront. You only pay once you've seen it and you're happy with it"),
     (r"maintain|maintenance|update|upkeep|seo|after it|after launch|support|changes|edit|monthly",
-     "Once it's live there's an optional care plan of about 250 AED a month that covers SEO, edits, fixes and upkeep. Totally up to you"),
+     "Once it's live there's an optional care and SEO plan for {care_price} AED a month that keeps you showing up on Google and covers edits, fixes and upkeep. Totally up to you"),
     (r"how long|when can|timeline|time frame|timeframe|deadline|days|weeks|ready by|quick",
      "[How long it takes, for example: a first version within X days]"),
     (r"hosting|domain|server|email address|\.com|\.ae",
@@ -221,6 +247,10 @@ def lead_vars(lead, settings: Settings) -> Dict[str, str]:
         "sender_name": settings.from_name,
         "whatsapp": names.format_whatsapp(settings.whatsapp),
         "examples_link": settings.examples_link,
+        "price": "{:,}".format(settings.website_price),
+        "care_price": "{:,}".format(settings.care_price),
+        "ads_offer": ADS_OFFER[ads_offer(lead)],
+        "ads_offer_sentence": ADS_OFFER[ads_offer(lead)] + ".",
     }
 
 
@@ -269,7 +299,7 @@ def draft_reply(classification: str, lead, their_text: str, settings: Settings) 
     sign = values["sender_name"]
     ads = campaign_of(lead) == "ads"
     if classification == "interested" and "?" not in (their_text or ""):
-        return render(ADS_DRAFT_INTERESTED if ads else DRAFT_INTERESTED, values) + "\n\n" + sign
+        return render(ADS_DRAFT_INTERESTED[ads_offer(lead)] if ads else DRAFT_INTERESTED, values) + "\n\n" + sign
     if classification in ("interested", "question"):
         text = (their_text or "").lower()
         answers: List[str] = []

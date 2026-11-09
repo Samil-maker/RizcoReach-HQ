@@ -96,7 +96,7 @@ def overview(con, s: config.Settings) -> Dict:
     elif not approved:
         nxt = "Off until a test email is approved (rizco setup)"
     elif running:
-        nxt = "Sending now, spread until about 17:45"
+        nxt = "Sending now, spread until about 21:45"
     elif schedule.is_send_day(today) and now < clock.at(today, 9):
         nxt = "Today at 9:00"
     elif schedule.is_send_day(today) and schedule.current_window_end(now) and sent_today < cap_today and sum(queue.values()):
@@ -127,7 +127,8 @@ def overview(con, s: config.Settings) -> Dict:
         },
         "replies_checked": _nice_time(db.get_state(con, "replies_checked")),
         "settings": {"from_name": s.from_name, "whatsapp": names.format_whatsapp(s.whatsapp), "examples_link": s.examples_link,
-                     "test_email_to": s.test_email_to, "daily_limit": s.daily_limit, "max_daily_limit": config.MAX_DAILY_LIMIT},
+                     "test_email_to": s.test_email_to, "daily_limit": s.daily_limit, "max_daily_limit": config.MAX_DAILY_LIMIT,
+                     "website_price": s.website_price, "care_price": s.care_price},
     }
 
 
@@ -340,6 +341,12 @@ def post(path: str, body: Dict, raw: bytes, headers) -> Dict:
             if not re.match(r"^https://\S+$", link) or names.DASHES[1:] and any(c in link for c in names.DASHES[1:]):
                 return {"ok": False, "message": "The portfolio link must start with https:// (and have no long dashes)."}
             updates["EXAMPLES_LINK"] = link
+        for field, key, low, high in (("website_price", "WEBSITE_PRICE", 100, 100000), ("care_price", "CARE_PLAN_PRICE", 50, 50000)):
+            value = re.sub(r"[^\d]", "", str(body.get(field) or ""))
+            if value:
+                if not low <= int(value) <= high:
+                    return {"ok": False, "message": "That price looks wrong (%s)." % body.get(field)}
+                updates[key] = value
         limit = str(body.get("daily_limit") or "").strip()
         if limit:
             if not limit.isdigit() or not 1 <= int(limit) <= config.MAX_DAILY_LIMIT:

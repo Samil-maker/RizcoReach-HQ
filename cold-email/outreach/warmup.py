@@ -3,7 +3,7 @@
 A brand new inbox spends its first 14 days only warming up, then starts cold email at its daily limit, and
 keeps a little warm up going after that. Every inbox takes part once you have two or more.
 
-Every hour (the hourly job), between 9:00 and 18:00 Dubai time:
+Every hour (the hourly job), between 9:00 and 21:00 Dubai time:
   - each inbox starts a few short conversations with your other inboxes
   - each inbox opens the warm up emails it received, pulls any out of Spam (which tells Gmail
     "not spam"), stars or marks some as important, replies to most, and files them in a
@@ -28,7 +28,7 @@ from .config import Inbox, Settings
 from .mailbox import Mailbox, MailboxError, imap_date
 
 FOLDER = "RizcoReach Warmup"
-DAY_START, DAY_END = 9, 18
+DAY_START, DAY_END = 9, 21
 MAX_NEW_PER_RUN = 2
 REPLY_CHANCE = 0.65
 MAX_DEPTH = 2  # a conversation is at most 3 emails
