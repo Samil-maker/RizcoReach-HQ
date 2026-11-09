@@ -20,25 +20,23 @@ from .config import Settings
 
 SUBJECT = "{subject_business} website"
 
-# (segment, version): version A states the price, version B does not.
-# Website emails. Version A shows both prices (the website and the monthly SEO and management plan),
-# version B describes the same offer without numbers.
-# The monthly plan line: the full one, and a shorter one used when a long business name would push past 80 words.
-PLAN_LINE = {
-    "A": ("After that it's {care_price} AED a month for SEO and management. Google Maps updates, edits, fixes and any changes you need",
-          "After that it's {care_price} AED a month for SEO, Google Maps and any changes you need"),
-    "B": ("After that I can handle your SEO and management every month. Google Maps updates, edits, fixes and any changes you need",
-          "After that I can look after your SEO, Google Maps and any changes every month"),
-}
+# Website emails, written as "we" (RizcoReach), with the question at the end from you.
+# (segment, version): version A states the website price, version B describes the same offer without numbers.
+# The SEO and management line never states the monthly price. That comes up in your reply when they ask.
+# PLAN_LINE: the full line, and a shorter one used when a long business name would push past 80 words.
+PLAN_LINE = (
+    "We also offer SEO and management. That includes Google Maps updates, edits, fixes and any changes you need",
+    "We also handle SEO, Google Maps and any changes you need",
+)
 
 FIRST_EMAIL: Dict[Tuple[str, str], str] = {
     ("A", "A"): """Hi {greeting_name}
 
 Saw {business} just opened[[ in {area}]]. Congrats on the launch
 
-People look up a new place before they visit. A proper website turns that into bookings
+People look you up before they visit. A proper website turns that into bookings
 
-I build websites for new businesses in {in_city} for {price} AED. Nothing upfront and you only pay once you're happy with it
+We build websites for new businesses in {in_city} for {price} AED. Nothing upfront and you only pay once you're happy with it
 
 {plan}
 
@@ -47,49 +45,49 @@ Want me to send you a few examples?""",
 
 Saw {business} just opened[[ in {area}]]. Congrats on the launch
 
-People look up a new place before they visit. A proper website turns that into bookings
+People look you up before they visit. A proper website turns that into bookings
 
-I build websites for new businesses in {in_city} at a fixed price with nothing upfront. You only pay once you're happy with it
+We build websites for new businesses in {in_city} at a fixed price with nothing upfront. You only pay once you're happy with it
 
 {plan}
 
 Want me to send you a few examples?""",
     ("B", "A"): """Hi {greeting_name}
 
-I was looking up {business} and couldn't find a website. Just the {found_on} page. Most people check for one before they call
+We came across {business} and couldn't find a website. Just the {found_on} page. Most people look for one before they call
 
-I build websites for {city} businesses for {price} AED. Nothing upfront and you only pay once you're happy with it
+We build websites for {city} businesses for {price} AED. Nothing upfront and you only pay once you're happy with it
 
 {plan}
 
-Want me to show you what yours could look like?""",
+Want me to show you what your website could look like?""",
     ("B", "B"): """Hi {greeting_name}
 
-I was looking up {business} and couldn't find a website. Just the {found_on} page. Most people check for one before they call
+We came across {business} and couldn't find a website. Just the {found_on} page. Most people look for one before they call
 
-I build websites for {city} businesses at a fixed price with nothing upfront. You only pay once you're happy with it
+We build websites for {city} businesses at a fixed price with nothing upfront. You only pay once you're happy with it
 
 {plan}
 
-Want me to show you what yours could look like?""",
+Want me to show you what your website could look like?""",
     ("C", "A"): """Hi {greeting_name}
 
 Had a look at the {business} website. {observation}
 
-I redesign websites for {city} businesses for {price} AED. Nothing upfront and you only pay once you're happy with the new one
+We redesign websites for {city} businesses for {price} AED. Nothing upfront and you only pay once you're happy with the new one
 
 {plan}
 
-Worth sending you a couple of examples?""",
+Want me to send you a few examples?""",
     ("C", "B"): """Hi {greeting_name}
 
 Had a look at the {business} website. {observation}
 
-I redesign websites for {city} businesses at a fixed price with nothing upfront. You only pay once you're happy with the new one
+We redesign websites for {city} businesses at a fixed price with nothing upfront. You only pay once you're happy with the new one
 
 {plan}
 
-Worth sending you a couple of examples?""",
+Want me to send you a few examples?""",
 }
 
 # Meta ads campaign. Sells the system, not just the ads: most agencies forward every form fill (job seekers,
@@ -107,8 +105,8 @@ ADS_OFFER = {
 }
 ADS_ASK = "Want me to send you a quick explanation of how it works?"
 ADS_OPEN = {
-    "N": "I was looking at {business}[[ in {area}]] and couldn't see any Facebook or Instagram ads running",
-    "G": "I came across {business}[[ in {area}]] and had a quick question about Facebook and Instagram ads",
+    "N": "We were looking at {business}[[ in {area}]] and couldn't see any Facebook or Instagram ads running",
+    "G": "We came across {business}[[ in {area}]] and had a quick question about Facebook and Instagram ads",
 }
 for _seg, _open in ADS_OPEN.items():
     FIRST_EMAIL[(_seg, "A")] = "Hi {greeting_name}\n\n%s\n\n%s\n\n{ads_offer}\n\n%s" % (_open, ADS_PITCH, ADS_ASK)
@@ -124,16 +122,16 @@ HOME_IMPROVEMENT = re.compile(
 
 ADS_FOLLOW_UP = {
     1: "Hi {greeting_name} just bringing this back up in case it got buried. Happy to send a quick explanation of how it works if you're interested",
-    2: "Last one from me[[ {first_name}]]. If more genuine enquiries from Facebook and Instagram is ever on your list just reply yes and I'll send the details",
+    2: "One last note[[ {first_name}]]. If more genuine enquiries from Facebook and Instagram are ever on your list just reply yes and we'll send over the details",
 }
 ADS_HOW = ("We set up and run Facebook and Instagram ads for {business}. Our team contacts every enquiry by SMS or WhatsApp "
            "to confirm what they need, and only the genuine ones get passed to you on WhatsApp or email, whichever you prefer.")
 ADS_DRAFT_INTERESTED = {
     "pay_after": "Thanks[[ {first_name}]]. Here's how it works in short. " + ADS_HOW + " You don't pay anything upfront. "
                  "You only pay once you've had your first genuine lead.\n\n[What it costs after that]\n\n"
-                 "Easiest if we chat on WhatsApp, I'm on {whatsapp}",
+                 "Easiest to chat on WhatsApp. Our number is {whatsapp}",
     "standard": "Thanks[[ {first_name}]]. Here's how it works in short. " + ADS_HOW + " It's one flat monthly rate with no "
-                "big setup fee.\n\n[Your monthly rate and what's included]\n\nEasiest if we chat on WhatsApp, I'm on {whatsapp}",
+                "big setup fee.\n\n[Your monthly rate and what's included]\n\nEasiest to chat on WhatsApp. Our number is {whatsapp}",
 }
 ADS_QUESTION_ANSWERS = [
     (r"how much|price|cost|charge|fee|rate|budget|\baed\b|pay|expensive|cheap",
@@ -160,21 +158,21 @@ CAMPAIGN_OF_SEGMENT = {"A": "website", "B": "website", "C": "website", "N": "ads
 
 FOLLOW_UP = {
     # The portfolio link goes on its own line (EXAMPLES_LINK in .env). First emails never carry a link.
-    1: "Hi {greeting_name} just bringing this back up in case it got buried.[[ Here are a few sites I've built so you can see the style\n\n{examples_link}]]",
-    2: "Last one from me[[ {first_name}]]. If it helps I can put together a quick preview of what a homepage for {business} could look like. No cost and no commitment. Just reply yes",
+    1: "Hi {greeting_name} just bringing this back up in case it got buried.[[ Here are a few sites we've built so you can see the style\n\n{examples_link}]]",
+    2: "One last note[[ {first_name}]]. If it helps we can put together a quick preview of what a homepage for {business} could look like. No cost and no commitment. Just reply yes",
 }
 
 SIGNATURE = """{sender_name}
 RizcoReach
 WhatsApp {whatsapp}"""
 
-OPT_OUT = "Not relevant? Just reply no and I won't email again"
+OPT_OUT = "Not relevant? Just reply no and we won't email again"
 
 # Reply drafts. These are never sent for you: they go in the report and your Drafts folder.
 DRAFT_INTERESTED = (
-    "Thanks[[ {first_name}]]. Here are some sites I've built: {examples_link}\n\n"
-    "If you like the style I can put together a quick preview for {business} so you can see it before deciding "
-    "anything. Easiest if we chat on WhatsApp, I'm on {whatsapp}"
+    "Thanks[[ {first_name}]]. Here are some sites we've built: {examples_link}\n\n"
+    "If you like the style we can put together a quick preview for {business} so you can see it before deciding "
+    "anything. Easiest to chat on WhatsApp. Our number is {whatsapp}"
 )
 
 # Short answers for common questions. Anything in [brackets] is for you to fill in before sending.
@@ -190,15 +188,15 @@ QUESTION_ANSWERS = [
     (r"include|pages|what do (i|we) get|features|booking|whatsapp button|arabic|language|shop|e ?commerce|payment",
      "[What's included: pages, booking or WhatsApp button, Arabic if they want it]"),
     (r"example|portfolio|previous|samples|work you|sites you|websites you",
-     "Here are some sites I've built: {examples_link}"),
+     "Here are some sites we've built: {examples_link}"),
     (r"who are you|where are you|company|based|office|meet|location|trade licen[cs]e|legit",
      "[A line about you and RizcoReach]"),
 ]
 DRAFT_QUESTION_OPEN = "Thanks[[ {first_name}]]. Good question."
 DRAFT_QUESTION_FALLBACK = "[Answer their question here]"
 DRAFT_QUESTION_CLOSE = (
-    "If it helps I can put together a quick preview for {business} so you can see it before deciding anything. "
-    "Easiest if we chat on WhatsApp, I'm on {whatsapp}"
+    "If it helps we can put together a quick preview for {business} so you can see it before deciding anything. "
+    "Easiest to chat on WhatsApp. Our number is {whatsapp}"
 )
 
 # Ideas for the next version once a test has 100 sends per version (shown in the report).
@@ -219,9 +217,9 @@ NEXT_VARIANT_IDEAS = {
         "Ask 'Is anyone already building your website?' at the end",
     ],
     "B": [
-        "Lead with the free preview: 'I could mock up a homepage for {business} so you can see it first'",
+        "Lead with the free preview: 'We could mock up a homepage for {business} so you can see it first'",
         "Ask 'Is a website on your list this year?' at the end",
-        "Name their niche in the first line, for example 'I was looking up salons in Al Barsha'",
+        "Name their niche in the first line, for example 'We were looking up salons in Al Barsha'",
     ],
     "C": [
         "Shorter: just the observation and the question, price in the second line",
@@ -246,6 +244,20 @@ def render(template: str, values: Dict[str, str]) -> str:
     return _VAR.sub(lambda m: str(values.get(m.group(1), "{%s}" % m.group(1))), text)
 
 
+# Leads imported before the emails said "we" have the old "I" wording saved with them. Brought up to date when sent.
+_OLD_OBSERVATION = [
+    (re.compile(r"\bwhen I (tried|opened)\b"), r"when we \1"),
+    (re.compile(r"^I couldn't see an easy way"), "We couldn't see an easy way"),
+    (re.compile(r"^I think a fresh modern version"), "We think a fresh modern version"),
+]
+
+
+def _we(observation: str) -> str:
+    for rx, new in _OLD_OBSERVATION:
+        observation = rx.sub(new, observation)
+    return observation
+
+
 def lead_vars(lead, settings: Settings) -> Dict[str, str]:
     get = (lambda k: (lead[k] if k in lead.keys() else "") or "") if hasattr(lead, "keys") else (lambda k: lead.get(k) or "")
     business = get("business") or names.clean_business(get("business_name"))
@@ -261,7 +273,7 @@ def lead_vars(lead, settings: Settings) -> Dict[str, str]:
         "in_city": in_city,
         "city": city,
         "found_on": names.found_on(get("source"), get("instagram")),
-        "observation": get("observation"),
+        "observation": _we(get("observation")),
         "sender_name": settings.from_name,
         "whatsapp": names.format_whatsapp(settings.whatsapp),
         "examples_link": settings.examples_link,
@@ -286,7 +298,7 @@ def first_email(lead, variant: str, settings: Settings) -> Tuple[str, str, str]:
     values = lead_vars(lead, settings)
     segment = lead["segment"]
     template = FIRST_EMAIL[(segment, variant)]
-    full_plan, short_plan = PLAN_LINE[variant]
+    full_plan, short_plan = PLAN_LINE
     # Under 80 words: keep their area if we can (it shows we looked), then the full plan line if it fits.
     for area, plan in ((values["area"], full_plan), (values["area"], short_plan), ("", full_plan), ("", short_plan)):
         body = render(template, dict(values, area=area, plan=render(plan, values)))

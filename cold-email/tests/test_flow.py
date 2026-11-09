@@ -128,7 +128,7 @@ def test_send_day_respects_limits_windows_and_gaps(project, con, settings, smtp,
     assert m["From"] == "Samil <samilatrizcoreach@gmail.com>" and m["Subject"] == "Shop 0 website"
     assert m.get_content_type() == "text/plain" and not m.is_multipart()
     body = m.get_content()
-    assert "http" not in body and body.rstrip().endswith("Just reply no and I won't email again")
+    assert "http" not in body and body.rstrip().endswith("Just reply no and we won't email again")
     # a second run the same day sends nothing more
     assert run_day(con, settings, fake_clock, datetime(2026, 11, 9, 10, 30, tzinfo=clock.TZ)) == 0
     # weekends: nothing
@@ -162,7 +162,7 @@ def test_follow_ups_go_first_and_thread(project, con, settings, smtp, dns_pass, 
     smtp.outbox.clear()
     run_day(con, settings, fake_clock, datetime(2026, 11, 16, 9, 0, tzinfo=clock.TZ))  # day 7: follow up 2
     texts = [m.get_content() for m in smtp.outbox if m["To"].startswith("owner")]
-    assert len(texts) == 5 and all("Last one from me" in t for t in texts)
+    assert len(texts) == 5 and all("One last note" in t for t in texts)
     assert con.execute("SELECT COUNT(*) FROM leads WHERE status='done'").fetchone()[0] == len(texts)
 
 
@@ -188,7 +188,7 @@ def test_reply_stops_sequence_and_drafts(project, con, settings, smtp, dns_pass,
     mid = con.execute("SELECT message_id FROM messages WHERE to_email='owner0@shop0.ae'").fetchone()[0]
     fake_clock.set(datetime(2026, 11, 10, 11, 0, tzinfo=clock.TZ))
     info = replies.process(con, settings, settings.inboxes[0], REPLY.format(mid=mid).encode())
-    assert info["label"] == "interested" and "Here are some sites I've built" in info["draft"]
+    assert info["label"] == "interested" and "Here are some sites we've built" in info["draft"]
     lead = db.lead_by_email(con, "owner0@shop0.ae")
     assert lead["status"] == "replied" and lead["waiting_on_me"] == 1 and lead["next_due"] is None
     assert replies.process(con, settings, settings.inboxes[0], REPLY.format(mid=mid).encode()) is None  # once only
@@ -197,7 +197,7 @@ def test_reply_stops_sequence_and_drafts(project, con, settings, smtp, dns_pass,
     assert [m["To"] for m in smtp.outbox] == ["owner1@shop1.ae"]  # no follow up for the one who replied
     text = report.build(con, settings)
     top = text.index("## Interested: reply to these first")
-    assert top < text.index("## Sent") and "owner0@shop0.ae" in text and "Here are some sites I've built" in text
+    assert top < text.index("## Sent") and "owner0@shop0.ae" in text and "Here are some sites we've built" in text
 
 
 def test_out_of_office_pushes_the_next_email(project, con, settings, smtp, dns_pass, fake_clock):

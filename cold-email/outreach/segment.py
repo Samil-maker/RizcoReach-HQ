@@ -27,16 +27,16 @@ NEW_BUSINESS = re.compile(
 )
 
 OBSERVATIONS = {
-    "down": "It wasn't loading when I tried to open it",
-    "error": "It showed an error page when I tried to open it",
+    "down": "It wasn't loading when we tried to open it",
+    "error": "It showed an error page when we tried to open it",
     "parked": "Right now it just shows a placeholder page",
     "coming_soon": "Right now it just shows a coming soon page",
     "mobile": "It's quite hard to use on a phone",
     "https": "Chrome marks it as not secure because it has no HTTPS",
     "copyright": "The site still says {year} at the bottom",
-    "slow": "It took about {seconds} seconds to load when I opened it",
-    "contact": "I couldn't see an easy way to call or book from the homepage",
-    "generic": "I think a fresh modern version could bring you a lot more enquiries",
+    "slow": "It took about {seconds} seconds to load when we opened it",
+    "contact": "We couldn't see an easy way to call or book from the homepage",
+    "generic": "We think a fresh modern version could bring you a lot more enquiries",
 }
 
 

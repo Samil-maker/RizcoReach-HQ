@@ -140,9 +140,11 @@ There is an empty template in `leads/sample/lead-template.csv`.
 - **Brand new inboxes** only warm up for their first 14 days, then send their full daily amount. Every inbox keeps
   a little warm up going (about 4 a day) once there are two or more.
 - **Two campaigns.** Website: segments A new business, B no website, C outdated website, at the website price
-  (749 AED unless you change it), nothing upfront, paid once they're happy with it, plus the SEO and management plan
-  (480 AED a month: SEO, Google Maps updates, edits, fixes and any changes). Version A shows both prices, version B
-  describes the same offer without numbers. Meta ads: N (Lead Hunter
+  (749 AED unless you change it), nothing upfront, paid once they're happy with it. Every email also says "We also
+  offer SEO and management. That includes Google Maps updates, edits, fixes and any changes you need" without a
+  price: the 480 AED a month only appears in your reply drafts when someone asks. Version A shows the website price,
+  version B describes the same offer without numbers. Emails are written as "we" (RizcoReach), with the question
+  at the end from you ("Want me to send you a few examples?"). Meta ads: N (Lead Hunter
   found no Meta ads, and the email says so), G (not checked, so the email makes no claim), and businesses already
   running ads are skipped. Each inbox sends Website, Meta ads or both.
 - **Meta ads emails sell the system:** most agencies forward every form fill (job seekers, suppliers and all), your
