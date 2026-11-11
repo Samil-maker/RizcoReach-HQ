@@ -104,3 +104,45 @@ def test_wake_and_schedule_commands():
     assert cmd[:4] == ["sudo", "pmset", "repeat", "wakeorpoweron"] and len(cmd[4]) == 5
     assert "<string>auto</string>" in launchd.hourly_plist() and "StartInterval" in launchd.hourly_plist()
     assert "<string>send</string>" in launchd.plist() and "caffeinate" in launchd.plist()
+
+
+def test_add_inbox(project, wizard, smtp, capsys):
+    answers, pw, _ = wizard
+    answers += ["", "samil@example.org", "yes", "yes", "yes"]
+    pw += ["abcdefghijklmnop"]
+    setup_wizard.run()
+    answers += ["samilatrizcoreach@gmail.com",   # already sending: refused
+                "rizco.two@gmail.com",           # the new one
+                "",                              # sends website emails (the default)
+                "yes"]                           # brand new account
+    pw += ["abcdefghijklmnop"]
+    assert setup_wizard.add_inbox() == 0
+    env = setup_wizard.read_env()
+    assert env["INBOX2_EMAIL"] == "rizco.two@gmail.com" and env["INBOX2_PROVIDER"] == "gmail"
+    assert env["INBOX2_APP_PASSWORD"] == "abcdefghijklmnop" and env["INBOX1_APP_PASSWORD"] == "abcdefghijklmnop"
+    assert db.get_state(db.connect(), "warmup_start:inbox2") == clock.today().isoformat()
+    out = capsys.readouterr().out
+    assert "warms up for 14 days" in out and "100 a day: Monday 23 November" in out
+    assert env["INBOX2_CAMPAIGN"] == "website"
+
+
+def test_two_imports_at_once_take_turns(project, con, fake_web):
+    import threading
+
+    (project / "leads" / "inbox" / "list.csv").write_text("business,email\nSky Cafe,hello@skycafe.ae\nBlue Spa,hi@bluespa.ae\n")
+    results, errors = [], []
+
+    def run():
+        try:
+            results.append(importer.import_pending(db.connect(), log=lambda *a: None))
+        except Exception as e:  # noqa: BLE001
+            errors.append(e)
+
+    threads = [threading.Thread(target=run) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert errors == []
+    assert sorted(len(r) for r in results) == [0, 1]   # one imported the file, the other found nothing left
+    assert con.execute("SELECT COUNT(*) FROM leads").fetchone()[0] == 2

@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RizcoReach Outreach</title>
+<style>
+:root {
+  --bg: #050505; --surface: #0f0f0f; --surface-2: #161616; --line: rgb(255 255 255 / .09); --line-2: rgb(255 255 255 / .18);
+  --fg: #f4f4f1; --fg-2: #c4c4be; --fg-3: #8f8f89; --paper: #ecece8; --ink: #0b0b0b;
+  --ok: #bfe8c6; --bad: #ffb4ab; --warn: #f5d58e;
+  --r: 16px; --r-sm: 10px;
+  --serif: 'Instrument Serif', 'Iowan Old Style', Georgia, serif;
+  --sans: 'Geist Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono: ui-monospace, 'SF Mono', Menlo, monospace;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+.draft, blockquote, td, .small, .stat .l, .result p { overflow-wrap: anywhere; }
+main, .card, .stats > * { min-width: 0; }
+html { background: var(--bg); color: var(--fg); font: 15px/1.5 var(--sans); -webkit-font-smoothing: antialiased; }
+body { margin: 0; }
+a { color: inherit; }
+h1, h2, h3 { font-family: var(--serif); font-weight: 400; margin: 0; letter-spacing: -.01em; }
+h2 { font-size: 1.9rem; }
+h3 { font-size: 1.35rem; }
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--paper); outline-offset: 2px; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 0 20px 80px; }
+header.top { position: sticky; top: 0; z-index: 5; background: rgb(5 5 5 / .86); backdrop-filter: blur(12px); border-bottom: 1px solid var(--line); }
+header.top .wrap { display: flex; align-items: center; gap: 16px; padding-top: 14px; padding-bottom: 14px; flex-wrap: wrap; }
+.brand { font-family: var(--serif); font-size: 1.6rem; }
+.brand span { color: var(--fg-3); font-family: var(--sans); font-size: .8rem; letter-spacing: .16em; text-transform: uppercase; margin-left: 10px; }
+.spacer { flex: 1; }
+.pill { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line-2); font-size: .85rem; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--fg-3); }
+.pill.on .dot { background: var(--ok); box-shadow: 0 0 0 4px rgb(191 232 198 / .15); }
+.pill.paused .dot { background: var(--warn); }
+.pill.off .dot { background: var(--bad); }
+.muted { color: var(--fg-3); }
+.small { font-size: .85rem; }
+section { margin-top: 40px; }
+.sec-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 18px; }
+.banner { margin-top: 20px; border-radius: var(--r); padding: 16px 18px; display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+.banner.warn { background: rgb(245 213 142 / .1); border: 1px solid rgb(245 213 142 / .35); }
+.banner.bad { background: rgb(255 180 171 / .08); border: 1px solid rgb(255 180 171 / .35); }
+.banner p { margin: 0; flex: 1; min-width: 240px; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 38px; padding: 8px 14px; border-radius: var(--r-sm);
+  border: 1px solid var(--line-2); background: var(--surface-2); cursor: pointer; text-decoration: none; font-size: .9rem; white-space: nowrap; }
+.btn:hover { border-color: var(--fg-3); }
+.btn.primary { background: var(--paper); color: var(--ink); border-color: var(--paper); font-weight: 600; }
+.btn.primary:hover { background: #fff; }
+.btn.ghost { background: transparent; }
+.btn.danger { color: var(--bad); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btns { display: flex; gap: 8px; flex-wrap: wrap; }
+/* drop zone */
+.drop { margin-top: 28px; border: 1.5px dashed var(--line-2); border-radius: var(--r); padding: 34px 20px; text-align: center; cursor: pointer;
+  background: var(--surface); transition: border-color .18s, background .18s; }
+.drop:hover, .drop.over { border-color: var(--paper); background: var(--surface-2); }
+.drop h2 { font-size: 2.1rem; }
+.drop p { margin: 6px 0 0; }
+.result { margin-top: 14px; text-align: left; }
+.chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.chip { padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line-2); font-size: .82rem; background: transparent; cursor: pointer; }
+.chip.on { background: var(--paper); color: var(--ink); border-color: var(--paper); }
+.tag { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: .75rem; border: 1px solid var(--line-2); color: var(--fg-2); }
+.tag.hot { color: var(--ink); background: var(--ok); border-color: var(--ok); }
+/* stats */
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 20px; }
+.stat .n { font-family: var(--serif); font-size: 2.6rem; line-height: 1.05; }
+.stat .l { color: var(--fg-3); font-size: .82rem; letter-spacing: .04em; }
+.bar { height: 6px; border-radius: 6px; background: var(--surface-2); margin-top: 10px; overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--paper); border-radius: 6px; }
+/* waiting */
+.reply { display: grid; gap: 12px; }
+.reply + .reply { margin-top: 14px; }
+.reply .meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+blockquote { margin: 0; padding: 10px 14px; border-left: 2px solid var(--line-2); color: var(--fg-2); white-space: pre-wrap; }
+.draft { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 12px 14px; white-space: pre-wrap; font-size: .92rem; }
+.empty { color: var(--fg-3); padding: 18px; border: 1px dashed var(--line); border-radius: var(--r); }
+/* tables */
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; font-weight: 500; color: var(--fg-3); font-size: .78rem; letter-spacing: .06em; text-transform: uppercase; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+td { padding: 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+td.note { color: var(--fg-2); font-size: .88rem; }
+.tablewrap { overflow-x: auto; }
+.search { flex: 1; min-width: 200px; padding: 9px 12px; border-radius: var(--r-sm); border: 1px solid var(--line-2); background: var(--surface); }
+/* forms */
+form.grid { display: grid; gap: 12px; max-width: 560px; }
+label { display: grid; gap: 6px; font-size: .9rem; color: var(--fg-2); }
+input[type=text], input[type=email], input[type=password], input[type=url], input[type=tel] {
+  padding: 10px 12px; border-radius: var(--r-sm); border: 1px solid var(--line-2); background: var(--surface-2); }
+.check { display: flex; gap: 10px; align-items: center; color: var(--fg); }
+ol.steps { margin: 0 0 4px; padding-left: 20px; color: var(--fg-2); }
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+input[type=number] { padding: 10px 12px; border-radius: var(--r-sm); border: 1px solid var(--line-2); background: var(--surface-2); }
+.activity li { padding: 8px 0; border-bottom: 1px solid var(--line); display: flex; gap: 14px; }
+.activity ul { list-style: none; margin: 0; padding: 0; }
+.activity .when { color: var(--fg-3); min-width: 120px; font-size: .85rem; }
+dialog { background: var(--surface); color: var(--fg); border: 1px solid var(--line-2); border-radius: var(--r); padding: 0; width: min(860px, 94vw); max-height: 86vh; }
+dialog::backdrop { background: rgb(0 0 0 / .6); }
+dialog .head { display: flex; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--surface); }
+dialog .body { padding: 18px; overflow: auto; max-height: calc(86vh - 60px); }
+pre.text { white-space: pre-wrap; font: .9rem/1.55 var(--mono); margin: 0; color: var(--fg-2); }
+.email { border: 1px solid var(--line); border-radius: var(--r-sm); padding: 14px; margin-bottom: 12px; }
+.email .subj { font-weight: 600; margin: 6px 0 10px; }
+#toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); background: var(--paper); color: var(--ink); padding: 10px 16px; border-radius: var(--r-sm);
+  font-size: .9rem; opacity: 0; pointer-events: none; transition: opacity .2s; max-width: 90vw; z-index: 20; }
+#toast.show { opacity: 1; }
+@media (max-width: 760px) { .stats { grid-template-columns: 1fr 1fr; } #campaigns { grid-template-columns: 1fr !important; } .activity .when { min-width: 90px; } }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <div class="brand">RizcoReach<span>Outreach</span></div>
+  <div class="spacer"></div>
+  <div id="pill" class="pill"><span class="dot"></span><span id="pillText">Loading</span></div>
+  <div class="small muted" id="next"></div>
+</div></header>
+
+<main class="wrap">
+  <div id="banners"></div>
+
+  <div class="drop" id="drop" role="button" tabindex="0" aria-label="Add a lead file">
+    <h2>Drop a lead file here</h2>
+    <p class="muted">CSV or Excel, for example a Lead Hunter export. Or click to choose one. It's checked and queued straight away.</p>
+    <div class="chips" id="campaignPick" role="radiogroup" aria-label="These leads are for" style="justify-content:center;margin-top:14px">
+      <span class="small muted" style="align-self:center">These leads are for:</span>
+      <button type="button" class="chip on" data-c="auto" role="radio" aria-checked="true" title="Lead Hunter's Meta ads export goes to Meta ads, everything else to Website">Auto</button>
+      <button type="button" class="chip" data-c="website" role="radio" aria-checked="false">Website</button>
+      <button type="button" class="chip" data-c="ads" role="radio" aria-checked="false">Meta ads</button>
+    </div>
+    <input type="file" id="file" accept=".csv,.xlsx,.xlsm,.tsv,.txt" hidden>
+    <div id="dropResult" class="result" aria-live="polite"></div>
+  </div>
+
+  <div class="stats" id="stats"></div>
+
+  <section>
+    <div class="sec-head"><h2>Reply to these</h2><span class="muted small" id="checked"></span></div>
+    <div id="waiting"></div>
+  </section>
+
+  <section>
+    <div class="sec-head"><h2>Campaigns</h2></div>
+    <div class="stats" id="campaigns" style="grid-template-columns:1fr 1fr;margin-top:0"></div>
+  </section>
+
+  <section>
+    <div class="sec-head"><h2>Inboxes</h2><span class="spacer"></span><button class="btn" id="addInboxBtn">Add an inbox</button></div>
+    <div class="card tablewrap"><table><thead><tr><th>Inbox</th><th>Sends</th><th>Today</th><th>Status</th><th>Warm up, 7 days</th></tr></thead><tbody id="inboxes"></tbody></table></div>
+    <p class="small muted" id="forecast"></p>
+    <form class="card grid" id="addInbox" hidden>
+      <h3>Add a sending inbox</h3>
+      <ol class="steps small">
+        <li>Make a new Gmail account, then <a id="tsvLink" href="https://myaccount.google.com/signinoptions/twosv" target="_blank" rel="noopener">turn on 2-Step Verification</a> for it (Google texts your phone a code).</li>
+        <li><a id="apLink" href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">Create an App Password</a> while signed in as that account (name it RizcoReach).</li>
+        <li>Paste it below. Nothing is saved unless Gmail accepts it.</li>
+      </ol>
+      <label>New email address<input type="email" id="aiEmail" required autocomplete="off" placeholder="samil.rizcoreach@gmail.com"></label>
+      <label>App Password (16 letters)<input type="password" id="aiPass" required autocomplete="off"></label>
+      <label>It sends
+        <select id="aiCampaign" style="padding:10px 12px;border-radius:var(--r-sm);border:1px solid var(--line-2);background:var(--surface-2)">
+          <option value="website">Website emails</option><option value="ads">Meta ads emails</option><option value="both">Both</option>
+        </select></label>
+      <label class="check"><input type="checkbox" id="aiNew" checked> It's a brand new account (it warms up for 14 days first)</label>
+      <div class="btns"><button class="btn primary" type="submit" id="aiGo">Check and add</button><button class="btn ghost" type="button" id="aiCancel">Cancel</button></div>
+      <p class="small" id="aiMsg" aria-live="polite"></p>
+    </form>
+  </section>
+
+  <section>
+    <div class="sec-head"><h2>Leads</h2><span class="muted small" id="leadCount"></span></div>
+    <div class="btns" style="margin-bottom:12px"><input class="search" id="search" type="text" placeholder="Search business, email or area" aria-label="Search leads"></div>
+    <div class="chips" id="chips" style="margin-bottom:12px"></div>
+    <div class="card tablewrap"><table><thead><tr><th>Business</th><th>Status</th><th>Note</th><th></th></tr></thead><tbody id="leads"></tbody></table></div>
+    <div style="margin-top:12px"><button class="btn ghost" id="more" hidden>Show more</button></div>
+  </section>
+
+  <section>
+    <div class="sec-head"><h2>Controls</h2></div>
+    <div class="card" style="display:grid;gap:18px">
+      <div class="btns">
+        <button class="btn primary" id="fastBtn">Send the rest now (1 a minute)</button>
+        <button class="btn" id="startBtn">Start sending now</button>
+        <button class="btn" id="pauseBtn">Pause sending</button>
+        <button class="btn" id="repliesBtn">Check replies now</button>
+        <button class="btn" id="previewBtn">See the emails it will send</button>
+        <button class="btn" id="reportBtn">Today's report</button>
+      </div>
+      <form class="grid" id="settings" style="max-width:none">
+        <div class="two">
+          <label>WhatsApp number in every email<input type="tel" id="sWa"></label>
+          <label>Portfolio link (sent in follow up 1 and replies)<input type="url" id="sLink"></label>
+          <label>Emails a day per inbox (follow ups included)<input type="number" id="sLimit" min="1" max="100"></label>
+          <label>Website price in AED (in website emails)<input type="number" id="sPrice" min="100" step="50"></label>
+          <label>SEO and management plan, AED a month (only in your reply drafts)<input type="number" id="sCare" min="50" step="10"></label>
+        </div>
+        <div class="btns"><button class="btn" type="submit">Save</button><span class="small muted" id="sMeta"></span></div>
+      </form>
+    </div>
+  </section>
+
+  <section class="activity">
+    <div class="sec-head"><h2>Activity</h2></div>
+    <div class="card"><ul id="activity"></ul></div>
+  </section>
+</main>
+
+<dialog id="modal"><div class="head"><h3 id="mTitle"></h3><span class="spacer"></span><button class="btn ghost" id="mClose">Close</button></div><div class="body" id="mBody"></div></dialog>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+const TOKEN = "__TOKEN__";
+const $ = (id) => document.getElementById(id);
+const state = { status: "", q: "", offset: 0, overview: null };
+
+function el(tag, attrs, ...kids) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v === false || v == null) continue;
+    if (k === "class") n.className = v;
+    else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
+    else n.setAttribute(k, v === true ? "" : v);
+  }
+  for (const kid of kids.flat()) if (kid != null && kid !== false) n.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
+  return n;
+}
+function toast(msg) { const t = $("toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove("show"), 4200); }
+async function api(path, opts = {}) {
+  const r = await fetch(path, { ...opts, headers: { "X-Rizco-Token": TOKEN, ...(opts.headers || {}) } });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok && !data.message) throw new Error(data.error || ("Error " + r.status));
+  return data;
+}
+const post = (path, body) => api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+async function waitJob(id, onTick) {
+  for (;;) {
+    await new Promise((r) => setTimeout(r, 900));
+    const j = await api("/api/job?id=" + id);
+    if (onTick) onTick(j);
+    if (j.done) return j;
+  }
+}
+
+/* ---------------- overview */
+async function loadOverview() {
+  const o = await api("/api/overview");
+  state.overview = o;
+  const pill = $("pill");
+  pill.className = "pill " + (o.paused ? "paused" : (!o.approved ? "off" : "on"));
+  $("pillText").textContent = o.paused ? "Paused" : (!o.approved ? "Sending off" : (o.running ? "Sending now" : "Sending on"));
+  $("next").textContent = o.paused || o.running ? o.today : "Next: " + o.next;
+  const b = $("banners"); b.replaceChildren();
+  if (o.paused) b.append(el("div", { class: "banner warn" },
+    el("p", {}, el("strong", {}, "Sending is paused. "), o.paused.reason + (o.paused.detail ? ". " + o.paused.detail : "")),
+    el("button", { class: "btn primary", onclick: resume }, "Resume sending")));
+  for (const p of o.problems) b.append(el("div", { class: "banner bad" }, el("p", {}, p)));
+  if (!o.approved && !o.problems.length) b.append(el("div", { class: "banner bad" }, el("p", {}, "Sending is off until a test email is approved. Run the setup line in Terminal once more.")));
+
+  const s = o.stats;
+  const pct = s.cap_today ? Math.min(100, Math.round(100 * s.sent_today / s.cap_today)) : 0;
+  $("stats").replaceChildren(
+    el("div", { class: "card stat" }, el("div", { class: "n" }, s.sent_today + (s.cap_today ? " / " + s.cap_today : "")), el("div", { class: "l" }, "Sent today"), el("div", { class: "bar" }, el("i", { style: "width:" + pct + "%" }))),
+    el("div", { class: "card stat" }, el("div", { class: "n" }, s.waiting), el("div", { class: "l" }, "Waiting for your reply")),
+    el("div", { class: "card stat" }, el("div", { class: "n" }, s.replies_week), el("div", { class: "l" }, "Replies this week (" + s.interested_week + " interested)")),
+    el("div", { class: "card stat" }, el("div", { class: "n" }, s.queued), el("div", { class: "l" }, "Leads waiting to be emailed")),
+  );
+  $("checked").textContent = o.replies_checked ? "Replies checked " + o.replies_checked : "";
+
+  $("campaigns").replaceChildren(...o.campaigns.map((c) => {
+    const noInbox = !c.inboxes.length;
+    return el("div", { class: "card", style: "display:grid;gap:10px" },
+      el("div", { class: "meta", style: "display:flex;gap:10px;align-items:center;flex-wrap:wrap" }, el("h3", {}, c.name),
+        el("span", { class: "tag" + (c.approved && !noInbox ? " hot" : "") }, !c.approved ? "Off until you approve the emails" : noInbox ? "No inbox sends these yet" : "On")),
+      el("div", { class: "small muted" }, c.queued + " waiting · " + c.emailed + " emailed · " + c.replied + " replied · " + c.interested + " interested"),
+      el("div", { class: "small muted" }, noInbox ? "Add an inbox below and choose " + c.name + " (or Both)." : "Sent from " + c.inboxes.join(", ")),
+      el("div", { class: "btns" },
+        el("button", { class: "btn", onclick: () => showPreview(c.key, c.name) }, "Read the " + c.name + " emails"),
+        !c.approved && c.key === "ads" ? el("button", { class: "btn primary", onclick: () => approveCampaign(c) }, "Approve Meta ads emails") : null));
+  }));
+  $("inboxes").replaceChildren(...o.inboxes.map((i) => el("tr", {},
+    el("td", {}, i.email),
+    el("td", { class: "note" }, i.sends),
+    el("td", {}, i.sent + " / " + i.cap),
+    el("td", { class: "note" }, i.status),
+    el("td", { class: "note" }, i.warm_sent ? i.warm_sent + " sent, " + i.warm_spam + " of " + i.warm_checked + " landed in Spam" : (o.inboxes.length < 2 ? "starts with 2 inboxes" : "none yet")))));
+  const reach = Object.entries(o.forecast.reach).map(([n, when]) => n + " a day: " + when).join(" · ");
+  $("forecast").textContent = "Together up to " + o.forecast.today + " a day now. " + reach + ". Lifetime: " + s.emailed + " emailed, " + s.replied + " replied, " + s.interested + " interested, " + s.clients + " clients.";
+
+  $("startBtn").disabled = !o.can_start;
+  $("startBtn").title = o.can_start ? "" : o.next;
+  $("pauseBtn").textContent = o.paused ? "Resume sending" : "Pause sending";
+  if (document.activeElement !== $("sWa")) $("sWa").value = o.settings.whatsapp;
+  if (document.activeElement !== $("sLink")) $("sLink").value = o.settings.examples_link;
+  if (document.activeElement !== $("sLimit")) $("sLimit").value = o.settings.daily_limit;
+  if (document.activeElement !== $("sPrice")) $("sPrice").value = o.settings.website_price;
+  if (document.activeElement !== $("sCare")) $("sCare").value = o.settings.care_price;
+  $("sMeta").textContent = "Emails are signed " + o.settings.from_name + ", RizcoReach";
+}
+
+/* ---------------- people waiting */
+async function loadWaiting() {
+  const list = await api("/api/waiting");
+  const box = $("waiting");
+  if (!list.length) { box.replaceChildren(el("div", { class: "empty" }, "Nobody is waiting for a reply from you right now.")); return; }
+  box.replaceChildren(...list.map((w) => {
+    const copy = () => navigator.clipboard.writeText(w.draft).then(() => toast("Reply copied"));
+    return el("article", { class: "card reply" },
+      el("div", { class: "meta" }, el("h3", {}, w.business), el("span", { class: "tag hot" }, w.kind), el("span", { class: "tag" }, w.segment), el("span", { class: "muted small" }, w.when)),
+      el("div", { class: "small muted" }, w.email + (w.phone ? " · " + w.phone : "")),
+      w.said ? el("blockquote", {}, w.said) : null,
+      w.draft ? el("div", {}, el("div", { class: "small muted", style: "margin-bottom:6px" }, w.draft_saved ? "Your drafted reply (also waiting in Gmail Drafts):" : "Your drafted reply:"), el("div", { class: "draft" }, w.draft)) : null,
+      el("div", { class: "btns" },
+        el("a", { class: "btn primary", href: w.gmail, target: "_blank", rel: "noopener" }, w.draft_saved ? "Open Gmail Drafts" : "Open in Gmail"),
+        w.whatsapp ? el("a", { class: "btn", href: w.whatsapp, target: "_blank", rel: "noopener" }, "WhatsApp") : null,
+        w.draft ? el("button", { class: "btn", onclick: copy }, "Copy reply") : null,
+        el("button", { class: "btn", onclick: () => mark(w.email, "handled") }, "Done, I replied"),
+        el("button", { class: "btn", onclick: () => mark(w.email, "client") }, "Became a client"),
+        el("button", { class: "btn ghost danger", onclick: () => confirm("Mark " + w.business + " as not interested? They won't be emailed again.") && mark(w.email, "no") }, "Not interested")));
+  }));
+}
+
+/* ---------------- leads */
+async function loadLeads(append) {
+  if (!append) state.offset = 0;
+  const p = new URLSearchParams({ status: state.status, q: state.q, offset: state.offset });
+  const d = await api("/api/leads?" + p);
+  const all = Object.values(d.counts).reduce((a, b) => a + b, 0);
+  $("leadCount").textContent = all + " in total";
+  const chip = (key, label, n) => el("button", { class: "chip" + (state.status === key ? " on" : ""), onclick: () => { state.status = key; loadLeads(); } }, label + (n != null ? " " + n : ""));
+  $("chips").replaceChildren(chip("", "All", all), ...Object.entries(d.names).filter(([k]) => d.counts[k]).map(([k, label]) => chip(k, label, d.counts[k])));
+  const rows = d.items.map((l) => el("tr", {},
+    el("td", {}, el("div", {}, l.business), el("div", { class: "small muted" }, l.email + (l.area ? " · " + l.area : ""))),
+    el("td", {}, el("span", { class: "tag" }, l.status_name), l.segment && l.segment !== "SKIP" ? el("span", { class: "small muted" }, " " + l.segment) : null, l.outcome ? el("span", { class: "tag hot", style: "margin-left:6px" }, l.outcome) : null),
+    el("td", { class: "note" }, l.note),
+    el("td", {}, leadAction(l))));
+  if (append) $("leads").append(...rows); else $("leads").replaceChildren(...rows);
+  if (!d.items.length && !append) $("leads").replaceChildren(el("tr", {}, el("td", { colspan: 4, class: "muted" }, all ? "No leads match." : "No leads yet. Drop a lead file above.")));
+  state.offset += d.items.length;
+  $("more").hidden = state.offset >= d.total;
+}
+function leadAction(l) {
+  if (l.status === "queued" || l.status === "active") return el("button", { class: "btn ghost", onclick: () => confirm("Stop emailing " + l.business + "?") && mark(l.email, "skip") }, "Don't email");
+  if (l.status === "skipped" || l.status === "blocked") return el("button", { class: "btn ghost", onclick: () => mark(l.email, "requeue") }, "Email anyway");
+  if (l.status === "replied" && !l.outcome) return el("button", { class: "btn ghost", onclick: () => mark(l.email, "client") }, "Client");
+  return null;
+}
+
+/* ---------------- activity */
+async function loadActivity() {
+  const items = await api("/api/activity");
+  $("activity").replaceChildren(...(items.length ? items.map((a) => el("li", {}, el("span", { class: "when" }, a.when), el("span", {}, a.text))) : [el("li", { class: "muted" }, "Nothing yet.")]));
+}
+
+/* ---------------- actions */
+async function mark(email, what) {
+  const r = await post("/api/mark", { email, what });
+  toast(r.message);
+  refresh();
+}
+async function resume() { if (!confirm("Start sending again? Make sure you've looked at why it paused.")) return; toast((await post("/api/resume")).message); refresh(); }
+$("pauseBtn").onclick = async () => {
+  if (state.overview && state.overview.paused) return resume();
+  if (!confirm("Pause all sending? Nothing goes out until you resume.")) return;
+  toast((await post("/api/pause")).message); refresh();
+};
+$("startBtn").onclick = async () => { toast((await post("/api/start")).message); setTimeout(refresh, 1500); };
+$("fastBtn").onclick = async () => {
+  if (!confirm("Send all of today's remaining emails now, about one a minute, instead of spreading them over the day? Still within each inbox's daily limit. It goes back to normal tomorrow.")) return;
+  toast((await post("/api/send-fast")).message); setTimeout(refresh, 1500);
+};
+$("repliesBtn").onclick = async () => {
+  const btn = $("repliesBtn"); btn.disabled = true; btn.textContent = "Checking replies...";
+  try { const r = await post("/api/check-replies"); const j = await waitJob(r.job);
+    toast(j.error ? "Couldn't check: " + j.error : (j.result.found ? j.result.found + " new " + (j.result.found === 1 ? "reply" : "replies") : "No new replies"));
+  } finally { btn.disabled = false; btn.textContent = "Check replies now"; refresh(); }
+};
+$("reportBtn").onclick = async () => { const r = await api("/api/report"); openModal("Today's report", el("pre", { class: "text" }, r.text)); };
+async function approveCampaign(c) {
+  if (!confirm("Approve the Meta ads emails? Read them first with 'Read the Meta ads emails'. They start going out on the next sending day.")) return;
+  toast((await post("/api/approve-campaign", { campaign: c.key })).message); refresh();
+}
+async function showPreview(campaign, name) {
+  const list = await api("/api/preview?campaign=" + encodeURIComponent(campaign || ""));
+  openModal(name ? "The " + name + " emails" : "The next emails it will send", list.length ? list.map((e) => el("div", { class: "email" },
+    el("div", { class: "small muted" }, e.segment + " · version " + e.version + " · to " + e.to),
+    el("div", { class: "subj" }, "Subject: " + e.subject), el("pre", { class: "text" }, e.text))) : el("p", { class: "muted" }, "No leads waiting. Drop a lead file first."));
+}
+$("previewBtn").onclick = () => showPreview("", "");
+$("settings").onsubmit = async (ev) => { ev.preventDefault(); const r = await post("/api/settings", { whatsapp: $("sWa").value, examples_link: $("sLink").value, daily_limit: $("sLimit").value, website_price: $("sPrice").value, care_price: $("sCare").value }); toast(r.message); refresh(); };
+
+/* add inbox */
+$("addInboxBtn").onclick = () => { $("addInbox").hidden = false; $("aiEmail").focus(); };
+$("aiCancel").onclick = () => { $("addInbox").hidden = true; $("aiMsg").textContent = ""; };
+$("aiEmail").oninput = () => {
+  const who = encodeURIComponent($("aiEmail").value.trim());
+  $("apLink").href = "https://myaccount.google.com/apppasswords?authuser=" + who;
+  $("tsvLink").href = "https://myaccount.google.com/signinoptions/twosv?authuser=" + who;
+};
+$("addInbox").onsubmit = async (ev) => {
+  ev.preventDefault();
+  $("aiGo").disabled = true; $("aiMsg").textContent = "Checking with Gmail, this takes a few seconds...";
+  try {
+    const r = await post("/api/add-inbox", { email: $("aiEmail").value, password: $("aiPass").value, brand_new: $("aiNew").checked, campaign: $("aiCampaign").value });
+    const j = await waitJob(r.job);
+    const res = j.result || { ok: false, message: j.error };
+    $("aiMsg").textContent = res.message;
+    if (res.ok) { $("aiPass").value = ""; $("aiEmail").value = ""; refresh(); }
+  } finally { $("aiGo").disabled = false; }
+};
+
+/* upload */
+let campaign = "auto";
+document.querySelectorAll("#campaignPick .chip").forEach((b) => b.onclick = () => {
+  campaign = b.dataset.c;
+  document.querySelectorAll("#campaignPick .chip").forEach((x) => { x.classList.toggle("on", x === b); x.setAttribute("aria-checked", x === b ? "true" : "false"); });
+});
+const drop = $("drop");
+drop.onclick = (ev) => { if (!ev.target.closest("button, a, input, select, label")) $("file").click(); };
+drop.onkeydown = (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); $("file").click(); } };
+$("file").onchange = () => { if ($("file").files[0]) upload($("file").files[0]); $("file").value = ""; };
+["dragenter", "dragover"].forEach((t) => window.addEventListener(t, (ev) => { ev.preventDefault(); drop.classList.add("over"); }));
+["dragleave", "drop"].forEach((t) => window.addEventListener(t, (ev) => { ev.preventDefault(); if (t === "drop" || ev.target === document.documentElement) drop.classList.remove("over"); }));
+window.addEventListener("drop", (ev) => { const f = ev.dataTransfer && ev.dataTransfer.files[0]; if (f) upload(f); });
+
+async function upload(file) {
+  const out = $("dropResult");
+  out.replaceChildren(el("p", {}, "Importing " + file.name + ": checking emails and websites. This can take a minute for big files..."));
+  try {
+    const r = await api("/api/upload", { method: "POST", headers: { "X-Filename": encodeURIComponent(file.name), "X-Campaign": campaign }, body: file });
+    if (!r.job) { out.replaceChildren(el("p", { class: "muted" }, r.message || "Couldn't upload that file.")); return; }
+    const j = await waitJob(r.job);
+    if (j.error) { out.replaceChildren(el("p", {}, "Couldn't import: " + j.error)); return; }
+    if (!j.result.length) { out.replaceChildren(el("p", {}, "That file couldn't be read. It needs a column with business names and one with email addresses. " + j.lines.join(" "))); return; }
+    out.replaceChildren(...j.result.map((x) => el("div", { class: "card", style: "margin-top:8px" },
+      el("h3", {}, x.imported + " new " + x.campaign + " leads from " + x.file),
+      el("p", { class: "small" }, x.campaign === "Meta ads"
+        ? "No Meta ads running " + x.N + " · Not checked " + x.G + " · Skipped (already running ads) " + x.skip
+        : "New business " + x.A + " · No website " + x.B + " · Outdated website " + x.C + " · Skipped (good website) " + x.skip),
+      x.reasons.length ? el("p", { class: "small muted" }, "Not imported: " + x.reasons.map(([why, n]) => why + " (" + n + ")").join(", ")) : null,
+      el("p", { class: "small muted" }, x.imported ? "They go out from the next sending day, a few at a time." : ""),
+      x.imported ? el("button", { class: "btn", onclick: () => $("previewBtn").click() }, "See the emails it wrote") : null)));
+  } catch (e) { out.replaceChildren(el("p", {}, "Upload failed: " + e.message)); }
+  refresh();
+}
+
+/* modal */
+function openModal(title, content) { $("mTitle").textContent = title; $("mBody").replaceChildren(...[].concat(content)); $("modal").showModal(); }
+$("mClose").onclick = () => $("modal").close();
+
+/* search */
+let st; $("search").oninput = () => { clearTimeout(st); st = setTimeout(() => { state.q = $("search").value.trim(); loadLeads(); }, 250); };
+$("more").onclick = () => loadLeads(true);
+
+async function refresh() {
+  try { await Promise.all([loadOverview(), loadWaiting(), loadActivity()]); }
+  catch (e) { toast("Can't reach the dashboard service. Is the Mac awake? " + e.message); }
+}
+refresh(); loadLeads();
+setInterval(refresh, 30000);
+setInterval(() => { if (!state.q && state.offset <= 100) loadLeads(); }, 60000);
+</script>
+</body>
+</html>

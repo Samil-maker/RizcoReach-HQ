@@ -7,7 +7,7 @@ import time
 from typing import List, Optional
 
 from . import clock, config, db, dnscheck, importer, launchd, mailer, names, replies, report, safety, schedule, segment
-from . import sender, suppression, templates
+from . import actions, sender, suppression, templates
 from .config import Settings
 
 SEG = report.SEGMENT_NAMES
@@ -129,19 +129,19 @@ def parse_maps(values: Optional[List[str]]) -> dict:
 
 def cmd_import(args) -> int:
     con = db.connect()
-    files = importer.pending_files()
-    if not files:
-        print("No files in leads/inbox/. Put a .csv or .xlsx file there and run this again.")
+    if not importer.pending_files():
+        print("No files in your RizcoReach Leads folder (%s)." % config.leads_inbox())
+        print("Put a .csv or .xlsx file there and run this again. If you just dropped one in, the hourly job may")
+        print("have imported it already: rizco status shows how many leads are waiting.")
         return 0
     overrides = parse_maps(args.map)
-    for path in files:
-        try:
-            result = importer.import_file(con, path, overrides, check_sites=not args.no_site_check)
-        except ValueError as e:
-            print("\n" + str(e))
-            continue
+    results = importer.import_pending(con, log=print, overrides=overrides, check_sites=not args.no_site_check,
+                                      campaign=args.campaign)
+    for result in results:
         for line in importer.summary_lines(result):
             print(line)
+    if not results:
+        print("The hourly job imported those files a moment ago. rizco status shows how many leads are waiting.")
     print("\nNext: look at the segments and sample emails with  rizco preview")
     return 0
 
@@ -149,7 +149,7 @@ def cmd_import(args) -> int:
 def cmd_preview(args) -> int:
     s = config.load_settings()
     con = db.connect()
-    segments = [args.segment.upper()] if args.segment else ["A", "B", "C"]
+    segments = [args.segment.upper()] if args.segment else list(report.SEGMENTS)
     shown_followups = False
     for seg in segments:
         leads = con.execute("SELECT * FROM leads WHERE segment=? AND status='queued' ORDER BY id", (seg,)).fetchall()
@@ -305,7 +305,7 @@ def cmd_approve(args) -> int:
     db.set_state(con, "approved", {"at": clock.iso(), "test": test})
     db.log_event(con, "approved", "campaign approved after test email to %s" % test["to"])
     s = config.load_settings()
-    print("\nApproved. Week 1 of the warm up starts with your first real email:")
+    print("\nApproved. Real sending is switched on:")
     for i in s.inboxes:
         lim = schedule.limits(con, i, clock.today())
         print("  %s: %s" % (i.email, lim["why"]))
@@ -317,14 +317,28 @@ def cmd_approve(args) -> int:
 # ----------------------------------------------------------------------------- daily commands
 
 def cmd_send(args) -> int:
+    import os
+
     s = config.load_settings()
     con = db.connect()
-    run = sender.SendRun(con, s, dry_run=args.dry_run, limit=args.limit)
+    if not args.dry_run and not os.environ.get("OUTREACH_JUST_UPDATED"):
+        from . import updater
+
+        if updater.available() and not sender.Lock.held("send"):
+            message = updater.update(con, log=sender.log)
+            if message.startswith("Updated"):  # start again on the new version before sending anything
+                sender.log(message + " Starting again on the new version.")
+                os.environ["OUTREACH_JUST_UPDATED"] = "1"
+                again = ["send"] + (["--limit", str(args.limit)] if args.limit is not None else []) + (["--fast"] if args.fast else [])
+                os.execv(sys.executable, [sys.executable, str(config.ROOT / "run.py")] + again)
+    if args.fast and not args.dry_run:
+        schedule.set_fast(con)
+    run = sender.SendRun(con, s, dry_run=args.dry_run, limit=args.limit, fast=args.fast)
     if args.dry_run:
         run.run()
         return 0
     if args.limit is not None:
-        print("Sending at most %d emails today (the warm up limit still applies)." % args.limit)
+        print("Sending at most %d emails today (the daily limit still applies)." % args.limit)
     with sender.Lock():
         sender.log("Send started. Leave this window open, or let the 9:00 job run it. Ctrl+C stops it safely.")
         try:
@@ -379,6 +393,9 @@ def cmd_status(args) -> int:
     for i in s.inboxes:
         lim = schedule.limits(con, i, today)
         print("%s: %s. Sent today %d." % (i.email, lim["why"], lim["sent"]))
+    f = schedule.forecast(con, s.inboxes)
+    print("Together: up to %d a day. %s" % (f["today"], ", ".join(
+        "%d a day: %s" % (t, clock.nice(d) if hasattr(d, "day") else d) for t, d in f["reach"].items())))
     for row in con.execute("SELECT status, COUNT(*) AS n FROM leads GROUP BY status ORDER BY n DESC"):
         print("  %-11s %d" % (row["status"], row["n"]))
     checked = db.get_state(con, "replies_checked")
@@ -404,73 +421,14 @@ def cmd_resume(args) -> int:
     return 0
 
 
-MARKS = {
-    "interested": "they are interested (waiting for your reply)",
-    "question": "they asked a question (waiting for your reply)",
-    "not-now": "they said not now",
-    "no": "they said no: stop and add to the suppression list",
-    "handled": "you have answered them",
-    "client": "they became a client",
-    "lost": "the deal is off",
-    "skip": "never email this lead",
-    "requeue": "put a skipped or blocked lead back in the queue",
-}
+MARKS = actions.MARKS
 
 
 def cmd_mark(args) -> int:
     con = db.connect()
-    lead = db.lead_by_email(con, args.email)
-    what = args.what.lower()
-    if not lead:
-        print("No lead with the email %s" % args.email)
-        return 1
-    if what not in MARKS:
-        print("Use one of: " + ", ".join(MARKS))
-        return 1
-    stopped = dict(next_due=None)
-    if what in ("interested", "question"):
-        db.update_lead(con, lead["id"], status="replied", reply_class=what, waiting_on_me=1,
-                       replied_at=lead["replied_at"] or clock.iso(), stop_reason="replied (marked by you)", **stopped)
-    elif what == "not-now":
-        db.update_lead(con, lead["id"], status="replied", reply_class="not_now", waiting_on_me=0,
-                       replied_at=lead["replied_at"] or clock.iso(), stop_reason="not now (marked by you)", **stopped)
-    elif what == "no":
-        db.update_lead(con, lead["id"], status="opted_out", reply_class="opt_out", waiting_on_me=0, stop_reason="said no (marked by you)", **stopped)
-        suppression.add(con, lead["email"], "said no")
-    elif what == "handled":
-        db.update_lead(con, lead["id"], waiting_on_me=0)
-    elif what in ("client", "lost"):
-        db.update_lead(con, lead["id"], outcome=what, waiting_on_me=0)
-    elif what == "skip":
-        db.update_lead(con, lead["id"], status="skipped", stop_reason="skipped by you", **stopped)
-    elif what == "requeue":
-        if lead["first_sent_at"]:
-            print("This lead has already been emailed, so it can't go back to the start.")
-            return 1
-        if suppression.is_suppressed(lead["email"], suppression.load()):
-            print("This address is on the suppression list. Remove it from suppression.csv first if that was a mistake.")
-            return 1
-        fields = dict(status="queued", next_step=0, next_due=clock.today().isoformat(), stop_reason=None)
-        if args.note:  # a true line about their site that you checked yourself
-            note = names.no_dashes(args.note.strip().rstrip("."))
-            fields.update(segment="C" if lead["website"] else lead["segment"], observation=note, observation_kind="yours",
-                          segment_reason="requeued by you with your own observation")
-        elif lead["segment"] not in ("A", "B", "C"):
-            if not lead["website"]:
-                fields.update(segment="B", segment_reason="requeued by you")
-            else:
-                fields.update(segment="C", observation=segment.OBSERVATIONS["generic"], observation_kind="generic",
-                              segment_reason="requeued by you (general line, no specific claim)")
-        if fields.get("segment", lead["segment"]) == "C" and not (fields.get("observation") or lead["observation"]):
-            fields.update(observation=segment.OBSERVATIONS["generic"], observation_kind="generic")
-        db.update_lead(con, lead["id"], **fields)
-        lead = db.lead(con, lead["id"])
-        if lead["segment"] == "C":
-            print('It will say: "Had a look at the %s website. %s"' % (lead["business"], lead["observation"]))
-            print('To use your own line instead:  rizco mark %s requeue "It\'s quite hard to use on a phone"' % lead["email"])
-    db.log_event(con, "marked", what, lead["id"])
-    print("%s: %s" % (lead["email"], MARKS[what]))
-    return 0
+    ok, message = actions.mark(con, args.email, args.what, args.note)
+    print(message)
+    return 0 if ok else 1
 
 
 def cmd_suppress(args) -> int:
@@ -529,6 +487,12 @@ def cmd_auto(args) -> int:
                 launchd.notify("RizcoReach: %d new leads imported" % st["imported"],
                                "A %d, B %d, C %d, skipped %d. They go out from the next 9:00 run."
                                % (st["seg_A"], st["seg_B"], st["seg_C"], st["seg_SKIP"]))
+        from . import warmup
+
+        try:
+            warmup.run(con, s, log=sender.log)
+        except Exception as e:  # noqa: BLE001 - the warm up never stops replies or imports
+            sender.log("Warm up skipped this hour: %s" % e)
         if s.problems or not any(i.has_imap for i in s.inboxes):
             sender.log("Settings incomplete, not checking replies: " + " ".join(s.problems))
         elif sender.Lock.held("send"):
@@ -546,9 +510,25 @@ def cmd_auto(args) -> int:
 
         if updater.due(con) and not sender.Lock.held("send"):
             sender.log(updater.update(con, log=sender.log))
+        start_sending_if_needed(con, s)
     finally:
         lock.__exit__(None, None, None)
     return 0
+
+
+def start_sending_if_needed(con, s: Settings) -> bool:
+    """During sending hours: if emails can still go out today and the sender isn't running, start it."""
+    now = clock.now()
+    today = now.date()
+    if not launchd.IS_MAC or sender.Lock.held("send") or safety.paused(con) or not db.get_state(con, "approved"):
+        return False
+    if not schedule.is_send_day(today) or not schedule.current_window_end(now) or now >= clock.at(today, *schedule.LAST_PLANNED):
+        return False
+    left = sum(len(v["items"]) for v in schedule.plan(con, s, today, [i for i in s.inboxes if i.password]).values())
+    if not left:
+        return False
+    sender.log("%d emails can still go out today. Starting the sender." % left)
+    return launchd.start_now()
 
 
 def _open_folder(path, name: str) -> int:
@@ -574,6 +554,25 @@ def cmd_reports(args) -> int:
     return _open_folder(config.reports_dir(), "Your reports folder")
 
 
+def cmd_add_inbox(args) -> int:
+    from . import setup_wizard
+
+    try:
+        return setup_wizard.add_inbox()
+    except KeyboardInterrupt:
+        print("\nStopped. Nothing was added.")
+        return 1
+
+
+def cmd_dashboard(args) -> int:
+    from . import dashboard
+
+    if args.serve:
+        dashboard.serve()
+        return 0
+    return dashboard.open_dashboard()
+
+
 def cmd_update(args) -> int:
     from . import updater
 
@@ -588,6 +587,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="command")
     sp = sub.add_parser("setup", help="the one time setup, as a few questions (safe to run again)")
     sp.add_argument("--again", action="store_true", help="ask the questions again even if everything works")
+    sp = sub.add_parser("dashboard", help="open the dashboard in your browser (http://localhost:8321)")
+    sp.add_argument("--serve", action="store_true", help="run the dashboard service (the background job does this)")
+    sub.add_parser("add-inbox", help="add another sending inbox (new ones warm up for 14 days first)")
     sub.add_parser("leads", help="open the folder where you drop lead files")
     sub.add_parser("reports", help="open the folder with the daily reports")
     sub.add_parser("update", help="get the latest version now (it also updates itself once a day)")
@@ -596,16 +598,19 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("import", help="import the lead files in leads/inbox/")
     sp.add_argument("--map", action="append", metavar='FIELD="Column"', help='say which column is which, e.g. --map email="Contact Email"')
     sp.add_argument("--no-site-check", action="store_true", help="skip the website checks (leads with a website become Skip)")
+    sp.add_argument("--campaign", choices=["auto", "website", "ads"], default="auto",
+                    help="website or ads (Meta ads). auto: Lead Hunter's Meta ads export is ads, the rest website")
     sp = sub.add_parser("preview", help="show the segments and sample emails")
-    sp.add_argument("--segment", choices=["A", "B", "C", "a", "b", "c"])
+    sp.add_argument("--segment", choices=["A", "B", "C", "N", "G", "a", "b", "c", "n", "g"])
     sp.add_argument("--count", type=int, default=3)
     sp = sub.add_parser("test-email", help="send ONE real test email to yourself (asks first)")
     sp.add_argument("--to")
     sp.add_argument("--inbox", help="inbox1, inbox2...")
-    sub.add_parser("approve", help="after the test email looked right: allow real sending (week 1 starts)")
+    sub.add_parser("approve", help="after the test email looked right: allow real sending")
     sp = sub.add_parser("send", help="send today's emails slowly (use --dry-run to preview)")
     sp.add_argument("--dry-run", action="store_true", help="show exactly what would be sent today, send nothing")
     sp.add_argument("--limit", type=int, help="send fewer than the daily limit today")
+    sp.add_argument("--fast", action="store_true", help="send the rest of today's emails about one a minute")
     sub.add_parser("replies", help="check the inbox for replies, stop sequences, draft answers")
     sp = sub.add_parser("report", help="write today's report to reports/")
     sp.add_argument("--weekly", action="store_true", help="include the weekly review (added on Fridays anyway)")
@@ -625,7 +630,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 COMMANDS = {
-    "setup": cmd_setup, "auto": cmd_auto, "leads": cmd_leads, "reports": cmd_reports, "update": cmd_update,
+    "setup": cmd_setup, "auto": cmd_auto, "add-inbox": cmd_add_inbox, "dashboard": cmd_dashboard, "leads": cmd_leads, "reports": cmd_reports, "update": cmd_update,
     "check": cmd_check, "import": cmd_import, "preview": cmd_preview, "test-email": cmd_test_email,
     "approve": cmd_approve, "send": cmd_send, "replies": cmd_replies, "report": cmd_report, "status": cmd_status,
     "resume": cmd_resume, "mark": cmd_mark, "suppress": cmd_suppress, "launchd": cmd_launchd,

@@ -33,28 +33,49 @@ If a window asks to install "command line developer tools", click **Install** an
 That's it. It updates itself once a day (outside sending hours, and only to a version whose tests pass).
 Pasting the same line again also updates it right away, without asking the questions again.
 
-## Your part after that
+## Your dashboard
 
-- **Leads:** drop CSV or Excel files into the **RizcoReach Leads** folder on your Desktop. Can't find it? Open
-  a new Terminal window and type `rizco leads`: it opens the folder (it lives in
-  `~/RizcoReach-Outreach/cold-email/leads/inbox`) and puts the shortcut back on your Desktop. Lead Hunter exports
-  work as they are. Files are imported within the hour.
-- **Replies:** when your Mac shows "... replied", open samilatrizcoreach@gmail.com, go to **Drafts**, check the
-  drafted answer (fill in anything in [brackets]) and press Send. Tip: add that account to the Gmail app on your
-  phone so you see replies the moment they arrive.
-- **The Mac:** on, plugged in, lid open on weekday mornings. If it's asleep at 9:00 it sends when it wakes, but
-  only until 15:30.
-- **If it ever says "sending paused":** read why in the report (RizcoReach Reports folder on your Desktop), fix
-  it, then paste: `rizco resume`
+Everything you do happens on one page: **http://localhost:8321**. Open it with the **RizcoReach Dashboard** icon
+on your Desktop (or type `rizco dashboard` in Terminal). It runs on your Mac only. Nobody else can open it.
+
+- **Leads:** drag a CSV or Excel file (a Lead Hunter export works as it is) onto the page. It's checked and queued
+  straight away, and you see how many were imported, which segment they went in, and why any were skipped. Press
+  **See the emails it will send** to read them.
+- **Replies:** everyone waiting for you is at the top with what they wrote and your drafted answer. Press
+  **Open Gmail Drafts** to send it (or **Copy reply**, or **WhatsApp**), then **Done, I replied** or **Became a client**.
+  Tip: add samilatrizcoreach@gmail.com to the Gmail app on your phone so you see replies the moment they arrive.
+- **Two campaigns: Website and Meta ads.** When you drop a file in, pick who it's for (Auto sends Lead Hunter's Meta
+  ads export to Meta ads and everything else to Website). Meta ads emails stay off until you read them and press
+  **Approve Meta ads emails** under Campaigns, and they only go out from an inbox set to send Meta ads.
+- **More emails a day:** make a new Gmail account, then **Add an inbox** on the dashboard and choose what it sends
+  (Website, Meta ads or Both). Each inbox sends 50 a day (change it under Controls); a brand new account warms up
+  for 14 days first. The dashboard shows the date you'll reach 50 and 100 a day.
+- **Send the rest now (1 a minute):** one click sends all of today's remaining emails about one a minute instead of
+  spreading them over the day (still within each inbox's daily limit, 9:00 to 22:00 on weekdays). It goes back to
+  normal the next day.
+- **Pause or resume** sending, **check replies now**, **start today's sending**, change your **WhatsApp number** or
+  **portfolio link**, set your **prices** (website, and the care and SEO plan you mention in replies), and read
+  **today's report**, all from the same page.
+
+## Your part
+
+- Drop lead files into the dashboard and answer the people who reply.
+- Keep the Mac on, plugged in and awake 9:00 to 22:00 on weekdays (you can use it as normal). If it sleeps, sending
+  pauses, and when it wakes the rest of the day's emails are spread over the time that's left. Whatever doesn't
+  fit before 22:00 goes first the next weekday. Leads you add during the day go out the same day.
+- If the dashboard ever says **Sending is paused**, read why, fix it, then press **Resume sending**.
 
 ## What happens by itself
 
 | When | What |
 |---|---|
+| Always | The dashboard at http://localhost:8321 (it starts when you log in) |
 | Once a day, evenings or weekends | Updates itself to the latest version, if its tests pass |
 | Every hour | New lead files are imported, cleaned and segmented. Replies are checked (All Mail and Spam), sequences stop for anyone who replied, answers are drafted into Gmail Drafts, the report is updated, and you get a notification for interested people |
-| Mon to Fri 9:00 Dubai time | The day's emails go out one at a time, 3 to 9 minutes apart, follow ups first. Overflow goes out 14:00 to 15:30 |
-| Every send | SPF and DKIM must pass, the email must pass the style checks, and the daily warm up limit must have room |
+| Mon to Fri 9:00 to 22:00 Dubai time | The day's emails go out one at a time, spread over the day (busiest 10 to 12 and 1 to 3, about three quarters out by 18:00), inboxes taking turns, follow ups first. The plan is refreshed every 15 minutes, so new leads join the same day |
+| Every hour, sending hours | If there's more to send today and the sender isn't running (say you added leads after it finished), it starts it |
+| Every hour, 9:00 to 21:00 | Warm up: your inboxes swap a few normal emails, open them, rescue any from Spam, reply, and file them in a "RizcoReach Warmup" folder |
+| Every send | SPF and DKIM must pass, the email must pass the style checks, and the inbox's daily limit must have room |
 | Fridays | The report adds a weekly review: what's working, what isn't, what to change |
 
 ---
@@ -72,6 +93,8 @@ Writes today's report now (it also updates every hour by itself).
 
 | Command | What it does |
 |---|---|
+| `rizco dashboard` | opens the dashboard (and puts its icon on your Desktop) |
+| `rizco add-inbox` | adds another sending inbox (brand new ones warm up for 14 days first) |
 | `rizco leads` | opens the folder where you drop lead files |
 | `rizco reports` | opens the folder with the daily reports |
 | `rizco status` | limits, queue, pause state at a glance |
@@ -112,29 +135,52 @@ There is an empty template in `leads/sample/lead-template.csv`.
 
 ### The rules it always follows
 
-- **Warm up per inbox**, follow ups included: week 1: 5 a day, week 2: 10, week 3: 18, week 4: 25, then 30.
-  A free @gmail.com address never goes above 20. `DAILY_CAP` in `.env` can lower this, never raise it.
-  50 a day needs two inboxes: leads are shared and each keeps its own warm up.
-- **Monday to Friday only, Dubai time:** 9:00 to 11:30, overflow 14:00 to 15:30, one email at a time, inboxes
-  taking turns. Follow ups first, then new leads (new businesses first, since "just opened" goes stale).
+- **50 a day per inbox**, follow ups included (your choice; change it under Controls on the dashboard, 1 to 100).
+  More a day means more inboxes: leads are shared between the inboxes that send their campaign.
+- **Brand new inboxes** only warm up for their first 14 days, then send their full daily amount. Every inbox keeps
+  a little warm up going (about 4 a day) once there are two or more.
+- **Two campaigns.** Website: segments A new business, B no website, C outdated website, at the website price
+  (749 AED unless you change it), nothing upfront, paid once they're happy with it. Every email also says "We also
+  offer SEO and management. That includes Google Maps updates, edits, fixes and any changes you need" without a
+  price: the 480 AED a month only appears in your reply drafts when someone asks. Version A shows the website price,
+  version B describes the same offer without numbers. Emails are written as "we" (RizcoReach), with the question
+  at the end from you ("Want me to send you a few examples?"). Meta ads: N (Lead Hunter
+  found no Meta ads, and the email says so), G (not checked, so the email makes no claim), and businesses already
+  running ads are skipped. Each inbox sends Website, Meta ads or both.
+- **Meta ads emails sell the system:** most agencies forward every form fill (job seekers, suppliers and all), your
+  team messages each enquiry on WhatsApp first and only passes on the genuine ones. The offer depends on the
+  business: home improvement (interior design, fit out, renovation, landscaping and similar, see `HOME_IMPROVEMENT`
+  in `outreach/templates.py`) get "one flat monthly rate and no big setup fee", everyone else gets "nothing upfront,
+  you only pay once you've had your first genuine lead".
+- **Monday to Friday only, Dubai time:** spread from 9:00 to 21:45, never two emails from one inbox within 3
+  minutes or two from any inbox within a minute. Follow ups first, then new leads (new businesses first, since
+  "just opened" goes stale).
 - **Sequence:** day 0, day 3 follow up, day 7 follow up, then stop. Follow ups reply in the same thread. Any real
   reply, bounce or opt out stops that lead. Out of office replies push the next email to the day after they're back.
-- **Copy:** plain text, no links, no images, no tracking, under 80 words, no dashes or semicolons, ends with the
+- **Copy:** plain text, no images, no tracking, no links in the first email (follow up 1 carries your portfolio
+  link), first emails under 80 words, no dashes or semicolons, ends with the
   opt out line. All wording lives in `outreach/templates.py`.
-- **A/B test:** half of each segment gets version A (shows 480 AED), half version B (no price). After 100 sends
+- **A/B test:** half of each segment gets version A (with the price line), half version B (without). After 100 sends
   each, the report names the winner and suggests the next test.
 - **Automatic pause** (until `rizco resume`): bounces over 3% of a day's emails, a reply that mentions spam or
-  reporting, or Gmail refusing our mail or login. At 5 a day one bounce is 20%, so in week 1 any bounce pauses.
+  reporting, or Gmail refusing our mail or login. At 50 a day, 2 bounces in a day is already 4%.
 - **suppression.csv:** everyone who said no, every hard bounce, anyone you add. Never emailed again.
-- **Never:** the care plan in a cold email, demo sites called client work, made up clients or numbers, or a reply sent for you.
+- **Never:** demo sites called client work, made up clients or numbers, or a reply sent for you.
 
-### About sending from a free @gmail.com address
+### About sending from free @gmail.com addresses
 
 Cold email from a free Gmail is a high spam risk: filters trust personal addresses less for this, and a few spam
-reports can get the account limited. That's why it's capped at 20 a day. When you want more: buy a separate
-domain only for outreach (not rizcoreach.ae, so your main domain is never at risk), put a Google Workspace or
-paid Zoho Mail inbox on it, and add it as `INBOX2_...` in `.env`. `rizco check` then prints the exact SPF, DKIM
-and DMARC records to add at your domain host.
+reports can get the account limited. You chose 50 a day per inbox, which is more than most cold email guides
+advise for a free account (they say 20 to 30). Google's rules for free Gmail also don't allow bulk unsolicited
+email or using several accounts to get around sending limits, so the more you send and the more free accounts you
+add, the bigger the chance one gets suspended. The automatic pauses are your safety net. Watch the warm up "landed
+in Spam" numbers on the dashboard, give each account its own recovery details, and keep things you can't lose
+(like your portfolio folder) out of them.
+
+The cheap way past this: a separate domain only for outreach (about $10 a year, not rizcoreach.ae, so your main
+domain is never at risk) with Zoho Mail Lite inboxes (about $1 an inbox a month; the free Zoho plan has no
+SMTP or IMAP), 30 a day each. Add each with `rizco add-inbox`; it prints the exact SPF, DKIM and DMARC records
+to add at your domain host.
 
 - **Google Workspace:** App Password the same way (signed in as that account), `INBOX2_PROVIDER=workspace`.
 - **Zoho Mail (paid plans only, the free plan has no SMTP or IMAP):** Settings > Mail Accounts > IMAP Access on,

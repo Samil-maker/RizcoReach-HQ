@@ -1,9 +1,15 @@
 """Every lead gets exactly one segment, and segment C leads get one true observation.
 
+Website campaign:
 A  new business      the file's source or notes say grand opening, just opened, new branch and so on
 B  no website        no website, or the "website" is only Instagram, a link page or Google Maps
 C  outdated website  we confirmed a real problem on their homepage (or clear signs of an old site)
 SKIP                 a good modern website, or a site we could not check (we never guess)
+
+Meta ads campaign (from Lead Hunter's Meta ads export, or files you mark as Meta ads):
+N  no Meta ads       Lead Hunter checked the Ad Library and found none, so the email can say so
+G  general           not checked: the email makes no claim about their ads
+SKIP                 already running Meta ads
 """
 from __future__ import annotations
 
@@ -21,16 +27,16 @@ NEW_BUSINESS = re.compile(
 )
 
 OBSERVATIONS = {
-    "down": "It wasn't loading when I tried to open it",
-    "error": "It showed an error page when I tried to open it",
+    "down": "It wasn't loading when we tried to open it",
+    "error": "It showed an error page when we tried to open it",
     "parked": "Right now it just shows a placeholder page",
     "coming_soon": "Right now it just shows a coming soon page",
     "mobile": "It's quite hard to use on a phone",
     "https": "Chrome marks it as not secure because it has no HTTPS",
     "copyright": "The site still says {year} at the bottom",
-    "slow": "It took about {seconds} seconds to load when I opened it",
-    "contact": "I couldn't see an easy way to call or book from the homepage",
-    "generic": "I think a fresh modern version could bring you a lot more enquiries",
+    "slow": "It took about {seconds} seconds to load when we opened it",
+    "contact": "We couldn't see an easy way to call or book from the homepage",
+    "generic": "We think a fresh modern version could bring you a lot more enquiries",
 }
 
 
@@ -89,3 +95,20 @@ def decide(lead: Dict, site: Optional[Dict] = None) -> Dict:
     if not kind:
         return {"segment": "SKIP", "segment_reason": reason}
     return {"segment": "C", "segment_reason": reason, "observation": line, "observation_kind": kind}
+
+
+ADS_NONE = re.compile(r"not running ads|no ads found|no meta ads|^\s*(none|no|false|0)\s*$", re.I)
+ADS_RUNNING = re.compile(r"running ads|^\s*(running|yes|true)\s*$", re.I)
+
+
+def decide_ads(lead: Dict) -> Dict:
+    """Segment for a Meta ads lead, from what Lead Hunter found in the Ad Library."""
+    forced = {"N": "N", "G": "G", "SKIP": "SKIP"}.get((lead.get("segment") or "").strip().upper())
+    if forced:
+        return {"segment": forced, "segment_reason": "set in the file"}
+    meta, tags = lead.get("meta_ads") or "", lead.get("tags") or ""
+    if ADS_NONE.search(meta) or re.search(r"no meta ads", tags, re.I):
+        return {"segment": "N", "segment_reason": "no Meta ads found in the Ad Library"}
+    if ADS_RUNNING.search(meta) or re.search(r"running ads", tags, re.I):
+        return {"segment": "SKIP", "segment_reason": "already running Meta ads"}
+    return {"segment": "G", "segment_reason": "Meta ads not checked, so the email makes no claim about them"}
