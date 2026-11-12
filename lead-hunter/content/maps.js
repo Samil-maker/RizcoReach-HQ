@@ -203,7 +203,12 @@
   (async () => {
     const res = await send({ type: 'maps:hello' });
     if (!res || !res.search) return; // a normal Maps tab: do nothing
-    const out = await collect();
+    let out;
+    try {
+      out = await collect();
+    } catch (e) {
+      out = { items: [], error: `the results list could not be read (${String((e && e.message) || e).slice(0, 120)})` };
+    }
     send({ type: 'maps:results', ...out });
   })();
 })();

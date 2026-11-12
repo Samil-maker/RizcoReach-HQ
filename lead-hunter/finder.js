@@ -581,6 +581,11 @@ async function runMaps(fid) {
         // Paused, not stopped: Resume carries on from this search once the page is sorted out.
         await patchFinder(fid, { status: 'paused', mapsNote: text });
         await alertSource('maps', text);
+      } else if (e.skip) {
+        // This one search failed: it is not marked done, so a later run tries it again. The run carries on.
+        await logProblem('maps', `${q.q}: ${text}`);
+        await patchFinder(fid, (x) => ({ mapsI: x.mapsI + 1, mapsNote: text }));
+        continue;
       } else {
         await patchFinder(fid, { mapsDone: true, mapsNote: text });
         await logProblem('maps', `${q.q}: ${text}`);
@@ -604,15 +609,22 @@ async function mapsTab() {
   return t.id;
 }
 async function mapsBrowserSearch(query) {
-  const tabId = await mapsTab();
-  const res = await new Promise((resolve) => {
-    const timer = setTimeout(() => resolve({ timeout: true, items: [] }), 120000);
-    pendingMaps = { tabId, query, resolve: (r) => (clearTimeout(timer), resolve(r)) };
-    // hl=en keeps labels in English even when the Google account is set to Arabic.
-    chrome.tabs.update(tabId, { url: `https://www.google.com/maps/search/${encodeURIComponent(query)}/?hl=en` }).catch(() => resolve({ error: 'tab', items: [] }));
-  });
-  pendingMaps = null;
+  let res;
+  // A tab that never answers (it crashed, or loaded too slowly) is tried once more before the search is skipped.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const tabId = await mapsTab();
+    res = await new Promise((resolve) => {
+      const timer = setTimeout(() => resolve({ timeout: true, items: [] }), 45000);
+      pendingMaps = { tabId, query, resolve: (r) => (clearTimeout(timer), resolve(r)) };
+      // hl=en keeps labels in English even when the Google account is set to Arabic.
+      chrome.tabs.update(tabId, { url: `https://www.google.com/maps/search/${encodeURIComponent(query)}/?hl=en&lh=${attempt}` }).catch(() => resolve({ timeout: true, items: [] }));
+    });
+    pendingMaps = null;
+    if (!res.timeout) break;
+    await logProblem('maps', `${query}: the Google Maps tab did not answer${attempt ? ', skipped' : ', trying again'}`);
+  }
   if (res.blocked) throw Object.assign(new Error('Google Maps showed a consent or verification page'), { blocked: true });
+  if (res.timeout || res.error) throw Object.assign(new Error(res.error ? `Google Maps: ${res.error}` : 'The Google Maps tab did not answer'), { skip: true });
   return (res.items || []).map((x) => ({ ...x, source: 'maps' }));
 }
 

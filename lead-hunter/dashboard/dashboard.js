@@ -118,7 +118,8 @@ function facts(l, now = Date.now()) {
   return { l, fs, fit: fs.fit, mail: LH.sendableEmail(l, S.settings), info: LH.emailInfo(l), niche: LH.nicheOf(l, S.settings) || '' };
 }
 
-function filtered() {
+/** The leads the filters show. withExported: also the ones exported before (Include already exported). */
+function filtered({ withExported = false } = {}) {
   const f = S.filters;
   const q = f.q.trim().toLowerCase();
   const now = Date.now();
@@ -127,7 +128,7 @@ function filtered() {
     if (f.hunt && !(l.hunts || []).includes(f.hunt)) continue;
     if (f.status === '' && ['skip', 'lost'].includes(l.status)) continue;
     if (f.status && f.status !== 'all' && l.status !== f.status) continue;
-    if (!f.exported && l.coldEmailExportedAt && f.show !== 'all') continue;
+    if (!f.exported && !withExported && l.coldEmailExportedAt && f.show !== 'all') continue;
     if (!f.contactedBefore && contactedBefore(l)) continue;
     if (f.source && foundOn(l) !== f.source) continue;
     const r = facts(l, now);
@@ -1081,7 +1082,7 @@ function bind() {
         S.limit += ROWS_STEP;
         return renderTable();
       case 'export-cold':
-        return exportColdEmail(filtered().map((r) => r.l));
+        return exportColdEmail(filtered({ withExported: S.coldInclude }).map((r) => r.l));
       case 'bulk-cold':
         return exportColdEmail(selectedLeads());
       case 'export-csv':

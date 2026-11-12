@@ -82,9 +82,11 @@ async function dropFrom(queue, id) {
 const saveCheck = (id, email, v) => updateLead(id, (l) => (l.emailCheck = { ...(l.emailCheck || {}), [email]: { s: v.s, why: v.why || '', at: now() } }));
 
 let emailCheckBusy = false;
+let emailCheckAgain = false; // something was queued while a run was going: run once more when it ends
 async function runEmailChecks() {
-  if (emailCheckBusy) return;
+  if (emailCheckBusy) return void (emailCheckAgain = true);
   emailCheckBusy = true;
+  emailCheckAgain = false;
   try {
     // 1. Domains: every lead, straight away.
     for (;;) {
@@ -155,6 +157,7 @@ async function runEmailChecks() {
     }
   } finally {
     emailCheckBusy = false;
+    if (emailCheckAgain) runEmailChecks();
   }
 }
 
