@@ -5,6 +5,7 @@ import { SAMPLE_ADS, searchResponse, makeAd } from './fixtures.mjs';
 
 await import('../lib/common.js');
 await import('../lib/emails.js');
+await import('../lib/fit.js');
 await import('../lib/extract-ads.js');
 await import('../lib/site-audit.js');
 await import('../lib/prospects.js');

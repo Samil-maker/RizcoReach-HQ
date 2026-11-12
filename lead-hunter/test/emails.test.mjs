@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 
 await import('../lib/common.js');
 await import('../lib/emails.js');
+await import('../lib/fit.js');
 await import('../lib/site-audit.js');
 const LH = globalThis.LH;
 

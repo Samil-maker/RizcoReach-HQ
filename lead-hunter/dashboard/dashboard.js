@@ -527,8 +527,10 @@ function coldEmailNote(l) {
   if (['replied', 'meeting', 'won', 'lost', 'skip'].includes(l.status)) return 'Their status says you are talking to them or closed them, so they stay out of the cold email file.';
   if (l.doNotEmail) return 'Never email is on, so they stay out of the cold email file.';
   if ((l.emailQueue || {}).sent >= 1) return "Lead Hunter's old email sender already emailed them, so they stay out of the cold email file.";
-  if (LH.coldEmailSite(l, S.settings) === 'good') return 'Their website looks good (HTTPS, works on phones, scores 80 or more), so they stay out of the cold email file.';
-  if (!LH.goodEmails(l)[0]) return 'No email found yet, so they stay out of the cold email file.';
+  const f = LH.fit(l, S.settings);
+  if (!f.fit) return `${f.why}, so they stay out of the cold email file.`;
+  const mail = LH.sendableEmail(l, S.settings);
+  if (!mail.email) return { none: 'No email found yet', bad: 'Their email failed its check', waiting: 'Their email is still being checked', risky: 'Their email could not be confirmed' }[mail.why] + ', so they stay out of the cold email file.';
   if (l.coldEmailExportedAt) return `Exported for cold email on ${fmtDate(l.coldEmailExportedAt)}. Tick Include already exported to export them again.`;
   return 'They go in the next Export for cold email.';
 }

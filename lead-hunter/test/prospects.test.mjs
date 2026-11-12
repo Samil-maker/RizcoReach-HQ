@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 
 await import('../lib/common.js');
 await import('../lib/emails.js');
+await import('../lib/fit.js');
 await import('../lib/prospects.js');
 const LH = globalThis.LH;
 
@@ -59,8 +60,8 @@ test('Meta ads prospects: the offer follows the website and the ad check; the co
   assert.equal(LH.scriptFor({ ...p, adCheck: { state: 'unclear' } }).tag, 'Ad check not done');
   assert.equal(LH.scriptFor({ ...p, adCheck: { state: 'running' } }).script, null, 'running ads with a website: skipped');
   assert.equal(LH.scriptFor({ ...p, website: null, adCheck: { state: 'running' } }).script, 'website');
-  // No website, found on Google Maps: in the cold email file whatever their ads, and it says so.
-  const r = LH.coldEmailExport([{ ...p, id: 'p1', website: null, emails: ['hi@shine.example'], adCheck: { state: 'running' } }], settings);
+  // No website, Google says they just opened, found on Google Maps: in the cold email file, and it says so.
+  const r = LH.coldEmailExport([{ ...p, id: 'p1', website: null, emails: ['hi@shine.example'], emailCheck: { 'hi@shine.example': { s: 'dns' } }, openSignals: [{ kind: 'google', text: 'Recently opened', at: Date.now() }], adCheck: { state: 'running' } }], settings);
   const col = (name) => r.rows[0][LH.COLD_EMAIL_HEAD.indexOf(name)];
   assert.deepEqual([col('business_name'), col('email'), col('website'), col('source'), col('niche'), col('status')], ['Shine PPF', 'hi@shine.example', '', 'Google Maps', 'Car', 'New']);
 });
