@@ -68,7 +68,19 @@
     /it works!/i,
     /default web site page/i,
     /there is no website configured at this address/i,
+    // Website builders and hosts, before the owner ever built or published anything.
+    /(domain|site|website) (is not|isn['’]?t) connected to a website/i,
+    /(site|website|store|page) (is not|isn['’]?t|has not been|hasn['’]?t been) (yet )?published/i,
+    /future home of/i,
+    /(domain|website|hosting) (has |is )?expired/i,
+    /this domain is (available|not configured)/i,
+    /new (website|site) (is )?(coming|launching)/i,
+    /(website|site) (is )?(launching|opening) soon/i,
+    /(we are|we['’]re) (launching|coming) soon/i,
+    /welcome to wordpress\. this is your first post/i,
   ];
+  // On a page with next to nothing on it, these words alone say it is a placeholder.
+  const TINY_PARKED = /\b(coming|launching|opening) soon\b|\bunder construction\b|\bstay tuned\b/i;
 
   /** Contacts found in a page: phone numbers, WhatsApp numbers, emails, social profiles. */
   LH.extractContacts = (html, baseUrl, countryCode = 'AE') => {
@@ -169,7 +181,7 @@
     const builder = (BUILDERS.find(([, re]) => re.test(html)) || [null])[0];
 
     // Parked / placeholder pages are a headline issue on their own.
-    const parkedHit = PARKED.find((re) => re.test(words < 400 ? text : text.slice(0, 600)));
+    const parkedHit = PARKED.find((re) => re.test(words < 400 ? text : text.slice(0, 600))) || (words < 80 && TINY_PARKED.test(text) ? TINY_PARKED : null);
     if (parkedHit && words < 400) {
       const phrase = (text.match(parkedHit) || [''])[0].trim().slice(0, 60);
       return {

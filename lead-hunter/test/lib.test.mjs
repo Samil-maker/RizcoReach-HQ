@@ -89,6 +89,21 @@ test('audit: parked pages are flagged', () => {
   const r = LH.auditHtml('<html><body><h1>This domain is for sale!</h1><p>Buy this domain today.</p></body></html>', { finalUrl: 'https://x.example/', ttfbMs: 100, totalMs: 200, bytes: 300, headers: {} });
   assert.equal(r.parked, true);
   assert.equal(r.issues[0].id, 'parked');
+  const meta = { finalUrl: 'https://x.example/', ttfbMs: 100, totalMs: 200, bytes: 300, headers: {} };
+  const parked = (body) => LH.auditHtml(`<html><head><title>x</title></head><body>${body}</body></html>`, meta).parked === true;
+  for (const body of [
+    '<h1>Launching Soon</h1><p>Stay in the loop.</p>',
+    '<h1>Velvet Hair</h1><p>Coming soon! hello@velvet.example</p>',
+    "<p>Looks like this domain isn't connected to a website yet</p>",
+    '<p>This site has not been published yet.</p>',
+    '<h1>Future home of something quite cool</h1>',
+    '<p>Our new website is coming. Stay tuned.</p>',
+    '<h1>Hello world!</h1><p>Welcome to WordPress. This is your first post. Edit or delete it.</p>',
+    '<p>Opening soon</p><form><input type="password"></form>',
+  ])
+    assert.ok(parked(body), body);
+  // A real site that mentions a branch opening soon is not a placeholder.
+  assert.ok(!parked(`<h1>Glow Salon</h1>${'<p>Hair, nails and lashes in JLT, with twelve stylists and a decade of regulars. </p>'.repeat(12)}<p>Our Marina branch is opening soon.</p>`));
 });
 
 test('audit: client-rendered shells are not accused of missing content', () => {

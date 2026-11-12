@@ -150,6 +150,30 @@ function placesInstagram(lead, places) {
   if (handle && !lead.socials.instagram) lead.socials.instagram = `https://www.instagram.com/${handle}/`;
 }
 
+/**
+ * No website known, but an email address at a domain of their own (info@glowsalon.ae): that domain is their website
+ * until the check says otherwise. Without this a business with a working site could be told it has none.
+ */
+function siteFromEmail(lead) {
+  if (LH.ownWebsite(lead) || lead.websiteSource === 'manual') return false;
+  const email = LH.goodEmails(lead).find((e) => !LH.isFreeMail(e));
+  const domain = email ? email.split('@').pop() : '';
+  if (!domain || LH.linkKind(`https://${domain}/`) !== 'website') return false;
+  lead.website = `https://${domain}/`;
+  lead.landingUrl = lead.website;
+  lead.websiteSource = 'email';
+  lead.destinationKind = 'website';
+  lead.site = { state: 'queued' };
+  return true;
+}
+/** New addresses on a lead: maybe a website to check, and the addresses themselves to check. */
+async function afterEmails(id, front = false) {
+  let site = false;
+  await updateLead(id, (l) => (site = siteFromEmail(l)));
+  if (site) enqueue([id], front);
+  queueEmailChecks([id], front);
+}
+
 function addPhone(lead, number, source) {
   if (!number) return;
   const hit = lead.phones.find((p) => p.number === number);
@@ -301,6 +325,7 @@ async function ingest(ads, ctx = {}, tabId) {
           lead.emailFrom = { ...Object.fromEntries(inAd.map((e) => [e, 'ad'])), ...(lead.emailFrom || {}) };
         }
       }
+      siteFromEmail(lead);
       if (!prev && LH.historyHit(lead, contactHistory)) continue; // contacted before: never added again
       if (!lead.niche) lead.niche = LH.nicheOf(lead, settings) || ''; // from the hunt keywords
       if (!prev) added++;
@@ -731,7 +756,8 @@ const handlers = {
       }
     });
     if (msg.patch && 'website' in msg.patch) enqueue([msg.id], true);
-    if (msg.patch && (msg.patch.addEmail || 'justOpened' in msg.patch)) queueEmailChecks([msg.id], true);
+    if (msg.patch && msg.patch.addEmail) await afterEmails(msg.id, true);
+    else if (msg.patch && 'justOpened' in msg.patch) queueEmailChecks([msg.id], true);
     return { lead };
   },
   /* Contacted memory. Reset: the business is new again and future searches can find it. */

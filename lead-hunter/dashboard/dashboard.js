@@ -18,7 +18,6 @@ const fmtDate = (ts) => (ts ? new Date(ts).toLocaleDateString(undefined, { day: 
 const compactNum = (n) => Intl.NumberFormat(undefined, { notation: 'compact' }).format(n || 0);
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const ALL_TYPES = 'All types';
-const BIG_BRAND = 60000; // Facebook pages with more likes than this are chains, not new businesses
 const ROWS_STEP = 300;
 const ICON = {
   mail: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>',
@@ -131,7 +130,6 @@ function filtered() {
     if (!f.exported && l.coldEmailExportedAt && f.show !== 'all') continue;
     if (!f.contactedBefore && contactedBefore(l)) continue;
     if (f.source && foundOn(l) !== f.source) continue;
-    if (l.kind !== 'prospect' && (l.pageLikes || 0) > BIG_BRAND && f.show !== 'all') continue;
     const r = facts(l, now);
     if (f.niche && r.niche !== f.niche) continue;
     const fit = r.fit;
@@ -514,7 +512,7 @@ function siteSection(l) {
     }[state];
     const [cls, label] = SITE_TAG[state];
     body = `<div class="site-head"><a href="${esc(safeHref(site.finalUrl || l.landingUrl || own))}" target="_blank" rel="noopener noreferrer">${esc(LH.domainOf(site.finalUrl || own))}</a><span class="tag ${cls}">${esc(label)}</span></div>
-      <p>${said}</p>
+      <p>${said}${l.websiteSource === 'email' ? ' <span class="muted">(Nobody listed this website: it is the domain of their email address.)</span>' : ''}</p>
       <div class="kv">${[site.builder && `<span>Built with <b>${esc(site.builder)}</b></span>`, site.checkedAt && `<span>Checked <b>${esc(fmtDate(site.checkedAt))}</b></span>`].filter(Boolean).join('')}</div>`;
   }
   return `<section class="d-sec" data-site-sec><h3>Website</h3>${body}${setForm}${own ? '<div class="row"><button class="btn sm" data-act="recheck">Check again</button></div>' : ''}</section>`;

@@ -153,6 +153,7 @@
   };
 
   /* --------------------------------------------------------------------- fit */
+  LH.BIG_BRAND_LIKES = 60000;
   /**
    * Does this business fit: { fit, kind: 'new' | 'parked' | 'down' | null, why, pending, site, open }.
    * pending: the website check has not finished, so it cannot be said yet.
@@ -162,6 +163,8 @@
     const open = LH.opening(lead, settings, now);
     const out = (fit, kind, why, pending = false) => ({ fit, kind, why, pending, site, open });
     const proof = open ? (open.soon ? 'Opening soon' : 'Just opened') : '';
+    // A Facebook page with this many likes is an established brand, whatever its ad says about a new branch.
+    if (lead && lead.kind !== 'prospect' && (lead.pageLikes || 0) > LH.BIG_BRAND_LIKES) return out(false, null, 'An established brand, not a new business');
     switch (site) {
       case 'working':
         return out(false, null, 'They have a working website');

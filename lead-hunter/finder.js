@@ -144,7 +144,7 @@ async function ingestProspects(items, ctx = {}) {
     }
     for (const id of counted) {
       const l = touched.get(id);
-      if (LH.ownWebsite(l)) l.site = { state: 'queued' };
+      if (!siteFromEmail(l) && LH.ownWebsite(l)) l.site = { state: 'queued' };
     }
     await store.set(writes);
     const websites = counted.filter((id) => LH.ownWebsite(touched.get(id)));
@@ -330,8 +330,8 @@ async function runIg() {
         });
         if (newSite) enqueue([id]);
         if (after && !r.error) {
-          queueEmailChecks([id]);
-          fbEmailAuto([after], settings);
+          await afterEmails(id);
+          fbEmailAuto([await getLead(id)], settings);
         }
       }
       await locked(async () => {
@@ -409,7 +409,7 @@ async function runFbEmails() {
           l.emails = [...new Set([...(l.emails || []), ...emails])].slice(0, 5);
           l.emailFrom = { ...Object.fromEntries(emails.map((e) => [e, 'facebook'])), ...(l.emailFrom || {}) };
         });
-        if (emails.length) queueEmailChecks([id]);
+        if (emails.length) await afterEmails(id);
         await sleep(jitter(4000, 9000)); // human pace on Facebook
       } else if (lead && (lead.fbEmail || {}).state === 'queued') await updateLead(id, (l) => delete l.fbEmail);
       await locked(async () => {
