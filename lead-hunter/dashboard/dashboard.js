@@ -323,7 +323,8 @@ function renderStrip() {
     if (S.mailQ.length) busy.push(`${plural(S.mailQ.length, 'business', 'businesses')} waiting for a mailbox check${waiting ? ` (${esc(S.verifyWait.why || 'waiting')}; it carries on by itself)` : ''}`);
     if (S.mailQ.length || used) busy.push(`mailbox checks today: ${used} of ${Number(S.settings.verifyDailyCap) || 0}`);
   }
-  if (busy.length) lines.push(`<span class="m">${S.queue.length || S.checkQ.length ? '<span class="spin"></span> ' : ''}${busy.join(' · ')}</span>`);
+  const said = busy.join(' · ');
+  if (busy.length) lines.push(`<span class="m">${S.queue.length || S.checkQ.length ? '<span class="spin"></span> ' : ''}${said.charAt(0).toUpperCase()}${said.slice(1)}</span>`);
   if (S.view === 'leads' && !S.settings.verifyKey && S.leads.size)
     lines.push(`<span class="m">Mailbox checks are off, so addresses are only checked as far as their domain. <button class="linkish" data-goto="settings" data-anchor="verify">Add a free key</button> for the lowest bounce rate.</span>`);
   el.hidden = !lines.length;

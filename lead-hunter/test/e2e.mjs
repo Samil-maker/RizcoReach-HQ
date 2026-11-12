@@ -160,6 +160,7 @@ try {
   await dash.click('[data-act="verify-test"]');
   await dash.waitForFunction(() => /^Working\. Mailbox checks are on/.test(document.querySelector('[data-verify-test]').textContent));
   assert.deepEqual([calls.sandbox.length, calls.verify.length], [1, 0], 'the test used the sandbox, none of the day’s checks');
+  if (SHOTS) await dash.screenshot({ path: `${SHOTS}/4-settings.png` });
   await dash.click('[data-settings-form] button[type="submit"]');
   await waitFor(async () => (await storage('settings')).settings.scrollDelayMs === 900, 5000, 'settings saved');
   const saved = (await storage('settings')).settings;
@@ -175,6 +176,7 @@ try {
   await dash.click('[data-find-preset="Salons"]');
   assert.match(await dash.inputValue('[data-finder-form] [name="keywords"]'), /^ladies salon\n/);
   assert.match(await dash.textContent('[data-find-areas]'), /^2 areas \(Settings > Areas\), from JLT, Dubai/);
+  if (SHOTS) await dash.screenshot({ path: `${SHOTS}/3-find.png`, fullPage: true });
   await dash.fill('[data-finder-form] [name="keywords"]', 'ladies salon');
   await dash.fill('[data-finder-form] [name="cap"]', '10');
   await dash.click('[data-finder-form] button[type="submit"]');
@@ -254,7 +256,7 @@ try {
   assert.match(await dash.textContent('[data-fit-sec]'), /Google Maps: “Recently opened”[\s\S]*Their Instagram post: “/);
   assert.match(await dash.textContent('[data-email-sec]'), /bloom\.beauty\.dxb@gmail\.com\s*Confirmed/);
   assert.match(await dash.textContent('[data-cold-note]'), /They go in the next Export for cold email, with bloom\.beauty\.dxb@gmail\.com/);
-  if (SHOTS) await dash.screenshot({ path: `${SHOTS}/2-drawer.png` });
+  if (SHOTS) await dash.waitForTimeout(500), await dash.screenshot({ path: `${SHOTS}/2-drawer.png` });
   await dash.click('.drawer [data-act="close"]');
   const gloss = await byName('Gloss Garage');
   await dash.click(`tr[data-id="${gloss.id}"] [data-open]`);
