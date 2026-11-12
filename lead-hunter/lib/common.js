@@ -972,36 +972,8 @@ Mussafah, Abu Dhabi`),
     return { total: { ...total, rate: LH.replyRate(total) }, byNiche: list(byNiche), byScript: list(byScript) };
   };
 
-  /* ------------------------------------------------------------ Email addresses */
-  // Addresses website builders put in their templates (GoDaddy's filler@godaddy.com and the like) and other
-  // placeholders. They are never a real inbox, and an email to one bounces, which hurts the Gmail that sent it.
-  const JUNK_DOMAIN = /(^|\.)(example\.(com|org|net)|domain\.com|email\.com|yourdomain\.\w+|yoursite\.\w+|mysite\.com|website\.com|test\.com|sentry\.io|wixpress\.com|wix\.com|godaddy\.com|secureserver\.net|squarespace\.com|weebly\.com|jimdo\.com|shopify\.com|wordpress\.(com|org)|mailchimp\.com)$/;
-  const JUNK_USER = /^(filler|name|your|yourname|you|user|username|email|e-?mail|test|example|sample|someone|john\.?doe|jane\.?doe|no-?reply|do-?not-?reply|donotreply)$/;
-  LH.isJunkEmail = (email) => {
-    const [user, domain, extra] = String(email || '').trim().toLowerCase().split('@');
-    return !user || !domain || extra !== undefined || /\.(png|jpe?g|gif|webp|svg|css|js)$/.test(domain) || JUNK_DOMAIN.test(domain) || JUNK_USER.test(user);
-  };
-  /** The addresses worth emailing: not bounced before, not a placeholder. */
-  LH.goodEmails = (lead) => ((lead && lead.emails) || []).filter((e) => !((lead.badEmails || []).includes(e) || LH.isJunkEmail(e)));
-  // Platform addresses found in Facebook and Instagram pages that are never the business's own.
-  const PLATFORM_DOMAIN = /(^|\.)(facebook\.com|fb\.com|fbcdn\.net|meta\.com|instagram\.com|cdninstagram\.com|whatsapp\.com|messenger\.com|w3\.org|schema\.org|google\.com|apple\.com)$/;
-  /**
-   * Email addresses a business publishes on its own Facebook or Instagram page, from the page's text: escaped forms
-   * ("info@x.com", "info&#64;x.com") count, placeholders and platform addresses do not.
-   */
-  LH.emailsInPage = (text) => {
-    const t = String(text || '')
-      .replace(/\\u0040/gi, '@')
-      .replace(/&#0*64;|&#x0*40;/gi, '@')
-      .replace(/%40/g, '@');
-    const out = [];
-    for (const m of t.matchAll(/[a-z0-9][a-z0-9._%+-]{0,63}@[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,24}(?![a-z0-9-])/gi)) {
-      const e = m[0].toLowerCase();
-      if (LH.isJunkEmail(e) || PLATFORM_DOMAIN.test(e.split('@')[1]) || out.includes(e)) continue;
-      out.push(e);
-    }
-    return out.slice(0, 3);
-  };
+  /* ------------------------------------------------------------- Facebook pages */
+  // (Email addresses live in lib/emails.js.)
   /**
    * The business's own Facebook page: the one their website or Google Maps links to, or for website leads the
    * advertiser's page. '' when there is none (a share link, a group or a post is not a page).

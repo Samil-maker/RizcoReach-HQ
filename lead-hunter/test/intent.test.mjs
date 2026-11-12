@@ -3,6 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 await import('../lib/common.js');
+await import('../lib/emails.js');
 await import('../lib/intent.js');
 const LH = globalThis.LH;
 const NOW = Date.UTC(2026, 9, 26, 12);

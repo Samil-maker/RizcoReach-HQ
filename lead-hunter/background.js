@@ -4,7 +4,7 @@
    - Enriches leads: audits the landing page, finds phones/emails/socials,
      optional Google Places + PageSpeed lookups
    - Marks leads saved by Export for cold email (the cold email system on the Mac sends the emails) */
-importScripts('lib/common.js', 'lib/site-audit.js', 'lib/prospects.js', 'lib/intent.js', 'lib/intent-db.js');
+importScripts('lib/common.js', 'lib/emails.js', 'lib/site-audit.js', 'lib/prospects.js', 'lib/intent.js', 'lib/intent-db.js');
 const LH = self.LH;
 
 const DASHBOARD = chrome.runtime.getURL('dashboard/dashboard.html');

@@ -3,6 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 await import('../lib/common.js');
+await import('../lib/emails.js');
 await import('../lib/prospects.js');
 const LH = globalThis.LH;
 
