@@ -21,30 +21,30 @@
    * Returns { kind: 'opened', text, openedAt } or { kind: 'soon', text, opensAt }, null when it is not a label.
    */
   LH.openingLabel = (text, now = Date.now()) => {
-    const t = String(text == null ? '' : text).replace(/\s+/g, ' ').trim();
-    if (!t || t.length > 60 || /["“”«»]/.test(t)) return null;
+    const t = String(text == null ? '' : text).replace(/\s+/g, ' ').trim().replace(/[.!]+$/, '');
+    if (!t || t.length > 40 || /["“”«»]/.test(t)) return null;
     if (/\d{1,2}(:\d{2})?\s*(a\.?m\.?|p\.?m\.?)\b/i.test(t) || /\bopens soon\b|\bcloses?\b|\bclosed\b|\b24 hours\b/i.test(t)) return null;
     const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
-    let m = t.match(/\bopened (\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve) (day|week|month)s? ago\b/i);
+    let m = t.match(/^opened (\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve) (day|week|month)s? ago$/i);
     if (m) {
       const n = COUNT[m[1].toLowerCase()] || Number(m[1]);
       return { kind: 'opened', text: cap(m[0]), openedAt: now - n * { day: 1, week: 7, month: 30 }[m[2].toLowerCase()] * DAY };
     }
-    m = t.match(new RegExp(`\\bopened (?:in |on )?${MONTH},? (?:(\\d{1,2}),? )?(\\d{4})\\b`, 'i'));
+    m = t.match(new RegExp(`^opened (?:in |on )?${MONTH},? (?:(\\d{1,2}),? )?(\\d{4})$`, 'i'));
     if (m) {
       const at = new Date(Number(m[3]), MONTHS.indexOf(m[1].toLowerCase()), Number(m[2]) || 15).getTime();
       return at > now + DAY ? null : { kind: 'opened', text: cap(m[0]), openedAt: at };
     }
-    if (/\brecently opened\b/i.test(t)) return { kind: 'opened', text: 'Recently opened', openedAt: null };
-    if (/\bopening soon\b/i.test(t)) return { kind: 'soon', text: 'Opening soon', opensAt: null };
-    m = t.match(new RegExp(`\\bopens (?:on )?(?:(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*\\.?,? )?${MONTH} (\\d{1,2})(?:,? (\\d{4}))?\\b`, 'i'));
+    if (/^recently opened$/i.test(t)) return { kind: 'opened', text: 'Recently opened', openedAt: null };
+    if (/^opening soon$/i.test(t)) return { kind: 'soon', text: 'Opening soon', opensAt: null };
+    m = t.match(new RegExp(`^opens (?:on )?(?:(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*\\.?,? )?${MONTH} (\\d{1,2})(?:,? (\\d{4}))?$`, 'i'));
     if (m) {
       const month = MONTHS.indexOf(m[1].toLowerCase());
       let at = new Date(Number(m[3]) || new Date(now).getFullYear(), month, Number(m[2])).getTime();
       if (!m[3] && at < now - 30 * DAY) at = new Date(new Date(now).getFullYear() + 1, month, Number(m[2])).getTime();
       return { kind: 'soon', text: cap(m[0]), opensAt: at };
     }
-    m = t.match(new RegExp(`\\bopens (?:in )?${MONTH} (\\d{4})\\b`, 'i'));
+    m = t.match(new RegExp(`^opens (?:in )?${MONTH} (\\d{4})$`, 'i'));
     if (m) return { kind: 'soon', text: cap(m[0]), opensAt: new Date(Number(m[2]), MONTHS.indexOf(m[1].toLowerCase()), 15).getTime() };
     return null;
   };

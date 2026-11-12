@@ -96,6 +96,31 @@ social media coordinator
 content creator
 performance marketing specialist
 growth marketer`),
+    // An owner saying they are opening, or just opened, their own business: they need a website now.
+    opening: lines(`opening my
+opening our
+opening a new
+opening my own
+just opened my
+just opened our
+we just opened
+we have just opened
+grand opening
+soft opening
+soft launch
+launching my business
+launching our business
+launching my own
+starting my own business
+starting my business
+started my own business
+starting a new business
+my new business
+our new business
+new business owner
+got my trade license
+got my trade licence
+got our trade license`),
     arabic: lines(`مصمم مواقع
 تصميم موقع
 تصميم مواقع
@@ -150,7 +175,7 @@ for hire
 نقدم خدمات
 تواصل معنا
 خصم`);
-  LH.INTENT_LABELS = { website: 'Website buyer', marketing: 'Marketing buyer', pain: 'Owner pain', hiring: 'Hiring for marketing', arabic: 'Arabic' };
+  LH.INTENT_LABELS = { website: 'Website buyer', marketing: 'Marketing buyer', opening: 'Opening a business', pain: 'Owner pain', hiring: 'Hiring for marketing', arabic: 'Arabic' };
   const UAE = /\b(uae|u\.a\.e|dubai|abu dhabi|abudhabi|sharjah|ajman|ras al khaimah|rak|fujairah|umm al quwain|al ain|emirates)\b|الإمارات|دبي|أبوظبي|الشارقة/i;
   LH.mentionsUAE = (text) => UAE.test(String(text || ''));
 
@@ -235,7 +260,7 @@ for hire
    */
   LH.intentScore = (post, now = Date.now()) => {
     const c = post.categories || [];
-    let s = c.includes('website') || c.includes('marketing') ? 55 : c.includes('hiring') ? 45 : c.includes('pain') ? 40 : 25;
+    let s = c.includes('website') || c.includes('marketing') ? 55 : c.includes('opening') ? 50 : c.includes('hiring') ? 45 : c.includes('pain') ? 40 : 25;
     if (c.length > 1) s += 5;
     const age = post.createdAt ? now - post.createdAt : null;
     if (age != null) s += age <= 2 * 864e5 ? 20 : age <= 7 * 864e5 ? 10 : 0;
@@ -260,7 +285,10 @@ for hire
       post.hits = [raw.title];
     } else {
       if (!m.categories.length) return { keep: false, why: 'nomatch', post };
-      if (m.seller) return { keep: false, why: 'seller', post: { ...post, seller: m.seller } };
+      // A business announcing its own opening sounds like a seller ("opening offer, DM us"): it is the buyer here.
+      // Only an opening post that asks for nothing else is let through; the AI check reads it next.
+      const announcing = m.categories.includes('opening') && !m.categories.some((c) => c === 'website' || c === 'marketing');
+      if (m.seller && !announcing) return { keep: false, why: 'seller', post: { ...post, seller: m.seller } };
     }
     if (post.createdAt && now - post.createdAt > s.intentMaxDays * 864e5) return { keep: false, why: 'old', post };
     if (needUae && !LH.mentionsUAE(text)) return { keep: false, why: 'foreign', post };
@@ -297,6 +325,7 @@ for hire
 
 For each post decide whether the person posting is a potential buyer of those services:
 - A buyer is a business owner, manager or someone acting for a business who wants a website, SEO, social media or paid ads help, or more customers for their business. A company hiring a marketing or social media person counts as a buyer too, since they need marketing.
+- Someone opening, or who has just opened, their own business (a salon, a cafe, a shop, a clinic) is a buyer of a website even when the post is only an announcement: a new business needs one. Use service_needed "website" unless they say they have one.
 - Not a buyer: anyone selling or advertising these services (agencies, freelancers, people sharing their portfolio), job seekers, people asking for consumer recommendations (a good restaurant, a mechanic for their own car), students, spam, or posts with nothing to do with buying these services.
 - The business should be in the UAE. If the post does not say where, judge from the group or subreddit it was posted in.
 
@@ -420,7 +449,7 @@ Fill in every field:
   /** A post with the AI's verdict on it. Its kinds follow what the AI says they need; hiring and owner pain stay. */
   LH.aiApply = (post, result, now = Date.now()) => {
     const need = { website: ['website'], seo: ['website'], marketing: ['marketing'], website_and_marketing: ['website', 'marketing'] }[result.service_needed] || [];
-    const keep = (post.categories || []).filter((c) => c === 'hiring' || c === 'pain');
+    const keep = (post.categories || []).filter((c) => c === 'hiring' || c === 'pain' || c === 'opening');
     return {
       ...post,
       verified: true,

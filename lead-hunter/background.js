@@ -1,9 +1,9 @@
 /* Lead Hunter: background service worker.
-   - Stores leads (one storage key per advertiser, all writes serialised here)
+   - Stores leads (one storage key per business, all writes serialised here)
    - Runs hunts: walks a list of keywords through the Ad Library in one tab
-   - Enriches leads: audits the landing page, finds phones/emails/socials,
-     optional Google Places + PageSpeed lookups
-   - Marks leads saved by Export for cold email (the cold email system on the Mac sends the emails) */
+   - Checks each lead's website (down, parked, working) and finds phones, emails and socials on it
+   - Marks leads saved by Export for cold email (the cold email system on the Mac sends the emails)
+   finder.js finds businesses on Google Maps, checks.js checks every email address, intent.js is Intent Radar. */
 importScripts('lib/common.js', 'lib/emails.js', 'lib/fit.js', 'lib/site-audit.js', 'lib/prospects.js', 'lib/intent.js', 'lib/intent-db.js');
 const LH = self.LH;
 
@@ -78,12 +78,11 @@ function newLead(pageId) {
   };
 }
 
-/* Statuses that mean the lead was messaged. The first one records when, with which script, and the niche (Results panel). */
+/* Statuses that mean the lead was messaged. The first one records when. */
 const SENT_STATUSES = ['contacted', 'followup', 'replied', 'meeting', 'won'];
-function markSent(lead, at, script, settings, via) {
+function markSent(lead, at, settings, via) {
   if (!lead.contactedAt) lead.contactedAt = at;
   if (via) lead.contactedVia = via;
-  if (script || !lead.sentScript) lead.sentScript = script || LH.sentScriptFor(lead);
   if (!lead.niche) lead.niche = LH.nicheOf(lead, settings) || '';
   remember(lead, lead.contactedVia || 'status', lead.contactedAt);
 }
@@ -91,7 +90,6 @@ function markSent(lead, at, script, settings, via) {
 function unmarkSent(lead) {
   lead.contactedAt = null;
   lead.contactedVia = null;
-  lead.sentScript = null;
   lead.repliedAt = null;
   forget(lead.id);
 }
@@ -293,8 +291,18 @@ async function ingest(ads, ctx = {}, tabId) {
       const hadSite = lead.website;
       list.forEach((ad) => mergeAd(lead, ad, ctx));
       derive(lead, country);
+      for (const ad of list) {
+        // An ad that started lately and announces their opening is proof they are new. So is nothing else in an ad.
+        const said = ad.active && ad.start && now() - ad.start < (Number(settings.newDays) || 120) * LH.DAY ? LH.openingWords(`${ad.title || ''}. ${ad.body || ''}`) : '';
+        if (said) LH.addOpenSignal(lead, { kind: 'ad', text: said, at: ad.start, openedAt: ad.start, url: LH.pageAdsUrl(pageId, country) });
+        const inAd = LH.emailsInText(ad.body || '', 2);
+        if (inAd.length) {
+          lead.emails = [...new Set([...(lead.emails || []), ...inAd])].slice(0, 5);
+          lead.emailFrom = { ...Object.fromEntries(inAd.map((e) => [e, 'ad'])), ...(lead.emailFrom || {}) };
+        }
+      }
       if (!prev && LH.historyHit(lead, contactHistory)) continue; // contacted before: never added again
-      if (!lead.niche) lead.niche = LH.nicheOf(lead, settings) || ''; // from the hunt keywords, for the Results panel
+      if (!lead.niche) lead.niche = LH.nicheOf(lead, settings) || ''; // from the hunt keywords
       if (!prev) added++;
       if (huntTab && !lead.hunts.includes(hunt.id)) {
         lead.hunts.push(hunt.id);
@@ -320,6 +328,7 @@ async function ingest(ads, ctx = {}, tabId) {
     }
     await store.set(writes);
     if (enrich.length) enqueue(enrich);
+    queueEmailChecks(Object.keys(writes).filter((k) => k.startsWith('lead:')).map((k) => k.slice(5)));
     return { added, stop, hunt: huntTab ? huntInfo(hunt) : null };
   });
 }
@@ -523,7 +532,7 @@ async function placesLookup(lead, key, country) {
     },
     body: JSON.stringify({ textQuery: `${lead.pageName}${c.code !== 'ALL' ? ', ' + c.name : ''}`, pageSize: 5, ...(c.code !== 'ALL' ? { regionCode: c.code } : {}) }),
   });
-  await placesSpend(); // counts towards the same monthly limit as business searches (finder.js)
+  await placesSpend(); // counted, so the free monthly allowance is not passed by accident (finder.js)
   if (!res.ok) return { error: `Google Places error ${res.status}` };
   const data = await res.json();
   const leadDomain = LH.domainOf(lead.website || '');
@@ -548,40 +557,6 @@ async function placesLookup(lead, key, country) {
     status: p.businessStatus || '',
     checkedAt: now(),
   };
-}
-
-async function pagespeed(url, key) {
-  const api = new URL('https://www.googleapis.com/pagespeedonline/v5/runPagespeed');
-  api.searchParams.set('url', url);
-  api.searchParams.set('strategy', 'mobile');
-  ['performance', 'seo', 'accessibility', 'best-practices'].forEach((c) => api.searchParams.append('category', c));
-  if (key) api.searchParams.set('key', key);
-  const res = await fetch(api, { signal: AbortSignal.timeout(70000) });
-  if (!res.ok) return { error: `PageSpeed error ${res.status}` };
-  const d = await res.json();
-  const cats = (d.lighthouseResult && d.lighthouseResult.categories) || {};
-  const audits = (d.lighthouseResult && d.lighthouseResult.audits) || {};
-  const sc = (k) => (cats[k] && typeof cats[k].score === 'number' ? Math.round(cats[k].score * 100) : null);
-  const num = (k) => (audits[k] && typeof audits[k].numericValue === 'number' ? audits[k].numericValue : null);
-  return {
-    performance: sc('performance'),
-    seo: sc('seo'),
-    accessibility: sc('accessibility'),
-    bestPractices: sc('best-practices'),
-    lcp: num('largest-contentful-paint'),
-    cls: num('cumulative-layout-shift'),
-    checkedAt: now(),
-  };
-}
-
-function applyPsi(site, psi) {
-  site.psi = psi;
-  site.issues = (site.issues || []).filter((i) => i.id !== 'psi');
-  if (typeof psi.performance === 'number' && psi.performance < 60) {
-    site.issues.push(LH.issue('psi', psi.performance < 35 ? 'high' : 'medium', psi.performance));
-    const rank = { critical: 0, high: 1, medium: 2, low: 3 };
-    site.issues.sort((a, b) => rank[a.sev] - rank[b.sev]);
-  }
 }
 
 async function enrichOne(id, opts = {}) {
@@ -647,12 +622,6 @@ async function enrichOne(id, opts = {}) {
     places = await placesLookup({ ...lead, website }, settings.placesKey, country).catch((e) => ({ error: String(e.message || e) }));
   }
 
-  if ((settings.pagespeedAuto || opts.psi) && site.state === 'ok' && !site.parked) {
-    const psi = await pagespeed(site.finalUrl || website, settings.pagespeedKey).catch((e) => ({ error: String(e.message || e) }));
-    if (psi && !psi.error) applyPsi(site, psi);
-    else site.psiError = psi && psi.error;
-  }
-
   await updateLead(id, (l) => {
     if (website && !l.website) {
       l.website = website;
@@ -668,12 +637,15 @@ async function enrichOne(id, opts = {}) {
     if (places && places.match && places.phone) addPhone(l, places.phone, 'google');
     l.phones = l.phones.slice(0, 8);
     l.emails = [...new Set([...(l.emails || []), ...contacts.emails])].slice(0, 5);
+    l.emailFrom = { ...Object.fromEntries(contacts.emails.map((e) => [e, 'website'])), ...(l.emailFrom || {}) };
     l.socials = { ...contacts.socials, ...(l.socials || {}) };
     l.enrichedAt = now();
   });
   const done = await getLead(id);
+  if (!done) return;
   igAuto([done], settings); // the website may have linked their Instagram
-  fbEmailAuto([done], settings); // still no email, and no website or a weak one: their Facebook page next
+  fbEmailAuto([done], settings); // it fits and still has no email: their Facebook page next
+  queueEmailChecks([id]); // the website's state is known now, so is whether a mailbox check is worth it
 }
 
 /* ---------------------------------------------------------------- cold email */
@@ -703,7 +675,15 @@ const handlers = {
     if (hunt && hunt.status === 'running' && sender.tab && hunt.tabId === sender.tab.id) await nextKeyword(msg.reason);
     return { ok: true };
   },
-  'hunt:start': async (msg) => ({ hunt: await startHunt(msg.config) }),
+  /** The Ad Library showed a login page, a security check or a block: stop there and say so. */
+  'hunt:blocked': async (msg, sender) => {
+    const { hunt } = await store.get('hunt');
+    if (!hunt || hunt.status !== 'running' || !sender.tab || hunt.tabId !== sender.tab.id) return { ok: false };
+    await stopHunt('blocked');
+    await alertSource('adlib', String(msg.reason || 'Facebook showed a wall').slice(0, 120), String(msg.url || ''), 'Sort it out in that tab, then start the hunt again from the Find tab.');
+    return { ok: true };
+  },
+  'hunt:start': async (msg) => (await clearAlert('adlib'), { hunt: await startHunt(msg.config) }),
   'hunt:stop': async () => (await stopHunt('stopped'), { ok: true }),
   'open:dashboard': async (msg) => (await openDashboard(msg.hash), { ok: true }),
   'lead:update': async (msg) => {
@@ -712,23 +692,36 @@ const handlers = {
       const p = msg.patch || {};
       if (p.status && p.status !== l.status) {
         l.statusHistory = [...(l.statusHistory || []), { status: p.status, at: now() }].slice(-20);
-        if (SENT_STATUSES.includes(p.status)) markSent(l, now(), p.sentScript, settings, p.via);
+        if (SENT_STATUSES.includes(p.status)) markSent(l, now(), settings, p.via);
         if (p.status === 'replied' && !l.repliedAt) l.repliedAt = now();
         if (p.status === 'new') unmarkSent(l);
       }
-      else if (p.via && SENT_STATUSES.includes(l.status)) markSent(l, l.contactedAt, null, settings, p.via); // the channel, set afterwards
+      else if (p.via && SENT_STATUSES.includes(l.status)) markSent(l, l.contactedAt, settings, p.via); // the channel, set afterwards
       if ('repliedAt' in p && !p.repliedAt) l.repliedAt = null; // "Replied" tapped again
       for (const k of ['status', 'notes', 'pageName', 'followUpAt']) if (k in p) l[k] = p[k];
-      // Just opened: only ever set by you. Never email: keeps them out of the cold email file.
-      if ('justOpened' in p) l.justOpened = !!p.justOpened;
+      // Just opened, your own call: true = new, false = not new whatever was found, null = go by what was found.
+      if ('justOpened' in p) {
+        if (p.justOpened == null) delete l.justOpened;
+        else l.justOpened = !!p.justOpened;
+      }
+      // Never email: keeps them out of the cold email file.
       if ('doNotEmail' in p) l.doNotEmail = !!p.doNotEmail;
       if (p.addPhone) addPhone(l, LH.normalizePhone(p.addPhone, l.countries[0] || 'AE'), 'manual');
       if (p.removePhone) l.phones = l.phones.filter((x) => x.number !== p.removePhone);
       if (p.addEmail) {
-        const added = String(p.addEmail).trim().toLowerCase();
+        // Typed by you: cleaned like any other (a typo in the ending is fixed), and checked like any other.
+        const c = LH.cleanEmail(p.addEmail);
+        const added = c.email || String(p.addEmail).trim().toLowerCase();
         l.emails = [...new Set([...(l.emails || []), added])];
         l.emailFrom = { ...(l.emailFrom || {}), [added]: 'manual' };
+        l.badEmails = (l.badEmails || []).filter((x) => x !== added);
       }
+      if (p.removeEmail) {
+        const gone = String(p.removeEmail).toLowerCase();
+        l.emails = (l.emails || []).filter((x) => String(x).toLowerCase() !== gone && LH.cleanEmail(x).email !== gone);
+      }
+      // It bounced: never used again for this lead.
+      if (p.badEmail) l.badEmails = [...new Set([...(l.badEmails || []), String(p.badEmail).toLowerCase()])];
       if ('website' in p) {
         const u = LH.safeUrl(p.website);
         l.website = u ? u.origin + '/' : null;
@@ -738,6 +731,7 @@ const handlers = {
       }
     });
     if (msg.patch && 'website' in msg.patch) enqueue([msg.id], true);
+    if (msg.patch && (msg.patch.addEmail || 'justOpened' in msg.patch)) queueEmailChecks([msg.id], true);
     return { lead };
   },
   /* Contacted memory. Reset: the business is new again and future searches can find it. */
@@ -750,7 +744,7 @@ const handlers = {
     if (lead) await forget(lead.id, LH.historyKeys(lead));
     return { lead };
   },
-  /** Exported to Google Contacts: saved on your phone, so treated as contacted from now on. */
+  /** Remember these as contacted, so future searches never bring them back. */
   'history:add': async (msg) => {
     const got = await store.get((msg.ids || []).map(leadKey));
     for (const l of Object.values(got)) remember(l, msg.via || 'export');
@@ -799,15 +793,6 @@ const handlers = {
     if (updated && updated.websiteSource === 'google' && (!lead.website || lead.website !== updated.website)) enqueue([msg.id], true);
     return { places };
   },
-  'lead:psi': async (msg) => {
-    const settings = await getSettings();
-    const lead = await getLead(msg.id);
-    if (!lead || !lead.website) return { error: 'No website to test.' };
-    const psi = await pagespeed((lead.site && lead.site.finalUrl) || lead.website, settings.pagespeedKey).catch((e) => ({ error: String(e.message || e) }));
-    if (psi.error) return psi;
-    await updateLead(msg.id, (l) => l.site && l.site.state === 'ok' && applyPsi(l.site, psi));
-    return { psi };
-  },
   'leads:import': async (msg) => {
     let n = 0;
     await locked(async () => {
@@ -824,19 +809,27 @@ const handlers = {
   /** Saved by Export for cold email: they stay out of the next file unless Include already exported is ticked. */
   'cold:exported': async (msg) => {
     const t = now();
-    for (const id of msg.ids || []) await updateLead(id, (l) => (l.coldEmailExportedAt = t));
+    for (const id of msg.ids || []) {
+      const l = await updateLead(id, (x) => (x.coldEmailExportedAt = t));
+      if (l) remember(l, 'cold-email', t); // a later search never brings them back, even after the lead is deleted
+    }
+    await flushHistory();
     return { ok: true };
   },
   stats: async () => {
     const leads = await allLeads();
     const settings = await getSettings();
-    const { hunt, enrichQueue = [] } = await store.get(['hunt', 'enrichQueue']);
+    const { hunt, finder, enrichQueue = [], emailCheckQueue = [], mailboxQueue = [] } = await store.get(['hunt', 'finder', 'enrichQueue', 'emailCheckQueue', 'mailboxQueue']);
+    const open = leads.filter((l) => LH.coldEmailOpen(l) && !l.coldEmailExportedAt);
+    const fits = open.filter((l) => LH.fit(l, settings).fit);
     return {
       total: leads.length,
-      hot: leads.filter((l) => l.status === 'new' && LH.heatClass(LH.heatScore(l, settings).score, settings) === 'hot').length,
-      withPhone: leads.filter((l) => l.phones.length).length,
+      fits: fits.length,
+      ready: fits.filter((l) => LH.sendableEmail(l, settings).email).length, // would go into the cold email file now
       queued: enrichQueue.length,
+      checking: emailCheckQueue.length + mailboxQueue.length,
       hunt,
+      finder,
     };
   },
 };
@@ -874,12 +867,15 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   if (reason === 'install') openDashboard('#welcome');
   await store.remove(['phoneQueueIds', 'queuePending', 'phoneQueueSyncedAt']); // the phone queue is gone (1.12)
   await store.remove(['emailQueueIds', 'emailCancel', 'emailSyncedAt']); // so is the email sender (2.3)
+  await store.remove(['adCheckQueue', 'adCheckPaused', 'adCheckTabId']); // and the Meta ads check (3.0)
   await seedMemory();
 });
 chrome.runtime.onStartup.addListener(() => pump());
 pump();
 
-// Meta-ads prospecting (Google Maps / Instagram finder + Ad Library checks).
+// Businesses from Google Maps and Instagram.
 importScripts('finder.js');
+// Email checks: the domain of every address, the mailbox of the ones that matter.
+importScripts('checks.js');
 // Intent Radar: people asking for help on Reddit, Facebook groups and LinkedIn.
 importScripts('intent.js');

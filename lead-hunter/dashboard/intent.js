@@ -1,6 +1,6 @@
 /* Lead Hunter dashboard: the Intent tab (people asking for help on Reddit, Facebook groups and LinkedIn), each post
    confirmed or ruled out by the AI check when a Gemini or Claude key is set.
-   Loaded after dashboard.js and prospects.js and shares their helpers ($, esc, S, send, toast, copy…).
+   Loaded after dashboard.js and shares its helpers ($, esc, S, send, toast, copy…).
    Posts live in IndexedDB (lib/intent-db.js); the background bumps intentState.rev when they change. */
 
 S.intent = { posts: [], f: { kind: '', source: '', status: 'new', notBuyers: false }, state: {} };
@@ -51,7 +51,7 @@ function intentCard(p) {
   const status = p.status || 'new';
   return `<article class="intent-card ${status}" data-intent-id="${esc(p.id)}">
     <header>
-      <span class="heat ${LH.heatClass(p.score || 0, { heatHot: 70, heatWarm: 50 })}" title="Intent score">${esc(p.score || 0)}</span>
+      <span class="heat ${(p.score || 0) >= 70 ? 'hot' : (p.score || 0) >= 50 ? 'warm' : 'cold'}" title="Intent score">${esc(p.score || 0)}</span>
       <span class="src">${esc(INTENT_SOURCES[p.source] || p.source)}${p.place ? ` · ${esc(p.place)}` : ''}</span>
       <span class="muted">${esc(ago(p.createdAt))}${p.author ? ` · ${esc(p.author)}` : ''}</span>
       ${kinds.map((k) => `<span class="tag ${k === 'hiring' ? 'amber' : 'green'}">${esc(LH.INTENT_LABELS[k] || k)}</span>`).join('')}
@@ -62,7 +62,7 @@ function intentCard(p) {
     ${p.ai ? `<p class="muted hits">${esc([p.ai.business_type, p.ai.location].filter((x) => x && x !== 'unknown').join(' · ') || 'Business and place not said')}${p.ai.service_needed && p.ai.service_needed !== 'none' ? ` · needs ${esc(p.ai.service_needed.replace(/_/g, ' '))}` : ''}</p>` : ''}
     ${p.hits && p.hits.length ? `<p class="muted hits">Matched: ${esc(p.hits.slice(0, 4).join(', '))}</p>` : ''}
     ${p.text && p.summary !== p.text ? `<details class="post-text"><summary>The post</summary><p>${esc(String(p.title && !p.job ? `${p.title}\n\n${p.text}` : p.text).slice(0, 1500))}</p></details>` : ''}
-    ${lead ? `<p class="muted">Linked to your lead <button class="linkish" data-act="intent-lead" data-id="${esc(lead.id)}">${esc(lead.pageName)}</button>, which gets the heat bonus</p>` : ''}
+    ${lead ? `<p class="muted">Linked to your lead <button class="linkish" data-act="intent-lead" data-id="${esc(lead.id)}">${esc(lead.pageName)}</button></p>` : ''}
     <div class="row">
       ${p.url ? `<a class="btn sm" href="${esc(safeHref(p.url))}" target="_blank" rel="noopener noreferrer">Open post</a>` : '<span class="muted">No link to this post</span>'}
       ${!p.verified && LH.aiProvider(S.settings) ? '<button class="btn sm" data-act="intent-ai">Check with AI</button>' : ''}
