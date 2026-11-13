@@ -36,3 +36,24 @@ test('a website Google Maps lists that is really an Instagram profile is not a w
   assert.deepEqual(LH.prospectKeys({ maps: { placeId: 'x' }, website: 'https://www.instagram.com/glossyppf/' }), ['m:x']);
 });
 
+
+test('Google results: Instagram profiles with the email in their bio, business websites, never directories or lists', () => {
+  const r = [
+    { url: 'https://www.instagram.com/bloombeautydxb/', title: 'Bloom Beauty Lounge (@bloombeautydxb) • Instagram photos and videos', text: 'Ladies salon in JLT. Bookings bloom.beauty.dxb@gmail.com or 050 111 2201' },
+    { url: 'https://www.instagram.com/p/C1x2y3/', title: 'A post', text: 'someone@gmail.com' },
+    { url: 'https://glowsalon.ae/contact', title: 'Glow Salon | Hair and nails in JLT', text: 'Email info@glowsalon.ae, or partner@other.com' },
+    { url: 'https://www.timeoutdubai.com/x', title: 'Glow Salon review', text: '' },
+    { url: 'https://example.ae/', title: 'Top 10 salons in JLT', text: '' },
+    { url: 'https://www.yellowpages-uae.com/x', title: 'Salons in JLT', text: '' },
+  ];
+  const items = LH.googleItems(r, 'web');
+  assert.deepEqual(items.map((x) => x.name), ['Bloom Beauty Lounge', 'Glow Salon']);
+  assert.deepEqual([items[0].instagram.username, items[0].emails, items[0].phones], ['bloombeautydxb', ['bloom.beauty.dxb@gmail.com'], ['+971501112201']]);
+  assert.deepEqual([items[1].website, items[1].emails], ['https://glowsalon.ae/', ['info@glowsalon.ae']], 'only an email at their own domain');
+  assert.deepEqual(LH.googleItems(r, 'ig').map((x) => x.name), ['Bloom Beauty Lounge'], 'an Instagram search keeps only profiles');
+  assert.equal(LH.prospectKeys(items[1]).join(), 'd:glowsalon.ae');
+  // Finding a business's own Instagram: the name has to match, or the handle has to spell it.
+  assert.equal(LH.pickInstagram(r, 'Bloom Beauty Lounge').handle, 'bloombeautydxb');
+  assert.equal(LH.pickInstagram([{ url: 'https://www.instagram.com/velvethair.dxb/', title: 'VH (@velvethair.dxb) • Instagram', text: '' }], 'Velvet Hair').handle, 'velvethair.dxb');
+  assert.equal(LH.pickInstagram(r, 'Rose Petal Spa'), null, 'another business is not theirs');
+});

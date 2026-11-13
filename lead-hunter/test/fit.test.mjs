@@ -90,36 +90,46 @@ test('proof they just opened: strong signs count for 120 days, your tick wins, a
 });
 
 /* ----------------------------------------------------------------------- fit */
-test('fit: just opened without a working website, or a website that is down or parked', () => {
-  const fit = (l) => {
-    const f = LH.fit(l, S, NOW);
+test('fit: no website, or a website that is down, parked or weak; a good website does not fit', () => {
+  const fit = (l, settings = S) => {
+    const f = LH.fit(l, settings, NOW);
     return [f.fit, f.kind, f.site];
   };
   const site = (state) => ({ website: 'https://glossy.example/', site: state });
+  const WEAK = { state: 'ok', score: 45, issues: [{ id: 'https', sev: 'high', label: 'No HTTPS ("Not secure" warning)' }, { id: 'viewport', sev: 'high', label: 'Not mobile-friendly' }] };
   assert.deepEqual(fit(fresh()), [true, 'new', 'none']);
-  assert.deepEqual(fit(lead()), [false, null, 'none'], 'never had a website, no proof they are new');
+  assert.deepEqual(fit(lead()), [true, 'none', 'none'], 'no website at all');
   assert.deepEqual(fit(lead(site({ state: 'error' }))), [true, 'down', 'down']);
   assert.deepEqual(fit(lead(site({ state: 'ok', parked: true }))), [true, 'parked', 'parked']);
   assert.deepEqual(fit(fresh(site({ state: 'ok', parked: true }))), [true, 'new', 'parked']);
-  assert.deepEqual(fit(lead(site(WORKING))), [false, null, 'working']);
-  assert.deepEqual(fit(fresh(site(WORKING))), [false, null, 'working'], 'new, but they already have a website');
-  assert.deepEqual(fit(lead(site({ ...WORKING, https: false, mobile: false, score: 20 }))), [false, null, 'working'], 'an ugly website is still a website');
+  assert.deepEqual(fit(lead(site(WEAK))), [true, 'weak', 'weak']);
+  assert.equal(LH.fit(lead(site(WEAK)), S, NOW).why, 'Weak website: No HTTPS, Not mobile-friendly');
+  assert.deepEqual(fit(lead(site({ ...WORKING, score: 70 }))), [true, 'weak', 'weak'], 'scores under 80');
+  assert.deepEqual(fit(lead(site({ ...WORKING, issues: [{ id: 'https', sev: 'high', label: 'No HTTPS' }] }))), [true, 'weak', 'weak'], 'not secure, whatever its score');
+  assert.deepEqual(fit(lead(site(WORKING))), [false, null, 'good']);
+  assert.deepEqual(fit(fresh(site(WORKING))), [false, null, 'good'], 'new, but they already have a good website');
+  assert.deepEqual(fit(lead(site({ ...WORKING, score: 70 })), { ...S, goodSiteScore: 60 }), [false, null, 'good'], 'the bar is in Settings');
   assert.deepEqual(fit(lead(site({ state: 'blocked' }))), [false, null, 'blocked']);
   assert.equal(LH.fit(lead(site({ state: 'queued' })), S, NOW).pending, true);
+  // Strict: only new businesses, or dead websites.
+  const strict = { ...S, strictFit: true };
+  assert.deepEqual(fit(lead(), strict), [false, null, 'none']);
+  assert.deepEqual(fit(lead(site(WEAK)), strict), [false, null, 'weak']);
+  assert.deepEqual(fit(fresh(site(WEAK)), strict), [true, 'new', 'weak']);
+  assert.deepEqual(fit(lead(site({ state: 'error' })), strict), [true, 'down', 'down']);
   // Instagram, a link page or Maps as the "website" is no website.
   for (const w of ['https://www.instagram.com/glossy/', 'https://linktr.ee/glossy', 'https://www.facebook.com/glossy', 'https://wa.me/971501234567']) assert.equal(LH.siteState(lead({ website: w })), 'none', w);
   assert.equal(LH.fit(fresh(), S, NOW).why, 'Just opened, and they have no website');
-  assert.equal(LH.fit(lead(), S, NOW).why, 'No website, but no proof they just opened');
+  assert.equal(LH.fit(lead(), S, NOW).why, 'No website');
 });
 
-test('fit score: fits with a confirmed email is hot, fits without one is warm, the rest sink', () => {
+test('fit score: new and dead websites first, an email makes it hot, a good website sinks', () => {
   const score = (l, settings = S) => LH.fitScore(l, settings, NOW).score;
   const confirmed = fresh({ emailCheck: { 'hi@glossy.example': { s: 'ok' } } });
   assert.equal(LH.fitClass(score(confirmed)), 'hot');
   assert.equal(LH.fitClass(score(fresh())), 'hot', 'no check key: a domain that receives email is enough');
-  assert.equal(LH.fitClass(score(fresh({ emails: [] }))), 'warm');
-  assert.ok(score(confirmed) > score(fresh()) && score(fresh()) > score(fresh({ emails: [] })));
-  assert.equal(LH.fitClass(score(lead())), 'cold', 'no proof');
+  assert.equal(LH.fitClass(score(lead())), 'warm', 'no website, with an email');
+  assert.ok(score(confirmed) > score(fresh()) && score(fresh()) > score(lead()) && score(lead()) > score(lead({ emails: [] })));
   assert.equal(LH.fitClass(score(lead({ website: 'https://x.example/', site: WORKING, emailCheck: { 'hi@glossy.example': { s: 'ok' } } }))), 'cold');
   assert.deepEqual(LH.fitScore(confirmed, S, NOW).parts.map((p) => p.label), ['Just opened', 'No website', 'Email confirmed', 'Has a WhatsApp number']);
 });
@@ -131,7 +141,8 @@ test('tags say why at a glance', () => {
   assert.deepEqual(tags(lead({ website: 'https://x.example/', site: { state: 'ok', parked: true }, emails: [] })), ['Parked', 'No email']);
   assert.deepEqual(tags(lead({ website: 'https://x.example/', site: { state: 'error' }, emailCheck: { 'hi@glossy.example': { s: 'bad' } } })), ['Site down', 'Email failed']);
   assert.deepEqual(tags(lead({ openSignals: [{ kind: 'soon', text: 'Opening soon', at: NOW }] })).slice(0, 1), ['Opening soon']);
-  assert.deepEqual(tags(lead({ website: 'https://x.example/', site: WORKING })).slice(0, 1), ['Working website']);
+  assert.deepEqual(tags(lead({ website: 'https://x.example/', site: WORKING })).slice(0, 1), ['Good website']);
+  assert.deepEqual(tags(lead({ website: 'https://x.example/', site: { ...WORKING, score: 50 } })).slice(0, 1), ['Weak website']);
 });
 
 /* -------------------------------------------------------------- the cold email file */
@@ -149,14 +160,15 @@ test('columns: exactly these, in this order, and the file name', () => {
   assert.match(csv[1], /^Glossy PPF,,hi@glossy\.example,,glossyppf,\+971559998877,Car,"Al Quoz, Dubai",Google Maps,new business,New$/);
 });
 
-test('who goes in: new without a working website, and down or parked sites; who stays out, and why', () => {
+test('who goes in: no website, or one that is down, parked or weak, with an email; who stays out, and why', () => {
   const down = lead({ website: 'https://old.example/', site: { state: 'error' } });
   const parked = lead({ website: 'https://soon.example/', site: { state: 'ok', parked: true } });
   const r = exp([
     fresh(),
     down,
     parked,
-    lead(), // no website, no proof
+    lead(), // no website, not new
+    lead({ website: 'https://weak.example/', site: { ...WORKING, score: 40 } }),
     lead({ website: 'https://good.example/', site: WORKING }),
     fresh({ website: 'https://good.example/', site: WORKING }),
     lead({ website: 'https://x.example/', site: { state: 'queued' } }),
@@ -166,9 +178,10 @@ test('who goes in: new without a working website, and down or parked sites; who 
     fresh({ emailQueue: { state: 'done', sent: 3 } }),
     fresh({ coldEmailExportedAt: NOW - DAY }),
   ]);
-  assert.equal(r.rows.length, 3);
-  assert.deepEqual(r.rows.map((row) => [col(row, 'website'), col(row, 'notes')]), [['', 'new business'], ['https://old.example/', ''], ['https://soon.example/', '']]);
-  assert.deepEqual(r.skipped, { closed: 6, emailedBefore: 1, exported: 1, working: 2, noProof: 1, siteUnknown: 2, noEmail: 0, badEmail: 0, waiting: 0, risky: 0 });
+  assert.equal(r.rows.length, 5);
+  assert.deepEqual(r.rows.map((row) => [col(row, 'website'), col(row, 'notes')]), [['', 'new business'], ['https://old.example/', ''], ['https://soon.example/', ''], ['', ''], ['https://weak.example/', '']]);
+  assert.deepEqual(r.skipped, { closed: 6, emailedBefore: 1, exported: 1, goodSite: 2, noProof: 0, siteUnknown: 2, noEmail: 0, badEmail: 0, waiting: 0, risky: 0 });
+  assert.equal(exp([lead()], {}, { ...S, strictFit: true }).skipped.noProof, 1, 'strict: not new, no dead website');
   // Include already exported puts them back. A queue entry that never sent anything is not "emailed".
   assert.equal(exp([fresh({ coldEmailExportedAt: NOW - DAY })], { includeExported: true }).rows.length, 1);
   assert.equal(exp([fresh({ emailQueue: { state: 'queued', sent: 0 } })]).rows.length, 1);
@@ -224,8 +237,8 @@ test('who gets their Facebook page read: no email, a page, and they fit', () => 
   assert.equal(wants(lead({ ...page, ...none, ...tagged })), true);
   assert.equal(wants(lead({ ...page, ...tagged })), false, 'already has an email');
   assert.equal(wants(lead({ ...none, ...tagged })), false, 'no page to read');
-  assert.equal(wants(lead({ ...page, ...none })), false, 'no proof they are new: not a cold email lead');
-  assert.equal(wants(lead({ ...page, ...none, website: 'https://good.example/', site: WORKING })), false, 'a working website');
+  assert.equal(wants(lead({ ...page, ...none })), true, 'no website, not new: still a lead');
+  assert.equal(wants(lead({ ...page, ...none, website: 'https://good.example/', site: WORKING })), false, 'a good website');
   assert.equal(wants(lead({ ...page, ...none, website: 'https://x.example/', site: { state: 'error' } })), true, 'site down');
   assert.equal(wants(lead({ ...page, ...none, ...tagged, status: 'won' })), false, 'closed');
   assert.equal(wants(lead({ ...page, ...none, ...tagged, fbEmail: { state: 'none', at: NOW_REAL } })), false, 'read once already');

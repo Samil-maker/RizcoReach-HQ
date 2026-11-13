@@ -5,8 +5,8 @@ import { makeAd, searchResponse } from './fixtures.mjs';
 
 export const VERIFY_KEY = 'qev-test-key';
 export const IG = { token: 'ig-test-token', account: '17841400000000001' };
-export const calls = { dns: [], verify: [], sandbox: [], ig: [], maps: [], fbPages: [] };
-export const world = { mapsWall: false, adWall: false, verifyOut: false };
+export const calls = { dns: [], verify: [], sandbox: [], ig: [], maps: [], fbPages: [], google: [] };
+export const world = { mapsWall: false, adWall: false, verifyOut: false, googleWall: false };
 
 /* ------------------------------------------------------------ Google Maps */
 // label: Google's own line on a new listing. hours: opening hours, which must never be read as that label.
@@ -76,6 +76,29 @@ function mapsXhr(query) {
   return JSON.stringify({ c: 0, d: ")]}'\n" + JSON.stringify(data) }) + '/*""*/';
 }
 
+
+/* ------------------------------------------------------------ Google search */
+const gResult = (url, title, text) => `<div class="MjjYud"><div class="g"><a href="${url}"><h3>${title}</h3></a><div class="VwiC3b">${text}</div></div></div>`;
+function googlePage(q, start) {
+  let list = [];
+  if (q === 'ladies salon JLT, Dubai')
+    list = [
+      gResult('https://www.yellowpages-uae.com/salons', 'Ladies Salons in JLT - Yellow Pages UAE', 'Find the best ladies salons'),
+      gResult('https://glowsalon.example/contact', 'Glow Salon | Hair and Nails in JLT', 'Book on 04 555 7788 or email info@glowsalon.example. Open daily.'),
+      gResult('https://www.timeoutdubai.com/best-salons', 'The 10 best salons in Dubai', 'Our pick'),
+      gResult('https://velvethair.example/', 'Velvet Hair Studio', 'Coming soon'),
+    ];
+  else if (q.startsWith('site:instagram.com "ladies salon" "Dubai"') && !start)
+    list = [
+      gResult('https://www.instagram.com/nailsbyrana/', 'Nails by Rana (@nailsbyrana) • Instagram photos and videos', '1,204 Followers, 300 Following, 88 Posts - Home nail salon in Al Barsha 💅 Book: ranas.nails@gmail.com · WhatsApp 052 333 9911'),
+      gResult('https://www.instagram.com/p/C9xyz/', 'Instagram post', 'random@gmail.com'),
+    ];
+  else if (q === 'site:instagram.com "Old Town Salon" Dubai')
+    list = [gResult('https://www.instagram.com/oldtownsalon.dxb/', 'Old Town Salon (@oldtownsalon.dxb) • Instagram photos and videos', '880 Followers - Since 2009 in JLT. oldtownsalon@gmail.com')];
+  const body = list.length ? list.join('') : '<p>Your search did not match any documents.</p>';
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${q} - Google Search</title></head><body><div id="main"><div id="search"><div id="rso">${body}</div></div></div></body></html>`;
+}
+
 /* ---------------------------------------------------------------- websites */
 const REAL = (name, email) => `<!doctype html><html lang="en"><head><title>${name} | Dubai</title><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="description" content="${name} in Dubai. Book today and get a quote on WhatsApp in minutes."></head>
@@ -94,6 +117,8 @@ const SITES = {
     `<!doctype html><html><head><title>Gloss Garage</title></head><body><h1>This domain is parked free</h1>
      <p>Call 0501112208owner@glossgarage.example or write to <a href="mailto:%20bookings@glossgarage.example">bookings</a>, sales@glossgarage.con, gloss.garage.dxb@gmial.com, you@yourdomain.com</p></body></html>`,
   ],
+  // A weak website: no viewport for phones, an old footer, little else.
+  'glowsalon.example': () => [200, '<html><head><title>Glow Salon</title></head><body><h1>Glow Salon</h1><p>Hair and nails in JLT. Email info@glowsalon.example</p><footer>© 2017 Glow Salon</footer></body></html>'],
   // The domain behind an email address found on Instagram: a real, working website nobody had listed.
   'newcafedxb.example': () => [200, REAL('New Cafe DXB', 'hello@newcafedxb.example')],
 };
@@ -118,6 +143,9 @@ const VERIFY = {
   'hello@velvethair.example': { result: 'valid', reason: 'accepted_email', disposable: 'false', accept_all: 'true', safe_to_send: 'false' },
   'hennahouse.dxb@gmail.com': { result: 'invalid', reason: 'rejected_email', disposable: 'false', accept_all: 'false', safe_to_send: 'false' },
   'gloss.garage.dxb@gmail.com': { result: 'valid', reason: 'accepted_email', disposable: 'false', accept_all: 'false', safe_to_send: 'true' },
+  'ranas.nails@gmail.com': { result: 'valid', reason: 'accepted_email', disposable: 'false', accept_all: 'false', safe_to_send: 'true' },
+  'oldtownsalon@gmail.com': { result: 'valid', reason: 'accepted_email', disposable: 'false', accept_all: 'false', safe_to_send: 'true' },
+  'info@glowsalon.example': { result: 'valid', reason: 'accepted_email', disposable: 'false', accept_all: 'false', safe_to_send: 'true' },
   'hello@freshbites.example': { result: 'unknown', reason: 'timeout', disposable: 'false', accept_all: 'false', safe_to_send: 'false' },
 };
 
@@ -195,6 +223,12 @@ export function worldHandler(req, res, url, host) {
       return html(200, mapsPage(query));
     }
     if (url.pathname === '/search' && url.searchParams.get('lhq')) return send(200, 'application/json; charset=utf-8', mapsXhr(url.searchParams.get('lhq')));
+    if (url.pathname === '/search' && url.searchParams.get('q')) {
+      const q = url.searchParams.get('q');
+      calls.google.push(`${q}${url.searchParams.get('start') ? ` #${url.searchParams.get('start')}` : ''}`);
+      if (world.googleWall) return html(200, '<!doctype html><html><body><form id="captcha-form"><p>Our systems have detected unusual traffic from your computer network.</p></form></body></html>');
+      return html(200, googlePage(q, Number(url.searchParams.get('start')) || 0));
+    }
   }
   if (host === 'dns.google' && url.pathname === '/resolve') {
     const name = String(url.searchParams.get('name') || '').toLowerCase();

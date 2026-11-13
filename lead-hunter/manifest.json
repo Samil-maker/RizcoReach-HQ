@@ -2,8 +2,8 @@
   "manifest_version": 3,
   "name": "RizcoReach Lead Hunter",
   "short_name": "Lead Hunter",
-  "version": "3.0.0",
-  "description": "Finds UAE businesses that just opened or whose website is down or parked, checks their email addresses, and exports them for cold email.",
+  "version": "3.1.0",
+  "description": "Finds UAE businesses with no website or a weak one, with their email, phone and Instagram, for cold email and WhatsApp.",
   "minimum_chrome_version": "111",
   "icons": {
     "16": "icons/icon-16.png",
@@ -100,6 +100,16 @@
       ],
       "js": [
         "content/social-scan.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.google.com/search*",
+        "https://www.google.ae/search*"
+      ],
+      "js": [
+        "content/google.js"
       ],
       "run_at": "document_idle"
     }

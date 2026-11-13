@@ -669,6 +669,7 @@ async function enrichOne(id, opts = {}) {
   const done = await getLead(id);
   if (!done) return;
   igAuto([done], settings); // the website may have linked their Instagram
+  igFindAuto([done], settings); // it did not: look for it on Google
   fbEmailAuto([done], settings); // it fits and still has no email: their Facebook page next
   queueEmailChecks([id]); // the website's state is known now, so is whether a mailbox check is worth it
 }
@@ -831,6 +832,16 @@ const handlers = {
       await store.set(writes);
     });
     return { imported: n };
+  },
+  /** Saved to Google Contacts: remembered, and out of the next file unless Show exported is ticked. */
+  'contacts:exported': async (msg) => {
+    const t = now();
+    for (const id of msg.ids || []) {
+      const l = await updateLead(id, (x) => (x.contactsExportedAt = t));
+      if (l) remember(l, 'export', t);
+    }
+    await flushHistory();
+    return { ok: true };
   },
   /** Saved by Export for cold email: they stay out of the next file unless Include already exported is ticked. */
   'cold:exported': async (msg) => {

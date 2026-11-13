@@ -348,3 +348,12 @@ h3.sub { margin: 16px 0 6px; font-size: 14px; }
 .signals { list-style: none; margin: 0 0 4px; padding: 0; display: grid; gap: 5px; font-size: 13px; }
 .signals li { padding: 6px 10px; border-left: 2px solid var(--good); background: var(--panel-2); border-radius: 0 8px 8px 0; }
 .fit-sec select.inp { max-width: 280px; }
+
+/* 3.1 */
+.sections { display: flex; gap: 6px; padding: 16px 0 0; flex-wrap: wrap; }
+.sections button { all: unset; cursor: pointer; padding: 10px 16px; border-radius: 12px; border: 1px solid var(--line); color: var(--fg-2); font-weight: 600; display: inline-flex; gap: 8px; align-items: center; }
+.sections button[aria-selected='true'] { background: var(--fg); color: var(--bg, #000); border-color: var(--fg); }
+.sections button:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+.sections .count { font-size: 12px; padding: 1px 7px; border-radius: 999px; background: var(--panel-3); color: var(--fg); }
+.sections .count:empty { display: none; }
+.section-hint { margin: 8px 0 4px; }

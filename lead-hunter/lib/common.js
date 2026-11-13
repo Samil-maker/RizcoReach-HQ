@@ -692,6 +692,10 @@ Mussafah, Abu Dhabi`),
     areas: null, // the shared area list as text, null = LH.DEFAULT_AREAS
     hiddenPresets: null, // built in presets you removed
     newDays: 120, // proof that a business opened counts as "just opened" for this many days
+    strictFit: false, // true: only businesses that just opened, or whose website is down or parked
+    goodSiteScore: 80, // a website scoring this or more, secure and made for phones, is a good website (does not fit)
+    googleDailyCap: 120, // Google searches a day, all kinds together (Google shows a captcha when it sees too many)
+    googleIgAuto: true, // look up the Instagram of businesses that fit and have none, on Google
     // Email check: the domain is always looked up. With a QuickEmailVerification key the mailbox itself is too.
     verifyKey: '',
     verifyDailyCap: 100, // mailbox checks a day (their free plan gives 100)

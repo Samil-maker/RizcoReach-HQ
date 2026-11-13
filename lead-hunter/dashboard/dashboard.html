@@ -28,38 +28,34 @@
     <!-- LEADS -->
     <main class="view" data-view-panel="leads">
       <section class="welcome" data-welcome hidden>
-        <h1>Businesses that just opened, or whose website is down.</h1>
-        <p>Lead Hunter finds UAE businesses, keeps the ones that need a website now, checks that their email address is real, and hands the list to your cold email system.</p>
+        <h1>Businesses with no website, or a weak one.</h1>
+        <p>Lead Hunter finds UAE businesses on Google Maps and Google, works out whether their website is missing, dead or weak, and finds their email, phone and Instagram.</p>
         <ol>
-          <li><b>Find.</b> On the Find tab pick a kind of business (or All types) and press Find businesses. Google Maps opens in a tab and is read like you would read it.</li>
-          <li><b>Lead Hunter sorts them.</b> A business fits when Google, its own ad or its own Instagram post says it just opened and it has no working website, or when its website is down, parked or says coming soon.</li>
-          <li><b>Emails are checked.</b> Typos are fixed, broken addresses are dropped, and each address is checked before it can be exported.</li>
-          <li><b>Export for cold email.</b> Save the file in your RizcoReach Leads folder. Your cold email system does the rest.</li>
+          <li><b>Find.</b> On the Find tab pick a kind of business (or All types) and press Find businesses. Google Maps and Google open in background tabs and are read like you would read them.</li>
+          <li><b>Email leads</b> are the ones with an email that passed its checks: Export for cold email and save the file in your RizcoReach Leads folder.</li>
+          <li><b>WhatsApp &amp; Instagram leads</b> are the ones with a phone or an Instagram: export them to Google Contacts, then message them on WhatsApp, or open their Instagram from the list.</li>
         </ol>
         <div class="row">
           <button class="btn pri" data-goto="find">Find businesses</button>
-          <button class="btn" data-goto="settings" data-anchor="verify">Set up the email check</button>
         </div>
       </section>
 
+      <div class="sections" role="tablist" data-sections>
+        <button type="button" role="tab" data-section="email" aria-selected="true">Email leads <span class="count" data-sec-count="email"></span></button>
+        <button type="button" role="tab" data-section="contact" aria-selected="false">WhatsApp &amp; Instagram leads <span class="count" data-sec-count="contact"></span></button>
+      </div>
+      <p class="hint section-hint" data-section-hint></p>
+
       <div class="toolbar" data-toolbar>
         <input type="search" class="inp search" placeholder="Search name, area, website, email, phone…" data-f="q" aria-label="Search leads" />
-        <select class="inp" data-f="show" aria-label="Show">
-          <option value="fits">Fits</option>
-          <option value="ready">Fits, email ready to send</option>
-          <option value="needemail">Fits, no usable email yet</option>
-          <option value="new">Just opened</option>
-          <option value="site">Website down or parked</option>
-          <option value="checking">Still being checked</option>
-          <option value="nofit">Does not fit</option>
-          <option value="all">Everything found</option>
-        </select>
+        <select class="inp" data-f="show" aria-label="Show"></select>
         <select class="inp" data-f="status" aria-label="Status"></select>
         <select class="inp" data-f="niche" aria-label="Kind of business"></select>
         <select class="inp" data-f="source" aria-label="Found on">
           <option value="">Found anywhere</option>
           <option value="Google Maps">Google Maps</option>
           <option value="Instagram">Instagram</option>
+          <option value="Google">Google search</option>
           <option value="Ad Library">Meta Ad Library</option>
         </select>
         <select class="inp" data-f="sort" aria-label="Sort">
@@ -70,15 +66,19 @@
         <label class="chk"><input type="checkbox" data-f="exported" /> Show exported</label>
         <label class="chk"><input type="checkbox" data-f="contactedBefore" /> Show contacted before</label>
         <div class="spacer"></div>
-        <button class="btn pri" data-act="export-cold" title="Every business shown that fits and has an email address that passed its checks. Save the file in your RizcoReach Leads folder.">Export for cold email</button>
-        <label class="chk inline" title="Leads you exported for cold email before go in the file again"><input type="checkbox" data-cold-include /> Include already exported</label>
+        <button class="btn pri" data-only="email" data-act="export-cold" title="Every business shown that fits and has an email address that passed its checks. Save the file in your RizcoReach Leads folder.">Export for cold email</button>
+        <label class="chk inline" data-only="email" title="Leads you exported for cold email before go in the file again"><input type="checkbox" data-cold-include /> Include already exported</label>
+        <button class="btn pri" data-only="contact" data-act="export-contacts" title="Every business shown with a phone or an email, for contacts.google.com: then they show by name in WhatsApp. Their Instagram is in each contact.">Google Contacts</button>
+        <button class="btn ghost" data-only="contact" data-act="export-vcard" title="The same contacts as a vCard file, if Google Contacts will not take the CSV. A phone can open it too.">vCard</button>
         <button class="btn" data-act="export-csv" title="Everything shown, as a spreadsheet">CSV</button>
       </div>
 
       <div class="bulk" data-bulk hidden>
         <span data-bulk-count></span>
         <select class="inp" data-bulk-status aria-label="Set status for selected"></select>
-        <button class="btn pri" data-act="bulk-cold">Export for cold email</button>
+        <button class="btn pri" data-only="email" data-act="bulk-cold">Export for cold email</button>
+        <button class="btn pri" data-only="contact" data-act="bulk-contacts">Google Contacts</button>
+        <button class="btn" data-act="bulk-igfind">Find their Instagram</button>
         <button class="btn" data-act="bulk-recheck">Check websites again</button>
         <button class="btn" data-act="bulk-emails">Check emails now</button>
         <button class="btn" data-act="bulk-ig">Read their Instagram</button>
@@ -115,8 +115,8 @@
       <p class="sub">Three places to look. Everything found lands on the Leads tab, where only the ones that fit are shown.</p>
 
       <section class="card" data-finder>
-        <h2>Google Maps</h2>
-        <p class="hint">Google puts <b>Recently opened</b> on a new listing for about three months, and lists businesses that are <b>Opening soon</b>. Lead Hunter searches Maps in a tab, reads that label, then checks every listed website to see whether it is down or parked. Keep the tab open while it runs.</p>
+        <h2>Google Maps and Google</h2>
+        <p class="hint">Pick a kind of business and where to search. <b>Google Maps</b> gives the most businesses, with phone numbers, and Google's <b>Recently opened</b> label on new ones. <b>Google: business websites</b> finds businesses through their own website, where the email usually is. <b>Google: Instagram profiles</b> finds Instagram accounts whose bio shows an email. Each search runs in a background tab at a human pace; keep the tabs open while it runs.</p>
         <form class="form" data-finder-form>
           <div class="field">
             <span class="lbl">Kind of business <small>edit them in Settings</small></span>
@@ -127,6 +127,15 @@
             <span class="lbl">Search terms <small>one per line, each searched in every area</small></span>
             <textarea class="inp" name="keywords" rows="4"></textarea>
           </label>
+          <div class="field">
+            <span class="lbl">Search on</span>
+            <div class="row" style="margin-top:4px">
+              <label class="chk inline"><input type="checkbox" name="src" value="maps" checked /> Google Maps</label>
+              <label class="chk inline"><input type="checkbox" name="src" value="web" checked /> Google: business websites</label>
+              <label class="chk inline"><input type="checkbox" name="src" value="ig" checked /> Google: Instagram profiles with an email</label>
+            </div>
+            <p class="hint" data-google-left style="margin:4px 0 0"></p>
+          </div>
           <div class="grid3">
             <label class="field"><span class="lbl">Searches this run <small>one search term and area each</small></span><input class="inp" type="number" name="cap" min="1" max="1000" value="100" /></label>
             <div class="field"><span class="lbl">Areas</span><span class="hint" data-find-areas style="margin:0"></span></div>
@@ -207,8 +216,8 @@
       <h1 class="h">Settings</h1>
       <form class="card form" data-settings-form>
         <h2 id="verify">Email check</h2>
-        <p class="hint">A wrong address bounces, and bounces hurt the inbox you send from. Every address Lead Hunter finds is cleaned first (typos like gmial.com or .con are fixed, broken and placeholder addresses are dropped), then its domain is checked: does it exist and receive email? That part is free and always on.</p>
-        <p class="hint">For the last step, whether <b>that exact mailbox</b> exists, Lead Hunter asks QuickEmailVerification with your own key. Their free plan gives 100 checks a day with no card: sign up at quickemailverification.com, open API settings, create an API key and paste it here. Checks are only spent on businesses that fit, best address first. With a key in place, only confirmed mailboxes go into the cold email file.</p>
+        <p class="hint">Every address Lead Hunter finds is cleaned (typos like gmial.com or .con are fixed; broken, glued and placeholder addresses like @info@… are dropped), then its domain is checked: does it exist and receive email? That is free and always on, and nothing that fails it is ever exported.</p>
+        <p class="hint"><b>Optional:</b> a QuickEmailVerification key also checks that the exact mailbox exists (100 free a day). Without one, everything else still works.</p>
         <div class="grid2">
           <label class="field"><span class="lbl">QuickEmailVerification API key <small>kept in this browser only</small></span><input class="inp" name="verifyKey" type="password" autocomplete="off" /></label>
           <label class="field"><span class="lbl">Mailbox checks a day <small>their free plan gives 100</small></span><input class="inp" name="verifyDailyCap" type="number" min="0" max="100000" /></label>
@@ -220,10 +229,12 @@
         <div class="row" style="margin-top:0"><button type="button" class="btn" data-act="bounces-add">Remember as bounced</button><span class="hint" data-bounces-out></span></div>
 
         <h2 id="fit">Who fits</h2>
-        <p class="hint">A business fits when there is proof it just opened (or is about to) and it has no working website, or when its website is down, parked or says coming soon. A business that never had a website, with no proof it is new, does not fit. Neither does one with a working website. Proof is Google's own label, the business's own ad, its own Instagram post, a brand new Instagram account, or your own tick in the lead's panel.</p>
+        <p class="hint">A business fits when it has no website, or its website is down, parked ("coming soon") or weak: not secure, not made for phones, or scoring under the bar below. A business with a good website does not fit. Businesses with proof they just opened (Google's own label, their own ad or Instagram post, a brand new Instagram, or your own say) come first, and the cold email file says "new business".</p>
         <div class="grid2">
+          <label class="field"><span class="lbl">A good website scores at least <small>out of 100, and is secure and made for phones</small></span><input class="inp" name="goodSiteScore" type="number" min="30" max="100" /></label>
           <label class="field"><span class="lbl">Counts as just opened for <small>days after the opening</small></span><input class="inp" name="newDays" type="number" min="14" max="365" /></label>
         </div>
+        <label class="chk"><input type="checkbox" name="strictFit" /> Strict: only businesses that just opened, or whose website is down or parked <small class="muted">(far fewer leads)</small></label>
 
         <h2 id="areas">Areas</h2>
         <p class="hint">Every kind of business is searched in these areas, top to bottom, unless it has its own list. One per line, the way you would type it into Google Maps.</p>
@@ -242,6 +253,10 @@
 
         <h2 id="checks">Checking businesses</h2>
         <label class="chk"><input type="checkbox" name="autoEnrich" /> Check every new lead's website automatically <small class="muted">(is it down, parked or working, and is there an email on it)</small></label>
+        <label class="chk"><input type="checkbox" name="googleIgAuto" /> Find the Instagram of businesses that fit and have none, on Google <small class="muted">(one Google search each, in the Google tab)</small></label>
+        <div class="grid2">
+          <label class="field"><span class="lbl">Google searches a day <small>all of them together. Too many in a day and Google shows a captcha</small></span><input class="inp" name="googleDailyCap" type="number" min="0" max="1000" /></label>
+        </div>
         <label class="chk"><input type="checkbox" name="fbEmailAuto" /> Look for an email on their Facebook page <small class="muted">(only for businesses that fit and have no email yet: the page opens in a background tab, one every few seconds)</small></label>
         <div class="grid2">
           <label class="field">

@@ -1,8 +1,9 @@
-/* Lead Hunter: businesses from Google Maps and Instagram (loaded by background.js, shares its scope).
-   1. FIND businesses on Google Maps: preset keywords x areas, read from the results list in a Maps tab. The list
-      shows Google's own "Recently opened" / "Opening soon" label, which is the best proof a business is new.
-   2. Their website is checked (down, parked, working), their Instagram is read through Meta's official API
-      (bio email, recent posts, how new the account is), and their Facebook page Intro is read for an email.
+/* Lead Hunter: businesses from Google Maps, Google search and Instagram (loaded by background.js, shares its scope).
+   1. FIND businesses: preset keywords x areas, searched on Google Maps (the results list shows Google's own
+      "Recently opened" label) and on Google (business websites, and Instagram profiles whose bio shows an email).
+   2. Their website is checked (down, parked, weak, good), their Instagram is found on Google when nobody listed it,
+      then read through Meta's official API (bio email, recent posts, how new the account is), and their Facebook
+      page Intro is read for an email.
    Businesses are stored like leads (`lead:p:…`, kind: 'prospect') so the dashboard and the exports work on them. */
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -48,6 +49,7 @@ function mergeProspect(lead, item, ctx) {
       lead.sources.maps = { ...cur, ...fill, otherListings: [...new Set([...(cur.otherListings || []), item.maps.placeId])].slice(0, 5) };
     }
   }
+  if (item.google && !(lead.sources.google || {}).url) lead.sources.google = item.google;
   if (item.instagram) {
     lead.sources.instagram = { ...(lead.sources.instagram || {}), ...item.instagram };
     lead.socials.instagram = `https://www.instagram.com/${item.instagram.username}/`;
@@ -111,8 +113,8 @@ async function ingestProspects(items, ctx = {}) {
         contacted++;
         continue;
       }
-      if (isNew && preset) {
-        const reviews = (item.maps && item.maps.reviews) || 0;
+      if (isNew && preset && item.maps) {
+        const reviews = item.maps.reviews || 0;
         // A listing Google marks as new has few reviews by nature: the lower limit never drops it.
         const isNewListing = !!(item.maps && item.maps.open);
         const why = reviews < preset.minReviews && !isNewListing ? 'fewReviews' : reviews > preset.maxReviews ? 'manyReviews' : LH.excludeHit(preset, item.name, item.category) ? 'excluded' : '';
@@ -122,7 +124,7 @@ async function ingestProspects(items, ctx = {}) {
         }
       }
       if (isNew) {
-        id = item.maps && item.maps.placeId ? `p:m:${item.maps.placeId}` : `p:i:${item.instagram.username.toLowerCase()}`;
+        id = item.maps && item.maps.placeId ? `p:m:${item.maps.placeId}` : item.instagram ? `p:i:${item.instagram.username.toLowerCase()}` : `p:w:${LH.rootDomain(item.website)}`;
         lead = touched.get(id) || (await getLead(id)) || newProspect(id);
       }
       mergeProspect(lead, item, ctx);
@@ -151,6 +153,7 @@ async function ingestProspects(items, ctx = {}) {
     return { added: counted.length, ids: counted, websites, contacted, leads: counted.map((id) => touched.get(id)) };
   });
   igAuto(result.leads, settings);
+  igFindAuto(result.leads.filter((l) => !LH.ownWebsite(l)), settings); // with a website: after its check, which may find it
   queueEmailChecks(result.ids);
   // No website: nothing else will find an email, so their Facebook page is next. With a website, after its check.
   fbEmailAuto(result.leads.filter((l) => !LH.ownWebsite(l)), settings);
@@ -191,7 +194,7 @@ async function logProblem(source, text) {
     await store.set({ problems });
   });
 }
-const SOURCE_NAMES = { adlib: 'Meta Ad Library', maps: 'Google Maps', instagram: 'Instagram API', fbpage: 'Facebook pages', verify: 'Email check' };
+const SOURCE_NAMES = { adlib: 'Meta Ad Library', google: 'Google search', maps: 'Google Maps', instagram: 'Instagram API', fbpage: 'Facebook pages', verify: 'Email check' };
 async function alertSource(source, text, url, hint = 'Open the tab, sort it out, then press Resume in Lead Hunter.') {
   await logProblem(source, text);
   await locked(async () => {
@@ -452,28 +455,58 @@ async function markSearchDone(preset, q) {
   if (!preset) return;
   await locked(async () => {
     const { searchDone = {} } = await store.get('searchDone');
-    searchDone[preset] = { ...(searchDone[preset] || {}), [comboKey(q.keyword, q.area)]: now() };
+    searchDone[preset] = { ...(searchDone[preset] || {}), [doneKey(q)]: now() };
     await store.set({ searchDone });
   });
 }
+/* Where a run searches. maps: Google Maps. web: Google, for business websites. ig: Google, for Instagram profiles
+   whose bio shows an email (one search per search term and city, two result pages). */
+const SOURCES = ['maps', 'web', 'ig'];
+const doneKey = (x) => (x.src === 'maps' ? comboKey(x.keyword, x.area) : comboKey(`${x.src}:${x.keyword}`, x.area));
+const IG_MAIL = '("@gmail.com" OR "@hotmail.com" OR "@outlook.com" OR "@yahoo.com" OR "email")';
+/** The searches for these keyword and area pairs, in order, for the chosen sources. */
+function buildQueue(pairs, sources) {
+  const want = SOURCES.filter((x) => (sources || ['maps']).includes(x));
+  const out = [];
+  const ig = new Set();
+  for (const { keyword, area, niche } of pairs) {
+    if (want.includes('maps')) out.push({ src: 'maps', q: `${keyword} ${area}`, keyword, area, niche });
+    if (want.includes('web')) out.push({ src: 'web', q: `${keyword} ${area}`, keyword, area, niche });
+    if (want.includes('ig')) {
+      const city = LH.cityOf(area, 'Dubai');
+      for (const start of [0, 10]) {
+        const key = `${keyword}|${city}|${start}`;
+        if (ig.has(key)) continue;
+        ig.add(key);
+        out.push({ src: 'ig', q: `site:instagram.com "${keyword}" "${city}" ${IG_MAIL}`, start, keyword, area: `${city}#${start}`, city, niche });
+      }
+    }
+  }
+  return out;
+}
 /** What is left of a preset: its searches in order, minus the finished ones. */
-async function presetQueue(preset, keywords, areas) {
+async function presetQueue(preset, keywords, areas, sources) {
   const done = await searchesDone(preset.name);
-  const all = keywords.flatMap((keyword) => areas.map((area) => ({ q: `${keyword} ${area}`, keyword, area, niche: preset.name })));
-  return { all: all.length, left: all.filter((x) => !done[comboKey(x.keyword, x.area)]) };
+  const all = buildQueue(keywords.flatMap((keyword) => areas.map((area) => ({ keyword, area, niche: preset.name }))), sources);
+  return { all: all.length, left: all.filter((x) => !done[doneKey(x)]) };
 }
 /* "All types": area by area, the main keyword of every preset, then their second keyword. Each search is
    remembered under its own preset, so running that preset later carries on from here. */
 const ALL_TYPES = 'All types';
-async function mixQueue(presets, settings) {
+async function mixQueue(presets, settings, sources) {
   const { searchDone = {} } = await store.get('searchDone');
   const areas = LH.presetAreas(null, settings);
-  const all = [];
+  const pairs = [];
   for (let round = 0; round < 2; round++)
     for (const area of areas)
-      for (const p of presets) if (p.keywords[round]) all.push({ q: `${p.keywords[round]} ${area}`, keyword: p.keywords[round], area, niche: p.name });
-  return { all: all.length, left: all.filter((x) => !(searchDone[x.niche] || {})[comboKey(x.keyword, x.area)]) };
+      for (const p of presets) if (p.keywords[round]) pairs.push({ keyword: p.keywords[round], area, niche: p.name });
+  const all = buildQueue(pairs, sources);
+  return { all: all.length, left: all.filter((x) => !(searchDone[x.niche] || {})[doneKey(x)]) };
 }
+const sourcesOf = (cfg) => {
+  const list = (Array.isArray(cfg && cfg.sources) ? cfg.sources : ['maps']).filter((x) => SOURCES.includes(x));
+  return list.length ? list : ['maps'];
+};
 
 async function startFinder(cfg) {
   const settings = await getSettings();
@@ -481,11 +514,12 @@ async function startFinder(cfg) {
   const mix = cfg.niche === ALL_TYPES;
   const preset = presets.find((n) => n.name === cfg.niche) || presets[0];
   let queue;
-  if (mix) queue = await mixQueue(presets, settings);
+  const sources = sourcesOf(cfg);
+  if (mix) queue = await mixQueue(presets, settings, sources);
   else {
     const keywords = LH.parseKeywords(cfg.keywords && cfg.keywords.length ? cfg.keywords : preset.keywords);
     if (!keywords.length) throw new Error('Pick a preset or add keywords.');
-    queue = await presetQueue(preset, keywords, cfg.areas && cfg.areas.length ? LH.parseLines(cfg.areas).slice(0, 300) : LH.presetAreas(preset, settings));
+    queue = await presetQueue(preset, keywords, cfg.areas && cfg.areas.length ? LH.parseLines(cfg.areas).slice(0, 300) : LH.presetAreas(preset, settings), sources);
   }
   const { all, left } = queue;
   if (!all) throw new Error('No areas to search. Add some in Settings.');
@@ -495,6 +529,7 @@ async function startFinder(cfg) {
     id: `f${now().toString(36)}`,
     status: 'running',
     niche: mix ? ALL_TYPES : preset.name,
+    sources,
     city: LH.cityOf(left[0].area, settings.adsCity || 'Dubai'),
     country: 'AE',
     cap,
@@ -568,9 +603,19 @@ async function runMaps(fid) {
     const q = f.mapsQ[f.mapsI];
     if (!q) return patchFinder(fid, { mapsDone: true });
     const niche = q.niche || f.niche;
-    const ctx = { finderId: fid, niche, keyword: q.keyword, area: q.area, country: f.country };
+    const ctx = { finderId: fid, niche, keyword: q.keyword, area: q.src === 'ig' ? q.city : q.area, country: f.country };
     try {
-      const items = await mapsBrowserSearch(q.q);
+      let items;
+      if (q.src === 'web' || q.src === 'ig') {
+        const left = await googleLeft();
+        if (left <= 0) {
+          // Paused, not stopped: Resume tomorrow carries on from this search.
+          await patchFinder(fid, { status: 'paused', mapsNote: `Google's daily search limit (${(await getSettings()).googleDailyCap}) is reached. Press Resume tomorrow, or raise it in Settings` });
+          return;
+        }
+        const results = await googleSearch(q.q, q.start || 0);
+        items = LH.googleItems(results, q.src, f.country);
+      } else items = await mapsBrowserSearch(q.q);
       await ingestProspects(items, ctx);
       await markSearchDone(niche, q);
       await patchFinder(fid, (x) => ({ mapsI: x.mapsI + 1 }));
@@ -580,7 +625,7 @@ async function runMaps(fid) {
       if (e.blocked) {
         // Paused, not stopped: Resume carries on from this search once the page is sorted out.
         await patchFinder(fid, { status: 'paused', mapsNote: text });
-        await alertSource('maps', text);
+        await alertSource(e.google ? 'google' : 'maps', text, e.url || '', e.google ? 'Open the Google tab, sort it out (or wait an hour), then press Resume.' : undefined);
       } else if (e.skip) {
         // This one search failed: it is not marked done, so a later run tries it again. The run carries on.
         await logProblem('maps', `${q.q}: ${text}`);
@@ -627,6 +672,135 @@ async function mapsBrowserSearch(query) {
   if (res.timeout || res.error) throw Object.assign(new Error(res.error ? `Google Maps: ${res.error}` : 'The Google Maps tab did not answer'), { skip: true });
   return (res.items || []).map((x) => ({ ...x, source: 'maps' }));
 }
+
+/* ------------------------------------------------------------- Google search */
+/* Searches run in one Google tab, one at a time, 6 to 12 seconds apart, at most googleDailyCap a day (Settings).
+   Google shows a captcha to browsers that search too much: when it does, Google searches pause with an alert. */
+let pendingGoogle = null;
+let googleChain = Promise.resolve();
+const googleDay = () => new Date().toISOString().slice(0, 10);
+async function googleLeft() {
+  const settings = await getSettings();
+  const { googleUsage } = await store.get('googleUsage');
+  const used = googleUsage && googleUsage.day === googleDay() ? googleUsage.count : 0;
+  return Math.max(0, (Number(settings.googleDailyCap) || 0) - used);
+}
+async function googleTab() {
+  const { googleTabId } = await store.get('googleTabId');
+  if (googleTabId) {
+    try {
+      return (await chrome.tabs.get(googleTabId)).id;
+    } catch {}
+  }
+  const t = await chrome.tabs.create({ url: 'about:blank', active: false });
+  await store.set({ googleTabId: t.id });
+  return t.id;
+}
+let lastGoogleAt = 0;
+/** One Google search in the Google tab: [{ url, title, text }]. Throws { blocked, google } on a captcha. */
+function googleSearch(query, start = 0) {
+  const run = googleChain.then(async () => {
+    const { alerts = {} } = await store.get('alerts');
+    if (alerts.google) throw Object.assign(new Error('Google searches are paused'), { blocked: true, google: true });
+    const { googlePace } = await store.get('googlePace'); // tests only: [min, max] ms between searches
+    const wait = lastGoogleAt + jitter(...(Array.isArray(googlePace) ? googlePace : [6000, 12000])) - now();
+    if (wait > 0) await sleep(wait);
+    await locked(async () => {
+      const { googleUsage } = await store.get('googleUsage');
+      const day = googleDay();
+      await store.set({ googleUsage: { day, count: (googleUsage && googleUsage.day === day ? googleUsage.count : 0) + 1 } });
+    });
+    const url = `https://www.google.com/search?q=${encodeURIComponent(query)}&hl=en&gl=ae${start ? `&start=${start}` : ''}`;
+    let res;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const tabId = await googleTab();
+      res = await new Promise((resolve) => {
+        const timer = setTimeout(() => resolve({ timeout: true, results: [] }), 40000);
+        pendingGoogle = { tabId, resolve: (r) => (clearTimeout(timer), resolve(r)) };
+        chrome.tabs.update(tabId, { url: attempt ? `${url}&lh=1` : url }).catch(() => resolve({ timeout: true, results: [] }));
+      });
+      pendingGoogle = null;
+      if (!res.timeout) break;
+    }
+    lastGoogleAt = now();
+    if (res.blocked) throw Object.assign(new Error(res.blocked), { blocked: true, google: true, url });
+    if (res.timeout) throw Object.assign(new Error('The Google tab did not answer'), { skip: true });
+    return res.results || [];
+  });
+  googleChain = run.catch(() => {});
+  return run;
+}
+
+/* Instagram usernames found on Google: "Bloom Beauty Lounge" -> instagram.com/bloombeautydxb. Only a result whose
+   name matches the business (or whose handle spells it) is taken. One search per business, for the ones that fit
+   and have no Instagram yet, when Settings says so. */
+let igFindBusy = false;
+async function queueIgFind(ids, front = false) {
+  if (!ids.length) return;
+  await locked(async () => {
+    const { igFindQueue = [] } = await store.get('igFindQueue');
+    const rest = igFindQueue.filter((x) => !ids.includes(x));
+    await store.set({ igFindQueue: front ? [...ids, ...rest] : [...rest, ...ids] });
+  });
+  runIgFind();
+}
+const wantsIgFind = (l, settings) => !!l && !LH.igHandle(l) && !(l.igFind && l.igFind.at) && !!l.pageName && LH.coldEmailOpen(l) && LH.fit(l, settings).fit;
+function igFindAuto(leads, settings) {
+  if (!settings.googleIgAuto) return;
+  queueIgFind((leads || []).filter((l) => wantsIgFind(l, settings)).map((l) => l.id));
+}
+async function runIgFind() {
+  if (igFindBusy) return;
+  igFindBusy = true;
+  try {
+    for (;;) {
+      const { igFindQueue = [], alerts = {} } = await store.get(['igFindQueue', 'alerts']);
+      const id = igFindQueue[0];
+      if (!id || alerts.google || (await googleLeft()) <= 0) break;
+      const lead = await getLead(id);
+      if (lead && !LH.igHandle(lead) && lead.pageName) {
+        const city = LH.cityOf(lead.area || '', 'Dubai');
+        let results;
+        try {
+          results = await googleSearch(`site:instagram.com "${LH.shortName(lead.pageName)}" ${city}`);
+        } catch (e) {
+          if (e.blocked) {
+            if (!(await store.get('alerts')).alerts?.google) await alertSource('google', e.message, e.url || '', 'Open the Google tab, sort it out (or wait an hour), then press Resume.');
+            break;
+          }
+          results = null;
+          logProblem('google', `${lead.pageName}: ${e.message}`);
+        }
+        const hit = results ? LH.pickInstagram(results, lead.pageName) : null;
+        let found = [];
+        const after = await updateLead(id, (l) => {
+          l.igFind = { at: now(), state: hit ? 'found' : results ? 'none' : 'error' };
+          if (!hit) return;
+          l.socials = { ...(l.socials || {}), instagram: `https://www.instagram.com/${hit.handle}/` };
+          l.sources = { ...(l.sources || {}), instagram: { username: hit.handle, fullName: hit.title, bio: hit.text, from: 'google', ...((l.sources || {}).instagram || {}) } };
+          found = LH.emailsInText(hit.text, 3);
+          if (found.length) {
+            l.emails = [...new Set([...(l.emails || []), ...found])].slice(0, 5);
+            l.emailFrom = { ...Object.fromEntries(found.map((e) => [e, 'instagram'])), ...(l.emailFrom || {}) };
+          }
+          for (const n of LH.phonesInText(hit.text, 'AE').slice(0, 2)) addPhone(l, n, 'instagram');
+        });
+        if (hit && after) {
+          const settings = await getSettings();
+          igAuto([after], settings); // the official API reads their bio and posts
+          if (found.length) await afterEmails(id);
+        }
+      }
+      await locked(async () => {
+        const { igFindQueue: q = [] } = await store.get('igFindQueue');
+        await store.set({ igFindQueue: q.filter((x) => x !== id) });
+      });
+    }
+  } finally {
+    igFindBusy = false;
+  }
+}
+chrome.alarms.onAlarm.addListener((a) => a.name === 'tick' && runIgFind());
 
 /* ---------------------------------------------------------- Instagram */
 /* A profile saved with the "Add to Lead Hunter" button on instagram.com. The page is read only when Samil presses
@@ -677,21 +851,46 @@ Object.assign(handlers, {
     if (f && f.status === 'paused') {
       await patchFinder(f.id, { status: 'running', mapsNote: null });
       await clearAlert('maps');
+      await clearAlert('google');
       runFinder();
     }
     return { ok: true };
   },
+  'google:resume': async () => {
+    await clearAlert('google');
+    runIgFind();
+    const { finder: f } = await store.get('finder');
+    if (f && f.status === 'paused') await handlers['finder:resume']();
+    return { ok: true };
+  },
+  'google:hello': async (msg, sender) => ({ search: !!(pendingGoogle && sender.tab && sender.tab.id === pendingGoogle.tabId) }),
+  'google:results': async (msg, sender) => {
+    if (pendingGoogle && sender.tab && sender.tab.id === pendingGoogle.tabId) pendingGoogle.resolve(msg);
+    return { ok: true };
+  },
+  /** Find these leads' Instagram on Google now (the bulk action and the lead panel button). */
+  'igfind:check': async (msg) => {
+    const ids = [];
+    for (const id of msg.ids || []) {
+      const l = await getLead(id);
+      if (l && !LH.igHandle(l) && l.pageName) ids.push(id);
+    }
+    for (const id of ids) await updateLead(id, (l) => delete l.igFind);
+    await queueIgFind(ids, true);
+    return { queued: ids.length, left: await googleLeft() };
+  },
   'finder:reset': async (msg) => (await resetPreset(String(msg.preset || '')), { ok: true }),
-  /** How far each preset has got: searches in total and finished. */
-  'finder:progress': async () => {
+  /** How far each preset has got: searches in total and finished, for these sources. */
+  'finder:progress': async (msg) => {
     const settings = await getSettings();
+    const sources = sourcesOf(msg);
     const out = {};
     const presets = LH.presetsFor(settings);
     for (const p of presets) {
-      const { all, left } = await presetQueue(p, p.keywords, LH.presetAreas(p, settings));
+      const { all, left } = await presetQueue(p, p.keywords, LH.presetAreas(p, settings), sources);
       out[p.name] = { total: all, done: all - left.length };
     }
-    const mix = await mixQueue(presets, settings);
+    const mix = await mixQueue(presets, settings, sources);
     out[ALL_TYPES] = { total: mix.all, done: mix.all - mix.left.length };
     return { progress: out };
   },
@@ -752,9 +951,10 @@ Object.assign(handlers, {
 });
 
 chrome.tabs.onRemoved.addListener(async (tabId) => {
-  const { checkTabId, mapsTabId } = await store.get(['checkTabId', 'mapsTabId']);
+  const { checkTabId, mapsTabId, googleTabId } = await store.get(['checkTabId', 'mapsTabId', 'googleTabId']);
   if (tabId === checkTabId) await store.remove('checkTabId');
   if (tabId === mapsTabId) await store.remove('mapsTabId');
+  if (tabId === googleTabId) await store.remove('googleTabId');
 });
 
 // Resume after the worker restarts (Chrome stops idle service workers).

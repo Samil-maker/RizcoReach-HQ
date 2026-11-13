@@ -1,9 +1,9 @@
-/* Lead Hunter: who is worth a cold email about a website (pure: background, dashboard and tests).
-   A business fits when
-     - there is proof it just opened (or is about to) and it has no working website, or
-     - its website is down, parked or says "coming soon" (it clearly meant to have one).
-   A business that simply never had a website, with no proof it is new, does not fit. Neither does one with a
-   working website, however it looks. Proof is never guessed: every signal says where it was seen and what it said. */
+/* Lead Hunter: who is worth reaching out to about a website (pure: background, dashboard and tests).
+   A business fits when it has no website, or its website is down, parked ("coming soon") or weak (old, not secure,
+   not made for phones, slow, thin). A business with a good modern website does not fit.
+   Proof that a business just opened puts it first, and the cold email file says "new business". Settings can make
+   it strict: then only businesses that just opened, or whose website is down or parked, fit.
+   Proof is never guessed: every signal says where it was seen and what it said. */
 (function (root) {
   const LH = (root.LH = root.LH || {});
   const DAY = 86400000;
@@ -140,17 +140,34 @@
     return u && LH.linkKind(u) === 'website' ? u.toString() : '';
   };
   /**
-   * none     no website of their own            working  it loads and is a real site
-   * down     it does not load, or errors        blocked  it refused the automatic check (cannot be judged)
-   * parked   a parking, "coming soon" or default page    unknown  not checked yet
+   * none     no website of their own            weak     it loads, but it is old, not secure, not made for phones…
+   * down     it does not load, or errors        good     a good modern website
+   * parked   a parking, "coming soon" or default page    blocked  it refused the automatic check (cannot be judged)
+   * unknown  not checked yet
    */
-  LH.siteState = (lead) => {
+  LH.siteState = (lead, settings = {}) => {
     if (!LH.ownWebsite(lead)) return 'none';
     const s = (lead && lead.site) || {};
     if (s.state === 'error') return 'down';
-    if (s.state === 'ok') return s.parked ? 'parked' : 'working';
+    if (s.state === 'ok') return s.parked ? 'parked' : LH.goodSite(s, settings) ? 'good' : 'weak';
     return s.state === 'blocked' ? 'blocked' : 'unknown';
   };
+  /** A good website: secure, made for phones, and a website check score of 80 or more (Settings can change it). */
+  LH.goodSite = (site, settings = {}) => {
+    const s = site || {};
+    if (s.state !== 'ok' || s.parked || typeof s.score !== 'number') return false;
+    const bad = new Set((s.issues || []).map((i) => i.id));
+    const min = Number(settings.goodSiteScore) > 0 ? Number(settings.goodSiteScore) : 80;
+    return s.score >= min && !bad.has('https') && !bad.has('viewport');
+  };
+  /** The worst things about a weak website, in words: "No HTTPS, Not mobile-friendly". */
+  LH.siteWeakness = (lead, max = 2) =>
+    (((lead && lead.site) || {}).issues || [])
+      .filter((i) => i.sev !== 'low')
+      .slice(0, max)
+      .map((i) => String(i.label || '').replace(/ \(.*\)$/, ''))
+      .filter(Boolean)
+      .join(', ');
 
   /* --------------------------------------------------------------------- fit */
   LH.BIG_BRAND_LIKES = 60000;
@@ -159,15 +176,16 @@
    * pending: the website check has not finished, so it cannot be said yet.
    */
   LH.fit = (lead, settings = {}, now = Date.now()) => {
-    const site = LH.siteState(lead);
+    const site = LH.siteState(lead, settings);
     const open = LH.opening(lead, settings, now);
     const out = (fit, kind, why, pending = false) => ({ fit, kind, why, pending, site, open });
     const proof = open ? (open.soon ? 'Opening soon' : 'Just opened') : '';
     // A Facebook page with this many likes is an established brand, whatever its ad says about a new branch.
     if (lead && lead.kind !== 'prospect' && (lead.pageLikes || 0) > LH.BIG_BRAND_LIKES) return out(false, null, 'An established brand, not a new business');
+    const strict = !!settings.strictFit;
     switch (site) {
-      case 'working':
-        return out(false, null, 'They have a working website');
+      case 'good':
+        return out(false, null, 'They have a good website');
       case 'blocked':
         return out(false, null, 'Their website blocked the check, so it cannot be judged');
       case 'unknown':
@@ -176,8 +194,14 @@
         return out(true, open ? 'new' : 'parked', open ? `${proof}, and their website is only a placeholder` : 'Their website is parked or says coming soon');
       case 'down':
         return out(true, open ? 'new' : 'down', open ? `${proof}, and their website is down` : 'Their website is down');
+      case 'weak': {
+        const weak = LH.siteWeakness(lead);
+        if (open) return out(true, 'new', `${proof}, and their website is weak`);
+        return strict ? out(false, null, 'Their website works (strict mode: only new businesses or dead websites)') : out(true, 'weak', weak ? `Weak website: ${weak}` : 'Their website is weak');
+      }
       default:
-        return open ? out(true, 'new', `${proof}, and they have no website`) : out(false, null, 'No website, but no proof they just opened');
+        if (open) return out(true, 'new', `${proof}, and they have no website`);
+        return strict ? out(false, null, 'No website, but no proof they just opened (strict mode)') : out(true, 'none', 'No website');
     }
   };
 
@@ -189,15 +213,17 @@
     const f = LH.fit(lead, settings, now);
     const parts = [];
     const add = (id, label, points) => parts.push({ id, label, points });
-    if (f.open) add('new', f.open.soon ? 'Opening soon' : 'Just opened', 40);
-    if (f.site === 'parked') add('parked', 'Website parked or coming soon', 35);
-    else if (f.site === 'down') add('down', 'Website down', 30);
-    else if (f.site === 'none') add('none', 'No website', 10);
+    if (f.open) add('new', f.open.soon ? 'Opening soon' : 'Just opened', 35);
+    if (f.site === 'parked') add('parked', 'Website parked or coming soon', 30);
+    else if (f.site === 'down') add('down', 'Website down', 28);
+    else if (f.site === 'none') add('none', 'No website', 22);
+    else if (f.site === 'weak') add('weak', 'Weak website', 12 + Math.round(Math.max(0, 80 - (((lead || {}).site || {}).score || 0)) / 8));
     const mail = LH.sendableEmail(lead, settings);
     if (mail.state === 'ok') add('email', 'Email confirmed', 30);
-    else if (mail.state === 'unverified') add('email', 'Email found, mailbox not confirmed', 20);
+    else if (mail.state === 'unverified') add('email', 'Email found', 25);
     else if (mail.state === 'risky' || mail.why === 'waiting' || mail.why === 'risky') add('email', mail.why === 'waiting' ? 'Email found, check not finished' : 'Email could not be confirmed', 8);
-    if (LH.whatsappTarget && LH.whatsappTarget(lead)) add('whatsapp', 'Has a WhatsApp number', 5);
+    if (LH.whatsappTarget && LH.whatsappTarget(lead)) add('whatsapp', 'Has a WhatsApp number', 8);
+    if (LH.igHandle && LH.igHandle(lead)) add('instagram', 'Has an Instagram', 5);
     let score = Math.max(0, Math.min(100, parts.reduce((n, p) => n + p.points, 0)));
     if (!f.fit) score = Math.min(score, f.pending ? 30 : 20);
     return { score, parts, fit: f };
@@ -211,7 +237,7 @@
     const tags = [];
     if (ctx.history && lead.status === 'new' && LH.historyHit(lead, ctx.history)) tags.push('Contacted before');
     if (f.open) tags.push(f.open.soon ? 'Opening soon' : 'Just opened');
-    tags.push({ none: 'No website', down: 'Site down', parked: 'Parked', working: 'Working website', blocked: 'Site not checkable', unknown: 'Checking website' }[f.site]);
+    tags.push({ none: 'No website', down: 'Site down', parked: 'Parked', weak: 'Weak website', good: 'Good website', blocked: 'Site not checkable', unknown: 'Checking website' }[f.site]);
     const info = LH.emailInfo(lead);
     const mail = LH.sendableEmail(lead, ctx.settings || {});
     if (!info.length) tags.push('No email');
@@ -244,7 +270,11 @@
   LH.coldEmailSource = (lead) => {
     const l = lead || {};
     const src = l.sources || {};
-    if (l.kind === 'prospect') return !(src.maps || {}).placeId && (src.instagram || {}).username ? 'Instagram' : 'Google Maps';
+    if (l.kind === 'prospect') {
+      if ((src.maps || {}).placeId) return 'Google Maps';
+      if ((src.instagram || {}).username) return 'Instagram';
+      return src.google ? 'Google' : 'Google Maps';
+    }
     // Ad Library: their ads ran on Facebook and Instagram. Instagram only when we know their profile.
     return LH.igHandle(l) ? 'Instagram' : 'Facebook';
   };
@@ -263,7 +293,7 @@
    * plus who was left out and why. Leads exported before stay out unless includeExported is set.
    */
   LH.coldEmailExport = (leads, settings = {}, { includeExported = false, now = Date.now() } = {}) => {
-    const skipped = { closed: 0, emailedBefore: 0, exported: 0, working: 0, noProof: 0, siteUnknown: 0, noEmail: 0, badEmail: 0, waiting: 0, risky: 0 };
+    const skipped = { closed: 0, emailedBefore: 0, exported: 0, goodSite: 0, noProof: 0, siteUnknown: 0, noEmail: 0, badEmail: 0, waiting: 0, risky: 0 };
     const rows = [];
     const ids = [];
     const waiting = [];
@@ -278,9 +308,9 @@
             : l.coldEmailExportedAt && !includeExported
               ? 'exported'
               : !f.fit
-                ? f.site === 'working'
-                  ? 'working'
-                  : f.site === 'none'
+                ? f.site === 'good'
+                  ? 'goodSite'
+                  : ['none', 'weak'].includes(f.site)
                     ? 'noProof'
                     : 'siteUnknown'
                 : mail.email
@@ -308,6 +338,84 @@
     }
     return { head: LH.COLD_EMAIL_HEAD, rows, ids, skipped, waiting };
   };
+  /* ---------------------------------------------------------- Google Contacts */
+  /**
+   * Leads as contacts for Google Contacts: the business name as the contact name, so WhatsApp on your phone shows
+   * who each chat is, with their Instagram as a second website. Leads without a phone or an email are left out.
+   * All go in one label. Two files: a CSV in the layout contacts.google.com exports, and a vCard (.vcf).
+   */
+  LH.GOOGLE_CONTACTS_HEAD = ['First Name', 'Last Name', 'Organization Name', 'Notes', 'Labels', 'E-mail 1 - Label', 'E-mail 1 - Value', 'Phone 1 - Label', 'Phone 1 - Value', 'Phone 2 - Label', 'Phone 2 - Value', 'Address 1 - Label', 'Address 1 - Formatted', 'Website 1 - Label', 'Website 1 - Value', 'Website 2 - Label', 'Website 2 - Value'];
+  /** "LF-2026-10-26": the label each export gets in Google Contacts, so one batch is easy to find and to delete. */
+  LH.contactsLabel = (date = new Date()) => `LF-${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  /** Notes for a contact: why they fit, their Instagram, the kind of business and the area. */
+  LH.contactNotes = (l, settings = {}) => {
+    const f = LH.fit(l, settings);
+    const ig = LH.igHandle(l);
+    return [f.why, f.open && f.open.label, ig && `Instagram @${ig}`, LH.nicheOf(l, settings), l.area].filter(Boolean).join(' · ');
+  };
+  /** The contacts themselves, shared by both files. */
+  LH.contactsFor = (leads, settings = {}, date = new Date()) =>
+    (leads || [])
+      .filter(Boolean)
+      .map((l) => {
+        const main = LH.whatsappTarget(l) || (LH.bestPhone(l) || {}).number || '';
+        const other = ((l.phones || []).find((p) => p.number && p.number !== main) || {}).number || '';
+        const email = LH.sendableEmail(l, settings).email || '';
+        if (!main && !email) return null;
+        const ig = LH.igHandle(l);
+        // The first name that is still there once cleaned (a name made only of emoji is not).
+        const name = [LH.shortName(l.pageName), ig, LH.domainOf(l.website || ''), main, email].map(oneLine).find(Boolean).slice(0, 100);
+        const address = oneLine(((l.sources || {}).maps || {}).address);
+        return {
+          id: l.id,
+          name,
+          main,
+          other,
+          email,
+          website: oneLine(LH.ownWebsite(l)),
+          instagram: ig ? `https://www.instagram.com/${ig}/` : '',
+          address: LH.looksLikeHours(address) ? '' : address,
+          notes: oneLine(LH.contactNotes(l, settings)).slice(0, 1000),
+          label: LH.contactsLabel(date),
+        };
+      })
+      .filter(Boolean);
+  LH.googleContactsRows = (leads, settings = {}, date = new Date()) =>
+    LH.contactsFor(leads, settings, date).map((c) => [
+      c.name, '', c.name, c.notes, c.label,
+      c.email ? 'Work' : '', c.email,
+      c.main ? 'Mobile' : '', c.main,
+      c.other ? 'Work' : '', c.other,
+      c.address ? 'Work' : '', c.address,
+      c.website ? 'Work' : '', c.website,
+      c.instagram ? 'Instagram' : '', c.instagram,
+    ]);
+  /** The same contacts as a vCard 3.0 file. */
+  const vText = (v) => oneLine(v).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,');
+  LH.contactsVcf = (leads, settings = {}, date = new Date()) =>
+    LH.contactsFor(leads, settings, date)
+      .map((c) =>
+        [
+          'BEGIN:VCARD',
+          'VERSION:3.0',
+          `N:;${vText(c.name)};;;`,
+          `FN:${vText(c.name)}`,
+          `ORG:${vText(c.name)}`,
+          c.main && `TEL;TYPE=CELL:${c.main}`,
+          c.other && `TEL;TYPE=WORK:${c.other}`,
+          c.email && `EMAIL;TYPE=INTERNET,WORK:${c.email}`,
+          c.website && `URL:${c.website}`,
+          c.instagram && `URL;TYPE=Instagram:${c.instagram}`,
+          c.address && `ADR;TYPE=WORK:;;${vText(c.address)};;;;`,
+          c.notes && `NOTE:${vText(c.notes)}`,
+          `CATEGORIES:${vText(c.label)}`,
+          'END:VCARD',
+        ]
+          .filter(Boolean)
+          .join('\r\n'),
+      )
+      .join('\r\n') + '\r\n';
+
   /** "rizcoreach-cold-email-2026-11-08.csv" */
   LH.coldEmailFilename = (date = new Date()) => `rizcoreach-cold-email-${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}.csv`;
 })(typeof globalThis !== 'undefined' ? globalThis : self);

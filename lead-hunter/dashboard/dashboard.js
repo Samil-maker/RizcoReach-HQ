@@ -32,6 +32,7 @@ const S = {
   queue: [], // websites waiting for their check
   checkQ: [], // leads whose email domains are being checked
   mailQ: [], // leads waiting for a mailbox check
+  igFindQ: [], // leads whose Instagram is being looked up on Google
   verifyUsage: null,
   verifyWait: null,
   selected: new Set(),
@@ -40,7 +41,8 @@ const S = {
   limit: ROWS_STEP,
   findPreset: ALL_TYPES,
   coldInclude: false, // Include already exported
-  filters: { q: '', show: 'fits', status: '', niche: '', source: '', sort: 'score', exported: false, contactedBefore: false, hunt: '' },
+  section: 'email', // email: leads for the cold email file · contact: leads for WhatsApp and Instagram
+  filters: { q: '', show: 'ready', status: '', niche: '', source: '', sort: 'score', exported: false, contactedBefore: false, hunt: '' },
   alerts: {}, // sources paused by a login wall, checkpoint or block: { maps: { at, text, url, hint } }
   problems: {}, // the last problems per source, newest first
   history: {}, // contacted memory
@@ -60,8 +62,10 @@ async function load() {
   S.queue = all.enrichQueue || [];
   S.checkQ = all.emailCheckQueue || [];
   S.mailQ = all.mailboxQueue || [];
+  S.igFindQ = all.igFindQueue || [];
   S.verifyUsage = all.verifyUsage || null;
   S.verifyWait = all.verifyWait || null;
+  S.googleUsage = all.googleUsage || null;
   S.history = all.contactHistory || {};
   S.alerts = all.alerts || {};
   S.problems = all.problems || {};
@@ -75,8 +79,8 @@ function scheduleRender() {
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
   let settingsChanged = false;
-  const plain = { hunt: 'hunt', finder: 'finder', verifyUsage: 'verifyUsage', verifyWait: 'verifyWait' };
-  const lists = { enrichQueue: 'queue', emailCheckQueue: 'checkQ', mailboxQueue: 'mailQ' };
+  const plain = { hunt: 'hunt', finder: 'finder', verifyUsage: 'verifyUsage', verifyWait: 'verifyWait', googleUsage: 'googleUsage' };
+  const lists = { enrichQueue: 'queue', emailCheckQueue: 'checkQ', mailboxQueue: 'mailQ', igFindQueue: 'igFindQ' };
   for (const [k, { newValue }] of Object.entries(changes)) {
     if (k.startsWith('lead:')) {
       const id = k.slice(5);
@@ -110,6 +114,37 @@ chrome.storage.onChanged.addListener((changes, area) => {
 /* ---------------------------------------------------------------- one lead */
 /** Where it was found, for the table and the filter. */
 const foundOn = (l) => (l.kind === 'prospect' ? LH.coldEmailSource(l) : 'Ad Library');
+/* The two sections and what each one can show. */
+const SECTION_SHOWS = {
+  email: [
+    ['ready', 'Has an email'],
+    ['needemail', 'Fits, no email yet'],
+    ['new', 'Just opened'],
+    ['site', 'Website down or parked'],
+    ['weak', 'Weak website'],
+    ['none', 'No website'],
+    ['checking', 'Still being checked'],
+    ['nofit', 'Good website (left out)'],
+    ['all', 'Everything found'],
+  ],
+  contact: [
+    ['reach', 'Has WhatsApp, phone or Instagram'],
+    ['ig', 'Has Instagram'],
+    ['noig', 'No Instagram yet'],
+    ['phone', 'Has a phone'],
+    ['new', 'Just opened'],
+    ['site', 'Website down or parked'],
+    ['none', 'No website'],
+    ['checking', 'Still being checked'],
+    ['nofit', 'Good website (left out)'],
+    ['all', 'Everything found'],
+  ],
+};
+const SECTION_HINT = {
+  email: 'Businesses with no website, or a dead or weak one, and an email that passed its checks. Export for cold email and save the file in your RizcoReach Leads folder.',
+  contact: 'Businesses with no website, or a dead or weak one, and a phone or an Instagram. Export them to Google Contacts and message them on WhatsApp, or tap their @username to open their Instagram.',
+};
+const exportedIn = (l, section) => (section === 'contact' ? l.contactsExportedAt : l.coldEmailExportedAt);
 /** New leads that match someone you contacted, exported or imported before: hidden unless asked for. */
 const contactedBefore = (l) => (l.status === 'new' && !l.contactedAt ? LH.historyHit(l, S.history) : null);
 /** Everything the table needs to know about a lead, worked out once per render. */
@@ -128,18 +163,26 @@ function filtered({ withExported = false } = {}) {
     if (f.hunt && !(l.hunts || []).includes(f.hunt)) continue;
     if (f.status === '' && ['skip', 'lost'].includes(l.status)) continue;
     if (f.status && f.status !== 'all' && l.status !== f.status) continue;
-    if (!f.exported && !withExported && l.coldEmailExportedAt && f.show !== 'all') continue;
+    if (!f.exported && !withExported && exportedIn(l, S.section) && f.show !== 'all') continue;
     if (!f.contactedBefore && contactedBefore(l)) continue;
     if (f.source && foundOn(l) !== f.source) continue;
     const r = facts(l, now);
     if (f.niche && r.niche !== f.niche) continue;
     const fit = r.fit;
+    const phone = !!(LH.whatsappTarget(l) || l.phones.length);
+    const ig = !!LH.igHandle(l);
     const ok = {
       fits: fit.fit,
       ready: fit.fit && !!r.mail.email,
       needemail: fit.fit && !r.mail.email,
-      new: !!fit.open,
-      site: ['down', 'parked'].includes(fit.site),
+      reach: fit.fit && (phone || ig),
+      ig: fit.fit && ig,
+      noig: fit.fit && !ig,
+      phone: fit.fit && phone,
+      new: fit.fit && !!fit.open,
+      site: fit.fit && ['down', 'parked'].includes(fit.site),
+      weak: fit.fit && fit.site === 'weak',
+      none: fit.fit && fit.site === 'none',
       checking: fit.pending || (fit.fit && r.mail.why === 'waiting'),
       nofit: !fit.fit && !fit.pending,
       all: true,
@@ -188,7 +231,7 @@ function whyCell({ fit }) {
   return `<div class="why ${fit.fit ? 'yes' : fit.pending ? 'wait' : 'no'}">${esc(fit.why)}${proof}</div>`;
 }
 
-const SITE_TAG = { none: ['amber', 'No website'], down: ['red', 'Down'], parked: ['red', 'Parked'], working: ['', 'Working'], blocked: ['', 'Could not check'], unknown: ['', 'Not checked'] };
+const SITE_TAG = { none: ['amber', 'No website'], down: ['red', 'Down'], parked: ['red', 'Parked'], weak: ['amber', 'Weak'], good: ['', 'Good'], blocked: ['', 'Could not check'], unknown: ['', 'Not checked'] };
 function siteCell(l, fit) {
   const st = (l.site || {}).state;
   const busy = ['queued', 'running'].includes(st);
@@ -225,7 +268,8 @@ function contactCell(l) {
   const parts = [];
   if (shown) parts.push(`<div class="p"><span class="num">${esc(LH.formatPhone(shown))}</span></div>`);
   const ig = LH.igHandle(l);
-  if (ig) parts.push(`<div class="p muted">${ICON.ig}<a class="trunc" href="https://www.instagram.com/${esc(encodeURIComponent(ig))}/" target="_blank" rel="noopener noreferrer" data-stop>@${esc(ig)}</a></div>`);
+  if (ig) parts.push(`<div class="p">${ICON.ig}<a class="trunc" href="https://www.instagram.com/${esc(encodeURIComponent(ig))}/" target="_blank" rel="noopener noreferrer" data-stop>@${esc(ig)}</a></div>`);
+  else if ((l.igFind || {}).state === 'none') parts.push('<div class="p muted">No Instagram found</div>');
   return parts.length ? `<div class="contact">${parts.join('')}</div>` : '<span class="muted">–</span>';
 }
 
@@ -247,26 +291,32 @@ function rowHtml(r) {
 }
 
 /* ---------------------------------------------------------------- render */
+/** How many leads each section has ready, not exported yet. */
+function sectionCounts() {
+  const now = Date.now();
+  const c = { email: 0, contact: 0, fits: 0 };
+  for (const l of S.leads.values()) {
+    if (!LH.coldEmailOpen(l) || !LH.fit(l, S.settings, now).fit) continue;
+    c.fits++;
+    if (!l.coldEmailExportedAt && LH.sendableEmail(l, S.settings).email) c.email++;
+    if (!l.contactsExportedAt && (l.phones.length || LH.igHandle(l))) c.contact++;
+  }
+  return c;
+}
 function renderKpis() {
   if (S.view === 'intent') return renderIntentKpis();
-  const now = Date.now();
-  let fits = 0;
-  let ready = 0;
-  for (const l of S.leads.values()) {
-    if (!LH.coldEmailOpen(l) || l.coldEmailExportedAt) continue;
-    if (!LH.fit(l, S.settings, now).fit) continue;
-    fits++;
-    if (LH.sendableEmail(l, S.settings).email) ready++;
+  const c = sectionCounts();
+  for (const k of ['email', 'contact']) {
+    const el = $(`[data-sec-count="${k}"]`);
+    if (el) el.textContent = c[k] ? String(c[k]) : '';
   }
-  const exported = [...S.leads.values()].filter((l) => l.coldEmailExportedAt).length;
   $('[data-kpis]').innerHTML =
-    `<span class="kpi hot" title="They fit and their email passed its checks: they go in the next Export for cold email"><b>${ready}</b> ready to export</span>` +
-    `<span class="kpi" title="Just opened without a working website, or a website that is down or parked"><b>${fits}</b> fit</span>` +
-    `<span class="kpi"><b>${S.leads.size}</b> found</span>` +
-    `<span class="kpi"><b>${exported}</b> exported</span>`;
+    `<span class="kpi hot" title="They fit and their email passed its checks: they go in the next Export for cold email"><b>${c.email}</b> to email</span>` +
+    `<span class="kpi" title="They fit and have a phone or an Instagram, not exported to Google Contacts yet"><b>${c.contact}</b> to WhatsApp / Instagram</span>` +
+    `<span class="kpi"><b>${S.leads.size}</b> found</span>`;
 }
 
-const SOURCE_LABEL = { adlib: 'Meta Ad Library', maps: 'Google Maps', instagram: 'Instagram API', fbpage: 'Facebook pages', verify: 'Email check', reddit: 'Reddit', facebook: 'Facebook groups', linkedin: 'LinkedIn', ai: 'AI check' };
+const SOURCE_LABEL = { adlib: 'Meta Ad Library', google: 'Google search', maps: 'Google Maps', instagram: 'Instagram API', fbpage: 'Facebook pages', verify: 'Email check', reddit: 'Reddit', facebook: 'Facebook groups', linkedin: 'LinkedIn', ai: 'AI check' };
 const presetNamed = (name) => LH.presetsFor(S.settings).find((n) => n.name === name);
 /** Before and after: "87 found → 31 new · 6 that Google says just opened · 22 already saved…". */
 function runStats(f) {
@@ -292,12 +342,13 @@ function renderStrip() {
   if (f && ['running', 'paused'].includes(f.status)) {
     const total = f.mapsQ.length || 1;
     const q = f.mapsQ[Math.min(f.mapsI, total - 1)];
-    lines.push(`${f.status === 'running' ? '<span class="pulse"></span>' : ''}<span class="t">${f.status === 'paused' ? 'Paused: ' : ''}Google Maps · ${esc(f.niche)} · search ${Math.min(f.mapsI + 1, total)} of ${total}${q ? ` <span class="muted">“${esc(q.q)}”</span>` : ''}</span>
+    const where = q ? { maps: 'Google Maps', web: 'Google', ig: 'Google (Instagram)' }[q.src || 'maps'] : 'Search';
+    lines.push(`${f.status === 'running' ? '<span class="pulse"></span>' : ''}<span class="t">${f.status === 'paused' ? 'Paused: ' : ''}${esc(where)} · ${esc(f.niche)} · search ${Math.min(f.mapsI + 1, total)} of ${total}${q ? ` <span class="muted">“${esc(q.q)}”</span>` : ''}</span>
       <span class="bar"><i style="width:${Math.min(100, Math.round((100 * f.mapsI) / total))}%"></i></span>
       <button class="btn sm" data-act="${f.status === 'running' ? 'finder-pause' : 'finder-resume'}">${f.status === 'running' ? 'Pause' : 'Resume'}</button>
-      <button class="btn sm danger" data-act="finder-stop">Stop</button>${runStats(f)}`);
+      <button class="btn sm danger" data-act="finder-stop">Stop</button>${runStats(f)}${f.status === 'paused' && f.mapsNote && !S.alerts.maps && !S.alerts.google ? `<span class="m">${esc(f.mapsNote)}.</span>` : ''}`);
   } else if (f && S.view === 'find') {
-    lines.push(`<span class="t">Last Google Maps run: ${esc(f.niche)} · ${plural(f.mapsI || 0, 'search', 'searches')} · ${esc(f.status)}</span>${runStats(f) || `<span class="m">${f.added} new businesses</span>`}${f.mapsNote && !S.alerts.maps ? `<span class="err" style="margin:0">Google Maps: ${esc(f.mapsNote)}</span>` : ''}`);
+    lines.push(`<span class="t">Last run: ${esc(f.niche)} · ${plural(f.mapsI || 0, 'search', 'searches')} · ${esc(f.status)}</span>${runStats(f) || `<span class="m">${f.added} new businesses</span>`}${f.mapsNote && !S.alerts.maps ? `<span class="err" style="margin:0">Google Maps: ${esc(f.mapsNote)}</span>` : ''}`);
   }
   const h = S.hunt;
   if (h && h.status === 'running') {
@@ -310,7 +361,7 @@ function renderStrip() {
   // A login wall, checkpoint or block paused a source: say so and leave it to you.
   for (const [src, a] of Object.entries(S.alerts)) {
     if (['reddit', 'facebook', 'linkedin', 'ai'].includes(src)) continue; // shown on the Intent tab
-    const resume = { maps: 'finder-resume', instagram: 'ig-resume', fbpage: 'fbemail-resume', verify: 'verify-resume', adlib: 'alert-clear' }[src] || 'alert-clear';
+    const resume = { maps: 'finder-resume', google: 'google-resume', instagram: 'ig-resume', fbpage: 'fbemail-resume', verify: 'verify-resume', adlib: 'alert-clear' }[src] || 'alert-clear';
     const link = a.url ? ` <a href="${esc(safeHref(a.url))}" target="_blank" rel="noopener noreferrer">Open it</a>.` : '';
     lines.push(`<span class="err alert" style="margin:0" data-alert="${esc(src)}"><b>${esc(SOURCE_LABEL[src] || src)} paused:</b> ${esc(a.text)}. ${esc(a.hint || 'Sort it out, then press Resume.')}${link} Nothing tries to get past it.</span><button class="btn sm" data-act="${resume}" data-source="${esc(src)}">${resume === 'alert-clear' ? 'Dismiss' : 'Resume'}</button>`);
   }
@@ -325,8 +376,7 @@ function renderStrip() {
   }
   const said = busy.join(' · ');
   if (busy.length) lines.push(`<span class="m">${S.queue.length || S.checkQ.length ? '<span class="spin"></span> ' : ''}${said.charAt(0).toUpperCase()}${said.slice(1)}</span>`);
-  if (S.view === 'leads' && !S.settings.verifyKey && S.leads.size)
-    lines.push(`<span class="m">Mailbox checks are off, so addresses are only checked as far as their domain. <button class="linkish" data-goto="settings" data-anchor="verify">Add a free key</button> for the lowest bounce rate.</span>`);
+  if (S.igFindQ.length) busy.unshift(`finding ${plural(S.igFindQ.length, 'Instagram')} on Google`);
   el.hidden = !lines.length;
   el.innerHTML = lines.map((x) => `<div class="strip-line">${x}</div>`).join('');
 }
@@ -350,8 +400,14 @@ function renderFilterOptions() {
 }
 
 const EMPTY_TEXT = {
-  fits: 'Nothing fits yet. A business fits when there is proof it just opened and it has no working website, or when its website is down or parked. Choose "Everything found" to see what was found.',
-  ready: 'No business that fits has an email that passed its checks yet.',
+  fits: 'Nothing fits yet. Choose "Everything found" to see what was found.',
+  ready: 'No business that fits has an email yet. Search Google for business websites and Instagram profiles on the Find tab: that is where emails are.',
+  reach: 'No business that fits has a phone or an Instagram yet.',
+  ig: 'No business that fits has an Instagram yet. Select some and press Find their Instagram.',
+  noig: 'Every business that fits has an Instagram.',
+  phone: 'No business that fits has a phone yet.',
+  weak: 'No business with a weak website yet.',
+  none: 'No business without a website yet.',
   needemail: 'Every business that fits has a usable email.',
   new: 'No business with proof that it just opened yet.',
   site: 'No business with a website that is down or parked yet.',
@@ -359,7 +415,21 @@ const EMPTY_TEXT = {
   nofit: 'Nothing here.',
   all: 'No leads match these filters.',
 };
+/** The section switch: its tabs, the Show options that go with it, and which buttons it shows. */
+function renderSection() {
+  $$('[data-section]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.section === S.section)));
+  $$('[data-only]').forEach((el) => (el.hidden = el.dataset.only !== S.section));
+  $('[data-section-hint]').textContent = SECTION_HINT[S.section];
+  const sel = $('[data-f="show"]');
+  const opts = SECTION_SHOWS[S.section];
+  if (sel.dataset.section !== S.section) {
+    sel.dataset.section = S.section;
+    if (!opts.some(([v]) => v === S.filters.show)) S.filters.show = opts[0][0];
+    sel.innerHTML = opts.map(([v, label]) => `<option value="${v}" ${v === S.filters.show ? 'selected' : ''}>${esc(label)}</option>`).join('');
+  }
+}
 function renderTable() {
+  renderSection();
   const rows = filtered();
   const shown = rows.slice(0, S.limit);
   $('[data-rows]').innerHTML = shown.map(rowHtml).join('');
@@ -378,6 +448,8 @@ function renderTable() {
   $('[data-bulk]').hidden = S.selected.size === 0;
   $('[data-bulk-count]').textContent = `${S.selected.size} selected`;
   $('[data-welcome]').hidden = S.leads.size > 0;
+  $('[data-sections]').hidden = S.leads.size === 0;
+  $('[data-section-hint]').hidden = S.leads.size === 0;
   $('[data-toolbar]').hidden = S.leads.size === 0;
   $('[data-table]').hidden = S.leads.size === 0;
 }
@@ -508,8 +580,9 @@ function siteSection(l) {
     const said = {
       down: `It does not load${site.status ? ` (${esc(site.status)})` : ''}. They meant to have a website and it is gone.`,
       parked: 'It only shows a parking, "coming soon" or default page. They bought the name and never built the site.',
-      working: 'It loads and is a real website, so they do not fit.',
       blocked: `${esc(site.note || 'The site blocked the automatic check.')} Open it and judge for yourself.`,
+      weak: `It works, but it is weak${LH.siteWeakness(l, 4) ? `: ${esc(LH.siteWeakness(l, 4))}` : ''}${typeof site.score === 'number' ? ` (scores ${site.score}/100)` : ''}.`,
+      good: `A good website${typeof site.score === 'number' ? ` (scores ${site.score}/100)` : ''}, secure and made for phones, so they do not fit.`,
       unknown: 'Not checked yet.',
     }[state];
     const [cls, label] = SITE_TAG[state];
@@ -544,6 +617,10 @@ function contactSection(l) {
         ? [st.followers != null && `${compactNum(st.followers)} followers`, st.media != null && plural(st.media, 'post'), st.lastPostAt && `last post ${fmtDate(st.lastPostAt)}`, st.firstPostAt && `first post ${fmtDate(st.firstPostAt)}`].filter(Boolean).join(' · ')
         : 'not read yet';
     igLine = `<p>Instagram: <a href="https://www.instagram.com/${esc(encodeURIComponent(ig))}/" target="_blank" rel="noopener noreferrer">@${esc(ig)}</a> <span class="muted">${esc(read)}</span> ${igReady ? `<button class="btn sm ghost" data-act="ig-lookup">${st.at ? 'Read again' : 'Read it'}</button>` : ''}</p>`;
+  } else {
+    const f = l.igFind || {};
+    const said = S.igFindQ.includes(l.id) ? 'Looking on Google…' : f.state === 'none' ? `Not found on Google (${fmtDate(f.at)}).` : f.state === 'error' ? 'The Google search did not work.' : 'Not known yet.';
+    igLine = `<p>Instagram: <span class="muted">${esc(said)}</span> ${S.igFindQ.includes(l.id) ? '' : '<button class="btn sm ghost" data-act="ig-find">Find it on Google</button>'}</p>`;
   }
   const socials = Object.entries(l.socials || {})
     .filter(([k]) => !(ig && k === 'instagram'))
@@ -699,6 +776,19 @@ function exportCsv(leads) {
   toast(`${plural(leads.length, 'lead')} saved as a spreadsheet`);
 }
 
+/* Google Contacts: import the file at contacts.google.com (Import), then WhatsApp shows each business by name.
+   csv: Google's own layout; vcf: a vCard, the fallback. Exported businesses are remembered as contacted. */
+function exportContacts(list, format = 'csv') {
+  const contacts = LH.contactsFor(list, S.settings);
+  if (!contacts.length) return toast('None of these leads has a phone number or an email yet.');
+  const day = new Date().toISOString().slice(0, 10);
+  if (format === 'vcf') download(`google-contacts-${day}.vcf`, LH.contactsVcf(list, S.settings), 'text/vcard;charset=utf-8');
+  else download(`google-contacts-${day}.csv`, `${LH.toCsv([LH.GOOGLE_CONTACTS_HEAD, ...LH.googleContactsRows(list, S.settings)])}\r\n`, 'text/csv;charset=utf-8');
+  send({ type: 'contacts:exported', ids: contacts.map((c) => c.id) });
+  const ig = contacts.filter((c) => c.instagram).length;
+  toast(`${plural(contacts.length, 'contact')} saved${ig ? `, ${ig} with their Instagram` : ''}. Import the file at contacts.google.com`);
+}
+
 /* Export for cold email: the leads for the cold email system, saved with Chrome's Save As so the file can go
    straight into the RizcoReach Leads folder (Chrome remembers the folder). Leads are marked exported once the file
    is saved; cancel the dialog and nothing is marked. */
@@ -710,8 +800,8 @@ async function exportColdEmail(list) {
     k.noEmail && `${k.noEmail} without an email`,
     k.badEmail && `${k.badEmail} whose email failed its check`,
     k.risky && `${k.risky} whose email could not be confirmed`,
-    k.working && `${k.working} with a working website`,
-    k.noProof && `${k.noProof} with no proof they just opened`,
+    k.goodSite && `${k.goodSite} with a good website`,
+    k.noProof && `${k.noProof} left out by strict mode`,
     k.siteUnknown && `${k.siteUnknown} whose website could not be judged`,
     k.exported && `${k.exported} exported before`,
     k.closed && `${k.closed} replied, closed or skipped`,
@@ -781,11 +871,17 @@ function pickPreset(name) {
   renderPresetProgress();
 }
 /** "Salons: 120 of 588 searches done. The next run carries on from there." */
+const findSources = () => $$('[data-finder-form] [name="src"]:checked').map((x) => x.value);
 async function renderPresetProgress() {
   const el = $('[data-preset-progress]');
   if (!el) return;
   const name = S.findPreset;
-  const r = await send({ type: 'finder:progress' });
+  const left = $('[data-google-left]');
+  if (left) {
+    const used = S.googleUsage && S.googleUsage.day === new Date().toISOString().slice(0, 10) ? S.googleUsage.count : 0;
+    left.textContent = `Google searches today: ${used} of ${Number(S.settings.googleDailyCap) || 0} (Settings).`;
+  }
+  const r = await send({ type: 'finder:progress', sources: findSources() });
   const p = r && r.progress && r.progress[name];
   if (!p || name !== S.findPreset) return (el.textContent = '');
   el.innerHTML = p.done
@@ -806,6 +902,7 @@ function initFind() {
   const form = $('[data-finder-form]');
   renderPresetChips();
   pickPreset(S.findPreset);
+  form.addEventListener('change', (e) => e.target.name === 'src' && renderPresetProgress());
   form.addEventListener('click', async (e) => {
     const n = e.target.closest('[data-find-preset]');
     if (n) pickPreset(n.dataset.findPreset);
@@ -823,9 +920,11 @@ function initFind() {
     const preset = presetNamed(S.findPreset);
     const keywords = form.keywords.value.split('\n').map((k) => k.trim()).filter(Boolean);
     if (preset && !keywords.length) return fail('Type at least one search term.');
-    const res = await send({ type: 'finder:start', config: { niche: S.findPreset, keywords: preset ? keywords : [], cap: form.cap.value } });
+    const sources = findSources();
+    if (!sources.length) return fail('Tick at least one place to search.');
+    const res = await send({ type: 'finder:start', config: { niche: S.findPreset, keywords: preset ? keywords : [], cap: form.cap.value, sources } });
     if (!res || res.error) return fail((res && res.error) || 'Could not start the search.');
-    toast(`Searching Google Maps ${plural(res.finder.mapsQ.length, 'time')}. Businesses show up on the Leads tab as they are found.`);
+    toast(`${plural(res.finder.mapsQ.length, 'search', 'searches')} queued. Businesses show up on the Leads tab as they are found.`);
     renderPresetProgress();
   });
 
@@ -1054,6 +1153,22 @@ function bind() {
   });
   $$('[data-cold-include]').forEach((el) => el.addEventListener('change', () => (S.coldInclude = el.checked)));
 
+  // The two sections
+  $('[data-sections]').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-section]');
+    if (!b || b.dataset.section === S.section) return;
+    S.section = b.dataset.section;
+    S.selected.clear();
+    S.limit = ROWS_STEP;
+    try {
+      localStorage.setItem('lh-section', S.section);
+    } catch {}
+    renderTable();
+  });
+  try {
+    if (['email', 'contact'].includes(localStorage.getItem('lh-section'))) S.section = localStorage.getItem('lh-section');
+  } catch {}
+
   // Every button
   document.addEventListener('click', async (e) => {
     const b = e.target.closest('[data-act], [data-goto], [data-copy], [data-remove-phone], [data-remove-email], [data-bad-email]');
@@ -1084,6 +1199,22 @@ function bind() {
         return renderTable();
       case 'export-cold':
         return exportColdEmail(filtered({ withExported: S.coldInclude }).map((r) => r.l));
+      case 'export-contacts':
+        return exportContacts(filtered().map((r) => r.l));
+      case 'export-vcard':
+        return exportContacts(filtered().map((r) => r.l), 'vcf');
+      case 'bulk-contacts':
+        return exportContacts(selectedLeads());
+      case 'bulk-igfind':
+      case 'ig-find': {
+        const ids = act === 'ig-find' ? (l ? [l.id] : []) : [...S.selected];
+        const r = await send({ type: 'igfind:check', ids });
+        if (!r || r.error) return toast((r && r.error) || 'Lead Hunter did not answer.');
+        return toast(r.queued ? `Looking for ${plural(r.queued, 'Instagram')} on Google, one every few seconds${r.left < r.queued ? `. Only ${r.left} Google searches are left today` : ''}` : 'They all have an Instagram already');
+      }
+      case 'google-resume':
+        await send({ type: 'google:resume' });
+        return toast('Google searches resumed');
       case 'bulk-cold':
         return exportColdEmail(selectedLeads());
       case 'export-csv':
