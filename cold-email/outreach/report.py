@@ -205,7 +205,7 @@ def build(con, settings: Settings, weekly: Optional[bool] = None) -> str:
     # 5. Not now, bounces, opt outs
     later = _rows(con, "SELECT * FROM leads WHERE reply_class='not_now' AND outcome IS NULL ORDER BY replied_at DESC LIMIT 30")
     if later:
-        L += ["## Said not now (worth a message in a month or two)", ""]
+        L += ["## Said not now (each comes back on your dashboard to check in 60 days after they replied)", ""]
         L += ["- %s, %s, replied %s" % (l["business"], l["email"], (l["replied_at"] or "")[:10]) for l in later]
         L.append("")
     gone = _rows(con, "SELECT * FROM leads WHERE status IN ('bounced','opted_out') AND substr(COALESCE(replied_at, last_sent_at),1,10)>=? "

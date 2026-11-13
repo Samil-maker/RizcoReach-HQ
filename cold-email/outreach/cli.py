@@ -175,7 +175,7 @@ def cmd_preview(args) -> int:
         if leads and not shown_followups:
             shown_followups = True
             lead = leads[0]
-            for step in (1, 2):
+            for step in sorted(schedule.FOLLOW_UP_DAYS):
                 body, full = templates.follow_up(lead, step, s)
                 print("\n" + "-" * 72)
                 print("Follow up %d (day %d, same thread, subject Re: ...), for %s" % (step, schedule.FOLLOW_UP_DAYS[step], lead["business"]))
@@ -479,6 +479,12 @@ def cmd_auto(args) -> int:
         return 0
     try:
         sender.log("Hourly check")
+        from . import actions
+
+        back = actions.check_ins_due(con)
+        if back:
+            launchd.notify("RizcoReach: %d to check in with" % back,
+                           "They said not now a while ago. A check in is drafted on your dashboard under Reply to these.")
         for result in importer.import_pending(con, log=sender.log):
             st = result["stats"]
             for line in importer.summary_lines(result):

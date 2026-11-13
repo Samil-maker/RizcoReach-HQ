@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS leads (
         -- queued, active, done, replied, bounced, opted_out, suppressed, skipped, blocked
     variant TEXT,                -- A (shows the price) or B (no price), set at the first send
     inbox TEXT,                  -- which inbox emails this lead (set at the first send)
-    next_step INTEGER DEFAULT 0, -- 0 first email, 1 follow up 1, 2 follow up 2
+    next_step INTEGER DEFAULT 0, -- 0 first email, then follow ups 1 to 6 (schedule.FOLLOW_UP_DAYS)
     next_due TEXT,               -- date the next email is due
     first_sent_at TEXT, last_sent_at TEXT,
     reply_class TEXT, replied_at TEXT,
@@ -99,6 +99,16 @@ def connect(path: Optional[Path] = None) -> sqlite3.Connection:
     columns = {r["name"] for r in con.execute("PRAGMA table_info(leads)")}
     if "campaign" not in columns:  # added with the Meta ads campaign
         con.execute("ALTER TABLE leads ADD COLUMN campaign TEXT DEFAULT 'website'")
+    if not get_state(con, "six_follow_ups"):
+        # The sequence used to stop after follow up 2 (day 7). Leads that finished that way, with no reply,
+        # carry on with follow up 3 on day 14 (or today if that's already past).
+        con.execute(
+            "UPDATE leads SET status='active', next_step=3, stop_reason=NULL, "
+            "next_due=MAX(date(substr(first_sent_at, 1, 10), '+14 days'), ?) "
+            "WHERE status='done' AND stop_reason='sequence finished, no reply' AND first_sent_at IS NOT NULL",
+            (clock.today().isoformat(),),
+        )
+        set_state(con, "six_follow_ups", True)
     return con
 
 

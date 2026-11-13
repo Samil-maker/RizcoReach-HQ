@@ -80,7 +80,9 @@ OUR_LINES = re.compile(
     r"Hi there just bringing|WhatsApp \+|I was looking at .* (ads|Instagram)|I came across .* Facebook|"
     r"We run Facebook and Instagram ads|No big setup fee|We came across .* (website|Facebook)|We build websites for|"
     r"We redesign websites for|We also offer SEO and management|We also handle SEO|One last note.{0,40}If (it helps|more genuine)|"
-    r"We were looking at .* (ads|Instagram))",
+    r"We were looking at .* (ads|Instagram)|"
+    r"Hi \S+( \S+)? (just bringing this back|had another thought|one more thought|just checking in\. (Most|If)|"
+    r"we know things get busy|checking in from RizcoReach|we haven't heard back so this is our last))",
     re.I | re.M,
 )
 

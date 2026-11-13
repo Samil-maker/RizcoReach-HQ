@@ -12,7 +12,7 @@ from email.message import Message
 from email.utils import getaddresses, parsedate_to_datetime
 from typing import Dict, List, Optional
 
-from . import classify, clock, config, db, mailer, safety, suppression, templates
+from . import classify, clock, config, db, mailer, safety, schedule, suppression, templates
 from .config import Inbox, Settings
 from .mailbox import Mailbox, MailboxError, imap_date
 
@@ -114,8 +114,8 @@ def process(con, settings: Settings, inbox: Inbox, raw: bytes, folder: str = "IN
             suppression.add(con, lead["email"], "said no" if not result.complaint else "complained")
             if sender and sender != lead["email"]:
                 suppression.add(con, sender, "said no (replied for %s)" % lead["email"])
-        elif result.label == "not_now":
-            stop.update(waiting_on_me=0)
+        elif result.label == "not_now":  # back on your Reply to these list in 60 days, to check in
+            stop.update(waiting_on_me=0, next_due=(received.date() + timedelta(days=schedule.NOT_NOW_CHECK_IN_DAYS)).isoformat())
             db.update_lead(con, lead_id, **stop)
         else:
             stop.update(waiting_on_me=1)

@@ -26,7 +26,11 @@ FAST_GAP_SECONDS = 60                                 # "Send the rest now": abo
 MIN_GAP_SECONDS = 180                                 # never two emails from one inbox within 3 minutes
 GAP_SECONDS = (180, 540)                              # catching up after the Mac slept: 3 to 9 minutes apart
 GLOBAL_GAP_SECONDS = (60, 120)                        # and never two emails within a minute of each other
-FOLLOW_UP_DAYS = {1: 3, 2: 7}
+# The follow ups, as days after the first email: close together at first, then about monthly for three months.
+# Every one replies in the same thread. Any reply, bounce or opt out stops the rest.
+FOLLOW_UP_DAYS = {1: 3, 2: 7, 3: 14, 4: 30, 5: 60, 6: 90}
+LAST_STEP = max(FOLLOW_UP_DAYS)
+NOT_NOW_CHECK_IN_DAYS = 60   # someone who said "not now" is back on your Reply to these list after this many days
 WARMUP_DAYS = 14                                      # a brand new inbox only warms up for its first 14 days
 
 
@@ -158,7 +162,7 @@ def next_window_start(now: datetime) -> Optional[datetime]:
 
 def due_follow_ups(con, inbox_key: str, day: date) -> List:
     return con.execute(
-        "SELECT * FROM leads WHERE status='active' AND inbox=? AND next_step IN (1, 2) AND next_due<=? "
+        "SELECT * FROM leads WHERE status='active' AND inbox=? AND next_step>=1 AND next_due<=? "
         "ORDER BY next_due, first_sent_at",
         (inbox_key, day.isoformat()),
     ).fetchall()
@@ -240,12 +244,18 @@ def campaign_approved(con, campaign: str) -> bool:
 
 
 def next_due_after(step_sent: int, first_sent: date, today: date) -> Optional[str]:
-    """Due date of the next email after sending `step_sent` today."""
+    """Due date of the next email after sending `step_sent` today, or None after the last follow up.
+
+    Each follow up is planned from the first email (day 3, 7, 14, 30, 60, 90). If one went out late (a busy day,
+    the Mac was off) the next keeps at least half its usual gap, so two never land close together."""
+    step = step_sent + 1
+    if step not in FOLLOW_UP_DAYS:
+        return None
     if step_sent == 0:
         return (today + timedelta(days=FOLLOW_UP_DAYS[1])).isoformat()
-    if step_sent == 1:
-        return max(first_sent + timedelta(days=FOLLOW_UP_DAYS[2]), today + timedelta(days=3)).isoformat()
-    return None
+    usual_gap = FOLLOW_UP_DAYS[step] - FOLLOW_UP_DAYS[step_sent]
+    return max(first_sent + timedelta(days=FOLLOW_UP_DAYS[step]),
+               today + timedelta(days=max(3, usual_gap // 2))).isoformat()
 
 
 def gap() -> float:

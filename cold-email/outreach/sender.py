@@ -14,7 +14,8 @@ from collections import deque
 from datetime import timedelta
 from typing import Dict, List, Optional
 
-from . import clock, config, db, dnscheck, mailer, replies, safety, schedule, segment, sitecheck, suppression, templates
+from . import (clock, config, db, dnscheck, emailcheck, mailer, replies, safety, schedule, segment, sitecheck, suppression,
+               templates)
 from .config import Inbox, Settings
 from .mailbox import Mailbox
 
@@ -95,7 +96,18 @@ def compose(con, settings: Settings, inbox: Inbox, lead, step: int, variant: Opt
 
 
 def recheck(con, lead) -> Optional[str]:
-    """Right before a first email: re-verify what we claim. Returns a reason to skip, or None."""
+    """Right before a first email: re-verify the address and what we claim. Returns a reason to skip, or None."""
+    email, fixed, problem = emailcheck.clean(lead["email"])  # leads imported before the address checks got stricter
+    if problem:
+        db.update_lead(con, lead["id"], status="blocked", stop_reason="email address: " + problem)
+        return "email address: " + problem
+    if email != lead["email"]:
+        if db.lead_by_email(con, email) or suppression.is_suppressed(email, suppression.load()):
+            db.update_lead(con, lead["id"], status="blocked", stop_reason="after fixing a typo (%s) it's a duplicate" % fixed)
+            return "after fixing a typo (%s) it's a duplicate or on the suppression list" % fixed
+        db.update_lead(con, lead["id"], email=email, mx_status="unchecked")
+        db.log_event(con, "fixed", "%s: %s" % (lead["business"], fixed), lead["id"])
+        lead = db.lead(con, lead["id"])
     if lead["mx_status"] == "unchecked":
         status = dnscheck.mx_status(lead["email"].split("@")[1])
         db.update_lead(con, lead["id"], mx_status=status)
@@ -235,8 +247,8 @@ class SendRun:
         fields = dict(last_sent_at=row["sent_at"], next_due=due)
         if step == 0:
             fields.update(status="active", inbox=inbox.key, variant=c["variant"], first_sent_at=row["sent_at"], next_step=1)
-        elif step == 1:
-            fields.update(next_step=2)
+        elif due:
+            fields.update(next_step=step + 1)
         else:
             fields.update(status="done", next_step=None, stop_reason="sequence finished, no reply")
         db.update_lead(con, lead_id, **fields)
@@ -330,6 +342,9 @@ class SendRun:
             begin = max(clock.now(), clock.at(day, 9)) + timedelta(seconds=random.uniform(0, 120 if first else 20))
             end = clock.at(day, *schedule.LAST_PLANNED)
             gap = schedule.FAST_GAP_SECONDS if self.fast else schedule.MIN_GAP_SECONDS
+            sent_today = con.execute("SELECT COUNT(*) FROM messages WHERE sent_date=? AND kind='campaign' "
+                                     "AND status IN ('sent', 'bounced')", (day.isoformat(),)).fetchone()[0]
+            safety.note_planned(con, day.isoformat(), sent_today + sum(len(v["items"]) for v in fresh.values()))
             for k, v in fresh.items():
                 queues[k] = deque((l["id"], step) for l, step in v["items"])
                 if self.fast:  # everything is due now: the gaps below set the pace, about one a minute

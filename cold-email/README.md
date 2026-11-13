@@ -71,7 +71,7 @@ on your Desktop (or type `rizco dashboard` in Terminal). It runs on your Mac onl
 |---|---|
 | Always | The dashboard at http://localhost:8321 (it starts when you log in) |
 | Once a day, evenings or weekends | Updates itself to the latest version, if its tests pass |
-| Every hour | New lead files are imported, cleaned and segmented. Replies are checked (All Mail and Spam), sequences stop for anyone who replied, answers are drafted into Gmail Drafts, the report is updated, and you get a notification for interested people |
+| Every hour | New lead files are imported, cleaned and segmented. Replies are checked (All Mail and Spam), sequences stop for anyone who replied, answers are drafted into Gmail Drafts, people who said not now 60 days ago come back to check in, the report is updated, and you get a notification for interested people |
 | Mon to Fri 9:00 to 22:00 Dubai time | The day's emails go out one at a time, spread over the day (busiest 10 to 12 and 1 to 3, about three quarters out by 18:00), inboxes taking turns, follow ups first. The plan is refreshed every 15 minutes, so new leads join the same day |
 | Every hour, sending hours | If there's more to send today and the sender isn't running (say you added leads after it finished), it starts it |
 | Every hour, 9:00 to 21:00 | Warm up: your inboxes swap a few normal emails, open them, rescue any from Spam, reply, and file them in a "RizcoReach Warmup" folder |
@@ -99,7 +99,7 @@ Writes today's report now (it also updates every hour by itself).
 | `rizco reports` | opens the folder with the daily reports |
 | `rizco status` | limits, queue, pause state at a glance |
 | `rizco send --dry-run` | shows exactly what the next send would email, sends nothing |
-| `rizco preview` | every segment with 3 sample emails each, plus the follow ups |
+| `rizco preview` | every segment with 3 sample emails each, plus all six follow ups |
 | `rizco replies` | checks replies now instead of waiting for the hour |
 | `rizco resume` | starts sending again after an automatic pause |
 | `rizco mark their@email.com handled` | you answered them on WhatsApp instead of email |
@@ -124,10 +124,21 @@ Writes today's report now (it also updates every hour by itself).
   bring you a lot more enquiries"). It never claims anything it didn't see.
 - **Skip:** a good modern website, or a site that blocks automated visits (it can't check, so it doesn't guess).
 
-The import also trims spaces, lowercases emails, drops duplicates (including two addresses at one company and
-anyone imported before), drops anyone in `suppression.csv` or marked Replied, Meeting booked, Won, Not
-interested or Skip in Lead Hunter, and checks every email's syntax and MX records. Each imported file moves to
-`leads/processed/` with a `.rejected.csv` saying why each skipped row was skipped.
+The import also drops duplicates (including two addresses at one company and anyone imported before), drops
+anyone in `suppression.csv` or marked Replied, Meeting booked, Won, Not interested or Skip in Lead Hunter, and
+checks every email address so it can't bounce (`outreach/emailcheck.py`):
+
+- **Tidies** what scraped lists get wrong: `mailto:`, spaces, brackets, `info [at] shop [dot] com`, web page
+  leftovers like `u003e` or `%20`, invisible characters, several addresses in one cell.
+- **Fixes typos** that can only mean one thing: `gmial.com`, `gamil.com`, `gmail.co`, `hotmial.com`, `yahooo.com`,
+  `outlok.com`, `shop.con`. The dashboard and the import summary list what was fixed.
+- **Leaves out** broken formats, placeholders (`name@domain.com`, `test@`), no reply and system addresses, image
+  file names (`logo@2x.png`), website platform and app addresses (Wix, Sentry, Facebook, Talabat and the like),
+  `info@gmail.com` style addresses (somebody's personal inbox, not the business), and domains with no MX records
+  (they can't receive email).
+- Leads imported before a check was added are checked again right before their first email.
+
+Each imported file moves to `leads/processed/` with a `.rejected.csv` saying why each skipped row was skipped.
 
 Columns are matched by name (`Company`, `E-mail`, `Mobile`, `Location`, and so on). Useful ones: business_name,
 email (both needed), first_name, website, instagram, phone, niche, area, source, notes, segment (forces A, B, C or SKIP).
@@ -155,15 +166,22 @@ There is an empty template in `leads/sample/lead-template.csv`.
 - **Monday to Friday only, Dubai time:** spread from 9:00 to 21:45, never two emails from one inbox within 3
   minutes or two from any inbox within a minute. Follow ups first, then new leads (new businesses first, since
   "just opened" goes stale).
-- **Sequence:** day 0, day 3 follow up, day 7 follow up, then stop. Follow ups reply in the same thread. Any real
-  reply, bounce or opt out stops that lead. Out of office replies push the next email to the day after they're back.
+- **Sequence:** the first email, then six follow ups on day 3, 7, 14, 30, 60 and 90, every one in the same thread
+  and each from a different angle: the examples, a free homepage preview, why a website matters, a quick yes or
+  not yet, the offer again, and a friendly last email that leaves the door open. Any real reply, bounce or opt out
+  stops that lead. Out of office replies push the next email to the day after they're back. Follow ups go out
+  before new leads, so as more people are in the sequence fewer new businesses fit in a day: the dashboard says
+  when follow ups fill most of a day, which is the moment to add an inbox.
+- **Not now:** someone who replies "not now" or "not yet" comes back on your Reply to these list 60 days later,
+  with a check in drafted for you. You send it yourself.
 - **Copy:** plain text, no images, no tracking, no links in the first email (follow up 1 carries your portfolio
   link), first emails under 80 words, no dashes or semicolons, ends with the
   opt out line. All wording lives in `outreach/templates.py`.
 - **A/B test:** half of each segment gets version A (with the price line), half version B (without). After 100 sends
   each, the report names the winner and suggests the next test.
 - **Automatic pause** (until `rizco resume`): bounces over 3% of a day's emails, a reply that mentions spam or
-  reporting, or Gmail refusing our mail or login. At 50 a day, 2 bounces in a day is already 4%.
+  reporting, or Gmail refusing our mail or login. The 3% counts against the whole day's emails, not just the
+  ones sent so far: at 50 a day 1 bounce (2%) carries on and 2 bounces (4%) pause.
 - **suppression.csv:** everyone who said no, every hard bounce, anyone you add. Never emailed again.
 - **Never:** demo sites called client work, made up clients or numbers, or a reply sent for you.
 

@@ -162,8 +162,20 @@ def test_follow_ups_go_first_and_thread(project, con, settings, smtp, dns_pass, 
     smtp.outbox.clear()
     run_day(con, settings, fake_clock, datetime(2026, 11, 16, 9, 0, tzinfo=clock.TZ))  # day 7: follow up 2
     texts = [m.get_content() for m in smtp.outbox if m["To"].startswith("owner")]
-    assert len(texts) == 5 and all("One last note" in t for t in texts)
-    assert con.execute("SELECT COUNT(*) FROM leads WHERE status='done'").fetchone()[0] == len(texts)
+    assert len(texts) == 5 and all("had another thought" in t for t in texts)
+    lead = db.lead_by_email(con, "owner0@shop0.ae")
+    assert lead["status"] == "active" and lead["next_step"] == 3 and lead["next_due"] == "2026-11-23"   # day 14
+    # the rest of the sequence: day 14, 30, 60 and 90, every one in the same thread, then it stops
+    for when, step, words in (((2026, 11, 23), 3, "just checking in"), ((2026, 12, 9), 4, "keep this one short"),
+                              ((2027, 1, 8), 5, "Our offer for Shop 0 is still open"),
+                              ((2027, 2, 8), 6, "this is our last email for now")):
+        smtp.outbox.clear()
+        run_day(con, settings, fake_clock, datetime(*when, 9, 0, tzinfo=clock.TZ))
+        mine = [m for m in smtp.outbox if m["To"] == "owner0@shop0.ae"]
+        assert len(mine) == 1 and words in mine[0].get_content() and mine[0]["Subject"] == "Re: Shop 0 website", (when, step)
+        assert con.execute("SELECT step FROM messages WHERE to_email='owner0@shop0.ae' ORDER BY id DESC").fetchone()[0] == step
+    assert db.lead_by_email(con, "owner0@shop0.ae")["status"] == "done"
+    assert con.execute("SELECT COUNT(*) FROM messages WHERE to_email='owner0@shop0.ae'").fetchone()[0] == 7
 
 
 REPLY = """From: Shop Owner <owner0@shop0.ae>
@@ -226,7 +238,7 @@ def test_bounce_over_3_percent_pauses(project, con, settings, smtp, dns_pass, fa
     assert db.lead_by_email(con, "owner2@shop2.ae")["status"] == "bounced"
     assert "owner2@shop2.ae" in suppression.load()
     p = safety.paused(con)
-    assert p and "1 of 5" in p["reason"]
+    assert p and "1 of the 5" in p["reason"]
     assert run_day(con, settings, fake_clock, datetime(2026, 11, 10, 9, 0, tzinfo=clock.TZ)) == 0
     safety.resume(con)
     assert not safety.paused(con)

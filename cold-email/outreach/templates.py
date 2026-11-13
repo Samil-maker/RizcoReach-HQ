@@ -122,7 +122,16 @@ HOME_IMPROVEMENT = re.compile(
 
 ADS_FOLLOW_UP = {
     1: "Hi {greeting_name} just bringing this back up in case it got buried. Happy to send a quick explanation of how it works if you're interested",
-    2: "One last note[[ {first_name}]]. If more genuine enquiries from Facebook and Instagram are ever on your list just reply yes and we'll send over the details",
+    2: "Hi {greeting_name} one more thought. Enquiries from ads go cold fast if nobody gets back to them. Our team "
+       "messages each one on WhatsApp straight away so you only talk to people who are ready. Want me to send the details?",
+    3: "Hi {greeting_name} just checking in. If getting more customers from Facebook and Instagram is on your mind we'd be "
+       "happy to show you how we'd set it up for {business}. Want me to send it over?",
+    4: "Hi {greeting_name} we know things get busy so we'll keep this one short. Are more enquiries for {business} something "
+       "you're focused on in the next few months? A quick yes or not yet is perfect",
+    5: "Hi {greeting_name} checking in from RizcoReach. Our offer for {business} is still open. {ads_offer_sentence} "
+       "Want me to send over how it would work?",
+    6: "Hi {greeting_name} we haven't heard back so this is our last email for now. If more genuine enquiries for "
+       "{business} ever become a priority just reply here and we'll pick it up from there. Wishing you all the best",
 }
 ADS_HOW = ("We set up and run Facebook and Instagram ads for {business}. Our team contacts every enquiry by SMS or WhatsApp "
            "to confirm what they need, and only the genuine ones get passed to you on WhatsApp or email, whichever you prefer.")
@@ -156,10 +165,28 @@ def ads_offer(lead) -> str:
 
 CAMPAIGN_OF_SEGMENT = {"A": "website", "B": "website", "C": "website", "N": "ads", "G": "ads"}
 
+# Follow ups: same thread, each one short and from a different angle, so a lead hears from us regularly
+# without reading the same email twice. Days are in schedule.FOLLOW_UP_DAYS (3, 7, 14, 30, 60, 90).
+# The portfolio link goes on its own line in follow up 1 (EXAMPLES_LINK in .env). First emails never carry a link.
 FOLLOW_UP = {
-    # The portfolio link goes on its own line (EXAMPLES_LINK in .env). First emails never carry a link.
+    # day 3: a gentle bump, with the examples
     1: "Hi {greeting_name} just bringing this back up in case it got buried.[[ Here are a few sites we've built so you can see the style\n\n{examples_link}]]",
-    2: "One last note[[ {first_name}]]. If it helps we can put together a quick preview of what a homepage for {business} could look like. No cost and no commitment. Just reply yes",
+    # day 7: something free to say yes to
+    2: "Hi {greeting_name} had another thought. If it helps we can put together a quick preview of what a homepage for "
+       "{business} could look like. No cost and no commitment. Just reply yes and we'll get started",
+    # day 14: why it matters
+    3: "Hi {greeting_name} just checking in. Most customers look a business up online before they get in touch "
+       "and the website is usually where they decide. We'd love to help {business} make a great first impression. "
+       "Is this something you'd like to look at?",
+    # day 30: an easy yes or no
+    4: "Hi {greeting_name} we know things get busy so we'll keep this one short. Is a website for {business} on your "
+       "list for the next few months? A quick yes or not yet is perfect",
+    # day 60: the offer again
+    5: "Hi {greeting_name} checking in from RizcoReach. Our offer for {business} is still open. Nothing upfront and you "
+       "only pay once you're happy with the website. Want me to send you a free preview?",
+    # day 90: a friendly close, the door left open
+    6: "Hi {greeting_name} we haven't heard back so this is our last email for now. If a website for {business} ever "
+       "comes up just reply here and we'll pick it up from there. Wishing you all the best with the business",
 }
 
 SIGNATURE = """{sender_name}
@@ -174,6 +201,14 @@ DRAFT_INTERESTED = (
     "If you like the style we can put together a quick preview for {business} so you can see it before deciding "
     "anything. Easiest to chat on WhatsApp. Our number is {whatsapp}"
 )
+
+# For someone who said "not now": back on your Reply to these list after 60 days with this drafted. You send it.
+CHECK_IN = {
+    "website": "Hi[[ {first_name}]]. A while back you mentioned it wasn't the right time for a website for {business}. "
+               "Just checking in to see if now is any better. Happy to put together a free preview whenever you're ready",
+    "ads": "Hi[[ {first_name}]]. A while back you mentioned it wasn't the right time for Facebook and Instagram ads for "
+           "{business}. Just checking in to see if now is any better. Happy to walk you through how it works whenever you're ready",
+}
 
 # Short answers for common questions. Anything in [brackets] is for you to fill in before sending.
 QUESTION_ANSWERS = [
@@ -325,6 +360,11 @@ def quote(original_text: str, sent_at: datetime, from_name: str, from_email: str
 
 def reply_subject(subject: str) -> str:
     return subject if re.match(r"^\s*re\s*:", subject or "", re.I) else "Re: " + (subject or "")
+
+
+def check_in(lead, settings: Settings) -> str:
+    """The check in for someone who said not now, signed with your name."""
+    return render(CHECK_IN["ads" if campaign_of(lead) == "ads" else "website"], lead_vars(lead, settings)) + "\n\n" + settings.from_name
 
 
 def draft_reply(classification: str, lead, their_text: str, settings: Settings) -> Optional[str]:
