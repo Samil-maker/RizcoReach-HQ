@@ -90,6 +90,10 @@ def overview(con, s: config.Settings) -> Dict:
     cap_today = sum(i["cap"] for i in inboxes) if schedule.is_send_day(today) else 0
     human = "is_auto=0 AND classification!='bounce'"
     queue = {r["segment"]: r["n"] for r in con.execute("SELECT segment, COUNT(*) AS n FROM leads WHERE status='queued' GROUP BY segment")}
+    send_day = today if schedule.is_send_day(today) else clock.next_weekday(today)
+    following = one("SELECT COUNT(*) FROM leads WHERE status='active'")
+    due_next = one("SELECT COUNT(*) FROM leads WHERE status='active' AND next_due<=?", send_day.isoformat())
+    full = f.get("full", 0)
 
     if paused:
         nxt = "Paused"
@@ -113,6 +117,8 @@ def overview(con, s: config.Settings) -> Dict:
         "inboxes": inboxes,
         "campaigns": campaigns,
         "forecast": {"today": f["today"], "reach": {str(k): (clock.nice(v) if hasattr(v, "day") else v) for k, v in f["reach"].items()}},
+        # Follow ups go first. When they fill most of a day, fewer new businesses fit in: time for another inbox.
+        "followups": {"active": following, "due_next": due_next, "full": full, "busy": bool(full and due_next >= 0.6 * full)},
         "stats": {
             "sent_today": sent_today, "cap_today": cap_today,
             "sent_week": one("SELECT COUNT(*) FROM messages WHERE kind='campaign' AND sent_date>=? AND status IN ('sent','bounced')", monday),
@@ -135,21 +141,24 @@ def overview(con, s: config.Settings) -> Dict:
 
 
 def waiting(con, s: config.Settings) -> List[Dict]:
+    actions.check_ins_due(con)
     out = []
     for lead in con.execute("SELECT * FROM leads WHERE waiting_on_me=1 ORDER BY replied_at DESC").fetchall():
         msg = con.execute("SELECT * FROM inbound WHERE lead_id=? AND is_auto=0 AND classification!='bounce' "
                           "ORDER BY received_at DESC LIMIT 1", (lead["id"],)).fetchone()
         inbox = s.inbox(lead["inbox"] or "") or (s.inboxes[0] if s.inboxes else None)
+        check_in = (lead["stop_reason"] or "").startswith("check in")
         out.append({
             "business": lead["business"], "email": lead["email"], "phone": lead["phone"] or "",
             "whatsapp": report.wa_link(lead["phone"] or ""),
             "instagram": "https://www.instagram.com/%s/" % lead["instagram"] if lead["instagram"] else "",
             "segment": report.SEGMENT_NAMES.get(lead["segment"], lead["segment"]),
-            "kind": classify.LABELS.get(lead["reply_class"] or "", lead["reply_class"] or ""),
+            "kind": "time to check in" if check_in else classify.LABELS.get(lead["reply_class"] or "", lead["reply_class"] or ""),
             "said": (msg["body"] if msg else "") or "", "when": _nice_time(msg["received_at"] if msg else lead["replied_at"]),
-            "draft": (msg["draft"] if msg else "") or "", "draft_saved": bool(msg and msg["draft_saved"]),
+            "draft": templates.check_in(lead, s) if check_in else (msg["draft"] if msg else "") or "",
+            "draft_saved": bool(msg and msg["draft_saved"]) and not check_in,
             "gmail": "https://mail.google.com/mail/u/?authuser=%s#%s" % (
-                inbox.email if inbox else "", "drafts" if msg and msg["draft_saved"] else "search/from%3A" + lead["email"]),
+                inbox.email if inbox else "", "drafts" if msg and msg["draft_saved"] and not check_in else "search/from%3A" + lead["email"]),
         })
     return out
 
@@ -195,6 +204,8 @@ EVENT_TEXT = {
     "updated": lambda e: "Updated to the latest version",
     "update_failed": lambda e: "An update failed its tests and was skipped",
     "suppressed": lambda e: "Never email again: %s" % e["detail"],
+    "fixed": lambda e: "Fixed an email typo before sending: %s" % e["detail"],
+    "check_in": lambda e: "%s said not now a while ago: time to check in (it's on your Reply to these list)" % e["who"],
 }
 
 
@@ -262,7 +273,7 @@ def _import_job(log, campaign="auto"):
         out.append({"file": r["file"], "imported": st["imported"], "rows": st["rows"], "A": st["seg_A"], "B": st["seg_B"],
                     "C": st["seg_C"], "N": st["seg_N"], "G": st["seg_G"], "skip": st["seg_SKIP"],
                     "campaign": config.CAMPAIGNS[r.get("campaign", "website")], "duplicate": st["duplicate"], "invalid": st["invalid"],
-                    "suppressed": st["suppressed"], "handled": st["handled"],
+                    "suppressed": st["suppressed"], "handled": st["handled"], "fixed": st["fixed"], "fixes": r.get("fixes", [])[:3],
                     "reasons": sorted(reasons.items(), key=lambda kv: -kv[1])[:6]})
     return out
 

@@ -1,6 +1,7 @@
 """Lead import: CSV or XLSX files in leads/inbox/ become clean leads in the database.
 
-Cleaning: trim spaces, lowercase emails, check email syntax and MX records, drop duplicates (in the
+Cleaning: tidy and check every email address and fix obvious typos (emailcheck.py), check MX records
+(the domain can receive email), drop duplicates (in the
 file and against everyone already imported, including two addresses at the same company), drop
 anyone on the suppression list. Then each lead gets its segment. The original file moves to
 leads/processed/, next to a .rejected.csv that says why each skipped row was skipped.
@@ -19,7 +20,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from . import clock, config, db, dnscheck, names, segment, sitecheck, suppression
+from . import clock, config, db, dnscheck, emailcheck, names, segment, sitecheck, suppression
 
 FIELDS: Dict[str, List[str]] = {
     "business_name": ["business name", "business", "company name", "company", "page name", "place name", "brand",
@@ -49,17 +50,7 @@ FIELDS: Dict[str, List[str]] = {
 HANDLED_STATUS = re.compile(r"^(replied|meeting booked|meeting|won|client|customer|not interested|lost|skip|do not contact|dnc)$", re.I)
 FUZZY = {"email": "email", "website": "website", "instagram": "instagram", "phone": "phone"}
 
-JUNK_DOMAIN = re.compile(
-    r"(^|\.)(example\.(com|org|net)|domain\.com|email\.com|yourdomain\.\w+|yoursite\.\w+|mysite\.com|website\.com|"
-    r"test\.com|sentry\.io|wixpress\.com|wix\.com|godaddy\.com|secureserver\.net|squarespace\.com|weebly\.com|"
-    r"jimdo\.com|shopify\.com|wordpress\.(com|org)|mailchimp\.com|sentry-next\.wixpress\.com)$"
-)
-JUNK_USER = re.compile(
-    r"^(filler|name|your|yourname|you|user|username|email|e-?mail|test|example|sample|someone|john\.?doe|"
-    r"jane\.?doe|no-?reply|do-?not-?reply|donotreply|noreply|mailer-daemon|postmaster|abuse|bounce[s]?|"
-    r"unsubscribe|privacy|legal|dpo|webmaster|hostmaster)$"
-)
-EMAIL_SYNTAX = re.compile(r"^[a-z0-9!#$%&'*+/=?^_`{|}~-]+(\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*@([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$")
+# Email address checks and typo fixes live in emailcheck.py
 
 
 def norm_header(h) -> str:
@@ -142,22 +133,9 @@ def read_rows(path: Path) -> Tuple[List[str], List[Dict[str, str]]]:
     return headers, out
 
 
-def pick_email(value: str) -> Tuple[str, str]:
-    """(email, problem). Takes the first usable address from a cell that may hold several."""
-    candidates = re.split(r"[\s,;/|]+", (value or "").lower().replace("mailto:", ""))
-    candidates = [c.strip("<>()[]\"'.") for c in candidates if "@" in c]
-    if not candidates:
-        return "", "no email"
-    problem = "invalid email"
-    for c in candidates:
-        if not EMAIL_SYNTAX.match(c) or ".." in c:
-            continue
-        user, domain = c.split("@", 1)
-        if JUNK_DOMAIN.search(domain) or JUNK_USER.match(user) or re.search(r"\.(png|jpe?g|gif|webp|svg|css|js)$", domain):
-            problem = "placeholder or no reply address"
-            continue
-        return c, ""
-    return "", problem
+def pick_email(value: str) -> Tuple[str, str, str]:
+    """(email, fixed, problem). Takes the first usable address from a cell that may hold several."""
+    return emailcheck.clean(value)
 
 
 def business_key(email: str, website: str) -> List[str]:
@@ -176,7 +154,7 @@ def clean_row(row: Dict[str, str], mapping: Dict[str, str]) -> Tuple[Optional[Di
     get = lambda f: _cell(row.get(mapping[f], "")) if f in mapping else ""  # noqa: E731
     if HANDLED_STATUS.match(get("status")):
         return None, "already handled (status: %s)" % get("status")
-    email, problem = pick_email(get("email"))
+    email, fixed, problem = pick_email(get("email"))
     if not email:
         return None, problem
     business_name = get("business_name")
@@ -188,6 +166,7 @@ def clean_row(row: Dict[str, str], mapping: Dict[str, str]) -> Tuple[Optional[Di
     first = names.clean_first_name(get("first_name") or get("full_name"), business)
     lead = {
         "email": email,
+        "email_fixed": fixed,
         "business_name": business_name,
         "business": business,
         "first_name": first,
@@ -257,6 +236,7 @@ def import_file(con, path: Path, overrides: Optional[Dict[str, str]] = None, che
     suppressed = suppression.load()
     seen_emails, seen_keys = _existing_keys(con)
     leads: List[Dict] = []
+    fixes: List[str] = []
     for row in rows:
         lead, problem = clean_row(row, mapping)
         if not lead and problem.startswith("already handled"):
@@ -278,6 +258,8 @@ def import_file(con, path: Path, overrides: Optional[Dict[str, str]] = None, che
             continue
         seen_emails.add(lead["email"])
         seen_keys.update(keys)
+        if lead["email_fixed"]:
+            fixes.append(lead["email_fixed"])
         lead["campaign"] = row_campaign(lead["campaign"], default_campaign)
         leads.append(lead)
 
@@ -349,7 +331,8 @@ def import_file(con, path: Path, overrides: Optional[Dict[str, str]] = None, che
                 for row, why in rejected:
                     w.writerow([why] + [row.get(h, "") for h in headers])
     stats["rows"] = len(rows)
-    return {"file": path.name, "stats": stats, "rejected": rejected, "campaign": default_campaign}
+    stats["fixed"] = len(fixes)
+    return {"file": path.name, "stats": stats, "rejected": rejected, "campaign": default_campaign, "fixes": fixes}
 
 
 def summary_lines(result: Dict) -> List[str]:
@@ -365,6 +348,9 @@ def summary_lines(result: Dict) -> List[str]:
     skips = [(k[5:], v) for k, v in s.items() if k.startswith("skip:")]
     if skips:
         lines.append("  Skipped because: " + ", ".join("%s (%d)" % kv for kv in sorted(skips, key=lambda kv: -kv[1])))
+    if result.get("fixes"):
+        lines.append("  Fixed %d email typo%s, for example %s" % (len(result["fixes"]), "" if len(result["fixes"]) == 1 else "s",
+                                                              ", ".join(result["fixes"][:3])))
     if s["mx_unchecked"]:
         lines.append("  %d email domains did not answer the MX check. They are checked again before sending." % s["mx_unchecked"])
     if result["rejected"]:

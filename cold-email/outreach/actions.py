@@ -1,9 +1,10 @@
 """Things you can do to a lead, shared by the dashboard buttons and  rizco mark."""
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Optional, Tuple
 
-from . import clock, db, names, segment, suppression
+from . import clock, db, names, schedule, segment, suppression
 
 MARKS = {
     "interested": "they are interested (waiting for your reply)",
@@ -32,8 +33,9 @@ def mark(con, email: str, what: str, note: Optional[str] = None) -> Tuple[bool, 
         db.update_lead(con, lead["id"], status="replied", reply_class=what, waiting_on_me=1,
                        replied_at=lead["replied_at"] or clock.iso(), stop_reason="replied (marked by you)", **stopped)
     elif what == "not-now":
+        check_in = (clock.today() + timedelta(days=schedule.NOT_NOW_CHECK_IN_DAYS)).isoformat()
         db.update_lead(con, lead["id"], status="replied", reply_class="not_now", waiting_on_me=0,
-                       replied_at=lead["replied_at"] or clock.iso(), stop_reason="not now (marked by you)", **stopped)
+                       replied_at=lead["replied_at"] or clock.iso(), stop_reason="not now (marked by you)", next_due=check_in)
     elif what == "no":
         db.update_lead(con, lead["id"], status="opted_out", reply_class="opt_out", waiting_on_me=0,
                        stop_reason="said no (marked by you)", **stopped)
@@ -73,3 +75,15 @@ def mark(con, email: str, what: str, note: Optional[str] = None) -> Tuple[bool, 
             extra = '\nIt will say: "Had a look at the %s website. %s"' % (lead["business"], lead["observation"])
     db.log_event(con, "marked", what, lead["id"])
     return True, "%s: %s%s" % (lead["email"], MARKS[what], extra)
+
+
+def check_ins_due(con) -> int:
+    """People who said "not now" a while ago go back on your Reply to these list, with a check in drafted for you.
+    Never sent for you. Returns how many came back."""
+    rows = con.execute(
+        "SELECT id FROM leads WHERE status='replied' AND reply_class='not_now' AND next_due IS NOT NULL AND next_due<=? "
+        "AND outcome IS NULL AND waiting_on_me=0", (clock.today().isoformat(),)).fetchall()
+    for r in rows:
+        db.update_lead(con, r["id"], waiting_on_me=1, next_due=None, stop_reason="check in: they said not now")
+        db.log_event(con, "check_in", "", r["id"])
+    return len(rows)

@@ -90,9 +90,9 @@ def test_follow_ups():
     b1, f1 = templates.follow_up(lead("B"), 1, S)
     assert b1.startswith("Hi there just bringing this back up")
     b2, f2 = templates.follow_up(lead("B", first="Sara"), 2, S)
-    assert b2.startswith("One last note Sara. If it helps we can")
+    assert b2.startswith("Hi Sara had another thought. If it helps we can")
     b2, _ = templates.follow_up(lead("B"), 2, S)
-    assert b2.startswith("One last note. If it helps")
+    assert b2.startswith("Hi there had another thought. If it helps")
     for b, f in ((b1, f1), (b2, f2)):
         assert templates.lint("Re: Glossy PPF website", b, f, 1)[0] == []
         assert not FIRST_PERSON.search(f)

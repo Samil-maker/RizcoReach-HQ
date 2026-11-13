@@ -289,7 +289,10 @@ async function loadOverview() {
     el("td", { class: "note" }, i.status),
     el("td", { class: "note" }, i.warm_sent ? i.warm_sent + " sent, " + i.warm_spam + " of " + i.warm_checked + " landed in Spam" : (o.inboxes.length < 2 ? "starts with 2 inboxes" : "none yet")))));
   const reach = Object.entries(o.forecast.reach).map(([n, when]) => n + " a day: " + when).join(" · ");
-  $("forecast").textContent = "Together up to " + o.forecast.today + " a day now. " + reach + ". Lifetime: " + s.emailed + " emailed, " + s.replied + " replied, " + s.interested + " interested, " + s.clients + " clients.";
+  const fu = o.followups;
+  $("forecast").textContent = "Together up to " + o.forecast.today + " a day now. " + reach + ". Following up with " + fu.active + " businesses (follow ups go out first). "
+    + (fu.busy ? "Follow ups fill " + fu.due_next + " of the next day's " + fu.full + " emails, so only a few new businesses fit in. Add an inbox to keep reaching new ones. " : "")
+    + "Lifetime: " + s.emailed + " emailed, " + s.replied + " replied, " + s.interested + " interested, " + s.clients + " clients.";
 
   $("startBtn").disabled = !o.can_start;
   $("startBtn").title = o.can_start ? "" : o.next;
@@ -441,7 +444,8 @@ async function upload(file) {
       el("p", { class: "small" }, x.campaign === "Meta ads"
         ? "No Meta ads running " + x.N + " · Not checked " + x.G + " · Skipped (already running ads) " + x.skip
         : "New business " + x.A + " · No website " + x.B + " · Outdated website " + x.C + " · Skipped (good website) " + x.skip),
-      x.reasons.length ? el("p", { class: "small muted" }, "Not imported: " + x.reasons.map(([why, n]) => why + " (" + n + ")").join(", ")) : null,
+      x.fixed ? el("p", { class: "small" }, "Fixed " + x.fixed + " email typo" + (x.fixed === 1 ? "" : "s") + ", for example " + x.fixes.join(", ")) : null,
+      x.reasons.length ? el("p", { class: "small muted" }, "Left out so they can't bounce: " + x.reasons.map(([why, n]) => why + " (" + n + ")").join(", ")) : null,
       el("p", { class: "small muted" }, x.imported ? "They go out from the next sending day, a few at a time." : ""),
       x.imported ? el("button", { class: "btn", onclick: () => $("previewBtn").click() }, "See the emails it wrote") : null)));
   } catch (e) { out.replaceChildren(el("p", {}, "Upload failed: " + e.message)); }

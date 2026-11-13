@@ -1,8 +1,9 @@
 """Two campaigns side by side: website and Meta ads."""
+import re
 from datetime import datetime
 
 from conftest import ENV
-from outreach import clock, config, db, importer, replies, sender, templates
+from outreach import clock, config, db, importer, replies, schedule, sender, templates
 
 LEAD_HUNTER_ADS_EXPORT = (
     "priority,business,niche,area,meta_ads,active_ads,ad_library_search,google_rating,google_reviews,google_maps,website,"
@@ -83,7 +84,12 @@ def test_ads_follow_ups(project):
     s = config.Settings(whatsapp="0501234567")
     lead = {"segment": "N", "campaign": "ads", "business": "Glow Dental", "first_name": "", "area": "", "observation": "",
             "source": "", "instagram": "", "address": ""}
-    for step in (1, 2):
+    bodies = []
+    for step in sorted(schedule.FOLLOW_UP_DAYS):
         body, full = templates.follow_up(lead, step, s)
-        assert "Facebook and Instagram" in body or "how it works" in body
+        assert re.search(r"Facebook and Instagram|how it works|enquiries|WhatsApp|genuine lead", body), body
+        assert "website" not in body.lower()                             # Meta ads leads never get the website pitch
         assert templates.lint("Re: Glow Dental enquiries", body, full, step)[0] == []
+        bodies.append(body)
+    assert len(set(bodies)) == len(bodies)
+    assert "Nothing upfront. You only pay once you've had your first genuine lead." in bodies[4]   # the offer again

@@ -126,6 +126,7 @@ def test_campaigns_on_the_dashboard(server, con):
 def test_prices_on_the_dashboard(server):
     o = server("/api/overview")[1]
     assert o["settings"]["website_price"] == 749 and o["settings"]["care_price"] == 480
+    assert o["followups"] == {"active": 0, "due_next": 0, "full": 50, "busy": False}
     assert server("/api/settings", body={"website_price": "1950", "care_price": "550"})[1]["ok"]
     o = server("/api/overview")[1]
     assert o["settings"]["website_price"] == 1950 and o["settings"]["care_price"] == 550
