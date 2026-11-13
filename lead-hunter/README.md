@@ -1,20 +1,19 @@
 # Lead Hunter (Chrome extension)
 
-Finds UAE businesses that need a website **now**, checks that their email address is real, and hands them to the
-cold email system (`cold-email/` in this repo) as a CSV file.
+Finds UAE businesses with **no website, or a dead or weak one**, with their email, phone and Instagram. Two sections
+on the Leads tab:
 
-A business goes in the file only when it fits:
+- **Email leads**: businesses that fit and have an email that passed its checks. **Export for cold email** makes the
+  CSV the cold email system (`cold-email/` in this repo) imports.
+- **WhatsApp & Instagram leads**: businesses that fit and have a phone or an Instagram. **Google Contacts** makes a
+  file for contacts.google.com (each contact has their Instagram too), so they show by name in WhatsApp. Tap an
+  @username in the list to open their Instagram.
 
-- **It just opened (or is about to) and has no working website.** Proof is never guessed. It is one of: Google's
-  own **Recently opened** / **Opened 3 weeks ago** / **Opening soon** label on the Maps listing, their own ad
-  saying "grand opening" or "now open" (an ad that started lately), their own Instagram post saying so, an
-  Instagram account that only started posting in the last few weeks, or your own say in the lead's panel. A bio
-  that says "now open" is shown as a hint only: bios say it for years.
-- **Or its website is down, parked, or a "coming soon" / placeholder page.** They meant to have a website and
-  don't.
-
-A business that never had a website, with no proof it is new, does not fit. Neither does one with a working
-website, however it looks. Everything found is kept, so **Everything found** on the Leads tab shows the rest.
+A business fits when it has no website, or its website is down, parked ("coming soon") or weak (not secure, not
+made for phones, or scoring under 80). A good modern website does not fit. Proof that a business **just opened**
+puts it first and the cold email file says "new business": Google's own **Recently opened** / **Opening soon**
+label on Maps, their own recent "grand opening" ad, their own Instagram post, a brand new Instagram account, or your
+own say. **Strict** (Settings > Who fits) brings back the old rule: only new businesses or dead websites.
 
 ## Install (2 minutes)
 
@@ -31,12 +30,17 @@ the Lead Hunter card. Your leads are kept.
 
 ## Find businesses (Find tab)
 
-1. **Google Maps.** Pick a kind of business, or **All types** (every kind, area by area), and press **Find
-   businesses**. Lead Hunter opens Google Maps in a background tab, runs "search term area" one search at a time
-   at a human pace, and reads the results list, including Google's Recently opened / Opening soon label. Each
-   kind remembers which searches have run, so the next run carries on from there (**Start over** resets it).
-   There are 43 kinds built in (salons, restaurants, cafes, clinics, gyms, garages, interiors, home maintenance,
-   contracting, shops, schools, events and more), so there is nothing to import. Edit, remove or add them in Settings.
+1. **Google Maps and Google.** Pick a kind of business, or **All types** (every kind, area by area), tick where to
+   search, and press **Find businesses**:
+   - **Google Maps**: the most businesses, with phone numbers and Google's Recently opened label.
+   - **Google: business websites**: businesses found through their own website, where the email usually is.
+     Directories, news, booking sites and "top 10" lists are skipped.
+   - **Google: Instagram profiles with an email**: Instagram accounts whose bio (as Google shows it) has an email.
+   Each search runs in a background tab at a human pace. Each kind remembers which searches have run, so the next
+   run carries on from there (**Start over** resets it). There are 43 kinds built in (salons, restaurants, cafes,
+   clinics, gyms, garages, interiors, home maintenance, contracting, shops, schools, events and more).
+   Google allows only so many searches before it shows a captcha, so Google searches stop at **120 a day**
+   (Settings). A captcha pauses Google with an alert; nothing tries to get past it.
 2. **Businesses advertising their opening.** Searches the Meta Ad Library for "grand opening", "now open",
    "soft opening" and the Arabic words in a tab, and keeps the advertisers whose recent ad says so.
 3. **Instagram.** Lead Hunter never searches or browses Instagram. When you come across a new business there,
@@ -45,12 +49,14 @@ the Lead Hunter card. Your leads are kept.
 Then, for every business, by itself:
 
 - **Its website is checked**: down (does not load, or errors), parked (parking, "coming soon", "launching soon",
-  "site not published", default server pages), or working. A website blocking the check counts as "could not be
+  "site not published", default server pages), weak, or good. A website blocking the check counts as "could not be
   judged" and stays out. With no website listed but an email at a domain of their own (info@glowsalon.ae), that
   domain is checked as their website, so a business with a working site is never told it has none.
 - **Its Instagram is read through Meta's official API** (Settings > Instagram): the bio (often with their email),
   the link in it, and the latest 12 posts. An opening announcement, or an account whose first post is under 90
   days old, counts as proof.
+- **Its Instagram is found on Google** when nobody listed it: one Google search by its name, and only a profile whose
+  name matches (or whose username spells it) is taken. Its bio's email and phone come with it.
 - **Its Facebook page Intro** is read for an email, only for businesses that fit and have none yet.
 - **Every email address is checked** (below).
 
@@ -63,7 +69,7 @@ Then, for every business, by itself:
    guessed.
 2. **Its domain** is looked up in public DNS (Google, then Cloudflare): a domain that does not exist, receives no
    email or is parked with a parking company's mail server fails. Free, always on.
-3. **Its mailbox** is checked with QuickEmailVerification, with your own key (Settings > Email check). Their free
+3. **Optional: its mailbox** is checked with QuickEmailVerification, with your own key (Settings > Email check). Their free
    plan gives **100 checks a day, no card**: sign up at quickemailverification.com, open API settings, create a
    key, paste it, press **Save and test** (the test uses their free sandbox). Checks are only spent on businesses
    that fit, best address first, and stop at the first confirmed one. With a key, only **confirmed** mailboxes go
@@ -76,16 +82,16 @@ Then, for every business, by itself:
 Each address in a lead's panel shows what happened to it: Confirmed, Domain checked, Not confirmed or Removed, with
 the reason and where it was found.
 
-## Export for cold email (Leads tab)
+## Export for cold email (Email leads)
 
-The Leads tab shows **Fits** by default, best first. **Export for cold email** saves every business shown that fits
+The Email leads section shows **Has an email** by default, best first. **Export for cold email** saves every business shown that fits
 and has an address that passed its checks, as `rizcoreach-cold-email-YYYY-MM-DD.csv` with Chrome's Save As: save it
 in your **RizcoReach Leads** folder and the cold email system imports it. Columns: business_name, first_name,
 email, website, instagram, phone, niche, area, source, notes, status. `notes` says `new business` when there is
 proof they just opened.
 
 Left out, and the toast says how many of each: no email, an email that failed or could not be confirmed, a check
-still running (its turn comes first), a working website, no proof they are new, replied / meeting / won / not
+still running (its turn comes first), a good website, replied / meeting / won / not
 interested / skipped, **Never email**, and anyone exported before (tick **Include already exported** to export them
 again). Exported businesses are remembered, so later searches never bring them back.
 
@@ -146,9 +152,9 @@ extension icon shows how many new ones came in.
 
 ## Good to know
 
-- **Volume.** This rule is strict on purpose, so expect far fewer leads per search than before: most businesses on
-  Maps are older and have a working website. Run **All types**, which spreads across every kind of business, and
-  more areas (Settings > Areas) to keep the cold email system fed.
+- **Volume.** Most emails come from Google: businesses' own websites and Instagram bios. Maps gives phones. Run
+  **All types** with all three sources ticked, and more areas (Settings > Areas), to keep the cold email system fed.
+  The 120 Google searches a day are shared by the business searches and the Instagram lookups.
 - Google Maps and the Ad Library are read in normal tabs at a human pace, a few seconds between searches. Google's
   and Meta's terms restrict automated collection, so run a sensible number of searches a day, ideally in a separate
   Chrome profile. A consent page, login wall, checkpoint, captcha or block pauses that source with an alert at the
@@ -164,13 +170,14 @@ extension icon shows how many new ones came in.
 | --- | --- |
 | `manifest.json` | Manifest V3; content scripts on the Ad Library, Google Maps, Instagram, Facebook, LinkedIn and Reddit |
 | `background.js` | Lead storage, Ad Library hunts, website checks, contacted memory |
-| `finder.js` | Google Maps searches in a tab, the Instagram API, Facebook page emails |
+| `finder.js` | Google Maps and Google searches in tabs, Instagram found on Google, the Instagram API, Facebook page emails |
+| `content/google.js` | Reading Google search results, in the tab Lead Hunter opened only |
 | `checks.js` | Email checks: DNS for every address, QuickEmailVerification mailbox checks with a daily cap, bounces |
 | `lib/emails.js` | Cleaning addresses, typo fixes, check states, which address may be sent, reading the checks' answers |
-| `lib/fit.js` | Google's opening label, opening words, who fits and why, the score, the cold email file |
+| `lib/fit.js` | Google's opening label, opening words, who fits and why, the score, the cold email file, Google Contacts |
 | `lib/common.js` | Phones, links, the 43 built in kinds of business, areas, settings, contacted memory, CSV |
 | `lib/site-audit.js` | Website check (down, parked, working) and contact extraction |
-| `lib/prospects.js` | De-duplication keys for businesses found on Maps and Instagram |
+| `lib/prospects.js` | De-duplication keys, Google results as businesses, picking a business's Instagram from results |
 | `lib/extract-ads.js` · `content/hook.js` · `content/adlib.js` | Reading the Ad Library |
 | `content/maps-hook.js` · `content/maps.js` | Reading Google Maps results (network data plus the visible list), with the opening label |
 | `content/instagram.js` | The + Add to Lead Hunter button |
