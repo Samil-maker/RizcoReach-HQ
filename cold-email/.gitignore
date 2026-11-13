@@ -21,3 +21,6 @@ venv/
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# Your portfolio pictures (shown inside your replies)
+portfolio/*

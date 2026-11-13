@@ -12,7 +12,7 @@ from email.message import Message
 from email.utils import getaddresses, parsedate_to_datetime
 from typing import Dict, List, Optional
 
-from . import classify, clock, config, db, mailer, safety, schedule, suppression, templates
+from . import classify, clock, config, db, mailer, portfolio, safety, schedule, suppression, templates
 from .config import Inbox, Settings
 from .mailbox import Mailbox, MailboxError, imap_date
 
@@ -120,23 +120,29 @@ def process(con, settings: Settings, inbox: Inbox, raw: bytes, folder: str = "IN
         else:
             stop.update(waiting_on_me=1)
             db.update_lead(con, lead_id, **stop)
-            draft = templates.draft_reply(result.label, lead, result.text, settings)
+            pictures = bool(settings.save_drafts and mailbox is not None and portfolio.pictures())
+            draft = templates.draft_reply(result.label, lead, result.text, settings, pictures=pictures)
         db.log_event(con, "reply", result.label, lead_id, inbox.key)
         if result.complaint:
             safety.pause(con, "a reply from %s mentions spam or reporting" % sender,
                          'They wrote: "%s". Read it in your inbox before you resume.' % result.text[:200].replace("\n", " "), log)
 
+    saved = bool(draft and settings.save_drafts and mailbox is not None and _save_draft(mailbox, inbox, settings, msg, lead, draft))
+    if draft and templates.PICTURES in draft:
+        if saved:  # what you see on the dashboard: the pictures themselves are in the Gmail draft
+            n = min(len(portfolio.pictures()), portfolio.IN_EMAIL)
+            draft = draft.replace(templates.PICTURES, "[%d pictures of your work, already in the Gmail draft]" % n)
+        else:  # no Gmail draft, so no pictures: the version with your portfolio link
+            draft = templates.draft_reply(result.label, lead, result.text, settings)
     con.execute(
         "INSERT INTO inbound(message_id, lead_id, inbox, folder, received_at, from_addr, subject, body, classification, "
-        "is_auto, complaint, ooo_until, draft, processed_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "is_auto, complaint, ooo_until, draft, draft_saved, processed_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (mid, lead_id, inbox.key, folder, clock.iso(received), sender, subject, result.text[:5000], result.label,
          int(result.is_auto), int(result.complaint), result.ooo_until.isoformat() if result.ooo_until else None,
-         draft, clock.iso()),
+         draft, int(saved), clock.iso()),
     )
-    if draft and settings.save_drafts and mailbox is not None:
-        if _save_draft(mailbox, inbox, settings, msg, lead, draft):
-            con.execute("UPDATE inbound SET draft_saved=1 WHERE message_id=?", (mid,))
-            info["draft_saved"] = True
+    if saved:
+        info["draft_saved"] = True
     info["draft"] = draft
     return info
 
@@ -191,6 +197,8 @@ def _save_draft(mb: Mailbox, inbox: Inbox, settings: Settings, their: Message, l
     reply_to = _addr(their.get("Reply-To")) or _addr(their.get("From")) or lead["email"]
     msg = mailer.build(inbox, settings.from_name, reply_to, templates.reply_subject(str(their.get("Subject") or "")),
                        draft, mailer.new_message_id(inbox), in_reply_to=their_id or None, references=refs or None)
+    if templates.PICTURES in draft:  # your portfolio pictures inside the email, where the mark is
+        portfolio.add_to_email(msg, draft, templates.PICTURES, plain_instead=settings.examples_link or "")
     try:
         return mb.append(folder, msg, "(\\Draft)")
     except Exception:  # noqa: BLE001 - a draft that could not be saved is still in the report

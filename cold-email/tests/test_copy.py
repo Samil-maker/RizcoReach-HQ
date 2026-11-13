@@ -130,17 +130,19 @@ def test_found_on_never_names_a_page_we_did_not_see():
     assert names.found_on("", "") == "Google Maps"
 
 
-def test_follow_up_1_carries_the_portfolio_link():
-    body, full = templates.follow_up(lead("B"), 1, S)
-    assert body == ("Hi there just bringing this back up in case it got buried. Here are a few sites we've built so you "
-                    "can see the style\n\n" + config.DEFAULT_EXAMPLES_LINK)
-    assert templates.lint("Re: Glossy PPF website", body, full, 1)[0] == []
-    assert full.endswith(templates.OPT_OUT)
-    for seg in "ABC":  # the first email still has no link
+def test_no_cold_email_carries_a_link():
+    """People don't click links from strangers: the work goes inside the reply when they ask (portfolio.py)."""
+    from outreach import schedule
+
+    for seg in "ABC":
         subject, b, f = templates.first_email(lead(seg), "A", S)
         assert "http" not in f and templates.lint(subject, b, f, 0)[0] == []
-    no_link = config.Settings(whatsapp="0501234567", examples_link="")
-    assert templates.follow_up(lead("B"), 1, no_link)[0] == "Hi there just bringing this back up in case it got buried."
+    for step in sorted(schedule.FOLLOW_UP_DAYS):
+        body, full = templates.follow_up(lead("B"), step, S)
+        assert "http" not in full and "drive.google" not in full
+    body, _ = templates.follow_up(lead("B"), 1, S)
+    assert body == ("Hi there just bringing this back up in case it got buried. Happy to send over a few websites we've "
+                    "built so you can see the style. Just reply yes")
 
 
 def test_prices_come_from_settings():

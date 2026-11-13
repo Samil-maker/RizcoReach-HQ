@@ -7,3 +7,4 @@ openpyxl>=3.1         # reading .xlsx lead files
 python-dotenv>=1.0    # reading your .env file
 python-dateutil>=2.8  # reading return dates in out-of-office replies
 tzdata>=2024.1        # Dubai time zone data (already on a Mac, needed on Windows)
+Pillow>=9.5           # makes your portfolio screenshots email sized (optional: it works without, just less well)
