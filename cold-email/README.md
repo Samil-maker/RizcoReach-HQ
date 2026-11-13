@@ -53,6 +53,11 @@ on your Desktop (or type `rizco dashboard` in Terminal). It runs on your Mac onl
 - **Send the rest now (1 a minute):** one click sends all of today's remaining emails about one a minute instead of
   spreading them over the day (still within each inbox's daily limit, 9:00 to 22:00 on weekdays). It goes back to
   normal the next day.
+- **Your work, inside the email:** add screenshots of 3 or 4 websites you've built (drag them onto the dashboard or
+  press Add pictures). When someone says "send me your work", the reply drafted in Gmail Drafts has those pictures
+  right inside the email, so they see your work without clicking a link. Name each file the way you want it
+  captioned (`Restaurant website.png`). Big screenshots are made email sized for you, and they stay on your Mac in
+  `portfolio/`. Without pictures, replies use your portfolio link instead.
 - **Pause or resume** sending, **check replies now**, **start today's sending**, change your **WhatsApp number** or
   **portfolio link**, set your **prices** (website, and the care and SEO plan you mention in replies), and read
   **today's report**, all from the same page.
@@ -174,9 +179,9 @@ There is an empty template in `leads/sample/lead-template.csv`.
   when follow ups fill most of a day, which is the moment to add an inbox.
 - **Not now:** someone who replies "not now" or "not yet" comes back on your Reply to these list 60 days later,
   with a check in drafted for you. You send it yourself.
-- **Copy:** plain text, no images, no tracking, no links in the first email (follow up 1 carries your portfolio
-  link), first emails under 80 words, no dashes or semicolons, ends with the
-  opt out line. All wording lives in `outreach/templates.py`.
+- **Copy:** plain text, no images, no tracking, no links in any cold email (people don't click links from someone
+  they don't know: follow up 1 offers to send your work, and the reply has your pictures inside), first emails
+  under 80 words, no dashes or semicolons, ends with the opt out line. All wording lives in `outreach/templates.py`.
 - **A/B test:** half of each segment gets version A (with the price line), half version B (without). After 100 sends
   each, the report names the winner and suggests the next test.
 - **Automatic pause** (until `rizco resume`): bounces over 3% of a day's emails, a reply that mentions spam or

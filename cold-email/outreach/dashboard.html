@@ -55,6 +55,12 @@ section { margin-top: 40px; }
 .btn.danger { color: var(--bad); }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
 .btns { display: flex; gap: 8px; flex-wrap: wrap; }
+/* portfolio pictures */
+.pics { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; margin-top: 14px; }
+.pic { border: 1px solid var(--line); border-radius: var(--r-sm); overflow: hidden; background: var(--surface-2); display: grid; min-width: 0; }
+.pic img { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; object-position: top center; display: block; background: #fff; }
+.pic .cap { padding: 8px 10px; display: grid; gap: 6px; font-size: .85rem; }
+.pics.over { outline: 1.5px dashed var(--paper); outline-offset: 6px; border-radius: var(--r-sm); }
 /* drop zone */
 .drop { margin-top: 28px; border: 1.5px dashed var(--line-2); border-radius: var(--r); padding: 34px 20px; text-align: center; cursor: pointer;
   background: var(--surface); transition: border-color .18s, background .18s; }
@@ -180,6 +186,18 @@ pre.text { white-space: pre-wrap; font: .9rem/1.55 var(--mono); margin: 0; color
     <div style="margin-top:12px"><button class="btn ghost" id="more" hidden>Show more</button></div>
   </section>
 
+  <section id="portfolio">
+    <div class="sec-head"><h2>Your work, inside the email</h2><span class="spacer"></span>
+      <button class="btn" id="picBtn">Add pictures</button><input type="file" id="picFile" accept="image/*,.heic,.heif" multiple hidden></div>
+    <div class="card" id="picCard">
+      <p style="margin:0">People don't like clicking links from someone they don't know, Google Drive links included. Add screenshots of
+        3 or 4 websites you've built and they go right inside your replies to anyone who wants to see your work, so they see
+        it without clicking anything. Name each file the way you want it captioned, for example <em>Restaurant website.png</em>.</p>
+      <p class="small muted" style="margin:8px 0 0">The first 4 go in each reply. Big screenshots are made email sized for you. Drop pictures here or press Add pictures.</p>
+      <div class="pics" id="pics"></div>
+    </div>
+  </section>
+
   <section>
     <div class="sec-head"><h2>Controls</h2></div>
     <div class="card" style="display:grid;gap:18px">
@@ -194,7 +212,7 @@ pre.text { white-space: pre-wrap; font: .9rem/1.55 var(--mono); margin: 0; color
       <form class="grid" id="settings" style="max-width:none">
         <div class="two">
           <label>WhatsApp number in every email<input type="tel" id="sWa"></label>
-          <label>Portfolio link (sent in follow up 1 and replies)<input type="url" id="sLink"></label>
+          <label>Portfolio link (only in replies while you have no portfolio pictures)<input type="url" id="sLink"></label>
           <label>Emails a day per inbox (follow ups included)<input type="number" id="sLimit" min="1" max="100"></label>
           <label>Website price in AED (in website emails)<input type="number" id="sPrice" min="100" step="50"></label>
           <label>SEO and management plan, AED a month (only in your reply drafts)<input type="number" id="sCare" min="50" step="10"></label>
@@ -428,7 +446,46 @@ drop.onkeydown = (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preven
 $("file").onchange = () => { if ($("file").files[0]) upload($("file").files[0]); $("file").value = ""; };
 ["dragenter", "dragover"].forEach((t) => window.addEventListener(t, (ev) => { ev.preventDefault(); drop.classList.add("over"); }));
 ["dragleave", "drop"].forEach((t) => window.addEventListener(t, (ev) => { ev.preventDefault(); if (t === "drop" || ev.target === document.documentElement) drop.classList.remove("over"); }));
-window.addEventListener("drop", (ev) => { const f = ev.dataTransfer && ev.dataTransfer.files[0]; if (f) upload(f); });
+const isPicture = (f) => /^image\//.test(f.type) || /\.(heic|heif)$/i.test(f.name);
+window.addEventListener("drop", (ev) => {
+  const files = [...((ev.dataTransfer && ev.dataTransfer.files) || [])];
+  if (!files.length) return;
+  if (files.every(isPicture)) { drop.classList.remove("over"); $("portfolio").scrollIntoView({ behavior: "smooth" }); return addPictures(files); }
+  upload(files[0]);
+});
+
+/* ---------------- portfolio pictures */
+async function loadPictures() {
+  const list = await api("/api/portfolio");
+  const box = $("pics");
+  if (!list.length) { box.replaceChildren(el("div", { class: "empty" }, "No pictures yet, so replies use your portfolio link for now.")); return; }
+  box.replaceChildren(...list.map((p) => el("figure", { class: "pic", style: "margin:0" },
+    el("img", { src: p.preview, alt: p.label || "Portfolio picture" }),
+    el("figcaption", { class: "cap" },
+      el("span", {}, p.label || el("span", { class: "muted" }, "No caption (rename the file to add one)")),
+      el("span", { class: "small muted" }, (p.in_email ? "Goes in replies" : "Spare (only the first 4 go in)") + " · " + p.kb + " KB"),
+      el("button", { class: "btn ghost danger", onclick: async () => { toast((await post("/api/portfolio-remove", { name: p.name })).message); loadPictures(); } }, "Remove")))));
+}
+async function addPictures(files) {
+  for (const f of files) {
+    toast("Adding " + f.name + "...");
+    try {
+      const r = await api("/api/portfolio", { method: "POST", headers: { "X-Filename": encodeURIComponent(f.name) }, body: f });
+      toast(r.message);
+    } catch (e) { toast("Couldn't add " + f.name + ": " + e.message); }
+  }
+  loadPictures();
+}
+$("picBtn").onclick = () => $("picFile").click();
+$("picFile").onchange = () => { const files = [...$("picFile").files]; $("picFile").value = ""; if (files.length) addPictures(files); };
+const picCard = $("picCard");
+["dragenter", "dragover"].forEach((t) => picCard.addEventListener(t, (ev) => { ev.preventDefault(); ev.stopPropagation(); $("pics").classList.add("over"); }));
+picCard.addEventListener("dragleave", () => $("pics").classList.remove("over"));
+picCard.addEventListener("drop", (ev) => {
+  ev.preventDefault(); ev.stopPropagation(); $("pics").classList.remove("over"); drop.classList.remove("over");
+  const files = [...((ev.dataTransfer && ev.dataTransfer.files) || [])].filter(isPicture);
+  if (files.length) addPictures(files); else toast("Drop pictures here (JPG, PNG, WebP or HEIC). Lead files go in the box at the top.");
+});
 
 async function upload(file) {
   const out = $("dropResult");
@@ -464,7 +521,7 @@ async function refresh() {
   try { await Promise.all([loadOverview(), loadWaiting(), loadActivity()]); }
   catch (e) { toast("Can't reach the dashboard service. Is the Mac awake? " + e.message); }
 }
-refresh(); loadLeads();
+refresh(); loadLeads(); loadPictures();
 setInterval(refresh, 30000);
 setInterval(() => { if (!state.q && state.offset <= 100) loadLeads(); }, 60000);
 </script>

@@ -107,7 +107,7 @@ def test_every_follow_up_is_different_and_passes_the_checks():
         assert templates.lint("Re: Glossy PPF website", body, full, step)[0] == []
         assert body.startswith("Hi Sara ") and full.endswith(templates.OPT_OUT)
         assert templates.word_count(body) < 60
-        assert ("http" in body) == (step == 1)                     # only follow up 1 carries the portfolio link
+        assert "http" not in body                                  # no links: the work goes inside the reply
 
 
 def test_leads_that_finished_the_old_short_sequence_carry_on(project, fake_clock):

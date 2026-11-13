@@ -20,8 +20,8 @@ from pathlib import Path
 from typing import Dict, List, Optional
 from urllib.parse import parse_qs, urlsplit
 
-from . import (actions, classify, clock, config, db, importer, launchd, names, replies, report, safety, schedule, sender,
-               templates, warmup)
+from . import (actions, classify, clock, config, db, importer, launchd, names, portfolio, replies, report, safety,
+               schedule, sender, templates, warmup)
 
 PORT = 8321
 URL = "http://localhost:%d/" % PORT
@@ -317,6 +317,14 @@ def post(path: str, body: Dict, raw: bytes, headers) -> Dict:
         campaign = (headers.get("X-Campaign") or "auto").lower()
         save_upload(unquote(headers.get("X-Filename") or ""), raw)
         return {"job": _job(_import_job, campaign if campaign in config.CAMPAIGNS else "auto")}
+    if path == "/api/portfolio":
+        from urllib.parse import unquote
+
+        ok, message = portfolio.add(unquote(headers.get("X-Filename") or ""), raw)
+        return {"ok": ok, "message": message}
+    if path == "/api/portfolio-remove":
+        ok, message = portfolio.remove(body.get("name", ""))
+        return {"ok": ok, "message": message}
     if path == "/api/approve-campaign":
         if body.get("campaign") != "ads":
             return {"ok": False, "message": "The website emails were approved with your test email in setup."}
@@ -449,6 +457,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._reply(200, preview(con, s, q.get("campaign", "")))
             if url.path == "/api/report":
                 return self._reply(200, {"text": report.write(con, s).read_text(encoding="utf-8")})
+            if url.path == "/api/portfolio":
+                return self._reply(200, portfolio.listing())
             if url.path == "/api/job":
                 job = _State.jobs.get(q.get("id", ""))
                 return self._reply(200 if job else 404, job or {"error": "unknown job"})
@@ -465,7 +475,7 @@ class Handler(BaseHTTPRequestHandler):
         raw = self.rfile.read(length) if length else b""
         path = urlsplit(self.path).path
         body = {}
-        if path != "/api/upload" and raw:
+        if path not in ("/api/upload", "/api/portfolio") and raw:
             try:
                 body = json.loads(raw.decode("utf-8"))
             except ValueError:

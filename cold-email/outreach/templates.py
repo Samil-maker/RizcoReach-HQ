@@ -167,10 +167,12 @@ CAMPAIGN_OF_SEGMENT = {"A": "website", "B": "website", "C": "website", "N": "ads
 
 # Follow ups: same thread, each one short and from a different angle, so a lead hears from us regularly
 # without reading the same email twice. Days are in schedule.FOLLOW_UP_DAYS (3, 7, 14, 30, 60, 90).
-# The portfolio link goes on its own line in follow up 1 (EXAMPLES_LINK in .env). First emails never carry a link.
+# No links in any cold email: people don't click links from someone they don't know. When they ask to see
+# your work, the reply drafted for them has your portfolio pictures inside the email (see portfolio.py).
 FOLLOW_UP = {
-    # day 3: a gentle bump, with the examples
-    1: "Hi {greeting_name} just bringing this back up in case it got buried.[[ Here are a few sites we've built so you can see the style\n\n{examples_link}]]",
+    # day 3: a gentle bump, and your work is one "yes" away
+    1: "Hi {greeting_name} just bringing this back up in case it got buried. Happy to send over a few websites we've "
+       "built so you can see the style. Just reply yes",
     # day 7: something free to say yes to
     2: "Hi {greeting_name} had another thought. If it helps we can put together a quick preview of what a homepage for "
        "{business} could look like. No cost and no commitment. Just reply yes and we'll get started",
@@ -196,6 +198,14 @@ WhatsApp {whatsapp}"""
 OPT_OUT = "Not relevant? Just reply no and we won't email again"
 
 # Reply drafts. These are never sent for you: they go in the report and your Drafts folder.
+# PICTURES marks where your portfolio pictures go in the Gmail draft. Without pictures the portfolio link is used.
+PICTURES = "<<your portfolio pictures>>"
+DRAFT_INTERESTED_PICTURES = (
+    "Thanks[[ {first_name}]]. Here are a few websites we've built so you can see the style\n\n" + PICTURES + "\n\n"
+    "If you like the style we can put together a quick preview for {business} so you can see it before deciding "
+    "anything. Easiest to chat on WhatsApp. Our number is {whatsapp}"
+)
+EXAMPLES_PICTURES = "Here are a few websites we've built so you can see the style\n\n" + PICTURES
 DRAFT_INTERESTED = (
     "Thanks[[ {first_name}]]. Here are some sites we've built: {examples_link}\n\n"
     "If you like the style we can put together a quick preview for {business} so you can see it before deciding "
@@ -367,19 +377,23 @@ def check_in(lead, settings: Settings) -> str:
     return render(CHECK_IN["ads" if campaign_of(lead) == "ads" else "website"], lead_vars(lead, settings)) + "\n\n" + settings.from_name
 
 
-def draft_reply(classification: str, lead, their_text: str, settings: Settings) -> Optional[str]:
-    """A reply for you to check and send yourself. Only for interested replies and questions."""
+def draft_reply(classification: str, lead, their_text: str, settings: Settings, pictures: bool = False) -> Optional[str]:
+    """A reply for you to check and send yourself. Only for interested replies and questions.
+
+    pictures: your portfolio pictures go in the email (the PICTURES mark shows where) instead of the link."""
     values = lead_vars(lead, settings)
     sign = values["sender_name"]
     ads = campaign_of(lead) == "ads"
     if classification == "interested" and "?" not in (their_text or ""):
-        return render(ADS_DRAFT_INTERESTED[ads_offer(lead)] if ads else DRAFT_INTERESTED, values) + "\n\n" + sign
+        if ads:
+            return render(ADS_DRAFT_INTERESTED[ads_offer(lead)], values) + "\n\n" + sign
+        return render(DRAFT_INTERESTED_PICTURES if pictures else DRAFT_INTERESTED, values) + "\n\n" + sign
     if classification in ("interested", "question"):
         text = (their_text or "").lower()
         answers: List[str] = []
         for pattern, answer in (ADS_QUESTION_ANSWERS if ads else QUESTION_ANSWERS):
             if re.search(pattern, text) and answer not in answers:
-                answers.append(answer)
+                answers.append(EXAMPLES_PICTURES if pictures and "{examples_link}" in answer else answer)
         if not answers:
             answers = [DRAFT_QUESTION_FALLBACK]
         parts = [render(DRAFT_QUESTION_OPEN, values)] + [render(a, values) for a in answers[:3]] + [render(DRAFT_QUESTION_CLOSE, values)]
