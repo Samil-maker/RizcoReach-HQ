@@ -6,3 +6,18 @@
 
 [build.environment]
   NODE_VERSION = "22"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
+# Each business's enquiry page: elheen.com/b/their-name
+[[redirects]]
+  from = "/b/*"
+  to = "/b.html"
+  status = 200
+
+[[redirects]]
+  from = "/app"
+  to = "/app.html"
+  status = 200

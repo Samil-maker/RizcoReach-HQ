@@ -38,3 +38,28 @@ fonts only load through a local server.
 - The first line of each page holds its title and description.
 - Header, footer and form live once in `src/partials/`.
 - Colours and sizes are the variables at the top of `src/assets/styles.css`.
+
+## The app
+
+The software lives in the same site as the marketing pages.
+
+| Address | What it is |
+|---|---|
+| `/app` | The owner's app: enquiries, calendar, set-up |
+| `/b/<business-name>` | That business's public enquiry page |
+| `/api/...` | The server, in `netlify/functions/api.mjs` |
+
+Data is stored in Netlify Blobs (store `elheen`). New businesses can only be
+created with the invite code held in the Netlify setting `ELHEEN_INVITE`.
+
+Leads from an ad form or another system can be posted to
+`/api/intake/<business-name>/<intake key>`. The key is shown to the owner's
+account as `intakeKey`.
+
+Test it on your computer:
+
+```
+npm install
+npm test                      # server tests
+node build.mjs && node tests/local-server.mjs   # full app at localhost:8770, invite code "letmein"
+```

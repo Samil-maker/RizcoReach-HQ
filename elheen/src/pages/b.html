@@ -1,0 +1,46 @@
+<!--{"title":"Book with us | Elheen","description":"Send an enquiry and pick a time.","nav":"","noindex":true,"bare":true,"scripts":["book.js"]}-->
+<div class="shell" id="book">
+  <div class="panel" id="loading"><p class="hint">Loading…</p></div>
+
+  <form class="panel" id="form" hidden novalidate>
+    <div class="biz-head"><i id="initial" aria-hidden="true"></i><div><h1 id="bizName"></h1><span id="bizArea"></span></div></div>
+
+    <p class="step-title" id="svcTitle">What do you need?</p>
+    <div class="choices" id="services" role="group" aria-labelledby="svcTitle"></div>
+
+    <p class="step-title">Your details</p>
+    <label>Your name<input id="name" autocomplete="name" required></label>
+    <label class="field">WhatsApp number<input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+971 5X XXX XXXX" required></label>
+    <label class="field">Tell us more <span class="hint">(optional)</span><textarea id="note" maxlength="1000"></textarea></label>
+
+    <div id="addressBlock" hidden>
+      <label class="field">Address or area<input id="address" autocomplete="street-address"></label>
+      <button class="btn btn-ghost btn-sm" type="button" id="locate" style="margin-top:10px">Share my location</button>
+      <p class="hint" id="locStatus" role="status"></p>
+    </div>
+
+    <div id="photoBlock" hidden>
+      <p class="step-title">Photos of the space <span class="hint" style="text-transform:none;letter-spacing:0">(up to 4)</span></p>
+      <div class="photos" id="photos"><button class="add-photo" type="button" id="addPhoto">Add photos</button></div>
+      <input id="photoInput" type="file" accept="image/*" multiple hidden>
+    </div>
+
+    <p class="step-title" id="timeTitle">Pick a time</p>
+    <div class="days" id="days" role="group" aria-labelledby="timeTitle"></div>
+    <div class="slots" id="slots"></div>
+    <p class="hint" style="margin-top:10px">No time that suits? Send it without one and we will message you.</p>
+
+    <p class="error" id="error" role="alert" hidden></p>
+    <button class="btn btn-primary wide-btn" type="submit" id="send">Send enquiry</button>
+  </form>
+
+  <div class="panel done" id="done" hidden>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12.500l3 3 5-6"/></svg>
+    <h1 id="doneTitle">Sent.</h1>
+    <p id="doneText"></p>
+  </div>
+
+  <div class="panel" id="missing" hidden><h1 style="font-size:1.6rem">This page does not exist.</h1><p class="hint" style="margin-top:8px">Check the link and try again.</p></div>
+
+  <a class="powered" href="/"><span>Booked with</span><img src="assets/logo.svg" alt="elheen"></a>
+</div>

@@ -14,7 +14,7 @@ const footer = read('partials/footer.html');
 const SITE = 'https://elheen.com';
 const include = (html) => html.replace(/<!--@(\w+)-->/g, (_, name) => read(`partials/${name}.html`));
 
-const layout = ({ title, description, nav, body, file, noindex }) => `<!doctype html>
+const layout = ({ title, description, nav, body, file, noindex, bare, scripts = [] }) => `<!doctype html>
 <html lang="en" class="no-js">
 <head>
 <meta charset="utf-8">
@@ -31,17 +31,16 @@ ${noindex ? '<meta name="robots" content="noindex">' : `<link rel="canonical" hr
 <meta name="theme-color" content="#1F0A24">
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
 <link rel="preload" href="assets/fonts/jakarta.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="assets/styles.css">
+${bare ? '<base href="/">\n' : ''}<link rel="stylesheet" href="assets/styles.css">${bare ? '\n<link rel="stylesheet" href="assets/app.css">' : ''}
 <script>document.documentElement.classList.remove("no-js")</script>
 </head>
 <body data-nav="${nav || ''}">
 <a class="skip" href="#main">Skip to content</a>
-${header}
+${bare ? '' : header}
 <main id="main">
 ${body}
 </main>
-${footer}
-<script src="assets/app.js" defer></script>
+${bare ? scripts.map((x) => `<script src="assets/${x}" defer></script>`).join('\n') : footer + '\n<script src="assets/app.js" defer></script>'}
 </body>
 </html>
 `;
