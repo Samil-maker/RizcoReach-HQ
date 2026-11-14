@@ -98,38 +98,77 @@
     }
   }
 
-  // Live demo: pick a service and a time, confirm, see the WhatsApp message.
+  // Live demo: choose a kind of business, a service and a time, then confirm.
   const demo = $('[data-demo]');
   if (demo) {
-    const state = { service: null, price: null, time: null };
-    const confirmBtn = $('[data-confirm]', demo);
-    const out = $('[data-wa]', demo);
-    const pick = (group, btn) => {
-      $$(`[data-${group}]`, demo).forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
+    const kinds = {
+      salon: { name: 'Lumière Salon', place: 'Example business · Jumeirah Lakes Towers', step1: '1. Choose a service', step2: '2. Pick a time tomorrow', visit: false,
+        items: [['Hair colour', '90 min · AED 450', 'AED 450'], ['Gel manicure', '45 min · AED 140', 'AED 140'], ['Signature facial', '60 min · AED 320', 'AED 320']] },
+      clinic: { name: 'Noor Aesthetic Clinic', place: 'Example business · Jumeirah', step1: '1. Choose a treatment', step2: '2. Pick a time tomorrow', visit: false,
+        items: [['Skin consultation', '30 min · Free', 'free'], ['Laser session', '45 min · AED 600', 'AED 600'], ['HydraFacial', '60 min · AED 550', 'AED 550']] },
+      home: { name: 'Bright Home Maintenance', place: 'Example business · Serving all of Dubai', step1: '1. What do you need?', step2: '2. Pick a visit time tomorrow', visit: true,
+        items: [['Kitchen renovation quote', 'Site visit · Free', 'free'], ['AC service', '60 min · AED 180', 'AED 180'], ['Bathroom remodel quote', 'Site visit · Free', 'free']] },
+      interior: { name: 'Studio Layali Interiors', place: 'Example business · Dubai Design District', step1: '1. What do you need?', step2: '2. Pick a visit time tomorrow', visit: true,
+        items: [['First consultation', '45 min · Free', 'free'], ['Measurement visit', '60 min · AED 300', 'AED 300'], ['Design review', '60 min · AED 400', 'AED 400']] },
     };
-    $$('[data-service]', demo).forEach((b) => b.addEventListener('click', () => {
-      state.service = b.dataset.service; state.price = b.dataset.price; pick('service', b); sync();
+    const state = { kind: 'salon', service: null, price: null, time: null };
+    const confirmBtn = $('[data-confirm]', demo);
+    const out = $('[data-wa]');
+    const opts = $('[data-opts]', demo);
+    const hint = out.innerHTML;
+    const sync = () => { confirmBtn.disabled = !(state.service && state.time); };
+    const press = (list, btn) => list.forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
+    const render = () => {
+      const k = kinds[state.kind];
+      state.service = state.price = state.time = null;
+      $('[data-name]', demo).textContent = k.name;
+      $('[data-initial]', demo).textContent = k.name[0];
+      $('[data-place]', demo).textContent = k.place;
+      $('[data-step1]', demo).textContent = k.step1;
+      $('[data-step2]', demo).textContent = k.step2;
+      opts.replaceChildren(...k.items.map(([label, meta, price]) => {
+        const b = document.createElement('button');
+        b.className = 'opt'; b.type = 'button'; b.setAttribute('aria-pressed', 'false');
+        b.append(label + ' ');
+        const small = document.createElement('small'); small.textContent = meta; b.append(small);
+        b.addEventListener('click', () => { state.service = label; state.price = price; press($$('.opt', opts), b); sync(); });
+        return b;
+      }));
+      press($$('[data-time]', demo), null);
+      confirmBtn.textContent = 'Confirm booking';
+      out.innerHTML = hint;
+      sync();
+    };
+    $$('[data-kind]').forEach((tab) => tab.addEventListener('click', () => {
+      state.kind = tab.dataset.kind;
+      $$('[data-kind]').forEach((t) => t.setAttribute('aria-selected', String(t === tab)));
+      render();
     }));
     $$('[data-time]', demo).forEach((b) => b.addEventListener('click', () => {
-      state.time = b.dataset.time; pick('time', b); sync();
+      state.time = b.dataset.time; press($$('[data-time]', demo), b); sync();
     }));
-    const sync = () => { confirmBtn.disabled = !(state.service && state.time); };
     const bubble = (cls, text, delay) => {
       const d = document.createElement('div');
-      d.className = `bub ${cls} pop`;
-      d.style.animationDelay = `${delay}ms`;
-      d.textContent = text;
+      d.className = `bub ${cls} pop`; d.style.animationDelay = `${delay}ms`; d.textContent = text;
       return d;
     };
     confirmBtn.addEventListener('click', () => {
-      out.replaceChildren(
+      const k = kinds[state.kind];
+      const cost = state.price === 'free' ? 'This one is free.' : `Total ${state.price}.`;
+      out.replaceChildren(...(k.visit ? [
         bubble('us', `Booked. ${state.service}, tomorrow at ${state.time}.`, 0),
-        bubble('us', `Total AED ${state.price}. We will remind you 2 hours before.`, 450),
+        bubble('us', `${cost} Please share your location so our team finds you.`, 450),
+        bubble('them', 'Location sent.', 1100),
+        bubble('us', 'Got it. We will message you when the team is on the way.', 1700),
+      ] : [
+        bubble('us', `Booked. ${state.service}, tomorrow at ${state.time}.`, 0),
+        bubble('us', `${cost} We will remind you 2 hours before.`, 450),
         bubble('them', 'Perfect, thank you.', 1100),
-        bubble('us', 'See you tomorrow.', 1700)
-      );
+        bubble('us', 'See you tomorrow.', 1700),
+      ]));
       confirmBtn.textContent = 'Booked. Try another';
       $('[data-status]', demo).textContent = `Booking confirmed for ${state.service} at ${state.time}.`;
     });
+    render();
   }
 })();

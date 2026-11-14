@@ -125,19 +125,21 @@
   <div class="wrap">
     <div class="section-head center reveal">
       <span class="eyebrow">Live demo</span>
-      <h2>Book an appointment. It takes ten seconds.</h2>
-      <p class="lede">This is what your clients see. Pick a service and a time, then confirm.</p>
+      <h2>See it for your kind of business.</h2>
+      <p class="lede">This is what your clients see. Choose a business, pick a service and a time, then confirm.</p>
+    </div>
+    <div class="demo-tabs reveal" role="tablist" aria-label="Kind of business">
+      <button class="demo-tab" type="button" role="tab" aria-selected="true" data-kind="salon">Salon</button>
+      <button class="demo-tab" type="button" role="tab" aria-selected="false" data-kind="clinic">Clinic</button>
+      <button class="demo-tab" type="button" role="tab" aria-selected="false" data-kind="home">Home improvement</button>
+      <button class="demo-tab" type="button" role="tab" aria-selected="false" data-kind="interior">Interior design</button>
     </div>
     <div class="demo reveal" data-demo>
       <div class="demo-panel">
-        <div class="demo-brand"><i aria-hidden="true">L</i><div><b>Lumière Salon</b><span>Example business · Jumeirah Lakes Towers</span></div></div>
-        <p class="demo-label" id="svc-label">1. Choose a service</p>
-        <div class="opts" role="group" aria-labelledby="svc-label">
-          <button class="opt" type="button" aria-pressed="false" data-service="Hair colour" data-price="450">Hair colour <small>90 min · AED 450</small></button>
-          <button class="opt" type="button" aria-pressed="false" data-service="Gel manicure" data-price="140">Gel manicure <small>45 min · AED 140</small></button>
-          <button class="opt" type="button" aria-pressed="false" data-service="Signature facial" data-price="320">Signature facial <small>60 min · AED 320</small></button>
-        </div>
-        <p class="demo-label" id="time-label">2. Pick a time tomorrow</p>
+        <div class="demo-brand"><i aria-hidden="true" data-initial>L</i><div><b data-name>Lumière Salon</b><span data-place>Example business · Jumeirah Lakes Towers</span></div></div>
+        <p class="demo-label" id="svc-label" data-step1>1. Choose a service</p>
+        <div class="opts" role="group" aria-labelledby="svc-label" data-opts></div>
+        <p class="demo-label" id="time-label" data-step2>2. Pick a time tomorrow</p>
         <div class="times" role="group" aria-labelledby="time-label">
           <button class="time" type="button" aria-pressed="false" data-time="10:30 AM">10:30</button>
           <button class="time" type="button" aria-pressed="false" data-time="1:00 PM">1:00</button>
