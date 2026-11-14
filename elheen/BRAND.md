@@ -48,19 +48,19 @@ until a real client's data backs it. The first three clients exist to earn those
 
 ## Logo
 
-- **The mark:** a geometric lower-case "e" with a mint dot sitting in its opening.
-  The dot is "now": a live signal, like a recording light.
-- **The wordmark:** `elheen` in Plus Jakarta Sans, weight 750, tight spacing.
-- The mark sits on a deep-green rounded square for app icons and profile pictures.
-- The dot may pulse on screens, never in print.
-- Clear space around the logo equals the height of the dot times three.
-- Never stretch it, recolour the dot, or put it on a busy photo.
-
-Files:
+- **The wordmark:** `elheen.` in Plus Jakarta Sans, heavy weight, tight spacing,
+  drawn as outlines so it looks the same everywhere.
+- **The full stop** is the brand colour. It stands for "now": booked, done.
+- **The icon:** `e.` on a deep aubergine tile, for app icons and profile pictures.
+- Clear space around the logo equals the height of the letter "e".
+- Never stretch it, recolour the full stop, or put it on a busy photo.
 
 | File | Use |
 |---|---|
-| `brand/elheen-mark.svg` | The mark on its dark tile (scales to any size) |
+| `brand/elheen-logo.svg` | Wordmark for light backgrounds |
+| `brand/elheen-logo-on-dark.svg` | Wordmark for dark backgrounds |
+| `brand/elheen-mark.svg` | Icon on the dark tile |
+| `brand/elheen-mark-orchid.svg` | Icon on the orchid tile |
 | `brand/elheen-instagram-profile.png` | Instagram profile picture, 1080 x 1080 |
 | `src/assets/og.png` | Preview image when the site link is shared |
 
@@ -68,29 +68,29 @@ Files:
 
 | Role | Name | Hex |
 |---|---|---|
-| Darkest background | Ink | `#06140F` |
-| Dark surface | Ink 2 | `#0C2219` |
-| Main text | Text | `#0B1512` |
-| Secondary text | Muted | `#52625B` |
+| Brand colour: buttons, links, the full stop | Orchid | `#A31A8A` |
+| Hover and strong text on tint | Deep orchid | `#7E1269` |
+| Dark sections | Aubergine | `#1F0A24` |
+| Accent on dark backgrounds only | Pink | `#FF86D6` |
+| Pale panel | Tint | `#F8E8F4` |
+| Quiet panel | Soft | `#FAF5F8` |
+| Main text | Text | `#1D1320` |
+| Secondary text | Muted | `#65586A` |
+| Lines | Line | `#E8DEE6` |
 | Page | White | `#FFFFFF` |
-| Soft panel | Surface | `#F5F8F6` |
-| Tinted panel | Tint | `#E9F6F0` |
-| Lines | Line | `#E3EAE6` |
-| Links and accents on white | Emerald | `#0A7A5A` |
-| The "now" signal | Mint | `#2EE6A6` |
 
-Calendly is blue and Fresha is black with purple. Elheen is white, deep green
-and one mint signal: clearly its own, and green reads as local and trusted here.
+Calendly is blue and Fresha is black with violet. Orchid sits between pink and
+purple, so it is clearly Elheen's own and suits a beauty-led audience.
 
-Mint is used for one thing per screen: the live dot, or the single action we
-most want on a dark background. If everything is mint, nothing is.
+Colour is always flat. No gradients, glows or blurred shapes: those are what
+make a site look machine-made.
 
 ## Type
 
 - **Plus Jakarta Sans** for English, **Readex Pro** for Arabic. Both are free and
-  are stored in the site, so no outside font service is needed.
-- Headings: weight 700, tight spacing, large.
-- Body: weight 400.
+  stored in the site.
+- Headings: weight 750, tight spacing, large.
+- Body: weight 400 to 600.
 
 ## Shape and motion
 

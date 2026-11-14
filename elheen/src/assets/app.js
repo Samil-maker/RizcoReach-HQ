@@ -41,15 +41,6 @@
     reveals.forEach((el) => io.observe(el));
   }
 
-  // Cards: a soft light that follows the pointer.
-  $$('.card').forEach((card) => {
-    card.addEventListener('pointermove', (e) => {
-      const r = card.getBoundingClientRect();
-      card.style.setProperty('--mx', `${e.clientX - r.left}px`);
-      card.style.setProperty('--my', `${e.clientY - r.top}px`);
-    });
-  });
-
   // Hero headline: rotating word.
   const rot = $('.rotator');
   if (rot) {
