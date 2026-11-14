@@ -1,0 +1,5 @@
+# Elheen is a separate site from rizcoreach.ae.
+# In Netlify: add a new site from this repository and set Base directory to "elheen".
+[build]
+  publish = "."
+  command = ""
