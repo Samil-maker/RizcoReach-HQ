@@ -48,19 +48,17 @@ until a real client's data backs it. The first three clients exist to earn those
 
 ## Logo
 
-- **The wordmark:** `elheen.` in Plus Jakarta Sans, medium weight, open and light,
-  drawn as outlines so it looks the same everywhere.
-- **The full stop** is the brand colour. It stands for "now": booked, done.
-- **The icon:** `e.` on a pale orchid tile, for app icons and profile pictures.
-- Clear space around the logo equals the height of the letter "e".
-- Never stretch it, recolour the full stop, or put it on a busy photo.
+- **The mark:** a rounded lower-case "e" in white with a pink dot sitting in its
+  opening, on an orchid tile with a soft glow toward the top right.
+- **The full logo:** the mark beside the `elheen` wordmark in Plus Jakarta Sans.
+- The dot stands for "now". Never recolour it or move it.
+- Clear space around the logo equals the width of the dot times three.
 
 | File | Use |
 |---|---|
-| `brand/elheen-logo.svg` | Wordmark for light backgrounds |
-| `brand/elheen-logo-on-dark.svg` | Wordmark for dark backgrounds |
-| `brand/elheen-mark.svg` | Icon on the pale tile |
-| `brand/elheen-mark-orchid.svg` | Icon on the orchid tile |
+| `brand/elheen-logo.svg` | Full logo for light backgrounds |
+| `brand/elheen-logo-on-dark.svg` | Full logo for dark backgrounds |
+| `brand/elheen-mark.svg` | The mark on its orchid tile |
 | `brand/elheen-instagram-profile.png` | Instagram profile picture, 1080 x 1080 |
 | `src/assets/og.png` | Preview image when the site link is shared |
 
@@ -82,8 +80,8 @@ until a real client's data backs it. The first three clients exist to earn those
 Calendly is blue and Fresha is black with violet. Orchid sits between pink and
 purple, so it is clearly Elheen's own and suits a beauty-led audience.
 
-Colour is always flat. No gradients, glows or blurred shapes: those are what
-make a site look machine-made.
+Colour on the site is flat. The one exception is the logo tile, which has a
+soft orchid glow.
 
 ## Type
 
