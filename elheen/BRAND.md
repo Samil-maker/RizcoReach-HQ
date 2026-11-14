@@ -48,10 +48,10 @@ until a real client's data backs it. The first three clients exist to earn those
 
 ## Logo
 
-- **The wordmark:** `elheen.` in Plus Jakarta Sans, heavy weight, tight spacing,
+- **The wordmark:** `elheen.` in Plus Jakarta Sans, medium weight, open and light,
   drawn as outlines so it looks the same everywhere.
 - **The full stop** is the brand colour. It stands for "now": booked, done.
-- **The icon:** `e.` on a deep aubergine tile, for app icons and profile pictures.
+- **The icon:** `e.` on a pale orchid tile, for app icons and profile pictures.
 - Clear space around the logo equals the height of the letter "e".
 - Never stretch it, recolour the full stop, or put it on a busy photo.
 
@@ -59,7 +59,7 @@ until a real client's data backs it. The first three clients exist to earn those
 |---|---|
 | `brand/elheen-logo.svg` | Wordmark for light backgrounds |
 | `brand/elheen-logo-on-dark.svg` | Wordmark for dark backgrounds |
-| `brand/elheen-mark.svg` | Icon on the dark tile |
+| `brand/elheen-mark.svg` | Icon on the pale tile |
 | `brand/elheen-mark-orchid.svg` | Icon on the orchid tile |
 | `brand/elheen-instagram-profile.png` | Instagram profile picture, 1080 x 1080 |
 | `src/assets/og.png` | Preview image when the site link is shared |
