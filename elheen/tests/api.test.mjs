@@ -13,8 +13,8 @@ function memoryStore() {
     async list({ prefix }) { return { blobs: [...m.keys()].filter((k) => k.startsWith(prefix)).map((key) => ({ key })) }; },
   };
 }
-const setup = () => {
-  const h = makeHandler(memoryStore(), { ELHEEN_INVITE: 'letmein' });
+const setup = (extra = {}) => {
+  const h = makeHandler(memoryStore(), { ELHEEN_INVITE: 'letmein', ...extra });
   const call = async (method, path, body, token) => {
     const res = await h(new Request(`https://x.test/api/${path}`, {
       method, headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
@@ -129,4 +129,52 @@ test('the owner can change services and opening hours', async () => {
   const ok = await call('PUT', 'me', { services: [{ name: 'Kitchen design', minutes: 60, price: 500 }, { name: '' }], openHour: 10, closeHour: 18 }, token);
   assert.equal(ok.data.business.services.length, 1);
   assert.equal(ok.data.business.services[0].name, 'Kitchen design');
+});
+
+test('a new enquiry sends a phone alert to devices the owner registered', async () => {
+  const sent = [];
+  const call = setup({ pushKey: 'PUBLIC', notify: async (subs, payload) => { sent.push({ subs, payload }); return []; } });
+  const { data: { token } } = await signup(call);
+  assert.equal((await call('POST', 'push', { subscription: { endpoint: 'http://not-secure', keys: {} } }, token)).status, 400);
+  const reg = await call('POST', 'push', { subscription: { endpoint: 'https://push.example/abc', keys: { p256dh: 'k', auth: 'a' } } }, token);
+  assert.equal(reg.data.business.alerts, 1);
+  assert.ok(!('push' in reg.data.business));
+  await call('POST', 'public/studio-layali/lead', { name: 'Layla', phone: '0501234567', source: 'instagram' });
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].payload.title, /New enquiry: Layla/);
+});
+
+test('a dead device is forgotten, and a failing alert never loses the enquiry', async () => {
+  let mode = 'dead';
+  const call = setup({ notify: async (subs) => { if (mode === 'throw') throw new Error('down'); return subs.map((s) => s.endpoint); } });
+  const { data: { token } } = await signup(call);
+  await call('POST', 'push', { subscription: { endpoint: 'https://push.example/abc', keys: { p256dh: 'k', auth: 'a' } } }, token);
+  await call('POST', 'public/studio-layali/lead', { name: 'A', phone: '0501234567' });
+  assert.equal((await call('GET', 'me', null, token)).data.business.alerts, 0);
+  await call('POST', 'push', { subscription: { endpoint: 'https://push.example/xyz', keys: { p256dh: 'k', auth: 'a' } } }, token);
+  mode = 'throw';
+  assert.equal((await call('POST', 'public/studio-layali/lead', { name: 'B', phone: '0507654321' })).status, 200);
+  assert.equal((await call('GET', 'leads', null, token)).data.leads.length, 2);
+});
+
+test('the assistant only answers when a key exists and the owner switched it on', async () => {
+  const seen = [];
+  const call = setup({ ask: async (system, messages) => { seen.push({ system, messages }); return 'We are open until 7.'; } });
+  const { data: { token } } = await signup(call);
+  const say = () => call('POST', 'public/studio-layali/chat', { messages: [{ role: 'user', content: 'When do you close?' }] });
+  assert.equal((await say()).status, 404);
+  assert.equal((await call('GET', 'public/studio-layali')).data.chat, false);
+  await call('PUT', 'me', { aiOn: true, aiNotes: 'Parking is free.' }, token);
+  const ok = await say();
+  assert.equal(ok.data.reply, 'We are open until 7.');
+  assert.match(seen[0].system, /Studio Layali/);
+  assert.match(seen[0].system, /Parking is free/);
+  assert.equal((await setup()('POST', 'public/studio-layali/chat', { messages: [] })).status, 404);
+});
+
+test('the chat is saved with the enquiry so the owner can read it', async () => {
+  const call = setup();
+  const { data: { token } } = await signup(call);
+  await call('POST', 'public/studio-layali/lead', { name: 'A', phone: '0501234567', chat: [{ role: 'user', content: 'Do you do villas?' }, { role: 'assistant', content: 'Yes we do.' }] });
+  assert.equal((await call('GET', 'leads', null, token)).data.leads[0].chat.length, 2);
 });

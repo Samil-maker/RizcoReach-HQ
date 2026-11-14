@@ -45,7 +45,7 @@
 
   // --- tabs
   function showTab(name) {
-    for (const t of ['inbox', 'detail', 'calendar', 'settings']) $(`${t}Tab`).hidden = t !== name;
+    for (const t of ['inbox', 'detail', 'board', 'calendar', 'settings']) $(`${t}Tab`).hidden = t !== name;
     document.querySelectorAll('[data-tab]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === (name === 'detail' ? 'inbox' : name))));
     scrollTo(0, 0);
   }
@@ -80,7 +80,7 @@
   async function patch(id, change) {
     const { lead } = await api('PATCH', `leads/${id}`, change);
     leads = leads.map((l) => (l.id === id ? lead : l));
-    drawFilters(); drawLeads(); drawAgenda(); openLead(id);
+    drawAll(); openLead(id);
   }
   async function openLead(id) {
     const l = leads.find((x) => x.id === id);
@@ -119,6 +119,8 @@
         row('Phone', l.phone), row('Wants', l.service), row('Price', l.price ? `AED ${l.price}` : (l.price === 0 ? 'Free' : '')),
         row('Message', l.note), row('Address', l.address), row('Received', dubai(l.createdAt, { dateStyle: 'medium', timeStyle: 'short' }))),
       ...((l.photos || []).length ? [el('p', { className: 'step-title' }, 'Photos'), gallery] : []),
+      ...((l.chat || []).length ? [el('p', { className: 'step-title' }, 'Chat with the assistant'),
+        el('div', { className: 'thread' }, ...l.chat.map((m) => el('div', { className: `bub ${m.role === 'assistant' ? 'us' : 'them'}` }, m.content)))] : []),
       el('p', { className: 'step-title' }, 'Where is this enquiry?'), statusRow,
       el('p', { className: 'step-title' }, 'Visit or appointment time'), when,
       el('p', { className: 'step-title' }, 'Your notes'), note);
@@ -176,15 +178,76 @@
     } catch (err) { say('settingsError', err.message); }
   });
 
+  // --- numbers at the top of the inbox
+  function drawStats() {
+    const day = 864e5, now = Date.now();
+    const tiles = [
+      ['New', leads.filter((l) => l.status === 'new').length],
+      ['This week', leads.filter((l) => now - l.createdAt < 7 * day).length],
+      ['Booked ahead', leads.filter((l) => l.when && l.status === 'booked' && new Date(l.when) > now).length],
+      ['Booked value', `AED ${leads.filter((l) => ['booked', 'done'].includes(l.status)).reduce((n, l) => n + (l.price || 0), 0).toLocaleString('en')}`],
+    ];
+    $('stats').replaceChildren(...tiles.map(([label, value]) => el('div', { className: 'stat-tile' }, el('small', {}, label), el('b', {}, String(value)))));
+  }
+
+  // --- pipeline board: one column per stage
+  function drawBoard() {
+    $('board').replaceChildren(...Object.entries(STATUS).map(([key, label]) => {
+      const inCol = leads.filter((l) => l.status === key);
+      const col = el('div', { className: 'col' }, el('div', { className: 'col-head' }, el('b', {}, label), el('span', {}, String(inCol.length))));
+      for (const l of inCol) {
+        const card = el('button', { className: 'card-mini', type: 'button' }, el('b', {}, l.name),
+          el('span', {}, [l.service, l.when ? dubai(l.when, { weekday: 'short', hour: 'numeric' }) : null].filter(Boolean).join(' · ') || 'General enquiry'),
+          el('span', { className: 'badge src' }, SOURCES[l.source] || l.source));
+        card.addEventListener('click', () => openLead(l.id));
+        col.append(card);
+      }
+      if (!inCol.length) col.append(el('p', { className: 'col-empty' }, 'Nothing here'));
+      return col;
+    }));
+  }
+  function drawAll() { drawStats(); drawFilters(); drawLeads(); drawBoard(); drawAgenda(); }
+
+  // --- phone alerts
+  const b64 = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
+  function drawAlerts() {
+    const can = 'serviceWorker' in navigator && 'PushManager' in window && biz.pushKey;
+    $('alertBtn').hidden = !can;
+    if (!biz.pushKey) $('alertHint').textContent = 'Phone alerts are being set up and will be available shortly.';
+    else if (!can) $('alertHint').textContent = 'On an iPhone, first add Elheen to your home screen (Share, then Add to Home Screen), open it from there, and come back to this page.';
+    $('alertStatus').textContent = biz.alerts ? `Alerts are on for ${biz.alerts} device${biz.alerts > 1 ? 's' : ''}.` : '';
+  }
+  $('alertBtn').addEventListener('click', async () => {
+    try {
+      if ((await Notification.requestPermission()) !== 'granted') { $('alertStatus').textContent = 'Alerts are blocked for this site in your browser settings.'; return; }
+      const reg = await navigator.serviceWorker.register('/sw.js');
+      await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64(biz.pushKey) });
+      biz = (await api('POST', 'push', { subscription: sub.toJSON() })).business;
+      drawAlerts();
+    } catch (err) { $('alertStatus').textContent = 'Alerts could not be turned on here. Try again from Chrome or Safari.'; }
+  });
+
+  // --- assistant
+  function drawAssistant() {
+    $('aiOn').checked = !!biz.aiOn; $('aiNotes').value = biz.aiNotes || '';
+    $('aiOn').disabled = !biz.aiAvailable;
+    if (!biz.aiAvailable) $('aiHint').textContent = 'The assistant is not switched on for your plan yet. Ask us and we will enable it.';
+  }
+  $('aiSave').addEventListener('click', async () => {
+    try { biz = (await api('PUT', 'me', { aiOn: $('aiOn').checked, aiNotes: $('aiNotes').value })).business; drawAssistant(); $('aiStatus').textContent = 'Saved.'; }
+    catch (err) { $('aiStatus').textContent = err.message; }
+  });
+
   async function refresh() {
     leads = (await api('GET', 'leads')).leads;
-    drawFilters(); drawLeads(); drawAgenda();
+    drawAll();
   }
   async function start() {
     biz = (await api('GET', 'me')).business;
     $('authView').hidden = true; $('appView').hidden = false; $('signOut').hidden = false;
-    drawSettings(); await refresh();
+    drawSettings(); drawAlerts(); drawAssistant(); await refresh();
   }
   (token ? start().catch(signOut) : Promise.resolve(signOut()));
-  setInterval(() => { if (token && !$('appView').hidden && $('detailTab').hidden && document.visibilityState === 'visible') refresh().catch(() => {}); }, 30000);
+  setInterval(() => { if (token && !$('appView').hidden && $('detailTab').hidden && $('settingsTab').hidden && document.visibilityState === 'visible') refresh().catch(() => {}); }, 30000);
 })();

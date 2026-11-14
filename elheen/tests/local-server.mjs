@@ -15,7 +15,8 @@ const store = {
   async getWithMetadata(key) { const v = m.get(key); return v ? { data: v.data, metadata: v.metadata } : null; },
   async list({ prefix }) { return { blobs: [...m.keys()].filter((k) => k.startsWith(prefix)).map((key) => ({ key })) }; },
 };
-const api = makeHandler(store, { ELHEEN_INVITE: 'letmein' });
+// The assistant here is a stand-in that gives one fixed answer, so no key is needed.
+const api = makeHandler(store, { ELHEEN_INVITE: 'letmein', ask: async () => 'Yes, we cover all of Dubai. Add your details below and pick a time.' });
 const types = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2' };
 
 createServer(async (req, res) => {

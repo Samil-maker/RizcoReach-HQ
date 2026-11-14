@@ -89,3 +89,39 @@ textarea:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 4px rgba(
 .auth-switch{margin-top:16px;text-align:center;font-size:.92rem;color:var(--muted)}
 .auth-switch button{border:0;background:transparent;color:var(--brand);font-weight:700;padding:8px 4px}
 @media(min-width:760px){.actions{grid-template-columns:repeat(4,1fr)}}
+
+/* chat threads */
+.thread{display:flex;flex-direction:column;gap:8px;margin-top:6px}
+.thread .bub{opacity:1;transform:none;font-size:.92rem;max-width:88%;margin-top:0}
+.chat-row{display:flex;gap:8px;margin-top:10px}
+.chat-row input{flex:1}
+
+/* numbers above the inbox */
+.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:16px}
+.stat-tile{background:#fff;border-radius:14px;padding:16px;box-shadow:inset 0 0 0 1px var(--line)}
+.stat-tile small{display:block;font-size:.72rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.stat-tile b{display:block;font-size:1.6rem;letter-spacing:-.03em;margin-top:4px}
+@media(min-width:760px){.stats{grid-template-columns:repeat(4,1fr)}}
+
+/* pipeline board */
+.board{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(200px,1fr);gap:12px;overflow-x:auto;padding-bottom:12px;align-items:start}
+.col{background:#F3ECF1;border-radius:14px;padding:12px;min-height:160px}
+.col-head{display:flex;align-items:center;justify-content:space-between;padding:4px 4px 12px}
+.col-head b{font-size:.78rem;letter-spacing:.1em;text-transform:uppercase}
+.col-head span{font-size:.78rem;font-weight:700;color:var(--muted);background:#fff;border-radius:999px;padding:2px 9px}
+.card-mini{display:grid;gap:4px;width:100%;text-align:left;border:0;background:#fff;border-radius:10px;padding:12px;margin-bottom:8px;color:var(--text);box-shadow:0 1px 2px rgba(31,10,36,.06);transition:transform .2s var(--ease),box-shadow .2s}
+.card-mini:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(31,10,36,.1)}
+.card-mini>span:not(.badge){font-size:.84rem;color:var(--muted)}
+.card-mini .badge{justify-self:start}
+.col-empty{font-size:.85rem;color:var(--muted);text-align:center;padding:18px 0}
+
+/* desktop: navigation moves to the side */
+@media(min-width:980px){
+  .shell.wide{max-width:none;margin:0;padding:28px 40px 60px 268px}
+  .shell.wide .topbar{position:fixed;left:0;top:0;width:228px;padding:26px 24px;z-index:21}
+  .shell.wide #signOut{position:fixed;left:24px;bottom:24px;width:180px;z-index:21}
+  .tabs{left:0;top:0;bottom:0;right:auto;width:228px;flex-direction:column;justify-content:flex-start;gap:4px;padding:92px 14px 90px;box-shadow:1px 0 0 var(--line)}
+  .tabs button{flex:none;max-width:none;width:100%;min-height:46px;display:flex;justify-content:flex-start;gap:12px;padding:0 14px;font-size:.95rem}
+  #authView{margin-left:-228px!important}
+  #inboxTab,#detailTab,#calendarTab,#settingsTab{max-width:880px}
+}

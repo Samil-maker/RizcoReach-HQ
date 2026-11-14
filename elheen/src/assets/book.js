@@ -3,13 +3,14 @@
   const $ = (id) => document.getElementById(id);
   const slug = decodeURIComponent(location.pathname.split('/').filter(Boolean)[1] || new URLSearchParams(location.search).get('b') || '');
   const source = new URLSearchParams(location.search).get('src') || (document.referrer.includes('instagram') ? 'instagram' : document.referrer.includes('google') ? 'google' : 'link');
-  const state = { serviceId: null, when: null, location: null, photos: [] };
+  const state = { serviceId: null, when: null, location: null, photos: [], chat: [] };
   const DUBAI = 4; // hours ahead of UTC, all year
 
   const showError = (text) => { $('error').textContent = text; $('error').hidden = !text; };
   const press = (list, on) => list.forEach((b) => b.setAttribute('aria-pressed', String(b === on)));
 
-  fetch(`/api/public/${encodeURIComponent(slug)}`).then((r) => r.ok ? r.json() : Promise.reject()).then(({ business: b, taken }) => {
+  fetch(`/api/public/${encodeURIComponent(slug)}`).then((r) => r.ok ? r.json() : Promise.reject()).then(({ business: b, taken, chat }) => {
+    $('chatBlock').hidden = !chat;
     document.title = `${b.name} | Book`;
     $('initial').textContent = b.name[0].toUpperCase();
     $('bizName').textContent = b.name;
@@ -69,6 +70,28 @@
     $('loading').hidden = true; $('form').hidden = false;
   }).catch(() => { $('loading').hidden = true; $('missing').hidden = false; });
 
+  // Questions: the assistant answers from the business's own details.
+  const addBubble = (role, text) => {
+    const d = document.createElement('div'); d.className = `bub ${role === 'assistant' ? 'them' : 'us'}`; d.textContent = text;
+    $('thread').append(d); d.scrollIntoView({ block: 'nearest' }); return d;
+  };
+  const ask = async () => {
+    const text = $('chatInput').value.trim();
+    if (!text) return;
+    $('chatInput').value = ''; $('chatSend').disabled = true;
+    state.chat.push({ role: 'user', content: text }); addBubble('user', text);
+    const waiting = addBubble('assistant', '…');
+    try {
+      const res = await fetch(`/api/public/${encodeURIComponent(slug)}/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ messages: state.chat }) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      waiting.textContent = data.reply; state.chat.push({ role: 'assistant', content: data.reply });
+    } catch (err) { waiting.textContent = err.message || 'Please send your enquiry below and we will reply.'; }
+    $('chatSend').disabled = false; $('chatInput').focus();
+  };
+  $('chatSend').addEventListener('click', ask);
+  $('chatInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); ask(); } });
+
   // Location: one tap, shared only if the client agrees.
   $('locate').addEventListener('click', () => {
     if (!navigator.geolocation) { $('locStatus').textContent = 'Your phone cannot share a location here. Please type the address.'; return; }
@@ -123,7 +146,7 @@
     try {
       const res = await fetch(`/api/public/${encodeURIComponent(slug)}/lead`, {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name, phone, note: $('note').value, address: $('address').value, location: state.location, serviceId: state.serviceId, when: state.when, photos: state.photos, source }),
+        body: JSON.stringify({ name, phone, note: $('note').value, address: $('address').value, location: state.location, serviceId: state.serviceId, when: state.when, photos: state.photos, chat: state.chat, source }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Something went wrong. Please try again.');

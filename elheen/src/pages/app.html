@@ -37,6 +37,7 @@
   <!-- the app -->
   <section id="appView" hidden>
     <div id="inboxTab">
+      <div class="stats" id="stats"></div>
       <div class="chips" id="filters" role="group" aria-label="Filter enquiries"></div>
       <div id="leadList"></div>
     </div>
@@ -46,6 +47,8 @@
       <div class="panel detail" id="detail"></div>
     </div>
 
+    <div id="boardTab" hidden><div class="board" id="board"></div></div>
+
     <div id="calendarTab" hidden><div id="agenda"></div></div>
 
     <div id="settingsTab" hidden>
@@ -54,6 +57,20 @@
         <p class="hint" style="margin-top:6px">Put this in your Instagram bio, your ads and your Google profile.</p>
         <div class="link-box"><input id="shareLink" readonly><button class="btn btn-primary btn-sm" id="copyLink" type="button">Copy</button></div>
         <p class="hint" id="copyStatus" role="status"></p>
+      </div>
+      <div class="panel">
+        <h2 style="font-size:1.4rem">Phone alerts</h2>
+        <p class="hint" style="margin-top:6px" id="alertHint">Get a notification on this device the moment an enquiry arrives.</p>
+        <button class="btn btn-primary btn-sm" id="alertBtn" type="button" style="margin-top:12px">Turn on alerts on this device</button>
+        <p class="hint" id="alertStatus" role="status" style="margin-top:8px"></p>
+      </div>
+      <div class="panel">
+        <h2 style="font-size:1.4rem">Assistant</h2>
+        <p class="hint" style="margin-top:6px" id="aiHint">When this is on, the assistant answers questions on your enquiry page and guides people to book. You can read every chat on the enquiry.</p>
+        <label class="check" style="margin-top:8px"><input type="checkbox" id="aiOn">Let the assistant reply for me</label>
+        <label class="field">Things it should know <span class="hint">(parking, areas you cover, what you do not do)</span><textarea id="aiNotes" maxlength="1500"></textarea></label>
+        <button class="btn btn-ghost btn-sm" id="aiSave" type="button" style="margin-top:12px">Save assistant settings</button>
+        <p class="hint" id="aiStatus" role="status" style="margin-top:8px"></p>
       </div>
       <form class="panel" id="settingsForm">
         <h2 style="font-size:1.4rem;margin-bottom:14px">Services</h2>
@@ -76,6 +93,7 @@
 
     <nav class="tabs" role="tablist" aria-label="Sections">
       <button role="tab" aria-selected="true" data-tab="inbox"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 13l2-8h12l2 8M4 13v6h16v-6M4 13h5l1 2h4l1-2h5"/></svg>Enquiries</button>
+      <button role="tab" aria-selected="false" data-tab="board"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="5" height="16" rx="1.500"/><rect x="10" y="4" width="5" height="11" rx="1.500"/><rect x="17" y="4" width="4" height="7" rx="1.500"/></svg>Pipeline</button>
       <button role="tab" aria-selected="false" data-tab="calendar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Calendar</button>
       <button role="tab" aria-selected="false" data-tab="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg>Set-up</button>
     </nav>

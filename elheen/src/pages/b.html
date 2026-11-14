@@ -5,6 +5,12 @@
   <form class="panel" id="form" hidden novalidate>
     <div class="biz-head"><i id="initial" aria-hidden="true"></i><div><h1 id="bizName"></h1><span id="bizArea"></span></div></div>
 
+    <div id="chatBlock" hidden>
+      <p class="step-title">Have a question?</p>
+      <div class="thread" id="thread" aria-live="polite"></div>
+      <div class="chat-row"><input id="chatInput" placeholder="Ask us anything" aria-label="Your question" maxlength="500"><button class="btn btn-primary btn-sm" type="button" id="chatSend">Send</button></div>
+    </div>
+
     <p class="step-title" id="svcTitle">What do you need?</p>
     <div class="choices" id="services" role="group" aria-labelledby="svcTitle"></div>
 

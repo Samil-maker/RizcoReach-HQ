@@ -31,7 +31,7 @@ ${noindex ? '<meta name="robots" content="noindex">' : `<link rel="canonical" hr
 <meta name="theme-color" content="#1F0A24">
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
 <link rel="preload" href="assets/fonts/jakarta.woff2" as="font" type="font/woff2" crossorigin>
-${bare ? '<base href="/">\n' : ''}<link rel="stylesheet" href="assets/styles.css">${bare ? '\n<link rel="stylesheet" href="assets/app.css">' : ''}
+${bare ? '<base href="/">\n<link rel="manifest" href="/manifest.webmanifest">\n<link rel="apple-touch-icon" href="/assets/icon-192.png">\n' : ''}<link rel="stylesheet" href="assets/styles.css">${bare ? '\n<link rel="stylesheet" href="assets/app.css">' : ''}
 <script>document.documentElement.classList.remove("no-js")</script>
 </head>
 <body data-nav="${nav || ''}">
@@ -48,6 +48,7 @@ ${bare ? scripts.map((x) => `<script src="assets/${x}" defer></script>`).join('\
 rmSync(dist, { recursive: true, force: true });
 mkdirSync(dist, { recursive: true });
 cpSync(join(src, 'assets'), join(dist, 'assets'), { recursive: true });
+cpSync(join(src, 'root'), dist, { recursive: true });
 
 for (const file of readdirSync(join(src, 'pages')).filter((f) => f.endsWith('.html'))) {
   const raw = read(`pages/${file}`);

@@ -44,6 +44,21 @@ const publicBusiness = (b) => ({
   askPhotos: b.askPhotos, askAddress: b.askAddress, openHour: b.openHour, closeHour: b.closeHour, closedDays: b.closedDays,
 });
 
+const MAX_CHAT_TURNS = 12;
+const assistantBrief = (b) => `You are the front desk for ${b.name}${b.area ? `, in ${b.area}` : ''}, a ${b.kind} business in the UAE. You reply to people enquiring on its booking page.
+
+Services and prices:
+${b.services.map((s) => `- ${s.name}: ${s.minutes} minutes, ${s.price ? `AED ${s.price}` : 'free'}`).join('\n')}
+Open ${b.openHour}:00 to ${b.closeHour}:00.
+${b.aiNotes ? `Notes from the owner:\n${b.aiNotes}\n` : ''}
+How to reply:
+- Write like a friendly person on WhatsApp: one to three short sentences, plain words, no lists, no emoji.
+- Reply in the language the person writes in (Arabic or English).
+- Answer only from the facts above. If you do not know, say the team will confirm, and never invent a price, a time or a promise.
+- Find out what they need${b.askPhotos ? ', and ask them to add photos of the space in the form' : ''}.
+- When they are ready, tell them to fill in their name and number below and pick a time, then press Send enquiry.
+- Never say you are an AI unless asked directly; if asked, say you are the assistant for ${b.name}.`;
+
 export function makeHandler(store, env = {}) {
   const getJSON = (key) => store.get(key, { type: 'json' });
   const setJSON = (key, value) => store.setJSON(key, value);
@@ -95,10 +110,22 @@ export function makeHandler(store, env = {}) {
       id: leadId, name, phone, serviceId: service?.id || null, service: service?.name || clean(body.service, 80) || null,
       price: service?.price ?? null, note: clean(body.note, 1000), address: clean(body.address, 300),
       location: /^-?\d{1,3}\.\d+,-?\d{1,3}\.\d+$/.test(body.location || '') ? body.location : null,
+      chat: (Array.isArray(body.chat) ? body.chat : []).slice(-2 * MAX_CHAT_TURNS)
+        .map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: clean(m.content, 600) })).filter((m) => m.content),
       photos, source: clean(source, 30) || 'link', status: when ? 'booked' : 'new', when, createdAt: Date.now(),
       history: [{ at: Date.now(), text: when ? 'Booked through the enquiry page' : 'Enquiry received' }],
     };
     await setJSON(`leads/${biz.slug}/${leadId}`, lead);
+    if (env.notify && (biz.push || []).length) {
+      try {
+        const dead = await env.notify(biz.push, {
+          title: when ? `New booking: ${name}` : `New enquiry: ${name}`,
+          body: [lead.service, lead.source !== 'link' ? `from ${lead.source}` : null].filter(Boolean).join(' · ') || 'Tap to open',
+          url: '/app',
+        });
+        if (dead && dead.length) { biz.push = biz.push.filter((p) => !dead.includes(p.endpoint)); await setJSON(`biz/${biz.slug}`, biz); }
+      } catch { /* an alert failing must never lose the enquiry */ }
+    }
     return json({ ok: true, id: leadId, when });
   }
 
@@ -139,7 +166,16 @@ export function makeHandler(store, env = {}) {
     if (parts[0] === 'public' && parts[1]) {
       const biz = await getJSON(`biz/${slugify(parts[1])}`);
       if (!biz) return fail(404, 'This page does not exist.');
-      if (method === 'GET' && !parts[2]) return json({ business: publicBusiness(biz), taken: await takenTimes(biz.slug) });
+      if (method === 'GET' && !parts[2]) return json({ business: publicBusiness(biz), taken: await takenTimes(biz.slug), chat: !!(env.ask && biz.aiOn) });
+      if (method === 'POST' && parts[2] === 'chat') {
+        if (!env.ask || !biz.aiOn) return fail(404, 'Chat is not available.');
+        const messages = (Array.isArray(body.messages) ? body.messages : []).slice(-2 * MAX_CHAT_TURNS)
+          .map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: clean(m.content, 600) })).filter((m) => m.content);
+        if (!messages.length || messages[messages.length - 1].role !== 'user') return fail(400, 'Say something first.');
+        if (messages.filter((m) => m.role === 'user').length > MAX_CHAT_TURNS) return json({ reply: 'Thanks. Please fill in your details below and the team will take it from here.' });
+        try { return json({ reply: await env.ask(assistantBrief(biz), messages) }); }
+        catch { return fail(502, 'The assistant is not available right now. Please send your enquiry below.'); }
+      }
       if (method === 'POST' && parts[2] === 'lead') return saveLead(biz, body, body.source || url.searchParams.get('src'));
     }
 
@@ -157,9 +193,14 @@ export function makeHandler(store, env = {}) {
     const biz = await auth(req);
     if (!biz) return fail(401, 'Please sign in.');
 
-    if (parts[0] === 'me' && method === 'GET') {
-      const { pass, ...safe } = biz;
-      return json({ business: safe });
+    const safeBiz = () => { const { pass, push, ...safe } = biz; return { ...safe, alerts: (push || []).length, aiAvailable: !!env.ask, pushKey: env.pushKey || null }; };
+    if (parts[0] === 'me' && method === 'GET') return json({ business: safeBiz() });
+    if (parts[0] === 'push' && method === 'POST') {
+      const sub = body.subscription;
+      if (!sub || typeof sub.endpoint !== 'string' || !/^https:\/\//.test(sub.endpoint) || !sub.keys) return fail(400, 'That device could not be registered.');
+      biz.push = [...(biz.push || []).filter((p) => p.endpoint !== sub.endpoint), { endpoint: sub.endpoint.slice(0, 600), keys: { p256dh: clean(sub.keys.p256dh, 200), auth: clean(sub.keys.auth, 100) } }].slice(-5);
+      await setJSON(`biz/${biz.slug}`, biz);
+      return json({ business: safeBiz() });
     }
     if (parts[0] === 'me' && method === 'PUT') {
       if (body.name) biz.name = clean(body.name, 60);
@@ -167,6 +208,8 @@ export function makeHandler(store, env = {}) {
       if ('phone' in body) biz.phone = clean(body.phone, 30).replace(/[^\d+]/g, '');
       if ('askPhotos' in body) biz.askPhotos = !!body.askPhotos;
       if ('askAddress' in body) biz.askAddress = !!body.askAddress;
+      if ('aiOn' in body) biz.aiOn = !!body.aiOn;
+      if ('aiNotes' in body) biz.aiNotes = clean(body.aiNotes, 1500);
       for (const k of ['openHour', 'closeHour']) {
         if (k in body) biz[k] = Math.min(24, Math.max(0, Number(body[k]) | 0));
       }
@@ -179,8 +222,7 @@ export function makeHandler(store, env = {}) {
         })).filter((s) => s.name);
       }
       await setJSON(`biz/${biz.slug}`, biz);
-      const { pass, ...safe } = biz;
-      return json({ business: safe });
+      return json({ business: safeBiz() });
     }
     if (parts[0] === 'leads' && method === 'GET' && !parts[1]) return json({ leads: await listLeads(biz.slug) });
     if (parts[0] === 'leads' && parts[1] && method === 'PATCH') {
@@ -212,5 +254,34 @@ export function makeHandler(store, env = {}) {
   };
 }
 
-export default (req) => makeHandler(getStore('elheen'), { ELHEEN_INVITE: process.env.ELHEEN_INVITE })(req);
+// Sends a phone alert to every device the owner has switched alerts on for.
+async function pushNotify(subscriptions, payload) {
+  const { VAPID_PUBLIC_KEY: pub, VAPID_PRIVATE_KEY: priv } = process.env;
+  if (!pub || !priv || !subscriptions.length) return [];
+  const webpush = (await import('web-push')).default;
+  webpush.setVapidDetails('mailto:support@elheen.com', pub, priv);
+  const dead = [];
+  await Promise.all(subscriptions.map((sub) =>
+    webpush.sendNotification(sub, JSON.stringify(payload)).catch((e) => { if (e.statusCode === 404 || e.statusCode === 410) dead.push(sub.endpoint); })));
+  return dead;
+}
+
+// Asks Claude for the assistant's next reply.
+async function askClaude(system, messages) {
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify({ model: process.env.ELHEEN_AI_MODEL || 'claude-haiku-5-5', max_tokens: 300, system, messages }),
+  });
+  if (!res.ok) throw new Error(`AI request failed: ${res.status}`);
+  const data = await res.json();
+  return (data.content || []).filter((c) => c.type === 'text').map((c) => c.text).join('').trim();
+}
+
+export default (req) => makeHandler(getStore({ name: 'elheen', consistency: 'strong' }), {
+  ELHEEN_INVITE: process.env.ELHEEN_INVITE,
+  pushKey: process.env.VAPID_PUBLIC_KEY || null,
+  notify: pushNotify,
+  ask: process.env.ANTHROPIC_API_KEY ? askClaude : null,
+})(req);
 export const config = { path: '/api/*' };
