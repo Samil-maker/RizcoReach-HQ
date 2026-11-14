@@ -1,7 +1,7 @@
 /* Lead Hunter: Google Maps results reader (content script on google.com/maps).
-   Used for Meta-ads business searches when no Places API key is set: the background
-   opens a Maps search in a tab, this script scrolls the results list to the end and
-   reads each business (name, rating, reviews, category, address, phone, website). */
+   The background opens a Maps search in a tab, this script scrolls the results list to the end and reads each
+   business: name, rating, reviews, category, address, phone, website, and Google's own "Recently opened" or
+   "Opening soon" label when the listing carries one. */
 (() => {
   if (window.__leadHunterMaps) return;
   window.__leadHunterMaps = true;
@@ -58,7 +58,16 @@
       if (!Array.isArray(a)) continue;
       if (typeof a[11] === 'string' && typeof a[10] === 'string' && /^0x[0-9a-f]+:0x[0-9a-f]+$/i.test(a[10]) && (Array.isArray(a[178]) || Array.isArray(a[7]) || Array.isArray(a[4]))) {
         const at = (x, ...p) => p.reduce((v, k) => (Array.isArray(v) ? v[k] : undefined), x);
+        // Google's label is somewhere in the record as its own short string ("Recently opened"). Where moves, so look.
+        let open = null;
+        const inside = [a];
+        for (let n = 0; inside.length && n < 6000 && !open; n++) {
+          const v = inside.pop();
+          if (typeof v === 'string') open = v.length < 41 ? LH.openingLabel(v) : null;
+          else if (Array.isArray(v)) for (const x of v) if (typeof x === 'string' || Array.isArray(x)) inside.push(x);
+        }
         net.set(a[10].toLowerCase(), {
+          open,
           name: a[11],
           website: typeof at(a, 7, 0) === 'string' ? at(a, 7, 0) : '',
           phone: typeof at(a, 178, 0, 0) === 'string' ? at(a, 178, 0, 0) : '',
@@ -103,8 +112,9 @@
     // Lines after the rating look like "Beauty salon · · Al Wasl Rd" and "Open · Closes 9 pm · 04 123 4567".
     const info = lines.filter((l) => l.includes('·'));
     const parts = (info[0] || '').split('·').map((x) => x.trim()).filter((x) => x && !/^[\W\d]+$/.test(x));
-    const category = parts[0] && !/open|closed|closes|opens/i.test(parts[0]) ? parts[0] : '';
-    const address = parts.length > 1 ? parts[parts.length - 1] : '';
+    const category = parts[0] && !LH.looksLikeHours(parts[0]) ? parts[0] : '';
+    // The last part that is not opening hours ("Interior designer · Opens 10 AM" has no address).
+    const address = parts.length > 1 ? parts.slice(1).reverse().find((x) => !LH.looksLikeHours(x)) || '' : '';
     const site = card.querySelector('a[data-value="Website"], a[aria-label^="Visit"], a.lcr4fd, div.Rwjeuc a[href]');
     const dataId = placeIdFrom(a.getAttribute('href'));
     const n = net.get(dataId) || {};
@@ -120,12 +130,14 @@
       const p = LH.normalizePhone(phoneText, 'AE');
       if (p) phones.push(p);
     }
+    // "Recently opened", "Opened 3 weeks ago", "Opening soon": on the card as its own line or part of one.
+    const open = LH.openingLabelIn(lines) || n.open || null;
     return {
       name: n.name || name,
       category: n.category || category,
       website: web ? LH.cleanUrl(web) || web : '',
       phones: [...new Set(phones)].slice(0, 2),
-      maps: { placeId: dataId, gPlaceId: n.placeId || '', rating: n.rating ?? rating, reviews: n.reviews || reviews, address: n.address || address, mapsUrl: cidUrl(dataId) || a.href.split('?')[0] },
+      maps: { placeId: dataId, gPlaceId: n.placeId || '', rating: n.rating ?? rating, reviews: n.reviews || reviews, address: n.address || address, mapsUrl: cidUrl(dataId) || a.href.split('?')[0], ...(open ? { open } : {}) },
     };
   }
 
@@ -144,6 +156,8 @@
         const stars = document.querySelector('[role="img"][aria-label*="star" i]');
         const m = stars && (stars.getAttribute('aria-label') || '').match(/([\d.]+)/);
         const rev = document.body.innerText.match(/([\d,]+)\s+reviews?/i);
+        const main = document.querySelector('[role="main"]') || document.body;
+        const open = LH.openingLabelIn(String(main.innerText || '').split('\n').slice(0, 60));
         return {
           items: [
             {
@@ -151,7 +165,7 @@
               category: (document.querySelector('button[jsaction*="category"]') || {}).textContent || '',
               website: web ? web.href : '',
               phones: phoneBtn ? [LH.normalizePhone(phoneBtn.getAttribute('data-item-id').replace('phone:tel:', ''), 'AE')].filter(Boolean) : [],
-              maps: { placeId: placeIdFrom(location.href), rating: m ? Number(m[1]) : null, reviews: rev ? Number(rev[1].replace(/\D/g, '')) : 0, address: addr ? addr.textContent.trim() : '', mapsUrl: location.href.split('?')[0] },
+              maps: { placeId: placeIdFrom(location.href), rating: m ? Number(m[1]) : null, reviews: rev ? Number(rev[1].replace(/\D/g, '')) : 0, address: addr ? addr.textContent.trim() : '', mapsUrl: location.href.split('?')[0], ...(open ? { open } : {}) },
             },
           ],
         };
@@ -189,7 +203,12 @@
   (async () => {
     const res = await send({ type: 'maps:hello' });
     if (!res || !res.search) return; // a normal Maps tab: do nothing
-    const out = await collect();
+    let out;
+    try {
+      out = await collect();
+    } catch (e) {
+      out = { items: [], error: `the results list could not be read (${String((e && e.message) || e).slice(0, 120)})` };
+    }
     send({ type: 'maps:results', ...out });
   })();
 })();

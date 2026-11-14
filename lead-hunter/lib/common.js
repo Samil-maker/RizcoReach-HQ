@@ -23,20 +23,535 @@
   ];
   LH.country = (code) => LH.COUNTRIES.find((c) => c.code === code) || LH.COUNTRIES[0];
 
-  /* ------------------------------------------------------------------ Niches */
-  // One list for both tabs: Ad Library hunts (New hunt) and Google Maps searches (Meta ads).
-  // The name is written the way it reads in a message: it becomes {{niche}} in the scripts.
-  LH.DEFAULT_NICHES = [
-    { name: 'Car detailing studios', keywords: ['ceramic coating', 'paint protection film', 'car detailing', 'window tinting', 'car polishing'] },
-    { name: 'Aesthetic clinics', keywords: ['aesthetic clinic', 'laser hair removal', 'skin clinic', 'hydrafacial', 'botox clinic'] },
-    { name: 'Dental clinics', keywords: ['cosmetic dentist', 'teeth whitening', 'dental clinic', 'invisalign', 'dental veneers'] },
-    { name: 'Beauty salons', keywords: ['beauty salon', 'hair salon', 'ladies salon', 'nail salon', 'lash studio'] },
+  /* ----------------------------------------------------------------- Presets */
+  // One preset per kind of business: what to search for, what to leave out, how many Google reviews a small
+  // owner run business has, and where to look. Searches run as "{keyword} {area}".
+  const lines = (s) => s.trim().split('\n').map((x) => x.trim()).filter(Boolean);
+  LH.AREA_LISTS = {
+    industrial: lines(`Al Quoz Industrial Area 1, Dubai
+Al Quoz Industrial Area 2, Dubai
+Al Quoz Industrial Area 3, Dubai
+Al Quoz Industrial Area 4, Dubai
+Ras Al Khor Industrial Area, Dubai
+Al Qusais Industrial Area, Dubai
+Umm Ramool, Dubai
+Dubai Investments Park, Dubai
+Jebel Ali Industrial Area, Dubai
+Al Barsha, Dubai
+Dubai Silicon Oasis, Dubai
+Sharjah Industrial Area, Sharjah
+Al Sajaa Industrial Area, Sharjah
+Muwaileh, Sharjah
+Ajman Industrial Area, Ajman
+Al Jurf, Ajman
+Mussafah, Abu Dhabi
+Mohammed Bin Zayed City, Abu Dhabi
+Ras Al Khaimah
+Umm Al Quwain
+Fujairah`),
+    residential: lines(`Dubai Marina, Dubai
+JLT, Dubai
+Business Bay, Dubai
+Downtown Dubai, Dubai
+DIFC, Dubai
+Al Barsha, Dubai
+Barsha Heights, Dubai
+Jumeirah, Dubai
+Umm Suqeim, Dubai
+Al Wasl, Dubai
+Al Safa, Dubai
+Al Quoz, Dubai
+Dubai Hills, Dubai
+Arabian Ranches, Dubai
+Motor City, Dubai
+Dubai Sports City, Dubai
+JVC, Dubai
+Al Furjan, Dubai
+Damac Hills, Dubai
+Town Square, Dubai
+Dubai Silicon Oasis, Dubai
+Mirdif, Dubai
+Al Warqa, Dubai
+Al Nahda, Dubai
+Al Qusais, Dubai
+Al Karama, Dubai
+Al Majaz, Sharjah
+Al Khan, Sharjah
+Al Nahda, Sharjah
+Al Taawun, Sharjah
+Muwaileh, Sharjah
+Aljada, Sharjah
+Al Nuaimiya, Ajman
+Al Rashidiya, Ajman
+Al Reem Island, Abu Dhabi
+Saadiyat Island, Abu Dhabi
+Yas Island, Abu Dhabi
+Al Raha, Abu Dhabi
+Khalifa City, Abu Dhabi
+Al Khalidiyah, Abu Dhabi
+Al Mushrif, Abu Dhabi
+Ras Al Khaimah
+Fujairah`),
+    business: lines(`Business Bay, Dubai
+Deira, Dubai
+Bur Dubai, Dubai
+Al Karama, Dubai
+Port Saeed, Dubai
+Al Garhoud, Dubai
+Oud Metha, Dubai
+Al Barsha, Dubai
+Barsha Heights, Dubai
+JLT, Dubai
+Al Qusais, Dubai
+Dubai Silicon Oasis, Dubai
+Al Majaz, Sharjah
+Al Qasimia, Sharjah
+Al Taawun, Sharjah
+Al Khan, Sharjah
+SAIF Zone, Sharjah
+Al Nuaimiya, Ajman
+Al Khalidiyah, Abu Dhabi
+Al Zahiyah, Abu Dhabi
+Hamdan Street, Abu Dhabi
+Khalifa City, Abu Dhabi
+Mussafah, Abu Dhabi
+Ras Al Khaimah
+Fujairah`),
+  };
+  LH.DEFAULT_PRESETS = [
+    {
+      name: 'Car',
+      label: 'car detailing and protection studios',
+      minReviews: 0,
+      maxReviews: 150,
+      keywords: lines(`ppf
+paint protection film
+ppf installation
+ceramic coating
+nano ceramic coating
+graphene coating
+car detailing studio
+car detailing
+auto detailing
+paint correction
+car polishing
+window tinting
+car tinting
+window film
+car wrap
+vehicle wrapping
+vinyl wrap
+color change wrap
+chrome delete
+starlight headliner
+ambient lighting car
+car interior customization
+car upholstery
+custom car interior
+car modification
+off road modification
+car audio installation
+body kit installation`),
+      // "category:" words are checked against the Google category only: many real studios are called "... Garage".
+      exclude: lines(`car wash
+hand wash
+steam wash
+laundry
+tyre
+tire
+category: garage
+mechanic
+auto repair
+spare parts
+rent a car
+car rental
+recovery
+towing
+battery
+oil change
+petrol station
+used cars
+category: showroom`),
+      areas: LH.AREA_LISTS.industrial,
+    },
+    {
+      name: 'Fitness',
+      label: 'gyms and fitness studios',
+      minReviews: 0,
+      maxReviews: 50,
+      keywords: lines(`boxing gym
+boxing club
+kickboxing gym
+muay thai gym
+mma gym
+martial arts gym
+martial arts school
+jiu jitsu gym
+bjj academy
+brazilian jiu jitsu
+krav maga
+self defense classes
+crossfit gym
+crossfit box
+hyrox gym
+functional training gym
+strength and conditioning gym
+personal training studio
+private gym
+ladies gym
+women only gym
+pilates studio
+reformer pilates
+yoga studio
+hot yoga
+aerial yoga
+barre studio
+spin studio
+indoor cycling studio
+bootcamp fitness`),
+      exclude: lines(`Fitness First
+GymNation
+Gold's Gym
+UFC Gym
+Barry's
+1Rebel
+hotel
+resort
+spa
+swimming
+football
+tennis
+padel
+physiotherapy
+clinic
+nursery`),
+      areas: LH.AREA_LISTS.residential,
+    },
+    {
+      name: 'Pets',
+      label: 'pet care businesses',
+      minReviews: 0,
+      maxReviews: 50,
+      keywords: lines(`dog trainer
+dog training
+puppy training
+dog behaviourist
+obedience training
+pet boarding
+dog boarding
+cat boarding
+pet hotel
+dog hotel
+dog daycare
+pet daycare
+pet grooming
+mobile pet grooming
+dog grooming
+cat grooming
+pet spa
+pet relocation
+pet transport
+pet taxi`),
+      exclude: lines(`veterinary
+vet clinic
+animal hospital
+pet clinic
+pet shop
+pet store
+pet food
+pet supplies
+aquarium`),
+      areas: [...LH.AREA_LISTS.residential, 'Umm Ramool, Dubai', 'Dubai Investments Park, Dubai', 'Mussafah, Abu Dhabi'],
+    },
+    {
+      name: 'Accountants',
+      label: 'accounting firms',
+      minReviews: 0, // small firms get few reviews
+      maxReviews: 50,
+      keywords: lines(`accounting firm
+accounting services
+accountant
+chartered accountants
+bookkeeping services
+bookkeeping company
+accounting and bookkeeping
+audit firm
+auditors
+tax consultant
+tax agent
+FTA tax agent
+VAT consultant
+VAT registration
+corporate tax consultant
+corporate tax registration
+e-invoicing consultant
+e-invoicing services
+payroll services
+virtual CFO
+CFO services`),
+      exclude: lines(`Deloitte
+PwC
+EY
+KPMG
+Grant Thornton
+BDO
+RSM
+Crowe
+Baker Tilly
+Mazars
+business setup
+company formation
+typing
+bank
+exchange
+insurance
+real estate`),
+      areas: LH.AREA_LISTS.business,
+    },
+    {
+      name: 'Used Cars',
+      label: 'used car showrooms',
+      minReviews: 0,
+      maxReviews: 150,
+      keywords: lines(`used car showroom
+used car dealer
+used cars trading
+motors trading
+pre owned cars
+second hand cars
+luxury used cars
+car showroom`),
+      exclude: lines(`rent a car
+rental
+leasing
+garage
+spare parts
+wash`),
+      areas: lines(`Souq Al Haraj, Sharjah
+Al Aweer, Dubai
+Ras Al Khor, Dubai
+Sheikh Zayed Road, Dubai
+Mussafah, Abu Dhabi`),
+    },
   ];
-  // Niche names stored on prospects by earlier versions.
+  // Any business can need a website, so there is a preset for every common kind. They search the shared area list
+  // (Settings > Areas) and keep every listing whatever its review count.
+  const MORE_PRESETS = [
+    ['New openings', 'new businesses', 'newly opened|recently opened|opening soon|grand opening|new restaurant|new cafe|new salon|new clinic|new gym|new shop', ''],
+    ['Restaurants', 'restaurants', 'restaurant|cafeteria|shawarma|burger|pizza|grill restaurant|biryani|indian restaurant|arabic restaurant|asian restaurant', 'mcdonald\'s|kfc|pizza hut|subway|hardee\'s|burger king|domino\'s'],
+    ['Cafes', 'cafes', 'cafe|coffee shop|specialty coffee|karak|tea house|juice bar|dessert cafe', 'starbucks|costa|tim hortons|dunkin|caribou'],
+    ['Bakeries and sweets', 'bakeries and sweet shops', 'bakery|cake shop|sweets shop|pastry shop|chocolate shop|dessert shop|kunafa', ''],
+    ['Catering and cloud kitchens', 'catering companies', 'catering|cloud kitchen|meal prep|healthy meals|home bakery', ''],
+    ['Salons', 'beauty salons', 'ladies salon|beauty salon|hair salon|beauty center|makeup studio|bridal salon', ''],
+    ['Barbers', 'barber shops', 'barber shop|gents salon|barbershop|mens grooming', ''],
+    ['Nails and lashes', 'nail and lash studios', 'nail salon|nail studio|lash studio|brow bar|lash extensions', ''],
+    ['Spas and massage', 'spas', 'spa|massage center|moroccan bath|wellness center|hammam', 'hotel|resort'],
+    ['Aesthetic and skin clinics', 'aesthetic clinics', 'aesthetic clinic|skin clinic|laser clinic|dermatology clinic|slimming center|hair transplant clinic', 'hospital'],
+    ['Dental clinics', 'dental clinics', 'dental clinic|dentist|orthodontist|dental center', 'hospital'],
+    ['Medical and physio', 'medical centers', 'medical center|polyclinic|physiotherapy|chiropractor|optical shop|home healthcare|diagnostic center', 'hospital|pharmacy'],
+    ['Vets and pet services', 'pet businesses', 'veterinary clinic|pet grooming|pet shop|dog training|pet boarding|pet daycare', ''],
+    ['Gyms and studios', 'gyms and fitness studios', 'gym|fitness studio|pilates studio|yoga studio|crossfit|boxing gym|ems training|personal trainer|ladies gym', 'fitness first|gymnation|gold\'s gym'],
+    ['Sports and kids activities', 'sports academies', 'swimming academy|football academy|martial arts|dance studio|kids play area|gymnastics|padel court', ''],
+    ['Garages', 'car garages', 'car garage|auto repair|car service center|car workshop|tyre shop|car ac repair|auto electrician|car body shop', ''],
+    ['Car wash and accessories', 'car care businesses', 'car wash|car accessories|car tinting|car upholstery|car polish', ''],
+    ['Car rental', 'car rental companies', 'rent a car|car rental|luxury car rental|bike rental|motorcycle shop', 'hertz|avis|budget|thrifty|europcar'],
+    ['Interior and fit-out', 'interior and fit-out companies', 'interior design company|fit out company|villa renovation|home renovation company|kitchen cabinets|joinery|gypsum works', ''],
+    ['Home maintenance', 'home maintenance companies', 'home maintenance company|handyman|ac repair|plumber|electrician|painting company|technical services', ''],
+    ['Cleaning and pest control', 'cleaning companies', 'cleaning company|deep cleaning|pest control|sofa cleaning|water tank cleaning|maid service', ''],
+    ['Landscaping and pools', 'landscaping companies', 'landscaping company|swimming pool contractor|pergola|artificial grass|garden maintenance', ''],
+    ['Curtains, furniture and decor', 'furniture and decor shops', 'curtains|blinds|furniture shop|upholstery|carpet shop|lighting shop|home decor|mattress shop', 'ikea|home centre|pan emirates|danube'],
+    ['Movers and storage', 'moving companies', 'movers and packers|moving company|self storage|furniture movers', ''],
+    ['Laundry', 'laundries', 'laundry|dry cleaners|laundry service|shoe laundry', ''],
+    ['Fashion and tailoring', 'fashion boutiques', 'abaya shop|boutique|tailoring|ladies tailor|gents tailor|kandora|bridal shop|kids wear', ''],
+    ['Perfumes, flowers and gifts', 'perfume and gift shops', 'perfume shop|oud|flower shop|gift shop|balloon shop|chocolate gifts', ''],
+    ['Jewellery and watches', 'jewellery shops', 'jewellery shop|gold shop|watch shop|watch repair', ''],
+    ['Phones and electronics', 'phone and electronics shops', 'mobile phone shop|mobile repair|computer repair|electronics shop|gaming shop|cctv installation', 'sharaf dg|jumbo|emax|etisalat|du '],
+    ['Grocery and specialty food', 'food shops', 'grocery|mini mart|roastery|butchery|organic shop|dates shop|spices shop|fish market', 'carrefour|lulu|spinneys|waitrose|choithrams|union coop'],
+    ['Typing and business setup', 'business services', 'typing center|business setup|document clearing|pro services|tax consultant|accounting firm|auditing|translation services', ''],
+    ['Real estate', 'real estate brokers', 'real estate broker|real estate agency|property management|holiday homes', 'emaar|damac|nakheel|sobha'],
+    ['Travel and tourism', 'travel companies', 'travel agency|tours|desert safari|yacht rental|visa services|umrah', ''],
+    ['Events and photography', 'event companies', 'event planner|wedding planner|photography studio|party supplies|kids party|event rentals|videographer', ''],
+    ['Education and nurseries', 'training centres', 'nursery|training institute|tutoring center|language institute|music school|art classes|coding classes|driving school', 'university'],
+    ['Printing and signage', 'printing companies', 'printing press|signage company|advertising gifts|digital printing|sticker shop', ''],
+    ['Legal and consultancy', 'consultancies', 'law firm|legal consultant|hr consultancy|recruitment agency|management consultancy|insurance broker', ''],
+    ['Building and contracting', 'contractors', 'building contractor|contracting company|building materials|steel fabrication|aluminium and glass|scaffolding', ''],
+  ];
+  LH.DEFAULT_PRESETS.push(...MORE_PRESETS.map(([name, label, kw, ex]) => ({ name, label, minReviews: 0, maxReviews: 100000, keywords: kw.split('|'), exclude: ex ? ex.split('|') : [], areas: [] })));
+  // Where every preset without its own areas searches, in this order.
+  LH.DEFAULT_AREAS = (
+    'Al Quoz Industrial Area 1, Dubai|' +
+    'Al Quoz Industrial Area 2, Dubai|' +
+    'Al Quoz Industrial Area 3, Dubai|' +
+    'Al Quoz Industrial Area 4, Dubai|' +
+    'Al Quoz, Dubai|' +
+    'Business Bay, Dubai|' +
+    'Dubai Design District, Dubai|' +
+    'JLT, Dubai|' +
+    'Al Barsha, Dubai|' +
+    'Barsha Heights, Dubai|' +
+    'Deira, Dubai|' +
+    'Bur Dubai, Dubai|' +
+    'Al Karama, Dubai|' +
+    'Oud Metha, Dubai|' +
+    'Port Saeed, Dubai|' +
+    'Al Garhoud, Dubai|' +
+    'Al Qusais, Dubai|' +
+    'Al Qusais Industrial Area, Dubai|' +
+    'Ras Al Khor Industrial Area, Dubai|' +
+    'Umm Ramool, Dubai|' +
+    'Dubai Investments Park, Dubai|' +
+    'Jebel Ali Industrial Area, Dubai|' +
+    'Dubai Silicon Oasis, Dubai|' +
+    'Al Nahda, Dubai|' +
+    'Al Rigga, Dubai|' +
+    'Al Muraqqabat, Dubai|' +
+    'Hor Al Anz, Dubai|' +
+    'Al Twar, Dubai|' +
+    'Muhaisnah, Dubai|' +
+    'Al Satwa, Dubai|' +
+    'Al Mankhool, Dubai|' +
+    'Downtown Dubai, Dubai|' +
+    'DIFC, Dubai|' +
+    'Al Sufouh, Dubai|' +
+    'Dubai Media City, Dubai|' +
+    'Dubai Internet City, Dubai|' +
+    'Al Jaddaf, Dubai|' +
+    'Dubai Festival City, Dubai|' +
+    'International City, Dubai|' +
+    'Jumeirah, Dubai|' +
+    'Umm Suqeim, Dubai|' +
+    'Al Wasl, Dubai|' +
+    'Al Safa, Dubai|' +
+    'Al Manara, Dubai|' +
+    'Palm Jumeirah, Dubai|' +
+    'Dubai Marina, Dubai|' +
+    'JBR, Dubai|' +
+    'Emirates Hills, Dubai|' +
+    'Jumeirah Islands, Dubai|' +
+    'Jumeirah Park, Dubai|' +
+    'Jumeirah Golf Estates, Dubai|' +
+    'The Springs, Dubai|' +
+    'The Meadows, Dubai|' +
+    'The Greens, Dubai|' +
+    'The Lakes, Dubai|' +
+    'Arabian Ranches, Dubai|' +
+    'Arabian Ranches 2, Dubai|' +
+    'Dubai Hills, Dubai|' +
+    'Al Barari, Dubai|' +
+    'Meydan, Dubai|' +
+    'Nad Al Sheba, Dubai|' +
+    'Damac Hills, Dubai|' +
+    'Damac Hills 2, Dubai|' +
+    'Town Square, Dubai|' +
+    'Mudon, Dubai|' +
+    'Tilal Al Ghaf, Dubai|' +
+    'Motor City, Dubai|' +
+    'Dubai Sports City, Dubai|' +
+    'JVC, Dubai|' +
+    'JVT, Dubai|' +
+    'Al Furjan, Dubai|' +
+    'Discovery Gardens, Dubai|' +
+    'Arjan, Dubai|' +
+    'Al Barsha South, Dubai|' +
+    'Mirdif, Dubai|' +
+    'Al Mizhar, Dubai|' +
+    'Al Khawaneej, Dubai|' +
+    'Al Warqa, Dubai|' +
+    'Al Rashidiya, Dubai|' +
+    'Nad Al Hamar, Dubai|' +
+    'Dubai Creek Harbour, Dubai|' +
+    'Dubai South, Dubai|' +
+    'Jebel Ali Village, Dubai|' +
+    'Mussafah, Abu Dhabi|' +
+    'Mohammed Bin Zayed City, Abu Dhabi|' +
+    'Khalifa City, Abu Dhabi|' +
+    'Al Shamkha, Abu Dhabi|' +
+    'Al Reef, Abu Dhabi|' +
+    'Al Raha, Abu Dhabi|' +
+    'Al Raha Beach, Abu Dhabi|' +
+    'Yas Island, Abu Dhabi|' +
+    'Saadiyat Island, Abu Dhabi|' +
+    'Al Reem Island, Abu Dhabi|' +
+    'Al Maryah Island, Abu Dhabi|' +
+    'Al Khalidiyah, Abu Dhabi|' +
+    'Al Bateen, Abu Dhabi|' +
+    'Corniche, Abu Dhabi|' +
+    'Al Markaziyah, Abu Dhabi|' +
+    'Al Zahiyah, Abu Dhabi|' +
+    'Hamdan Street, Abu Dhabi|' +
+    'Electra Street, Abu Dhabi|' +
+    'Al Nahyan, Abu Dhabi|' +
+    'Al Mushrif, Abu Dhabi|' +
+    'Al Karamah, Abu Dhabi|' +
+    'Al Manaseer, Abu Dhabi|' +
+    'Al Muroor, Abu Dhabi|' +
+    'Al Wahdah, Abu Dhabi|' +
+    'Al Mina, Abu Dhabi|' +
+    'Masdar City, Abu Dhabi|' +
+    'Shakhbout City, Abu Dhabi|' +
+    'Baniyas, Abu Dhabi|' +
+    'Al Falah, Abu Dhabi|' +
+    'Al Rahba, Abu Dhabi|' +
+    'Al Ain|' +
+    'Al Ain Industrial Area, Al Ain|' +
+    'Al Jimi, Al Ain|' +
+    'Al Muwaiji, Al Ain|' +
+    'Al Towayya, Al Ain|' +
+    'Sharjah Industrial Area, Sharjah|' +
+    'Al Sajaa Industrial Area, Sharjah|' +
+    'Al Majaz, Sharjah|' +
+    'Al Khan, Sharjah|' +
+    'Al Taawun, Sharjah|' +
+    'Al Nahda, Sharjah|' +
+    'Al Qasimia, Sharjah|' +
+    'Al Qasba, Sharjah|' +
+    'Muwaileh, Sharjah|' +
+    'University City, Sharjah|' +
+    'Aljada, Sharjah|' +
+    'Al Zahia, Sharjah|' +
+    'Tilal City, Sharjah|' +
+    'Maryam Island, Sharjah|' +
+    'Al Yarmook, Sharjah|' +
+    'Rolla, Sharjah|' +
+    'Abu Shagara, Sharjah|' +
+    'Al Rahmaniya, Sharjah|' +
+    'Ajman Industrial Area, Ajman|' +
+    'Al Jurf, Ajman|' +
+    'Al Nuaimiya, Ajman|' +
+    'Al Rashidiya, Ajman|' +
+    'Al Rawda, Ajman|' +
+    'Al Mowaihat, Ajman|' +
+    'Emirates City, Ajman|' +
+    'Ajman Corniche, Ajman|' +
+    'Al Nakheel, Ras Al Khaimah|' +
+    'Al Hamra Village, Ras Al Khaimah|' +
+    'Mina Al Arab, Ras Al Khaimah|' +
+    'Al Marjan Island, Ras Al Khaimah|' +
+    'Al Dhait, Ras Al Khaimah|' +
+    'Khuzam, Ras Al Khaimah|' +
+    'Al Qusaidat, Ras Al Khaimah|' +
+    'Al Jazeera Al Hamra, Ras Al Khaimah|' +
+    'Umm Al Quwain|' +
+    'Umm Al Quwain Industrial Area, Umm Al Quwain|' +
+    'Fujairah City, Fujairah|' +
+    'Fujairah Industrial Area, Fujairah|' +
+    'Dibba, Fujairah'
+  ).split('|');
+  /** The areas a preset searches: its own, else the shared list from Settings (the built in one when that is empty). */
+  LH.presetAreas = (preset, settings) => {
+    const own = LH.parseLines(preset && preset.areas);
+    if (own.length) return own.slice(0, 300);
+    const shared = LH.parseLines(settings && settings.areas);
+    return (shared.length ? shared : LH.DEFAULT_AREAS).slice(0, 300);
+  };
+  // Ad Library searches that find businesses advertising their own opening.
+  LH.OPENING_AD_KEYWORDS = ['grand opening', 'now open', 'newly opened', 'soft opening', 'opening soon', 'we are open', 'new branch', 'الافتتاح الكبير', 'افتتاح'];
+  // Niche names stored on leads by earlier versions.
   LH.LEGACY_NICHES = {
-    'Car detailing & PPF': 'Car detailing studios',
-    'Aesthetic clinics': 'Aesthetic clinics',
-    'Boutique fitness (Oct–Jan)': 'Fitness studios',
+    'Car detailing & PPF': 'Car',
+    'Car detailing studios': 'Car',
+    'Boutique fitness (Oct–Jan)': 'Fitness',
+    'Fitness studios': 'Fitness',
     'AC servicing (from late Jan)': 'AC service companies',
   };
 
@@ -49,59 +564,82 @@
     ),
   ];
 
-  /** The niches in use: the ones edited in Settings, or the four defaults. */
+  /** Lines from a textarea (or a list): trimmed, empty ones and repeats dropped, order kept. */
+  LH.parseLines = (v) => [...new Set((Array.isArray(v) ? v : String(v || '').split('\n')).map((x) => String(x).trim()).filter(Boolean))];
+  const reviewBound = (v, d) => (v === '' || v == null || !Number.isFinite(Number(v)) ? d : Math.max(0, Math.round(Number(v))));
+  /** One preset with every field in shape. Presets saved by older versions (name and keywords only) get no areas. */
+  LH.cleanPreset = (n) => ({
+    name: String((n && n.name) || '').trim().slice(0, 80),
+    label: String((n && n.label) || '').trim().slice(0, 120),
+    minReviews: reviewBound(n && n.minReviews, 0),
+    maxReviews: reviewBound(n && n.maxReviews, 100000),
+    keywords: LH.parseKeywords(n && n.keywords),
+    exclude: LH.parseLines(n && n.exclude).slice(0, 200),
+    areas: LH.parseLines(n && n.areas).slice(0, 300),
+  });
+  /** The presets in use: the ones edited in Settings, or the defaults. Lists saved before presets had areas are replaced by the defaults. */
   LH.nichesFor = (settings) => {
-    const list = ((settings && Array.isArray(settings.niches) && settings.niches) || [])
-      .map((n) => ({ name: String((n && n.name) || '').trim().slice(0, 80), keywords: LH.parseKeywords(n && n.keywords) }))
-      .filter((n) => n.name);
-    return list.length ? list : LH.DEFAULT_NICHES;
+    const s = settings || {};
+    const saved = (Array.isArray(s.niches) ? s.niches : []).filter((n) => n && n.areas != null).map(LH.cleanPreset).filter((n) => n.name);
+    const hidden = new Set((Array.isArray(s.hiddenPresets) ? s.hiddenPresets : []).map((x) => String(x).toLowerCase()));
+    const mine = new Map(saved.map((p) => [p.name.toLowerCase(), p]));
+    const builtIn = LH.DEFAULT_PRESETS.map(LH.cleanPreset);
+    const names = new Set(builtIn.map((p) => p.name.toLowerCase()));
+    // The built in ones (your edited copy when you changed one, none you removed), then the ones you added.
+    return [...builtIn.filter((p) => !hidden.has(p.name.toLowerCase())).map((p) => mine.get(p.name.toLowerCase()) || p), ...saved.filter((p) => !names.has(p.name.toLowerCase()))];
+  };
+  LH.presetsFor = LH.nichesFor;
+
+  /* Exclude words match whole words, ignoring capitals: "EY" never drops "Key Motors", "spa" never drops "Spartan Gym". */
+  const plain = (s) => String(s || '').replace(/[’‘`´]/g, "'");
+  const wordRe = (w) => new RegExp(`(^|[^\\p{L}\\p{N}])${plain(w).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=$|[^\\p{L}\\p{N}])`, 'iu');
+  /** The exclude word that drops a business, or ''. A "category: word" line only looks at the Google category. */
+  LH.excludeHit = (preset, name, category) => {
+    for (const raw of (preset && preset.exclude) || []) {
+      const only = raw.match(/^category\s*:\s*(.+)$/i);
+      const word = (only ? only[1] : raw).trim();
+      if (!word) continue;
+      const re = wordRe(word);
+      if (re.test(plain(category)) || (!only && re.test(plain(name)))) return raw;
+    }
+    return '';
+  };
+  const EMIRATES = ['Dubai', 'Abu Dhabi', 'Sharjah', 'Ajman', 'Umm Al Quwain', 'Ras Al Khaimah', 'Fujairah', 'Al Ain'];
+  /** "Al Nahda, Sharjah" -> "Sharjah", "Fujairah" -> "Fujairah", "Al Quoz" (older leads) -> the fallback. */
+  LH.cityOf = (area, fallback = 'Dubai') => {
+    const a = String(area || '').trim();
+    const last = (a.includes(',') ? a.split(',').pop() : a).trim().toLowerCase();
+    return EMIRATES.find((e) => e.toLowerCase() === last) || fallback;
   };
 
-  /** How a niche name reads mid-sentence: "Car detailing studios" -> "car detailing studios", "AC companies" stays. */
-  LH.nicheText = (name) => {
-    const s = String(name || '').trim();
-    const first = s.split(/\s+/)[0];
-    if (!s || (first.length > 1 && first === first.toUpperCase() && /[A-Z]/.test(first))) return s;
-    return s.charAt(0).toLowerCase() + s.slice(1);
+  /** Presets as a JSON file and back. Import keeps only well formed presets and says how many it skipped. */
+  LH.presetsToJson = (list) => JSON.stringify({ app: 'lead-hunter', kind: 'presets', version: 1, presets: list.map(LH.cleanPreset) }, null, 2);
+  LH.presetsFromJson = (text) => {
+    let data;
+    try {
+      data = JSON.parse(String(text || ''));
+    } catch {
+      throw new Error('That file is not valid JSON.');
+    }
+    const raw = Array.isArray(data) ? data : data && Array.isArray(data.presets) ? data.presets : null;
+    if (!raw) throw new Error('No presets in that file.');
+    const presets = raw.map((n) => LH.cleanPreset({ areas: [], ...n })).filter((n) => n.name && n.keywords.length);
+    if (!presets.length) throw new Error('No presets with a name and keywords in that file.');
+    return { presets, skipped: raw.length - presets.length };
   };
 
   /** A lead's niche name: its stored niche (old names mapped), else the niche its keywords belong to, else ''. */
   LH.nicheOf = (lead, settings) => {
     const niches = LH.nichesFor(settings);
     const raw = String((lead && lead.niche) || '').trim();
-    if (LH.LEGACY_NICHES[raw]) return LH.LEGACY_NICHES[raw];
     const named = raw && niches.find((n) => n.name.toLowerCase() === raw.toLowerCase());
-    if (named) return named.name;
+    if (named) return named.name; // a preset of that name wins over an old name it was renamed from
+    if (LH.LEGACY_NICHES[raw]) return LH.LEGACY_NICHES[raw];
     const kws = LH.parseKeywords([...((lead && lead.keywords) || []), raw]);
     const byKeyword =
       niches.find((n) => n.keywords.some((k) => kws.includes(k))) || niches.find((n) => n.keywords.some((k) => kws.some((x) => x.includes(k))));
     return byKeyword ? byKeyword.name : raw;
   };
-
-  // Searched in this order, so the established central and upscale areas come first.
-  LH.AREAS = {
-    Dubai: [
-      'Downtown Dubai', 'Business Bay', 'DIFC', 'Dubai Marina', 'JBR', 'JLT', 'Palm Jumeirah', 'Jumeirah', 'Umm Suqeim', 'Al Wasl',
-      'Al Safa', 'City Walk', 'La Mer', 'Al Barsha', 'Barsha Heights', 'Al Sufouh', 'Dubai Media City', 'Dubai Internet City',
-      'Dubai Hills', 'Emirates Hills', 'Arabian Ranches', 'The Springs', 'The Meadows', 'The Greens', 'Jumeirah Islands',
-      'Jumeirah Park', 'Jumeirah Golf Estates', 'Al Barari', 'Meydan', 'Nad Al Sheba', 'Dubai Creek Harbour', 'Dubai Festival City',
-      'Dubai Healthcare City', 'Al Jaddaf', 'Al Garhoud', 'Mirdif', 'Al Mizhar', 'Al Khawaneej', 'Al Quoz', 'Al Khail',
-      'JVC', 'JVT', 'Al Furjan', 'Discovery Gardens', 'Motor City', 'Sports City', 'Arjan', 'Damac Hills', 'Town Square',
-      'Mudon', 'Silicon Oasis', 'Academic City', 'International City', 'Dubai Investment Park', 'Jebel Ali', 'Dubai South',
-      'Al Karama', 'Oud Metha', 'Bur Dubai', 'Al Mankhool', 'Al Satwa', 'Deira', 'Al Rigga', 'Port Saeed', 'Al Muraqqabat',
-      'Hor Al Anz', 'Al Twar', 'Al Qusais', 'Al Nahda', 'Muhaisnah', 'Al Warqa', 'Al Rashidiya', 'Nad Al Hamar', 'Ras Al Khor',
-    ],
-    'Abu Dhabi': [
-      'Al Reem Island', 'Al Maryah Island', 'Saadiyat', 'Yas Island', 'Al Raha', 'Al Bateen', 'Corniche', 'Al Khalidiyah',
-      'Al Markaziyah', 'Tourist Club Area', 'Al Nahyan', 'Al Mushrif', 'Al Karamah', 'Al Manaseer', 'Al Muroor', 'Al Wahdah',
-      'Al Mina', 'Masdar City', 'Khalifa City', 'Mohammed Bin Zayed City', 'Al Shamkha', 'Al Reef', 'Al Rahba', 'Baniyas',
-      'Shakhbout City', 'Al Falah', 'Musaffah', 'Al Ain',
-    ],
-    Sharjah: ['Al Majaz', 'Al Nahda Sharjah', 'Al Khan', 'Muwaileh', 'Al Taawun'],
-  };
-  // Long sales cycles, restricted ads, or poor fit for a lead-confirmation offer: skipped as Meta-ads prospects.
-  LH.AVOID_WORDS =
-    /\b(renovation|contractor|contracting|construction|fit[- ]?out|interior design|joinery|flooring|landscaping|swimming pool|handyman|real estate|property|developer|off[- ]?plan|golden visa|business setup|plastic surge(on|ry)|surgery cent(er|re)|rhinoplasty|liposuction|hair transplant|ozempic|mounjaro|semaglutide|weight loss injection|mobile car wash|police[- ]proof|massage|maid)\b|ترميم|تشطيبات|مقاولات|عقارات|جراحة تجميل|مساج|خادمات/i;
 
   const STOP_WORDS = /\b(llc|l\.l\.c|fze|fzco|fz|dmcc|est|establishment|trading|services?|company|co|the|and|uae|dubai|abu dhabi|sharjah|ltd|limited|inc|group|official)\b/g;
   const nameTokens = (s) =>
@@ -140,34 +678,54 @@
 
   LH.DEFAULT_SETTINGS = {
     country: 'AE',
-    myName: '',
-    agency: 'RizcoReach',
-    myPhone: '+971 56 846 1835',
-    myWebsite: 'rizcoreach.ae',
-    auditLinkBase: 'https://www.rizcoreach.ae/tools/website-audit?url=',
     autoEnrich: true,
-    pagespeedKey: '',
-    pagespeedAuto: false,
     placesKey: '',
     placesAuto: true,
     placesMonthlyCap: 950,
     scrollDelayMs: 1800,
-    queueSite: 'https://www.rizcoreach.ae',
-    queueKey: '',
-    queueKeyAt: 0,
     adsCity: 'Dubai',
-    bubbles: 3, // WhatsApp messages per pitch: 3 = greeting, body, closing · 2 = greeting with body, closing
-    niches: null, // null = use LH.DEFAULT_NICHES
-    scripts: null, // null = use LH.DEFAULT_SCRIPTS
-    emailFromName: 'Samil',
-    emailMaxPerDay: 30, // the email sender's daily limit (1 to 40), also saved on the site where the sender reads it
-    emailFollowups: 2, // follow ups after the first email: 0, 1 or 2
-    emailSignature: 'Samil\nCreative Marketing Director\nRizcoReach · rizcoreach.ae\n+971 56 846 1835',
-    emailOptOut: "If you'd rather not hear from me just reply no thanks and I won't email again.",
-    emails: null, // null = use LH.DEFAULT_EMAILS
+    // Instagram Graph API (Business Discovery): bio, link and latest posts. Your own token, from your own Meta app.
+    igAccountId: '',
+    igToken: '',
+    igApiVersion: 'v23.0',
+    igAuto: true, // read the Instagram of new businesses that have one
+    areas: null, // the shared area list as text, null = LH.DEFAULT_AREAS
+    hiddenPresets: null, // built in presets you removed
+    newDays: 120, // proof that a business opened counts as "just opened" for this many days
+    strictFit: false, // true: only businesses that just opened, or whose website is down or parked
+    goodSiteScore: 80, // a website scoring this or more, secure and made for phones, is a good website (does not fit)
+    googleDailyCap: 120, // Google searches a day, all kinds together (Google shows a captcha when it sees too many)
+    googleIgAuto: true, // look up the Instagram of businesses that fit and have none, on Google
+    // Email check: the domain is always looked up. With a QuickEmailVerification key the mailbox itself is too.
+    verifyKey: '',
+    verifyDailyCap: 100, // mailbox checks a day (their free plan gives 100)
+    emailRisky: false, // also export addresses the mailbox check could not confirm
+    fbEmailAuto: true, // read the email on the Facebook page of leads that fit and have none, in the check tab
+    // Intent Radar (Phase 5)
+    radarEveryHours: 3, // scan Reddit every this many hours, 0 = only when you press Scan now
+    intentMaxDays: 14, // only posts this new
+    intentCap: 100, // posts read per subreddit per scan (Reddit's maximum is 100)
+    subreddits: 'dubai\nUAE\nabudhabi\nsharjah',
+    uaeOnlySubs: 'smallbusiness', // these count only when the post mentions the UAE
+    redditClientId: '', // optional: an app from reddit.com/prefs/apps (installed app: the id is enough)
+    redditSecret: '',
+    intentKeywords: null, // { website, marketing, pain, hiring, arabic } as text, null = defaults (LH.INTENT_KEYWORDS)
+    sellerWords: null, // null = LH.SELLER_WORDS
+    // Intent AI check (Phase 6): an AI reads each new post and says whether it is a real buyer.
+    // Gemini when geminiKey is filled in, else Claude when anthropicKey is.
+    geminiKey: '', // a Google AI Studio key (free tier), kept in this browser only
+    geminiModel: 'gemini-flash-lite-latest',
+    anthropicKey: '', // your Claude API key, kept in this browser only
+    aiModel: 'claude-haiku-5-5',
+    aiAuto: true, // check new posts as they come in
+    nameMatch: 0.92, // how close two names in the same area must be to count as one business (Jaro-Winkler, 0.8 to 1)
+    niches: null, // the kinds of business you changed or added (the built in ones are LH.DEFAULT_PRESETS)
   };
   // Settings from earlier versions that no longer do anything.
-  const OLD_SETTINGS = ['templates', 'adTemplates', 'adsOffer'];
+  // (1.12: pitching from the dashboard and the phone queue were removed. 2.3: Lead Hunter no longer writes or sends
+  // emails; the cold email system in cold-email/ does, so the email sender, its texts and your signature went.
+  // 3.0: the Meta ads client finder, the heat score, the quality signals and PageSpeed went.)
+  const OLD_SETTINGS = ['templates', 'adTemplates', 'adsOffer', 'scripts', 'bubbles', 'intentOpeners', 'emails', 'emailFromName', 'emailMaxPerDay', 'emailFollowups', 'emailSignature', 'emailOptOut', 'queueSite', 'queueKey', 'queueKeyAt', 'myName', 'agency', 'myPhone', 'myWebsite', 'auditLinkBase', 'pagespeedKey', 'pagespeedAuto', 'followerMin', 'followerMax', 'newBusinessReviews', 'weakSiteMin', 'psiMin', 'copyrightYears', 'weakChecks', 'heatWeights', 'heatHot', 'heatWarm', 'targetNiches', 'igActiveDays', 'adCheckAll'];
   /** Stored settings over the defaults, without the old keys. */
   LH.withDefaults = (stored) => {
     const s = { ...LH.DEFAULT_SETTINGS, ...(stored || {}) };
@@ -207,21 +765,6 @@
     [/(^|\.)(google\.com|goo\.gl|g\.co|g\.page)$/, 'google'],
     [/(^|\.)(calendly\.com|forms\.gle|typeform\.com|jotform\.com|tally\.so)$/, 'form'],
   ];
-  const DESTINATION = {
-    whatsapp: 'WhatsApp',
-    messenger: 'Messenger',
-    instagram: 'their Instagram',
-    facebook: 'their Facebook page',
-    linkinbio: 'a link-in-bio page',
-    form: 'a third-party form',
-    google: 'a Google page',
-    app: 'an app store',
-    tiktok: 'TikTok',
-    social: 'a social profile',
-    leadform: 'a Facebook instant form',
-  };
-  LH.destinationLabel = (kind) => DESTINATION[kind] || 'a social profile';
-
   LH.safeUrl = (raw, base) => {
     if (!raw || typeof raw !== 'string') return null;
     let s = raw.trim();
@@ -297,6 +840,7 @@
         /* already has the country code, just without a plus */
       } else if (d.startsWith('0') && dial) d = dial + d.slice(1);
       else if (dial === '971' && /^800\d{3,8}$/.test(d)) return d; // UAE toll-free stays local
+      else if (dial === '971' && /^600\d{6}$/.test(d)) d = '971' + d; // UAE 600 numbers (company call centres)
       else if (dial === '971' && /^5\d{8}$/.test(d)) d = '971' + d;
     }
     if (d.length < 8 || d.length > 15) return null;
@@ -371,148 +915,6 @@
     return wa ? wa.number : null;
   };
 
-  /** 0–100 for Meta-ads prospects: not advertising yet, real demand, reachable, not a giant. */
-  LH.prospectPriority = (p) => {
-    let s = 0;
-    const ad = (p.adCheck || {}).state;
-    s += ad === 'none' ? 30 : ad === 'likely' ? 22 : ad === 'running' ? -40 : 10;
-    const m = (p.sources || {}).maps || {};
-    const ig = (p.sources || {}).instagram || {};
-    const reviews = m.reviews || 0;
-    s += reviews >= 300 ? 15 : reviews >= 100 ? 12 : reviews >= 30 ? 8 : reviews >= 10 ? 4 : 0;
-    if (m.rating >= 4.5) s += 5;
-    else if (m.rating && m.rating < 3.8) s -= 6;
-    const f = ig.followers || 0;
-    if (f >= 1000 && f <= 100000) s += 8;
-    else if (f > 150000) s -= 12;
-    if (ig.lastPostAt) s += Date.now() - ig.lastPostAt < 30 * LH.DAY ? 6 : Date.now() - ig.lastPostAt > 120 * LH.DAY ? -6 : 0;
-    if (LH.whatsappTarget(p)) s += 16;
-    else if ((p.phones || []).length) s += 11;
-    else if ((p.emails || []).length) s += 5;
-    if (p.website) s += 6;
-    if (p.avoid) s -= 30;
-    return Math.max(0, Math.min(100, Math.round(s + 10)));
-  };
-
-  /** 0–100: how worth contacting this lead is right now. Leads skipped for running ads sink to the bottom. */
-  LH.priority = (lead, now = Date.now()) => {
-    if (!lead) return 0;
-    const p = lead.kind === 'prospect' ? LH.prospectPriority(lead) : advertiserPriority(lead, now);
-    return LH.scriptFor(lead).script ? p : Math.round(p / 10);
-  };
-  const advertiserPriority = (lead, now) => {
-    let s = 0;
-    const ads = lead.activeAdCount || 0;
-    s += Math.min(ads, 8) * 3; // up to 24: more creatives = more budget
-    const days = LH.daysRunning(lead, now);
-    s += days == null ? 4 : days >= 90 ? 20 : days >= 30 ? 15 : days >= 14 ? 10 : 6; // steady spenders
-    const site = lead.site || {};
-    if (!lead.website) s += 24;
-    else if (site.state === 'error' || site.parked) s += 32;
-    else if (typeof site.score === 'number') s += site.score < 45 ? 30 : site.score < 65 ? 22 : site.score < 80 ? 12 : 4;
-    else s += 10;
-    if (LH.bestPhone(lead)) s += 16;
-    else if ((lead.emails || []).length) s += 8;
-    const likes = lead.pageLikes || 0;
-    if (likes > 250000) s -= 35;
-    else if (likes > 60000) s -= 15;
-    return Math.max(0, Math.min(100, Math.round(s)));
-  };
-  LH.heat = (p) => (p >= 70 ? 'hot' : p >= 48 ? 'warm' : 'cold');
-
-  /* ------------------------------------------------------------------ Scripts */
-  // Two scripts, picked per lead by LH.scriptFor. Written the way Samil types on his phone:
-  // short lines, few commas, no dashes. Each part goes out as its own WhatsApp bubble.
-  LH.DEFAULT_SCRIPTS = {
-    ads: {
-      name: 'Ads script',
-      greeting: 'Hello {{business}}',
-      body: "Are you dependent on word of mouth for appointments in {{city}}?\n\nWe help {{niche}} in {{city}} get consistent inquiries through Facebook and Instagram ads.\n\nWe personally screen each and every lead so the ones that reach you are genuine people with real interest.\n\nThere's no big setup fee. Just one flat monthly rate so there's minimal risk on your end.\n\nIf this sounds interesting I'd be happy to send you a quick explanation of how it works.",
-      closing: 'Let me know',
-    },
-    website: {
-      name: 'Website script',
-      greeting: 'Hello {{business}}',
-      body: "I came across {{business}} on {{found_on}} and {{website_line}}.\n\nWe build simple websites for {{niche}} in {{city}} that turn visitors into WhatsApp inquiries.\n\nIf this sounds interesting I'd be happy to send you a free mockup of how yours could look.",
-      closing: 'Let me know',
-    },
-  };
-  LH.SCRIPT_PARTS = ['greeting', 'body', 'closing'];
-
-  // The first email is the script in one block. These are its subject and the two follow ups,
-  // which go as replies in the same thread a few working days apart.
-  LH.DEFAULT_EMAILS = {
-    ads: {
-      subject: 'Quick question for {{business}}',
-      followup1: 'Hello {{business}}\n\nJust bringing this back to the top of your inbox. Would a quick explanation of how it works be useful?\n\nLet me know',
-      followup2: "Hello {{business}}\n\nI'll leave it here so I don't fill up your inbox. If more appointments from Facebook and Instagram ads is ever on your list just reply and I'll send the details.",
-    },
-    website: {
-      subject: 'Website for {{business}}',
-      followup1: 'Hello {{business}}\n\nJust bringing this back to the top of your inbox. Would you like me to send the free mockup?\n\nLet me know',
-      followup2: "Hello {{business}}\n\nI'll leave it here so I don't fill up your inbox. If you ever want a simple website that brings in WhatsApp inquiries just reply and I'll send a free mockup.",
-    },
-  };
-  LH.EMAIL_PARTS = ['subject', 'followup1', 'followup2'];
-
-  /** Edits from Settings over the defaults, part by part. */
-  const withEdits = (defaults, parts, saved) => {
-    const out = {};
-    for (const [k, def] of Object.entries(defaults)) {
-      out[k] = { ...def };
-      for (const part of parts) if (saved && saved[k] && typeof saved[k][part] === 'string') out[k][part] = saved[k][part];
-    }
-    return out;
-  };
-  /** The scripts in use. */
-  LH.scriptsFor = (settings) => withEdits(LH.DEFAULT_SCRIPTS, LH.SCRIPT_PARTS, settings && settings.scripts);
-  /** The email subjects and follow ups in use. */
-  LH.emailsFor = (settings) => withEdits(LH.DEFAULT_EMAILS, LH.EMAIL_PARTS, settings && settings.emails);
-
-  /** They have a website but it is down or parked: for outreach that is no working website. */
-  LH.siteDown = (lead) => !!lead && !!lead.website && ((lead.site || {}).state === 'error' || !!(lead.site || {}).parked);
-  /**
-   * Which script a lead gets, plus the reason as a tag:
-   *   no website (either tab)                 -> 'website'  "No website"
-   *   website down or parked (either tab)     -> 'website'  "Site down"
-   *   website, ad check found no Meta ads     -> 'ads'      "No Meta ads"
-   *   website, ad check pending or unclear    -> 'ads'      "Ad check not done"
-   *   website and running ads                 -> null       "Running ads" (skipped for outreach)
-   * Website leads come from the Ad Library, so they all advertise: only the ones without a working website get a script.
-   */
-  LH.scriptFor = (lead) => {
-    if (!lead || !lead.website) return { script: 'website', tag: 'No website' };
-    if (LH.siteDown(lead)) return { script: 'website', tag: 'Site down' };
-    if (lead.kind !== 'prospect') return { script: null, tag: 'Running ads' };
-    const ad = (lead.adCheck || {}).state;
-    if (ad === 'running') return { script: null, tag: 'Running ads' };
-    if (ad === 'none' || ad === 'likely') return { script: 'ads', tag: 'No Meta ads' };
-    return { script: 'ads', tag: 'Ad check not done' };
-  };
-  /** The script a contacted lead got. "Pitch anyway" on a skipped lead uses the website script. */
-  LH.sentScriptFor = (lead) => LH.scriptFor(lead).script || 'website';
-
-  /** Google rating from Maps (Meta ads tab) or a Places lookup (website leads). */
-  const googleRating = (lead) => {
-    const m = ((lead && lead.sources) || {}).maps || {};
-    const pl = lead && lead.places && lead.places.match ? lead.places : {};
-    return { rating: m.rating || pl.rating || 0, reviews: m.reviews || pl.reviews || 0, known: !!(m.placeId || pl.match) };
-  };
-  /** Row tags, for sorting and filtering only (they never change the message). */
-  LH.leadTags = (lead) => {
-    if (!lead) return [];
-    const tags = [];
-    if (!lead.website) tags.push('No website');
-    else if (LH.siteDown(lead)) tags.push('Site down');
-    if (!LH.scriptFor(lead).script) tags.push('Running ads');
-    const g = googleRating(lead);
-    if (g.rating >= 4 && g.reviews >= 25) tags.push('Good reviews');
-    else if (g.known && g.reviews < 25) tags.push('Growing');
-    return tags;
-  };
-  /** The one-line summary the phone queue shows: "No website", "No Meta ads · Good reviews". */
-  LH.tagLine = (lead) => [...new Set([LH.scriptFor(lead).tag, ...LH.leadTags(lead)])].join(' · ');
-
   /** Instagram username (no @) from where the lead was found or the profile link on their website. */
   LH.igFromUrl = (url) => {
     const u = typeof url === 'string' ? LH.safeUrl(url) : url;
@@ -526,7 +928,7 @@
   };
 
   /**
-   * A business name the way you'd type it in a message. Only for {{business}}: the stored name stays as it is.
+   * A business name the way you'd type it, for the exports. The stored name stays as it is.
    *   "Dr. Smile Dental Clinic - Best Dentist in Dubai" -> "Dr. Smile Dental Clinic"
    *   "Glossy PPF | Ceramic Coating | Car Detailing Dubai" -> "Glossy PPF"
    *   "AL NOOR BEAUTY SALON L.L.C" -> "Al Noor Beauty Salon" · "Gloss Garage Dubai" -> "Gloss Garage"
@@ -547,149 +949,180 @@
     return s || full;
   };
 
-  /** Script variables. Missing data never shows up as "undefined" or {{…}}. */
-  LH.scriptVars = (lead, settings = {}) => {
+  /* ------------------------------------------------------------- Facebook pages */
+  // (Email addresses live in lib/emails.js.)
+  /**
+   * The business's own Facebook page: the one their website or Google Maps links to, or for website leads the
+   * advertiser's page. '' when there is none (a share link, a group or a post is not a page).
+   */
+  LH.facebookPageUrl = (lead) => {
     const l = lead || {};
-    const m = (l.sources || {}).maps || {};
-    const ig = (l.sources || {}).instagram || {};
-    const niche = LH.nicheOf(l, settings);
-    return {
-      // No name: their Instagram handle or domain. pitchFor writes "Hello there" and "your business" when there is neither.
-      business: LH.shortName(l.pageName) || LH.igHandle(l) || LH.domainOf(l.website || ''),
-      niche: niche ? LH.nicheText(niche) : 'businesses',
-      city: settings.adsCity || 'Dubai',
-      found_on: l.kind !== 'prospect' ? 'Facebook and Instagram' : ig.username && !m.placeId ? 'Instagram' : 'Google Maps',
-      website_line: LH.siteDown(l) ? "your website wasn't loading when I checked" : "couldn't find a website for you",
-      my_name: settings.myName || '',
-      agency: settings.agency || '',
-      my_phone: settings.myPhone || '',
-    };
+    const u = LH.safeUrl((l.socials || {}).facebook || '');
+    if (u && LH.linkKind(u) === 'facebook') {
+      const first = u.pathname.split('/').filter(Boolean)[0] || '';
+      const id = u.searchParams.get('id') || '';
+      if (first === 'profile.php') return /^\d{5,}$/.test(id) ? `https://www.facebook.com/profile.php?id=${id}` : '';
+      if (first && !/^(sharer|share|plugins|tr|dialog|groups|events|watch|login|hashtag|photo\.php|story\.php|permalink\.php|ads|reel|marketplace|gaming)$/i.test(first)) return `https://www.facebook.com${u.pathname.replace(/\/+$/, '')}`;
+    }
+    if (l.kind !== 'prospect' && /^\d{5,}$/.test(String(l.pageId || ''))) return `https://www.facebook.com/${l.pageId}`;
+    return '';
   };
 
-  LH.render = (tpl, vars) =>
-    String(tpl || '')
-      .replace(/\{\{\s*(\w+)\s*\}\}/g, (_, k) => (vars[k] != null ? vars[k] : ''))
-      .replace(/[ \t]{2,}/g, ' ')
-      .replace(/ ,/g, ',')
-      .replace(/[ \t]+\n/g, '\n')
-      .replace(/, \./g, '.')
+  /* ------------------------------------------------------- One business, one record */
+  // How two finds are recognised as the same business: same phone, same website (root domain), same Instagram
+  // handle, or nearly the same name (Jaro-Winkler, 0.92 by default) in the same area.
+  const NAME_SUFFIX = /\b(l\s*l\s*c|fz\s*llc|fzllc|fze|fzco|fzc|fz|llc|trading|est|establishment|co|company|services?|dubai|uae|and)\b/g;
+  /** "Gloss Garage L.L.C - Dubai" -> "gloss garage" */
+  LH.normName = (name) =>
+    String(name || '')
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .replace(NAME_SUFFIX, ' ')
+      .replace(/\s+/g, ' ')
       .trim();
 
-  /** The lead's script (`force` = 'website' pitches a skipped lead anyway), its variables and its rendered parts. */
-  const rendered = (lead, settings, force) => {
-    const pick = LH.scriptFor(lead);
-    const script = force && LH.DEFAULT_SCRIPTS[force] ? force : pick.script;
-    if (!script) return { script: null, tag: pick.tag };
-    const t = LH.scriptsFor(settings)[script];
-    const vars = LH.scriptVars(lead, settings);
-    // No name at all: "Hello there", and the body says "I came across your business on…".
-    const nameless = (business) => (vars.business ? vars : { ...vars, business });
-    const parts = LH.SCRIPT_PARTS.map((p) => LH.render(t[p], nameless({ greeting: 'there', body: 'your business' }[p] || '')));
-    return { script, tag: pick.tag, vars, nameless, parts };
-  };
-
-  /**
-   * The message for a lead, split into WhatsApp bubbles. WhatsApp is never sent from here:
-   * every bubble is prefilled or copied, and Samil presses Send himself.
-   *   3 bubbles: [greeting] [body] [closing] · 2 bubbles: [greeting + body] [closing]. Empty bubbles are dropped.
-   * `subject` and `email` are the first email, the same one the email sender sends.
-   */
-  LH.pitchFor = (lead, settings = {}, force) => {
-    const r = rendered(lead, settings, force);
-    if (!r.script) return { script: null, tag: r.tag, bubbles: [], text: '', subject: '', email: '' };
-    const [greeting, body, closing] = r.parts;
-    const parts = Number(settings.bubbles) === 2 ? [[greeting, body].filter(Boolean).join('\n\n'), closing] : [greeting, body, closing];
-    const bubbles = parts.filter(Boolean);
-    const mail = LH.emailFor(lead, settings, force);
-    return { script: r.script, tag: r.tag, bubbles, text: bubbles.join('\n\n'), subject: mail.subject, email: mail.steps[0] || '' };
-  };
-
-  /**
-   * The emails for a lead: the script in one email, then the follow ups (Settings says how many). Each one ends
-   * with the signature and the opt out line. `to` is their first address that has not bounced and is not a
-   * template placeholder, '' when there is none or they are on the never email list. Leads skipped for running ads get no emails.
-   */
-  LH.emailFor = (lead, settings = {}, force) => {
-    const r = rendered(lead, settings, force);
-    const to = (lead && !lead.doNotEmail && LH.goodEmails(lead)[0]) || '';
-    if (!r.script) return { script: null, tag: r.tag, to, subject: '', steps: [] };
-    const D = LH.DEFAULT_SETTINGS;
-    const t = LH.emailsFor(settings)[r.script];
-    const end = [settings.emailSignature ?? D.emailSignature, settings.emailOptOut ?? D.emailOptOut].map((x) => LH.render(x, r.vars)).filter(Boolean);
-    const count = Math.max(0, Math.min(2, Math.round(Number(settings.emailFollowups ?? D.emailFollowups)) || 0));
-    const first = r.parts.filter(Boolean).join('\n\n');
-    const followups = [t.followup1, t.followup2].slice(0, count).map((x) => LH.render(x, r.nameless('there')));
-    const steps = first ? [first, ...followups].filter(Boolean).map((text) => [text, ...end].join('\n\n')) : [];
-    // No name: "Quick question" or "Your website" instead of a subject ending in "for".
-    const subject = (r.vars.business && LH.render(t.subject, r.vars)) || { ads: 'Quick question', website: 'Your website' }[r.script];
-    return { script: r.script, tag: r.tag, to, subject, steps };
-  };
-
-  /* ------------------------------------------------------------------ Results */
-  const REPLIED = ['replied', 'meeting', 'won'];
-  LH.hasReplied = (l) => !!l && (REPLIED.includes(l.status) || !!l.repliedAt);
-  LH.replyRate = (r) => (r.sent ? `${Math.round((100 * r.replied) / r.sent)}%` : '–');
-  /**
-   * Reply rates across all leads (both tabs), by niche and by script.
-   * Sent = has contactedAt (a lead that replied was sent something too). Replied = replied, meeting, won or a recorded reply.
-   */
-  LH.results = (leads, settings) => {
-    const scripts = LH.scriptsFor(settings);
-    const total = { sent: 0, replied: 0 };
-    const byNiche = new Map();
-    const byScript = new Map();
-    const add = (map, key, label, replied) => {
-      const r = map.get(key) || { key, label, sent: 0, replied: 0 };
-      r.sent++;
-      if (replied) r.replied++;
-      map.set(key, r);
-    };
-    for (const l of leads || []) {
-      const replied = LH.hasReplied(l);
-      if (!l || !(l.contactedAt || replied)) continue;
-      total.sent++;
-      if (replied) total.replied++;
-      const niche = LH.nicheOf(l, settings);
-      add(byNiche, niche || '', niche || 'No niche', replied);
-      add(byScript, l.sentScript || '', l.sentScript && scripts[l.sentScript] ? scripts[l.sentScript].name : 'Not recorded', replied);
+  /** Jaro-Winkler similarity, 0 to 1. */
+  LH.jaroWinkler = (a, b) => {
+    a = String(a || '');
+    b = String(b || '');
+    if (!a || !b) return 0;
+    if (a === b) return 1;
+    const range = Math.max(0, Math.floor(Math.max(a.length, b.length) / 2) - 1);
+    const am = new Array(a.length).fill(false);
+    const bm = new Array(b.length).fill(false);
+    let m = 0;
+    for (let i = 0; i < a.length; i++) {
+      for (let j = Math.max(0, i - range); j < Math.min(b.length, i + range + 1); j++) {
+        if (bm[j] || a[i] !== b[j]) continue;
+        am[i] = bm[j] = true;
+        m++;
+        break;
+      }
     }
-    const list = (map) => [...map.values()].sort((a, b) => b.sent - a.sent || a.label.localeCompare(b.label)).map((r) => ({ ...r, rate: LH.replyRate(r) }));
-    return { total: { ...total, rate: LH.replyRate(total) }, byNiche: list(byNiche), byScript: list(byScript) };
+    if (!m) return 0;
+    let t = 0;
+    for (let i = 0, k = 0; i < a.length; i++) {
+      if (!am[i]) continue;
+      while (!bm[k]) k++;
+      if (a[i] !== b[k]) t++;
+      k++;
+    }
+    const jaro = (m / a.length + m / b.length + (m - t / 2) / m) / 3;
+    let prefix = 0;
+    while (prefix < 4 && a[prefix] === b[prefix]) prefix++;
+    return jaro + prefix * 0.1 * (1 - jaro);
   };
 
-  /* ------------------------------------------------------------ Email addresses */
-  // Addresses website builders put in their templates (GoDaddy's filler@godaddy.com and the like) and other
-  // placeholders. They are never a real inbox, and an email to one bounces, which hurts the Gmail that sent it.
-  const JUNK_DOMAIN = /(^|\.)(example\.(com|org|net)|domain\.com|email\.com|yourdomain\.\w+|yoursite\.\w+|mysite\.com|website\.com|test\.com|sentry\.io|wixpress\.com|wix\.com|godaddy\.com|secureserver\.net|squarespace\.com|weebly\.com|jimdo\.com|shopify\.com|wordpress\.(com|org)|mailchimp\.com)$/;
-  const JUNK_USER = /^(filler|name|your|yourname|you|user|username|email|e-?mail|test|example|sample|someone|john\.?doe|jane\.?doe|no-?reply|do-?not-?reply|donotreply)$/;
-  LH.isJunkEmail = (email) => {
-    const [user, domain, extra] = String(email || '').trim().toLowerCase().split('@');
-    return !user || !domain || extra !== undefined || /\.(png|jpe?g|gif|webp|svg|css|js)$/.test(domain) || JUNK_DOMAIN.test(domain) || JUNK_USER.test(user);
+  // Free website builders: the subdomain is the business, so "gloss.wixsite.com" is not "wixsite.com".
+  LH.FREE_BUILDERS = ['wixsite.com', 'godaddysites.com', 'square.site', 'webflow.io', 'wordpress.com', 'weebly.com', 'site123.me', 'carrd.co', 'blogspot.com', 'myshopify.com', 'business.site', 'mystrikingly.com', 'odoo.com', 'netlify.app', 'vercel.app'];
+  const SECOND_LEVEL = /^(co|net|org|ac|gov|sch|mil|com|edu)\.(ae|uk|sa|qa|om|bh|kw|in|pk|au|nz|za|jp)$/;
+  /** The registrable domain: "shop.gloss.ae" -> "gloss.ae", "gloss.co.ae" stays, "gloss.wixsite.com" stays. */
+  LH.rootDomain = (url) => {
+    const host = LH.domainOf(url);
+    if (!host || LH.FREE_BUILDERS.some((b) => host === b || host.endsWith(`.${b}`))) return host;
+    const parts = host.split('.');
+    const n = parts.length >= 3 && SECOND_LEVEL.test(parts.slice(-2).join('.')) ? 3 : 2;
+    return parts.slice(-n).join('.');
   };
-  /** The addresses worth emailing: not bounced before, not a placeholder. */
-  LH.goodEmails = (lead) => ((lead && lead.emails) || []).filter((e) => !((lead.badEmails || []).includes(e) || LH.isJunkEmail(e)));
 
-  /* ---------------------------------------------------------- Google Contacts */
+  /* ------------------------------------------------------------ Contacted memory */
   /**
-   * Leads as a Google Contacts import file (Google CSV format): the business name as the contact name, so WhatsApp
-   * on your phone shows who each chat is. Leads without a phone or an email are left out. All go in one label.
+   * Everything that identifies a business you have contacted, as history keys: its phones, website, Instagram
+   * handle, and its name in its area. A business found later with any of them is not added again.
    */
-  LH.GOOGLE_CONTACTS_HEAD = ['Name', 'Given Name', 'Family Name', 'Organization 1 - Name', 'Phone 1 - Type', 'Phone 1 - Value', 'Phone 2 - Type', 'Phone 2 - Value', 'E-mail 1 - Type', 'E-mail 1 - Value', 'Website 1 - Type', 'Website 1 - Value', 'Address 1 - Type', 'Address 1 - Formatted', 'Notes', 'Group Membership'];
-  LH.googleContactsRows = (leads, settings = {}) =>
-    (leads || [])
-      .filter(Boolean)
-      .map((l) => {
-        const main = LH.whatsappTarget(l) || (LH.bestPhone(l) || {}).number || '';
-        const other = ((l.phones || []).find((p) => p.number && p.number !== main) || {}).number || '';
-        const email = LH.goodEmails(l)[0] || '';
-        if (!main && !email) return null;
-        const name = LH.shortName(l.pageName) || LH.igHandle(l) || LH.domainOf(l.website || '') || main;
-        const status = (LH.STATUSES.find((s) => s.id === l.status) || {}).label || '';
-        const notes = ['RizcoReach lead', LH.nicheOf(l, settings), l.area, LH.tagLine(l), status].filter(Boolean).join(' · ');
-        const address = (((l.sources || {}).maps || {}).address) || '';
-        return [name, name, '', name, main ? 'Mobile' : '', main, other ? 'Work' : '', other, email ? 'Work' : '', email, l.website ? 'Work' : '', l.website || '', address ? 'Work' : '', address, notes, '* myContacts ::: RizcoReach leads'];
-      })
-      .filter(Boolean);
+  LH.historyKeys = (lead) => {
+    const l = lead || {};
+    const keys = [];
+    for (const p of l.phones || []) {
+      // A number found in a website's text can be someone else's (the web designer, the mall): its domain matches instead.
+      const n = typeof p === 'string' ? p : p && p.source !== 'website' && p.number;
+      if (n) keys.push(`p:${n}`);
+    }
+    for (const n of l.whatsapp || []) if (n) keys.push(`p:${n}`);
+    if (l.website && LH.linkKind(l.website) === 'website') keys.push(`d:${LH.rootDomain(l.website)}`);
+    const ig = (((l.instagram || (l.sources || {}).instagram) || {}).username || LH.igHandle(l) || '').replace(/^@/, '').toLowerCase();
+    if (ig) keys.push(`i:${ig}`);
+    const name = LH.normName(l.pageName || l.name);
+    if (name.length > 2 && l.area) keys.push(`n:${name}@${String(l.area).toLowerCase()}`);
+    return [...new Set(keys)];
+  };
+  /** The history entry that matches this business, or null. An entry made from the same lead never hides it. */
+  LH.historyHit = (lead, history) => {
+    if (!history) return null;
+    for (const key of LH.historyKeys(lead)) {
+      const e = history[key];
+      if (e && !(lead.id && e[2] === lead.id)) return { key, at: e[0], via: e[1] };
+    }
+    return null;
+  };
+
+  /* Fuzzy names, per area: { 'jlt': [['gloss garage', 'p:m:…'], …] }. */
+  LH.addName = (index, lead) => {
+    const name = LH.normName(lead.pageName);
+    const area = String(lead.area || '').toLowerCase();
+    if (name.length < 4 || !area) return;
+    const list = (index[area] = index[area] || []);
+    if (!list.some(([n, id]) => n === name && id === lead.id)) list.push([name, lead.id]);
+  };
+  /** The lead with nearly the same name in the same area (Jaro-Winkler at or above the threshold), or null. */
+  LH.findByName = (index, name, area, threshold = 0.92) => {
+    const n = LH.normName(name);
+    const list = index && area ? index[String(area).toLowerCase()] : null;
+    if (n.length < 4 || !list) return null;
+    let best = null;
+    let top = threshold;
+    for (const [m, id] of list) {
+      const score = LH.jaroWinkler(n, m);
+      if (score >= top) (best = id), (top = score);
+    }
+    return best;
+  };
+
+  /** A CSV file as rows of cells (quotes, commas and line breaks inside quotes, a BOM at the start). */
+  LH.parseCsv = (text) => {
+    const rows = [];
+    let row = [];
+    let cell = '';
+    let quoted = false;
+    const s = String(text || '').replace(/^﻿/, '');
+    for (let i = 0; i < s.length; i++) {
+      const c = s[i];
+      if (quoted) {
+        if (c === '"' && s[i + 1] === '"') (cell += '"'), i++;
+        else if (c === '"') quoted = false;
+        else cell += c;
+      } else if (c === '"' && !cell) quoted = true;
+      else if (c === ',' || c === ';' || c === '\t') row.push(cell), (cell = '');
+      else if (c === '\n' || c === '\r') {
+        if (c === '\r' && s[i + 1] === '\n') i++;
+        row.push(cell);
+        if (row.some((x) => x.trim())) rows.push(row);
+        row = [];
+        cell = '';
+      } else cell += c;
+    }
+    row.push(cell);
+    if (row.some((x) => x.trim())) rows.push(row);
+    return rows;
+  };
+  /** Every UAE phone number in a CSV (your CRM sheet or a Google Contacts export), in +971 format. */
+  LH.phonesInCsv = (text, country = 'AE') => {
+    const out = new Set();
+    for (const row of LH.parseCsv(text))
+      for (const cell of row) {
+        if (!/\d{6,}|\d[\d\s().+-]{7,}\d/.test(cell)) continue;
+        // Google Contacts puts several numbers in one cell: "+971 50 123 4567 ::: 04 123 4567"
+        for (const part of cell.split(/:::|\/|,|;|\|/)) {
+          const n = LH.normalizePhone(part.trim(), country);
+          if (n && /^\+\d{9,15}$/.test(n)) out.add(n);
+        }
+      }
+    return [...out];
+  };
+
+  /* ------------------------------------------------------------ Opening hours */
+  /** "Opens 10 AM", "Closed", "Open 24 hours": opening hours, which Google Maps lists show where an address can be. */
+  LH.looksLikeHours = (s) => /^(open|opens|opening|closed|closes|closing|temporarily closed|permanently closed)\b|\b\d{1,2}(:\d{2})?\s*(am|pm)\b|24 hours/i.test(String(s || '').trim());
 
   /* ---------------------------------------------------------------------- CSV */
   LH.toCsv = (rows) =>
