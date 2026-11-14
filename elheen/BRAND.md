@@ -12,17 +12,16 @@ again and again. These are his ideas applied to Elheen, not quotes.)
 
 - **Elheen** (الحين). Gulf Arabic for "now". "احجز الحين" means "book now".
 - Always lower-case in the logo: `elheen`. Capital E only at the start of a sentence.
-- Arabic and English always appear together in the logo lockup.
-- Domain: elheen.com.
+- Domain: elheen.com. Instagram: @getelheen.
 
 ## What we are
 
-The booking system for service businesses whose clients come from Instagram,
+The booking system for UAE service businesses whose clients come from Instagram,
 WhatsApp and ads.
 
-## Line
+## Headline
 
-**Booked. Right now.** Arabic: **احجز الحين**
+**Turn enquiries into booked appointments.** Arabic sign-off: **احجز الحين**
 
 ## What we promise (and must be able to prove)
 
@@ -32,15 +31,14 @@ WhatsApp and ads.
 4. One flat price per location.
 5. A person in Dubai answers you on WhatsApp.
 
-Never claim a number (bookings added, no-shows cut) until a real client's data
-shows it. The first three clients exist to earn those numbers.
+Never claim a number (bookings added, no-shows cut), a client logo or a review
+until a real client's data backs it. The first three clients exist to earn those.
 
 ## Voice
 
 - Plain words. Short sentences. No jargon.
 - Speak to the owner as an equal: confident, warm, direct.
 - Say what it does, then stop.
-- Arabic and English carry the same weight. Neither is a translation afterthought.
 
 | Say | Don't say |
 |---|---|
@@ -50,45 +48,60 @@ shows it. The first three clients exist to earn those numbers.
 
 ## Logo
 
-- A saffron dot followed by the wordmark `elheen` and الحين.
-- The dot is "now": a live signal. It may pulse on screens, never in print.
-- Clear space around the logo equals the height of the letter "e".
+- **The mark:** a geometric lower-case "e" with a mint dot sitting in its opening.
+  The dot is "now": a live signal, like a recording light.
+- **The wordmark:** `elheen` in Plus Jakarta Sans, weight 750, tight spacing.
+- The mark sits on a deep-green rounded square for app icons and profile pictures.
+- The dot may pulse on screens, never in print.
+- Clear space around the logo equals the height of the dot times three.
 - Never stretch it, recolour the dot, or put it on a busy photo.
-- App icon and favicon: the saffron dot on deep green (`favicon.svg`).
+
+Files:
+
+| File | Use |
+|---|---|
+| `brand/elheen-mark.svg` | The mark on its dark tile (scales to any size) |
+| `brand/elheen-instagram-profile.png` | Instagram profile picture, 1080 x 1080 |
+| `src/assets/og.png` | Preview image when the site link is shared |
 
 ## Colour
 
 | Role | Name | Hex |
 |---|---|---|
-| Main dark | Ink | `#0E1F1A` |
-| Dark surface | Ink 2 | `#1B332B` |
-| Page background | Sand | `#F6F1E7` |
-| Soft panel | Sand 2 | `#EBE3D3` |
-| Lines | Line | `#D9CFBB` |
-| The one accent | Saffron | `#F2A33A` |
-| Cards | White | `#FFFDF8` |
-| Secondary text | Muted | `#5B6B64` |
+| Darkest background | Ink | `#06140F` |
+| Dark surface | Ink 2 | `#0C2219` |
+| Main text | Text | `#0B1512` |
+| Secondary text | Muted | `#52625B` |
+| Page | White | `#FFFFFF` |
+| Soft panel | Surface | `#F5F8F6` |
+| Tinted panel | Tint | `#E9F6F0` |
+| Lines | Line | `#E3EAE6` |
+| Links and accents on white | Emerald | `#0A7A5A` |
+| The "now" signal | Mint | `#2EE6A6` |
 
-Saffron is used for one thing per screen: the action we want (a button) or the
-"now" dot. If everything is saffron, nothing is.
+Calendly is blue and Fresha is black with purple. Elheen is white, deep green
+and one mint signal: clearly its own, and green reads as local and trusted here.
 
-Fresha is near-black and white with purple and pink. Deep green, sand and
-saffron keep Elheen clearly separate and feel local and warm.
+Mint is used for one thing per screen: the live dot, or the single action we
+most want on a dark background. If everything is mint, nothing is.
 
 ## Type
 
-- **Readex Pro** for both Arabic and English (free, Google Fonts).
-- Headings: weight 600, tight letter spacing.
-- Body: weight 400, or 300 on dark backgrounds.
-- No second typeface.
+- **Plus Jakarta Sans** for English, **Readex Pro** for Arabic. Both are free and
+  are stored in the site, so no outside font service is needed.
+- Headings: weight 700, tight spacing, large.
+- Body: weight 400.
 
-## Shape
+## Shape and motion
 
-- Rounded corners: 18px on cards, full pill on buttons.
-- Generous space. One idea per section.
-- Simple line icons, 1.8 stroke. No emoji as icons.
+- Rounded corners: 20px on cards, 36px on large panels, full pill on buttons.
+- Generous white space. One idea per section.
+- Simple line icons. No emoji as icons.
+- Motion is calm and has a purpose: things rise into place once, the product
+  demo plays, and the live dot pulses. Anyone who has asked their device for
+  less motion gets a still page.
 
-## What we borrow from Fresha, and what we don't
+## What we take from the best booking sites, and what we don't
 
-- Borrow: big confident headlines, lots of space, the product shown in use.
-- Don't borrow: the marketplace look, the purple and pink, or any of their wording.
+- Take: big confident headlines, lots of space, the product shown in use.
+- Don't take: anyone's colours, wording, layouts or images.
