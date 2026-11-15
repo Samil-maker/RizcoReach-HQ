@@ -3,7 +3,7 @@
   const $ = (id) => document.getElementById(id);
   const el = (tag, props = {}, ...kids) => { const n = Object.assign(document.createElement(tag), props); n.append(...kids); return n; };
   const STATUS = { new: 'New', talking: 'Talking', booked: 'Booked', done: 'Done', lost: 'Lost' };
-  const SOURCES = { instagram: 'Instagram', google: 'Google', link: 'Your link', ad: 'Ad', 'meta-ad': 'Meta ad', website: 'Website', 'instagram-dm': 'Instagram DM', whatsapp: 'WhatsApp', call: 'Phone call', 'walk-in': 'Walk-in', referral: 'Referral', other: 'Other' };
+  const SOURCES = { instagram: 'Instagram', google: 'Google', link: 'Your link', ad: 'Ad', 'meta-ad': 'Facebook ad', website: 'Website', 'instagram-dm': 'Instagram DM', whatsapp: 'WhatsApp', call: 'Phone call', 'walk-in': 'Walk-in', referral: 'Referral', other: 'Other' };
   let token = null;
   try { token = localStorage.getItem('elheen-token'); } catch { /* private window */ }
   let biz = null, leads = [], filter = 'all', photoUrls = [];
@@ -112,11 +112,12 @@
       el('h2', {}, l.name),
       el('span', {}, el('span', { className: `badge ${l.status}` }, STATUS[l.status]), ' ', el('span', { className: 'badge src' }, SOURCES[l.source] || l.source)),
       el('div', { className: 'actions' },
-        el('a', { className: 'btn btn-primary', href: wa(l.phone, greeting), target: '_blank', rel: 'noopener' }, 'WhatsApp'),
-        el('a', { className: 'btn btn-ghost', href: `tel:${l.phone}` }, 'Call'),
+        ...(l.phone ? [el('a', { className: 'btn btn-primary', href: wa(l.phone, greeting), target: '_blank', rel: 'noopener' }, 'WhatsApp'),
+          el('a', { className: 'btn btn-ghost', href: `tel:${l.phone}` }, 'Call')] : []),
+        ...(l.email ? [el('a', { className: 'btn btn-ghost', href: `mailto:${l.email}` }, 'Email')] : []),
         ...(l.location ? [el('a', { className: 'btn btn-ghost', href: `https://maps.google.com/?q=${l.location}`, target: '_blank', rel: 'noopener' }, 'Open map')] : [])),
       el('div', { className: 'rows' },
-        row('Phone', l.phone), row('Wants', l.service), row('Price', l.price ? `AED ${l.price}` : (l.price === 0 ? 'Free' : '')),
+        row('Phone', l.phone), row('Email', l.email), row('Ad', [l.adName, l.campaign].filter(Boolean).join(' · ')), row('Wants', l.service), row('Price', l.price ? `AED ${l.price}` : (l.price === 0 ? 'Free' : '')),
         row('Message', l.note), row('Address', l.address), row('Received', dubai(l.createdAt, { dateStyle: 'medium', timeStyle: 'short' }))),
       ...((l.photos || []).length ? [el('p', { className: 'step-title' }, 'Photos'), gallery] : []),
       ...((l.chat || []).length ? [el('p', { className: 'step-title' }, 'Chat with the assistant'),
@@ -255,14 +256,67 @@
     catch (err) { $('passStatus').textContent = err.message; }
   });
 
+  // --- Facebook lead ads
+  function drawMeta() {
+    const m = biz.meta, on = !!(m && m.pages.length);
+    $('metaConnect').hidden = !biz.metaAvailable || on;
+    $('metaSync').hidden = !on; $('metaOff').hidden = !on; $('metaPages').hidden = !on;
+    if (!biz.metaAvailable) $('metaHint').textContent = 'The Facebook connection is being set up. Until then, add ad leads with the Add enquiry button.';
+    else if (!on) $('metaHint').textContent = 'Connect the Facebook page your ads run from. Every lead from your lead forms will land in your inbox on its own.';
+    else {
+      $('metaHint').textContent = 'Leads from your Facebook and Instagram lead forms arrive in your inbox on their own.';
+      $('metaPages').textContent = `Connected: ${m.pages.map((p) => p.name).join(', ')}`;
+      if (!$('metaStatus').dataset.keep) $('metaStatus').textContent = m.error ? `The last check did not work: ${m.error}` : (m.lastSync ? `Last checked ${dubai(m.lastSync, { timeStyle: 'short' })}.` : 'Checking for the first time…');
+    }
+  }
+  $('metaConnect').addEventListener('click', async () => {
+    try { $('metaConnect').disabled = true; location.href = (await api('POST', 'meta/start')).url; }
+    catch (err) { $('metaStatus').textContent = err.message; $('metaConnect').disabled = false; }
+  });
+  $('metaSync').addEventListener('click', async () => {
+    $('metaStatus').textContent = 'Checking…'; delete $('metaStatus').dataset.keep;
+    try {
+      const r = await api('POST', 'meta/sync', { force: true });
+      if (r.business) biz = r.business;
+      drawMeta();
+      if (!biz.meta?.error) $('metaStatus').textContent = r.added ? `${r.added} new lead${r.added > 1 ? 's' : ''} added.` : 'No new leads.';
+      if (r.added) { leads = (await api('GET', 'leads')).leads; drawAll(); }
+    } catch (err) { $('metaStatus').textContent = err.message; }
+  });
+  $('metaOff').addEventListener('click', async () => {
+    if (!confirm('Stop bringing in leads from Facebook? Leads already in your inbox stay.')) return;
+    try { biz = (await api('POST', 'meta/disconnect')).business; $('metaStatus').textContent = 'Disconnected.'; drawMeta(); }
+    catch (err) { $('metaStatus').textContent = err.message; }
+  });
+
+  let syncing = false;
   async function refresh() {
     leads = (await api('GET', 'leads')).leads;
     drawAll();
+    if (biz.meta?.pages?.length && !syncing) {
+      syncing = true;
+      api('POST', 'meta/sync').then(async (r) => {
+        if (r.business) { biz = r.business; drawMeta(); }
+        if (r.added) { leads = (await api('GET', 'leads')).leads; drawAll(); }
+      }).catch(() => {}).finally(() => { syncing = false; });
+    }
   }
   async function start() {
     biz = (await api('GET', 'me')).business;
     $('authView').hidden = true; $('appView').hidden = false; $('signOut').hidden = false;
-    drawSettings(); drawAlerts(); drawAssistant(); await refresh();
+    drawSettings(); drawAlerts(); drawAssistant(); drawMeta(); await refresh();
+    const result = new URLSearchParams(location.search).get('meta');
+    if (result) {
+      history.replaceState(null, '', '/app');
+      showTab('settings');
+      $('metaStatus').dataset.keep = '1';
+      $('metaStatus').textContent = {
+        connected: 'Facebook is connected. Your lead-form leads from the last 30 days are being brought in now.',
+        cancelled: 'The Facebook connection was cancelled. Nothing was changed.',
+        nopages: 'No Facebook page was shared. Connect again and tick the page your ads run from.',
+        expired: 'That took too long. Please press Connect Facebook again.',
+      }[result] || 'The Facebook connection did not work. Please try again.';
+    }
   }
   (token ? start().catch(signOut) : Promise.resolve(signOut()));
   setInterval(() => { if (token && !$('appView').hidden && $('detailTab').hidden && $('settingsTab').hidden && document.visibilityState === 'visible') refresh().catch(() => {}); }, 30000);

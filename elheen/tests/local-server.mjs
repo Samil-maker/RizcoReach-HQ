@@ -14,6 +14,7 @@ const store = {
   async set(key, data, o) { m.set(key, { data, metadata: o?.metadata }); },
   async getWithMetadata(key) { const v = m.get(key); return v ? { data: v.data, metadata: v.metadata } : null; },
   async list({ prefix }) { return { blobs: [...m.keys()].filter((k) => k.startsWith(prefix)).map((key) => ({ key })) }; },
+  async delete(key) { m.delete(key); },
 };
 // The assistant here is a stand-in that gives one fixed answer, so no key is needed.
 const api = makeHandler(store, { ELHEEN_INVITE: 'letmein', ask: async () => 'Yes, we cover all of Dubai. Add your details below and pick a time.' });

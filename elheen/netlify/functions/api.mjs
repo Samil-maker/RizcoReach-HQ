@@ -1,7 +1,7 @@
 // Elheen API. One function serves everything under /api/.
 // Data lives in Netlify Blobs: businesses, leads, photos and sign-in sessions.
 import { getStore } from '@netlify/blobs';
-import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import { randomBytes, scryptSync, timingSafeEqual, createHmac } from 'node:crypto';
 
 const STATUSES = ['new', 'talking', 'booked', 'done', 'lost'];
 const KINDS = ['salon', 'clinic', 'fitness', 'automotive', 'cleaning', 'home', 'interior', 'other'];
@@ -10,6 +10,9 @@ const PHOTO_KINDS = new Set(['home', 'interior']);               // property pho
 const MAX_PHOTOS = 4;
 const MAX_PHOTO_BYTES = 900_000;
 const SESSION_DAYS = 30;
+const GRAPH_VERSION = 'v26.0';
+const META_SCOPES = 'pages_show_list,pages_read_engagement,pages_manage_metadata,pages_manage_ads,leads_retrieval';
+const META_LOOKBACK_DAYS = 30;   // on first connect, bring in lead-form leads from the last month
 
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
@@ -84,10 +87,11 @@ export function makeHandler(store, env = {}) {
     return (await listLeads(slug)).filter((l) => l.when && l.status !== 'lost').map((l) => l.when);
   }
 
-  async function saveLead(biz, body, source) {
+  async function saveLead(biz, body, source, opts = {}) {
     const name = clean(body.name, 80);
     const phone = clean(body.phone, 30).replace(/[^\d+]/g, '');
-    if (!name || phone.replace(/\D/g, '').length < 7) return fail(400, 'Please give a name and a phone number.');
+    const requirePhone = opts.requirePhone !== false;
+    if (!name || (requirePhone && phone.replace(/\D/g, '').length < 7)) return fail(400, 'Please give a name and a phone number.');
     const service = biz.services.find((s) => s.id === body.serviceId);
     let when = null;
     if (body.when) {
@@ -112,7 +116,8 @@ export function makeHandler(store, env = {}) {
       location: /^-?\d{1,3}\.\d+,-?\d{1,3}\.\d+$/.test(body.location || '') ? body.location : null,
       chat: (Array.isArray(body.chat) ? body.chat : []).slice(-2 * MAX_CHAT_TURNS)
         .map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: clean(m.content, 600) })).filter((m) => m.content),
-      photos, source: clean(source, 30) || 'link', status: when ? 'booked' : 'new', when, createdAt: Date.now(),
+      email: clean(body.email, 120), adName: clean(body.adName, 120), campaign: clean(body.campaign, 120),
+      photos, source: clean(source, 30) || 'link', status: when ? 'booked' : 'new', when, createdAt: opts.createdAt || Date.now(),
       history: [{ at: Date.now(), text: when ? 'Booked through the enquiry page' : 'Enquiry received' }],
     };
     await setJSON(`leads/${biz.slug}/${leadId}`, lead);
@@ -129,13 +134,108 @@ export function makeHandler(store, env = {}) {
     return json({ ok: true, id: leadId, when });
   }
 
+  // --- Facebook and Instagram lead forms
+  const metaReady = () => !!(env.meta?.appId && env.meta?.appSecret && env.graph);
+  async function fetchLead(leadId, token) {
+    try { return await env.graph(String(leadId), { params: { access_token: token, fields: 'id,created_time,field_data,ad_name,campaign_name' } }); }
+    catch { return env.graph(String(leadId), { params: { access_token: token, fields: 'id,created_time,field_data' } }); }
+  }
+  async function importMetaLead(biz, lead) {
+    const seenKey = `metalead/${clean(lead.id, 40)}`;
+    if (!lead.id || await getJSON(seenKey)) return false;
+    const fields = Object.fromEntries((lead.field_data || []).map((f) => [String(f.name || '').toLowerCase(), (f.values || []).join(', ')]));
+    const pick = (...keys) => keys.map((k) => fields[k]).find(Boolean) || '';
+    const name = pick('full_name', 'name') || [fields.first_name, fields.last_name].filter(Boolean).join(' ') || 'Facebook lead';
+    const known = new Set(['full_name', 'name', 'first_name', 'last_name', 'phone_number', 'phone', 'email']);
+    const note = Object.entries(fields).filter(([k, v]) => !known.has(k) && v).map(([k, v]) => `${k.replace(/_/g, ' ')}: ${v}`).join('\n');
+    const res = await saveLead(biz, { name, phone: pick('phone_number', 'phone'), email: pick('email'), note, adName: lead.ad_name, campaign: lead.campaign_name },
+      'meta-ad', { requirePhone: false, createdAt: Date.parse(lead.created_time) || Date.now() });
+    if (res.status !== 200) return false;
+    await setJSON(seenKey, { slug: biz.slug, at: Date.now() });
+    return true;
+  }
+  async function syncMeta(biz) {
+    let added = 0;
+    const since = Math.max(Date.now(), biz.meta.connectedAt || 0) - META_LOOKBACK_DAYS * 864e5;
+    for (const page of biz.meta.pages) {
+      const forms = await env.graph(`${page.id}/leadgen_forms`, { params: { access_token: page.token, fields: 'id,name', limit: 50 } });
+      for (const form of forms.data || []) {
+        let leads;
+        try { leads = await env.graph(`${form.id}/leads`, { params: { access_token: page.token, fields: 'id,created_time,field_data,ad_name,campaign_name', limit: 50 } }); }
+        catch { leads = await env.graph(`${form.id}/leads`, { params: { access_token: page.token, fields: 'id,created_time,field_data', limit: 50 } }); }
+        for (const lead of leads.data || []) {
+          if ((Date.parse(lead.created_time) || 0) < since) continue;
+          if (await importMetaLead(biz, lead)) added++;
+        }
+      }
+    }
+    return added;
+  }
+
   return async function handler(req) {
     const url = new URL(req.url);
     const parts = url.pathname.replace(/^\/api\/?/, '').split('/').filter(Boolean);
     const method = req.method;
-    let body = {};
+    let body = {}, raw = '';
     if (method === 'POST' || method === 'PUT' || method === 'PATCH') {
-      try { body = await req.json(); } catch { return fail(400, 'The request could not be read.'); }
+      raw = await req.text();
+      if (raw) { try { body = JSON.parse(raw); } catch { return fail(400, 'The request could not be read.'); } }
+    }
+
+    // --- Facebook sends the owner back here after they approve the connection
+    if (parts[0] === 'meta' && parts[1] === 'callback' && method === 'GET') {
+      const back = (result) => new Response(null, { status: 302, headers: { location: `/app?meta=${result}` } });
+      const st = clean(url.searchParams.get('state'), 40);
+      const state = st ? await getJSON(`metastate/${st}`) : null;
+      if (!state || Date.now() - state.at > 15 * 6e4) return back('expired');
+      await store.delete(`metastate/${st}`);
+      if (url.searchParams.get('error') || !url.searchParams.get('code')) return back('cancelled');
+      const b = await getJSON(`biz/${state.slug}`);
+      if (!b || !metaReady()) return back('error');
+      try {
+        const m = env.meta;
+        const short = await env.graph('oauth/access_token', { params: { client_id: m.appId, client_secret: m.appSecret, redirect_uri: m.redirectUri, code: url.searchParams.get('code') } });
+        const long = await env.graph('oauth/access_token', { params: { grant_type: 'fb_exchange_token', client_id: m.appId, client_secret: m.appSecret, fb_exchange_token: short.access_token } });
+        const accounts = await env.graph('me/accounts', { params: { access_token: long.access_token, fields: 'id,name,access_token', limit: 100 } });
+        const pages = (accounts.data || []).filter((p) => p.access_token).map((p) => ({ id: String(p.id), name: clean(p.name, 80), token: p.access_token }));
+        if (!pages.length) return back('nopages');
+        for (const p of pages) {
+          try { await env.graph(`${p.id}/subscribed_apps`, { method: 'POST', params: { subscribed_fields: 'leadgen', access_token: p.token } }); p.live = true; }
+          catch { p.live = false; }
+          await setJSON(`metapage/${p.id}`, { slug: b.slug });
+        }
+        for (const old of b.meta?.pages || []) if (!pages.some((p) => p.id === old.id)) await store.delete(`metapage/${old.id}`);
+        b.meta = { pages, connectedAt: Date.now(), lastSync: 0, error: null };
+        await setJSON(`biz/${b.slug}`, b);
+        return back('connected');
+      } catch { return back('error'); }
+    }
+
+    // --- Meta tells us about each new lead-form lead
+    if (parts[0] === 'meta' && parts[1] === 'webhook') {
+      if (method === 'GET') {
+        const ok = env.meta?.verifyToken && url.searchParams.get('hub.mode') === 'subscribe' && url.searchParams.get('hub.verify_token') === env.meta.verifyToken;
+        return ok ? new Response(url.searchParams.get('hub.challenge') || '', { headers: { 'content-type': 'text/plain' } }) : fail(403, 'Not allowed.');
+      }
+      if (method === 'POST') {
+        if (!metaReady()) return fail(503, 'Not set up.');
+        const sig = req.headers.get('x-hub-signature-256') || '';
+        const expected = `sha256=${createHmac('sha256', env.meta.appSecret).update(raw).digest('hex')}`;
+        if (sig.length !== expected.length || !timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return fail(403, 'Bad signature.');
+        for (const entry of body.entry || []) {
+          for (const change of entry.changes || []) {
+            if (change.field !== 'leadgen' || !change.value) continue;
+            try {
+              const pageId = String(change.value.page_id);
+              const index = await getJSON(`metapage/${clean(pageId, 40)}`);
+              const b = index && await getJSON(`biz/${index.slug}`);
+              const page = b?.meta?.pages?.find((p) => p.id === pageId);
+              if (page) await importMetaLead(b, await fetchLead(change.value.leadgen_id, page.token));
+            } catch { /* the regular check picks up anything missed here */ }
+          }
+        }
+        return json({ ok: true });
+      }
     }
 
     // --- sign up and sign in
@@ -193,7 +293,38 @@ export function makeHandler(store, env = {}) {
     const biz = await auth(req);
     if (!biz) return fail(401, 'Please sign in.');
 
-    const safeBiz = () => { const { pass, push, ...safe } = biz; return { ...safe, alerts: (push || []).length, aiAvailable: !!env.ask, pushKey: env.pushKey || null }; };
+    const safeBiz = () => {
+      const { pass, push, meta, ...safe } = biz;
+      return {
+        ...safe, alerts: (push || []).length, aiAvailable: !!env.ask, pushKey: env.pushKey || null, metaAvailable: metaReady(),
+        meta: meta ? { pages: meta.pages.map((p) => ({ id: p.id, name: p.name, live: !!p.live })), lastSync: meta.lastSync || 0, error: meta.error || null } : null,
+      };
+    };
+    if (parts[0] === 'meta' && parts[1] === 'start' && method === 'POST') {
+      if (!metaReady()) return fail(503, 'The Facebook connection is not set up yet.');
+      const st = id(18);
+      await setJSON(`metastate/${st}`, { slug: biz.slug, at: Date.now() });
+      const u = new URL(`https://www.facebook.com/${GRAPH_VERSION}/dialog/oauth`);
+      for (const [k, v] of Object.entries({ client_id: env.meta.appId, redirect_uri: env.meta.redirectUri, state: st, scope: META_SCOPES, response_type: 'code' })) u.searchParams.set(k, v);
+      return json({ url: u.toString() });
+    }
+    if (parts[0] === 'meta' && parts[1] === 'sync' && method === 'POST') {
+      if (!metaReady() || !biz.meta?.pages?.length) return json({ added: 0 });
+      if (!body.force && Date.now() - (biz.meta.lastSync || 0) < 3 * 6e4) return json({ added: 0, skipped: true });
+      biz.meta.lastSync = Date.now();
+      await setJSON(`biz/${biz.slug}`, biz);
+      let added = 0;
+      try { added = await syncMeta(biz); biz.meta.error = null; }
+      catch (e) { biz.meta.error = clean(e.message, 200) || 'Facebook did not answer.'; }
+      await setJSON(`biz/${biz.slug}`, biz);
+      return json({ added, business: safeBiz() });
+    }
+    if (parts[0] === 'meta' && parts[1] === 'disconnect' && method === 'POST') {
+      for (const p of biz.meta?.pages || []) await store.delete(`metapage/${p.id}`);
+      biz.meta = null;
+      await setJSON(`biz/${biz.slug}`, biz);
+      return json({ business: safeBiz() });
+    }
     if (parts[0] === 'me' && method === 'GET') return json({ business: safeBiz() });
     if (parts[0] === 'password' && method === 'POST') {
       if (!checkPassword(String(body.current || ''), biz.pass)) return fail(403, 'Your current password is not right.');
@@ -277,6 +408,16 @@ async function pushNotify(subscriptions, payload) {
   return dead;
 }
 
+// Calls Meta's Graph API.
+async function graphFetch(path, { method = 'GET', params = {} } = {}) {
+  const u = new URL(`https://graph.facebook.com/${GRAPH_VERSION}/${path}`);
+  for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
+  const res = await fetch(u, { method });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.error) throw new Error(data.error?.message || `Facebook request failed: ${res.status}`);
+  return data;
+}
+
 // Asks Claude for the assistant's next reply.
 async function askClaude(system, messages) {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -294,5 +435,10 @@ export default (req) => makeHandler(getStore({ name: 'elheen', consistency: 'str
   pushKey: process.env.VAPID_PUBLIC_KEY || null,
   notify: pushNotify,
   ask: process.env.ANTHROPIC_API_KEY ? askClaude : null,
+  graph: graphFetch,
+  meta: {
+    appId: process.env.META_APP_ID, appSecret: process.env.META_APP_SECRET, verifyToken: process.env.META_VERIFY_TOKEN,
+    redirectUri: `${process.env.ELHEEN_URL || process.env.URL || 'https://elheen.netlify.app'}/api/meta/callback`,
+  },
 })(req);
 export const config = { path: '/api/*' };

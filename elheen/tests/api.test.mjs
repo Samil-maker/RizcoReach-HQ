@@ -11,17 +11,18 @@ function memoryStore() {
     async set(key, data, opts) { m.set(key, { data, metadata: opts?.metadata }); },
     async getWithMetadata(key) { const v = m.get(key); return v ? { data: v.data, metadata: v.metadata } : null; },
     async list({ prefix }) { return { blobs: [...m.keys()].filter((k) => k.startsWith(prefix)).map((key) => ({ key })) }; },
+    async delete(key) { m.delete(key); },
   };
 }
 const setup = (extra = {}) => {
   const h = makeHandler(memoryStore(), { ELHEEN_INVITE: 'letmein', ...extra });
-  const call = async (method, path, body, token) => {
+  const call = async (method, path, body, token, extraHeaders = {}) => {
     const res = await h(new Request(`https://x.test/api/${path}`, {
-      method, headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+      method, headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}), ...extraHeaders },
       body: body ? JSON.stringify(body) : undefined,
     }));
     const type = res.headers.get('content-type') || '';
-    return { status: res.status, data: type.includes('json') ? await res.json() : await res.arrayBuffer(), type };
+    return { status: res.status, data: type.includes('json') ? await res.json() : await res.arrayBuffer(), type, headers: res.headers };
   };
   return call;
 };
@@ -199,4 +200,91 @@ test('the owner can add a lead that came in by phone or message', async () => {
   assert.equal(leads[0].source, 'whatsapp');
   assert.equal((await call('POST', 'leads', { name: 'B', phone: '0507654321', source: 'made-up' }, token)).status, 200);
   assert.equal((await call('GET', 'leads', null, token)).data.leads.find((l) => l.name === 'B').source, 'other');
+});
+
+// --- Facebook lead forms, with a stand-in for Meta's servers
+import { createHmac } from 'node:crypto';
+const META = { appId: 'APP1', appSecret: 'SECRET', verifyToken: 'VT', redirectUri: 'https://x.test/api/meta/callback' };
+const formLead = (id, extra = []) => ({
+  id, created_time: new Date().toISOString(), ad_name: 'Kitchen offer', campaign_name: 'November',
+  field_data: [{ name: 'full_name', values: ['Mona Saeed'] }, { name: 'phone_number', values: ['+971501112222'] }, { name: 'email', values: ['mona@example.com'] }, ...extra],
+});
+function fakeMeta() {
+  const calls = [];
+  const graph = async (path, { method = 'GET', params = {} } = {}) => {
+    calls.push({ path, method, params });
+    if (path === 'oauth/access_token') return { access_token: params.fb_exchange_token ? 'LONG' : 'SHORT' };
+    if (path === 'me/accounts') return { data: [{ id: '111', name: 'Layali Page', access_token: 'PAGETOKEN' }] };
+    if (path === '111/subscribed_apps') return { success: true };
+    if (path === '111/leadgen_forms') return { data: [{ id: 'F1' }] };
+    if (path === 'F1/leads') return { data: [formLead('L1', [{ name: 'what_do_you_need', values: ['Kitchen redesign'] }]), { ...formLead('OLD'), created_time: '2020-01-01T00:00:00Z' }] };
+    if (path === 'L2') return formLead('L2');
+    throw new Error(`unexpected ${path}`);
+  };
+  return { graph, calls };
+}
+async function connectedBusiness(call) {
+  const { data: { token } } = await signup(call);
+  const start = await call('POST', 'meta/start', null, token);
+  const state = new URL(start.data.url).searchParams.get('state');
+  const back = await call('GET', `meta/callback?code=abc&state=${state}`);
+  return { token, start, state, back };
+}
+
+test('connecting Facebook stores the page without ever showing its token', async () => {
+  const fb = fakeMeta();
+  const call = setup({ graph: fb.graph, meta: META });
+  const { token, start, state, back } = await connectedBusiness(call);
+  assert.match(start.data.url, /client_id=APP1/);
+  assert.match(start.data.url, /leads_retrieval/);
+  assert.equal(back.status, 302);
+  assert.equal(back.headers.get('location'), '/app?meta=connected');
+  const { data: { business } } = await call('GET', 'me', null, token);
+  assert.deepEqual(business.meta.pages, [{ id: '111', name: 'Layali Page', live: true }]);
+  assert.ok(!JSON.stringify(business).includes('PAGETOKEN'));
+  assert.ok(fb.calls.some((c) => c.path === '111/subscribed_apps' && c.method === 'POST'));
+  assert.equal((await call('GET', `meta/callback?code=abc&state=${state}`)).headers.get('location'), '/app?meta=expired');
+});
+
+test('without the app secret the connection stays off', async () => {
+  const call = setup({ graph: fakeMeta().graph, meta: { ...META, appSecret: '' } });
+  const { data: { token } } = await signup(call);
+  assert.equal((await call('POST', 'meta/start', null, token)).status, 503);
+  assert.equal((await call('GET', 'me', null, token)).data.business.metaAvailable, false);
+});
+
+test('checking Facebook brings in recent lead-form leads once, with their answers', async () => {
+  const call = setup({ graph: fakeMeta().graph, meta: META });
+  const { token } = await connectedBusiness(call);
+  assert.equal((await call('POST', 'meta/sync', {}, token)).data.added, 1);
+  assert.equal((await call('POST', 'meta/sync', {}, token)).data.skipped, true);
+  assert.equal((await call('POST', 'meta/sync', { force: true }, token)).data.added, 0);
+  const { data: { leads } } = await call('GET', 'leads', null, token);
+  assert.equal(leads.length, 1);
+  assert.equal(leads[0].name, 'Mona Saeed');
+  assert.equal(leads[0].source, 'meta-ad');
+  assert.equal(leads[0].email, 'mona@example.com');
+  assert.equal(leads[0].adName, 'Kitchen offer');
+  assert.match(leads[0].note, /what do you need: Kitchen redesign/);
+});
+
+test('the Meta webhook checks its signature and adds the lead', async () => {
+  const call = setup({ graph: fakeMeta().graph, meta: META });
+  const { token } = await connectedBusiness(call);
+  const verify = await call('GET', 'meta/webhook?hub.mode=subscribe&hub.verify_token=VT&hub.challenge=12345');
+  assert.equal(Buffer.from(verify.data).toString(), '12345');
+  assert.equal((await call('GET', 'meta/webhook?hub.mode=subscribe&hub.verify_token=nope&hub.challenge=1')).status, 403);
+  const payload = { object: 'page', entry: [{ id: '111', changes: [{ field: 'leadgen', value: { page_id: '111', leadgen_id: 'L2' } }] }] };
+  assert.equal((await call('POST', 'meta/webhook', payload, null, { 'x-hub-signature-256': 'sha256=wrong' })).status, 403);
+  const sig = `sha256=${createHmac('sha256', 'SECRET').update(JSON.stringify(payload)).digest('hex')}`;
+  assert.equal((await call('POST', 'meta/webhook', payload, null, { 'x-hub-signature-256': sig })).status, 200);
+  assert.equal((await call('POST', 'meta/webhook', payload, null, { 'x-hub-signature-256': sig })).status, 200);
+  assert.equal((await call('GET', 'leads', null, token)).data.leads.length, 1);
+});
+
+test('disconnecting removes the page', async () => {
+  const call = setup({ graph: fakeMeta().graph, meta: META });
+  const { token } = await connectedBusiness(call);
+  const off = await call('POST', 'meta/disconnect', null, token);
+  assert.equal(off.data.business.meta, null);
 });
