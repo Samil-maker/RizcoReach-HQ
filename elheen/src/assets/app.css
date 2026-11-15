@@ -125,3 +125,6 @@ textarea:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 4px rgba(
   #authView{margin-left:-228px!important}
   #inboxTab,#detailTab,#calendarTab,#settingsTab{max-width:880px}
 }
+
+.inbox-head{display:flex;justify-content:flex-end;margin-bottom:12px}
+#addLeadForm{margin-bottom:14px}

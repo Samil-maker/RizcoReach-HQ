@@ -195,6 +195,13 @@ export function makeHandler(store, env = {}) {
 
     const safeBiz = () => { const { pass, push, ...safe } = biz; return { ...safe, alerts: (push || []).length, aiAvailable: !!env.ask, pushKey: env.pushKey || null }; };
     if (parts[0] === 'me' && method === 'GET') return json({ business: safeBiz() });
+    if (parts[0] === 'password' && method === 'POST') {
+      if (!checkPassword(String(body.current || ''), biz.pass)) return fail(403, 'Your current password is not right.');
+      if (String(body.next || '').length < 8) return fail(400, 'The new password needs at least 8 characters.');
+      biz.pass = hashPassword(String(body.next));
+      await setJSON(`biz/${biz.slug}`, biz);
+      return json({ ok: true });
+    }
     if (parts[0] === 'push' && method === 'POST') {
       const sub = body.subscription;
       if (!sub || typeof sub.endpoint !== 'string' || !/^https:\/\//.test(sub.endpoint) || !sub.keys) return fail(400, 'That device could not be registered.');
@@ -223,6 +230,10 @@ export function makeHandler(store, env = {}) {
       }
       await setJSON(`biz/${biz.slug}`, biz);
       return json({ business: safeBiz() });
+    }
+    if (parts[0] === 'leads' && method === 'POST' && !parts[1]) {
+      const src = ['instagram-dm', 'whatsapp', 'call', 'walk-in', 'referral', 'other'].includes(body.source) ? body.source : 'other';
+      return saveLead(biz, body, src);
     }
     if (parts[0] === 'leads' && method === 'GET' && !parts[1]) return json({ leads: await listLeads(biz.slug) });
     if (parts[0] === 'leads' && parts[1] && method === 'PATCH') {

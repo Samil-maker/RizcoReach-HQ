@@ -3,7 +3,7 @@
   const $ = (id) => document.getElementById(id);
   const el = (tag, props = {}, ...kids) => { const n = Object.assign(document.createElement(tag), props); n.append(...kids); return n; };
   const STATUS = { new: 'New', talking: 'Talking', booked: 'Booked', done: 'Done', lost: 'Lost' };
-  const SOURCES = { instagram: 'Instagram', google: 'Google', link: 'Your link', ad: 'Ad', 'meta-ad': 'Meta ad', website: 'Website' };
+  const SOURCES = { instagram: 'Instagram', google: 'Google', link: 'Your link', ad: 'Ad', 'meta-ad': 'Meta ad', website: 'Website', 'instagram-dm': 'Instagram DM', whatsapp: 'WhatsApp', call: 'Phone call', 'walk-in': 'Walk-in', referral: 'Referral', other: 'Other' };
   let token = null;
   try { token = localStorage.getItem('elheen-token'); } catch { /* private window */ }
   let biz = null, leads = [], filter = 'all', photoUrls = [];
@@ -237,6 +237,22 @@
   $('aiSave').addEventListener('click', async () => {
     try { biz = (await api('PUT', 'me', { aiOn: $('aiOn').checked, aiNotes: $('aiNotes').value })).business; drawAssistant(); $('aiStatus').textContent = 'Saved.'; }
     catch (err) { $('aiStatus').textContent = err.message; }
+  });
+
+  $('addLeadBtn').addEventListener('click', () => { $('addLeadForm').hidden = false; $('addLeadBtn').hidden = true; $('alName').focus(); });
+  $('alCancel').addEventListener('click', () => { $('addLeadForm').hidden = true; $('addLeadBtn').hidden = false; $('addLeadForm').reset(); say('alError', ''); });
+  $('addLeadForm').addEventListener('submit', async (e) => {
+    e.preventDefault(); say('alError', '');
+    try {
+      await api('POST', 'leads', { name: $('alName').value, phone: $('alPhone').value, source: $('alSource').value, note: $('alNote').value });
+      e.target.reset(); $('addLeadForm').hidden = true; $('addLeadBtn').hidden = false; await refresh();
+    } catch (err) { say('alError', err.message); }
+  });
+
+  $('passForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try { await api('POST', 'password', { current: $('passCurrent').value, next: $('passNext').value }); e.target.reset(); $('passStatus').textContent = 'Password changed.'; }
+    catch (err) { $('passStatus').textContent = err.message; }
   });
 
   async function refresh() {

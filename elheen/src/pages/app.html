@@ -38,6 +38,19 @@
   <section id="appView" hidden>
     <div id="inboxTab">
       <div class="stats" id="stats"></div>
+      <div class="inbox-head"><button class="btn btn-primary btn-sm" type="button" id="addLeadBtn">+ Add enquiry</button></div>
+      <form class="panel" id="addLeadForm" hidden>
+        <h2 style="font-size:1.3rem;margin-bottom:12px">Add an enquiry</h2>
+        <p class="hint" style="margin-bottom:14px">For leads that reached you by phone, WhatsApp, Instagram message or in person.</p>
+        <label>Name<input id="alName" required></label>
+        <label class="field">Phone<input id="alPhone" type="tel" inputmode="tel" required></label>
+        <label class="field">Came from
+          <select id="alSource"><option value="whatsapp">WhatsApp</option><option value="instagram-dm">Instagram message</option><option value="call">Phone call</option><option value="walk-in">Walk-in</option><option value="referral">Referral</option><option value="other">Other</option></select>
+        </label>
+        <label class="field">What they want <span class="hint">(optional)</span><textarea id="alNote" maxlength="1000"></textarea></label>
+        <p class="error" id="alError" role="alert" hidden></p>
+        <div class="btn-row" style="margin-top:16px"><button class="btn btn-primary btn-sm" type="submit">Save</button><button class="btn btn-ghost btn-sm" type="button" id="alCancel">Cancel</button></div>
+      </form>
       <div class="chips" id="filters" role="group" aria-label="Filter enquiries"></div>
       <div id="leadList"></div>
     </div>
@@ -89,8 +102,16 @@
         <button class="btn btn-primary wide-btn" type="submit" id="saveSettings">Save changes</button>
         <p class="hint" id="saveStatus" role="status" style="text-align:center;margin-top:10px"></p>
       </form>
+      <form class="panel" id="passForm">
+        <h2 style="font-size:1.4rem;margin-bottom:14px">Change password</h2>
+        <label>Current password<input id="passCurrent" type="password" autocomplete="current-password" required></label>
+        <label class="field">New password <span class="hint">(8 characters or more)</span><input id="passNext" type="password" autocomplete="new-password" minlength="8" required></label>
+        <button class="btn btn-ghost btn-sm" type="submit" style="margin-top:14px">Change password</button>
+        <p class="hint" id="passStatus" role="status" style="margin-top:8px"></p>
+      </form>
     </div>
 
+    <div id="passwordPanel" hidden></div>
     <nav class="tabs" role="tablist" aria-label="Sections">
       <button role="tab" aria-selected="true" data-tab="inbox"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 13l2-8h12l2 8M4 13v6h16v-6M4 13h5l1 2h4l1-2h5"/></svg>Enquiries</button>
       <button role="tab" aria-selected="false" data-tab="board"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="5" height="16" rx="1.500"/><rect x="10" y="4" width="5" height="11" rx="1.500"/><rect x="17" y="4" width="4" height="7" rx="1.500"/></svg>Pipeline</button>

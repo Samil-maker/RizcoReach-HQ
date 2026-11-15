@@ -178,3 +178,25 @@ test('the chat is saved with the enquiry so the owner can read it', async () => 
   await call('POST', 'public/studio-layali/lead', { name: 'A', phone: '0501234567', chat: [{ role: 'user', content: 'Do you do villas?' }, { role: 'assistant', content: 'Yes we do.' }] });
   assert.equal((await call('GET', 'leads', null, token)).data.leads[0].chat.length, 2);
 });
+
+test('the owner can change the password, and the old one stops working', async () => {
+  const call = setup();
+  const { data: { token } } = await signup(call);
+  assert.equal((await call('POST', 'password', { current: 'wrong', next: 'brand-new-pass' }, token)).status, 403);
+  assert.equal((await call('POST', 'password', { current: 'longenough', next: 'short' }, token)).status, 400);
+  assert.equal((await call('POST', 'password', { current: 'longenough', next: 'brand-new-pass' }, token)).status, 200);
+  assert.equal((await call('POST', 'login', { slug: 'studio-layali', password: 'longenough' })).status, 401);
+  assert.equal((await call('POST', 'login', { slug: 'studio-layali', password: 'brand-new-pass' })).status, 200);
+});
+
+test('the owner can add a lead that came in by phone or message', async () => {
+  const call = setup();
+  const { data: { token } } = await signup(call);
+  assert.equal((await call('POST', 'leads', { name: 'A', phone: '0501234567' })).status, 401);
+  const ok = await call('POST', 'leads', { name: 'Walk In', phone: '0501234567', source: 'whatsapp', note: 'Asked about kitchens' }, token);
+  assert.equal(ok.status, 200);
+  const { data: { leads } } = await call('GET', 'leads', null, token);
+  assert.equal(leads[0].source, 'whatsapp');
+  assert.equal((await call('POST', 'leads', { name: 'B', phone: '0507654321', source: 'made-up' }, token)).status, 200);
+  assert.equal((await call('GET', 'leads', null, token)).data.leads.find((l) => l.name === 'B').source, 'other');
+});
