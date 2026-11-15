@@ -15,7 +15,8 @@ function memoryStore() {
   };
 }
 const setup = (extra = {}) => {
-  const h = makeHandler(memoryStore(), { ELHEEN_INVITE: 'letmein', ...extra });
+  const store = memoryStore();
+  const h = makeHandler(store, { ELHEEN_INVITE: 'letmein', ...extra });
   const call = async (method, path, body, token, extraHeaders = {}) => {
     const res = await h(new Request(`https://x.test/api/${path}`, {
       method, headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}), ...extraHeaders },
@@ -24,6 +25,7 @@ const setup = (extra = {}) => {
     const type = res.headers.get('content-type') || '';
     return { status: res.status, data: type.includes('json') ? await res.json() : await res.arrayBuffer(), type, headers: res.headers };
   };
+  call.store = store;
   return call;
 };
 const signup = (call, extra = {}) => call('POST', 'signup', { invite: 'letmein', name: 'Studio Layali', kind: 'interior', password: 'longenough', ...extra });
@@ -287,4 +289,118 @@ test('disconnecting removes the page', async () => {
   const { token } = await connectedBusiness(call);
   const off = await call('POST', 'meta/disconnect', null, token);
   assert.equal(off.data.business.meta, null);
+});
+
+// --- Elheen's own billing through Ziina, and the admin view
+function fakeZiinaPay() {
+  const calls = [], intents = {};
+  const ziina = async (token, path, { method = 'GET', body } = {}) => {
+    calls.push({ token, path, method, body });
+    if (path === 'payment_intent' && method === 'POST') { const id = `pi${calls.length}`; intents[id] = { id, status: 'requires_payment_instrument', redirect_url: `https://pay.ziina.test/${id}` }; return intents[id]; }
+    if (path === 'webhook') return { success: true };
+    if (path.startsWith('payment_intent/')) return intents[path.split('/')[1]];
+    throw new Error(`unexpected ${path}`);
+  };
+  return { ziina, calls, intents };
+}
+const billingEnv = (z) => ({ ziina: z.ziina, billing: { token: 'ELHEEN-ZIINA', test: true }, siteUrl: 'https://x.test', ask: async () => 'hi', ELHEEN_ADMIN_KEY: 'admin-key-0123456789' });
+
+test('a new business starts on a 14-day Grow trial', async () => {
+  const call = setup(billingEnv(fakeZiinaPay()));
+  const { data: { token } } = await signup(call);
+  const { data: { business } } = await call('GET', 'me', null, token);
+  assert.equal(business.billing.state, 'trial');
+  assert.equal(business.billing.plan, 'grow');
+  assert.ok(Math.abs(business.billing.paidUntil - (Date.now() + 14 * 864e5)) < 60e3);
+  assert.equal(business.aiAvailable, true);
+  assert.ok(!JSON.stringify(business).includes('ELHEEN-ZIINA'));
+});
+
+test('paying opens Ziina for the plan price and extends the plan once', async () => {
+  const z = fakeZiinaPay();
+  const call = setup(billingEnv(z));
+  const { data: { token } } = await signup(call);
+  const before = (await call('GET', 'me', null, token)).data.business.billing.paidUntil;
+  const pay = await call('POST', 'billing/pay', { plan: 'start' }, token);
+  assert.match(pay.data.url, /^https:\/\/pay\.ziina\.test\//);
+  const intent = z.calls.find((c) => c.path === 'payment_intent');
+  assert.equal(intent.token, 'ELHEEN-ZIINA');
+  assert.equal(intent.body.amount, 14900);
+  assert.equal(intent.body.currency_code, 'AED');
+  assert.equal(intent.body.test, true);
+  const pid = new URL(intent.body.success_url).searchParams.get('billing');
+  assert.equal((await call('POST', 'billing/check', { id: pid }, token)).data.status, 'pending');
+  z.intents[new URL(pay.data.url).pathname.slice(1)].status = 'completed';
+  const done = await call('POST', 'billing/check', { id: pid }, token);
+  assert.equal(done.data.status, 'paid');
+  assert.equal(done.data.billing.plan, 'start');
+  assert.equal(done.data.billing.state, 'active');
+  assert.ok(Math.abs(done.data.billing.paidUntil - (before + 30 * 864e5)) < 60e3);
+  assert.equal((await call('POST', 'billing/check', { id: pid }, token)).data.billing.paidUntil, done.data.billing.paidUntil);
+  const me = (await call('GET', 'me', null, token)).data.business;
+  assert.equal(me.payments.length, 1);
+  assert.equal(me.aiAvailable, false);
+});
+
+test('one business cannot check another business\'s payment', async () => {
+  const call = setup(billingEnv(fakeZiinaPay()));
+  const a = await signup(call);
+  const b = await signup(call, { name: 'Other Co' });
+  const pay = await call('POST', 'billing/pay', {}, a.data.token);
+  assert.equal(pay.status, 200);
+  const z = (await call.store.list({ prefix: 'payments/' })).blobs[0].key.split('/')[1];
+  assert.equal((await call('POST', 'billing/check', { id: z }, b.data.token)).status, 404);
+});
+
+test('the Ziina webhook confirms a payment only with the right signature', async () => {
+  const z = fakeZiinaPay();
+  const call = setup(billingEnv(z));
+  const { data: { token } } = await signup(call);
+  const pay = await call('POST', 'billing/pay', { plan: 'grow' }, token);
+  const intentId = new URL(pay.data.url).pathname.slice(1);
+  assert.ok(z.calls.some((c) => c.path === 'webhook' && c.body.url === 'https://x.test/api/billing/webhook'));
+  const payload = { event: 'payment_intent.status.updated', data: { id: intentId, status: 'completed' } };
+  assert.equal((await call('POST', 'billing/webhook', payload, null, { 'x-hmac-signature': 'nope' })).status, 403);
+  const { secret } = await call.store.get('platform/ziina', { type: 'json' });
+  const sig = createHmac('sha256', secret).update(JSON.stringify(payload)).digest('hex');
+  assert.equal((await call('POST', 'billing/webhook', payload, null, { 'x-hmac-signature': sig, 'x-nf-client-connection-ip': '9.9.9.9' })).status, 403);
+  assert.equal((await call('POST', 'billing/webhook', payload, null, { 'x-hmac-signature': sig, 'x-nf-client-connection-ip': '3.29.184.186' })).status, 200);
+  assert.equal((await call('GET', 'me', null, token)).data.business.billing.state, 'active');
+});
+
+test('without the Elheen Ziina token, paying says so instead of failing', async () => {
+  const call = setup({ ziina: fakeZiinaPay().ziina, siteUrl: 'https://x.test' });
+  const { data: { token } } = await signup(call);
+  assert.equal((await call('POST', 'billing/pay', {}, token)).status, 503);
+  assert.equal((await call('GET', 'me', null, token)).data.business.billing.online, false);
+});
+
+test('an overdue business loses the assistant but keeps its booking page', async () => {
+  const call = setup(billingEnv(fakeZiinaPay()));
+  const { data: { token } } = await signup(call);
+  await call('PUT', 'me', { aiOn: true }, token);
+  assert.equal((await call('GET', 'public/studio-layali')).data.chat, true);
+  const biz = await call.store.get('biz/studio-layali', { type: 'json' });
+  biz.paidUntil = Date.now() - 10 * 864e5;
+  await call.store.setJSON('biz/studio-layali', biz);
+  const page = await call('GET', 'public/studio-layali');
+  assert.equal(page.status, 200);
+  assert.equal(page.data.chat, false);
+  assert.equal((await call('GET', 'me', null, token)).data.business.billing.state, 'overdue');
+});
+
+test('the admin view needs its key and can extend, include and reset a business', async () => {
+  const call = setup(billingEnv(fakeZiinaPay()));
+  await signup(call);
+  assert.equal((await call('GET', 'admin/businesses', null, null, { 'x-admin-key': 'wrong-key-0123456789' })).status, 401);
+  const h = { 'x-admin-key': 'admin-key-0123456789' };
+  const list = await call('GET', 'admin/businesses', null, null, h);
+  assert.equal(list.data.businesses[0].slug, 'studio-layali');
+  const more = await call('POST', 'admin/business/studio-layali', { addMonths: 2, plan: 'start' }, null, h);
+  assert.equal(more.data.billing.plan, 'start');
+  assert.equal(more.data.billing.state, 'active');
+  assert.equal((await call('POST', 'admin/business/studio-layali', { comp: true }, null, h)).data.billing.state, 'included');
+  const reset = await call('POST', 'admin/business/studio-layali', { resetPassword: true }, null, h);
+  assert.equal((await call('POST', 'login', { slug: 'studio-layali', password: reset.data.password })).status, 200);
+  assert.equal((await setup({})('GET', 'admin/businesses', null, null, h)).status, 401);
 });

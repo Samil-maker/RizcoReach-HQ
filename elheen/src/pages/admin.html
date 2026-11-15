@@ -1,0 +1,18 @@
+<!--{"title":"Admin | Elheen","description":"Elheen admin.","nav":"","noindex":true,"bare":true,"scripts":["admin.js"]}-->
+<div class="shell" style="max-width:1080px">
+  <div class="topbar"><img src="assets/logo.svg" alt="elheen"><span class="badge">Admin</span></div>
+
+  <form class="panel" id="keyForm" style="max-width:460px;margin:24px auto 0">
+    <h1 style="font-size:1.6rem;margin-bottom:12px">Admin sign in</h1>
+    <label>Admin key<input id="adminKey" type="password" autocomplete="current-password" required></label>
+    <p class="error" id="keyError" role="alert" hidden></p>
+    <button class="btn btn-primary wide-btn" type="submit">Open</button>
+  </form>
+
+  <section id="adminView" hidden>
+    <div class="stats" id="summary"></div>
+    <div class="chips" id="adminFilters" role="group" aria-label="Filter businesses"></div>
+    <div id="bizList"></div>
+    <button class="btn btn-ghost btn-sm" type="button" id="adminOut" style="margin-top:20px">Sign out of admin</button>
+  </section>
+</div>

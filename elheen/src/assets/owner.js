@@ -233,8 +233,54 @@
   function drawAssistant() {
     $('aiOn').checked = !!biz.aiOn; $('aiNotes').value = biz.aiNotes || '';
     $('aiOn').disabled = !biz.aiAvailable;
-    if (!biz.aiAvailable) $('aiHint').textContent = 'The assistant is not switched on for your plan yet. Ask us and we will enable it.';
+    if (!biz.aiAvailable) {
+      $('aiHint').textContent = biz.billing.state === 'overdue' ? 'Pay for your plan to switch the assistant back on.'
+        : biz.billing.plan === 'start' ? 'The assistant is part of the Grow plan. Choose Grow under Your plan to use it.'
+        : 'The assistant is being set up and will be available shortly.';
+    }
   }
+
+  // --- the business's own Elheen plan
+  let chosenPlan = null;
+  function drawPlan() {
+    const b = biz.billing;
+    chosenPlan = chosenPlan || b.plan;
+    const until = dubai(b.paidUntil, { day: 'numeric', month: 'long', year: 'numeric' });
+    const days = Math.ceil((b.paidUntil - Date.now()) / 864e5);
+    $('planBadge').className = `badge ${{ trial: 'new', active: 'booked', due: 'lost', overdue: 'lost', included: 'booked' }[b.state]}`;
+    $('planBadge').textContent = { trial: 'Free trial', active: 'Paid', due: 'Payment due', overdue: 'Overdue', included: 'Included' }[b.state];
+    $('planText').textContent = {
+      trial: `${b.planName} plan, free until ${until}.`,
+      active: `${b.planName} plan, paid until ${until}.`,
+      due: `Your payment was due on ${until}. Pay now to keep everything running.`,
+      overdue: `Your plan ended on ${until}. Your booking page still works; pay to switch the assistant back on.`,
+      included: 'Your plan is included in your service with us. Nothing to pay here.',
+    }[b.state];
+    const canPay = b.state !== 'included' && b.online;
+    $('planPick').hidden = !canPay; $('planPay').hidden = !canPay;
+    $('planPick').replaceChildren(...Object.entries(b.plans).map(([key, p]) => {
+      const btn = el('button', { className: 'choice', type: 'button' }, `${p.name}${key === 'grow' ? ' · with the assistant' : ''}`, el('small', {}, `AED ${p.price} a month`));
+      btn.setAttribute('role', 'radio'); btn.setAttribute('aria-pressed', String(key === chosenPlan)); btn.setAttribute('aria-checked', String(key === chosenPlan));
+      btn.addEventListener('click', () => { chosenPlan = key; drawPlan(); });
+      return btn;
+    }));
+    $('planPay').textContent = `Pay AED ${b.plans[chosenPlan].price} for 1 month`;
+    if (b.state !== 'included' && !b.online) $('planStatus').textContent = 'To pay, message us on WhatsApp and we will add it to your account.';
+    const hist = (biz.payments || []).slice(0, 5);
+    $('planHistory').replaceChildren(...(hist.length ? [el('p', { className: 'step-title' }, 'Payments'),
+      ...hist.map((p) => el('div', { className: 'pay-row' }, el('span', {}, dubai(p.at, { day: 'numeric', month: 'short', year: 'numeric' })),
+        el('span', {}, `${b.plans[p.plan]?.name || p.plan} · ${p.months} month${p.months > 1 ? 's' : ''}`), el('b', {}, p.amount ? `AED ${p.amount}` : 'Added by us')))] : []));
+    const warn = ['due', 'overdue'].includes(b.state) || (['trial', 'active'].includes(b.state) && days <= 5);
+    $('planBanner').hidden = !warn;
+    $('planBannerText').textContent = b.state === 'overdue' ? 'Your Elheen plan has ended.' : b.state === 'due' ? 'Your Elheen payment is due.'
+      : `Your ${b.state === 'trial' ? 'free trial' : 'plan'} ends in ${days} day${days === 1 ? '' : 's'}.`;
+  }
+  $('planBannerBtn').addEventListener('click', () => showTab('settings'));
+  $('planPay').addEventListener('click', async () => {
+    $('planPay').disabled = true; $('planStatus').textContent = 'Opening the payment page…';
+    try { location.href = (await api('POST', 'billing/pay', { plan: chosenPlan })).url; }
+    catch (err) { $('planStatus').textContent = err.message; $('planPay').disabled = false; }
+  });
   $('aiSave').addEventListener('click', async () => {
     try { biz = (await api('PUT', 'me', { aiOn: $('aiOn').checked, aiNotes: $('aiNotes').value })).business; drawAssistant(); $('aiStatus').textContent = 'Saved.'; }
     catch (err) { $('aiStatus').textContent = err.message; }
@@ -302,10 +348,27 @@
     }
   }
   async function start() {
+    const back = new URLSearchParams(location.search);
     biz = (await api('GET', 'me')).business;
     $('authView').hidden = true; $('appView').hidden = false; $('signOut').hidden = false;
-    drawSettings(); drawAlerts(); drawAssistant(); drawMeta(); await refresh();
-    const result = new URLSearchParams(location.search).get('meta');
+    drawSettings(); drawAlerts(); drawAssistant(); drawMeta(); drawPlan(); await refresh();
+    const paid = back.get('billing');
+    if (paid) {
+      history.replaceState(null, '', '/app');
+      showTab('settings');
+      if (paid === 'cancelled') $('planStatus').textContent = 'The payment was not completed. Nothing was charged.';
+      else {
+        $('planStatus').textContent = 'Confirming your payment…';
+        for (let i = 0; i < 5; i++) {
+          const r = await api('POST', 'billing/check', { id: paid }).catch(() => null);
+          if (r && r.status === 'paid') { biz = (await api('GET', 'me')).business; chosenPlan = null; drawPlan(); drawAssistant(); $('planStatus').textContent = 'Payment received. Thank you.'; break; }
+          if (r && r.status === 'failed') { $('planStatus').textContent = 'The payment did not go through. Nothing was charged.'; break; }
+          if (i === 4) $('planStatus').textContent = 'We are still confirming your payment. Refresh in a minute.';
+          await new Promise((res) => setTimeout(res, 2000));
+        }
+      }
+    }
+    const result = back.get('meta');
     if (result) {
       history.replaceState(null, '', '/app');
       showTab('settings');

@@ -63,3 +63,23 @@ npm install
 npm test                      # server tests
 node build.mjs && node tests/local-server.mjs   # full app at localhost:8770, invite code "letmein"
 ```
+
+## Billing (Elheen's own price)
+
+Businesses pay Elheen's monthly price by card into the Elheen Ziina account.
+New businesses get a 14-day trial of Grow. Start is AED 149 a month and Grow
+(with the assistant) AED 349. Ziina has no subscriptions, so each payment
+buys one month; the app reminds the owner 5 days before the end. After a
+7-day grace period the assistant switches off; the booking page keeps
+working.
+
+Netlify settings: `ZIINA_TOKEN` (the Elheen Ziina access token, secret) and
+`ZIINA_TEST` (`true` while testing). Payments are confirmed by a signed Ziina
+webhook at `/api/billing/webhook` and again when the owner returns to the app.
+
+## Admin
+
+`/admin` lists every business with its plan, payments and enquiry count, and
+can change a plan, add or remove months (for cash or bank payments), mark a
+business as included (done-for-you clients), and reset a password. It needs
+the key in the Netlify setting `ELHEEN_ADMIN_KEY`.

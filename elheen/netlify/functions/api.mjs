@@ -14,6 +14,26 @@ const GRAPH_VERSION = 'v26.0';
 const META_SCOPES = 'pages_show_list,pages_read_engagement,pages_manage_metadata,pages_manage_ads,leads_retrieval';
 const META_LOOKBACK_DAYS = 30;   // on first connect, bring in lead-form leads from the last month
 
+// Elheen's own prices, paid into the Elheen Ziina account.
+const PLANS = { start: { name: 'Start', price: 149 }, grow: { name: 'Grow', price: 349 } };
+const TRIAL_DAYS = 14;
+const GRACE_DAYS = 7;
+const MONTH_MS = 30 * 864e5;
+const ZIINA_IPS = ['3.29.184.186', '3.29.190.95', '20.233.47.127', '13.202.161.181'];
+const billingOf = (b) => {
+  const plan = PLANS[b.plan] ? b.plan : 'grow';
+  const paidUntil = b.paidUntil || (b.createdAt || Date.now()) + TRIAL_DAYS * 864e5;
+  const now = Date.now();
+  const state = b.comp ? 'included' : now <= paidUntil ? (b.paidOnce ? 'active' : 'trial') : now <= paidUntil + GRACE_DAYS * 864e5 ? 'due' : 'overdue';
+  return { plan, planName: PLANS[plan].name, price: PLANS[plan].price, paidUntil, state };
+};
+const entitled = (b, feature) => {
+  const { plan, state } = billingOf(b);
+  if (state === 'included') return true;
+  if (state === 'overdue') return false;
+  return feature === 'assistant' ? plan === 'grow' : true;
+};
+
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
 const fail = (status, error) => json({ error }, status);
@@ -172,6 +192,37 @@ export function makeHandler(store, env = {}) {
     return added;
   }
 
+  // --- Elheen's own billing, paid by card through Ziina
+  async function applyPayment(pid, ziinaStatus) {
+    const rec = await getJSON(`payments/${pid}`);
+    if (!rec || rec.status === 'paid') return rec;
+    if (ziinaStatus !== 'completed') {
+      if (['failed', 'canceled'].includes(ziinaStatus)) { rec.status = 'failed'; await setJSON(`payments/${pid}`, rec); }
+      return rec;
+    }
+    rec.status = 'paid'; rec.paidAt = Date.now();
+    await setJSON(`payments/${pid}`, rec);
+    const b = await getJSON(`biz/${rec.slug}`);
+    if (b) {
+      b.plan = rec.plan;
+      b.paidUntil = Math.max(Date.now(), billingOf(b).paidUntil) + rec.months * MONTH_MS;
+      b.paidOnce = true;
+      b.payments = [{ at: rec.paidAt, plan: rec.plan, amount: rec.amount, months: rec.months }, ...(b.payments || [])].slice(0, 24);
+      await setJSON(`biz/${b.slug}`, b);
+    }
+    return rec;
+  }
+  async function ensureBillingWebhook() {
+    const rec = await getJSON('platform/ziina');
+    if (rec?.webhook) return;
+    const secret = rec?.secret || id(24);
+    let webhook = false;
+    try { await env.ziina(env.billing.token, 'webhook', { method: 'POST', body: { url: `${env.siteUrl}/api/billing/webhook`, secret } }); webhook = true; }
+    catch { /* payments are still confirmed when the owner comes back to the app */ }
+    await setJSON('platform/ziina', { secret, webhook });
+  }
+  async function countLeads(slug) { return (await store.list({ prefix: `leads/${slug}/` })).blobs.length; }
+
   return async function handler(req) {
     const url = new URL(req.url);
     const parts = url.pathname.replace(/^\/api\/?/, '').split('/').filter(Boolean);
@@ -252,6 +303,7 @@ export function makeHandler(store, env = {}) {
         slug, name, kind, area: clean(body.area, 60), phone: clean(body.phone, 30).replace(/[^\d+]/g, ''),
         services: defaultServices(kind), askPhotos: PHOTO_KINDS.has(kind), askAddress: VISIT_KINDS.has(kind),
         openHour: 9, closeHour: 19, closedDays: [], intakeKey: id(12), pass: hashPassword(password), createdAt: Date.now(),
+        plan: 'grow', paidUntil: Date.now() + TRIAL_DAYS * 864e5,
       };
       await setJSON(`biz/${slug}`, biz);
       return json({ token: await newSession(slug), slug });
@@ -266,9 +318,10 @@ export function makeHandler(store, env = {}) {
     if (parts[0] === 'public' && parts[1]) {
       const biz = await getJSON(`biz/${slugify(parts[1])}`);
       if (!biz) return fail(404, 'This page does not exist.');
-      if (method === 'GET' && !parts[2]) return json({ business: publicBusiness(biz), taken: await takenTimes(biz.slug), chat: !!(env.ask && biz.aiOn) });
+      const chatOn = !!(env.ask && biz.aiOn && entitled(biz, 'assistant'));
+      if (method === 'GET' && !parts[2]) return json({ business: publicBusiness(biz), taken: await takenTimes(biz.slug), chat: chatOn });
       if (method === 'POST' && parts[2] === 'chat') {
-        if (!env.ask || !biz.aiOn) return fail(404, 'Chat is not available.');
+        if (!chatOn) return fail(404, 'Chat is not available.');
         const messages = (Array.isArray(body.messages) ? body.messages : []).slice(-2 * MAX_CHAT_TURNS)
           .map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: clean(m.content, 600) })).filter((m) => m.content);
         if (!messages.length || messages[messages.length - 1].role !== 'user') return fail(400, 'Say something first.');
@@ -277,6 +330,57 @@ export function makeHandler(store, env = {}) {
         catch (e) { console.error('assistant failed:', e.message); return fail(502, 'The assistant is not available right now. Please send your enquiry below.'); }
       }
       if (method === 'POST' && parts[2] === 'lead') return saveLead(biz, body, body.source || url.searchParams.get('src'));
+    }
+
+    // --- Ziina tells us when a business has paid for Elheen
+    if (parts[0] === 'billing' && parts[1] === 'webhook' && method === 'POST') {
+      const ip = req.headers.get('x-nf-client-connection-ip');
+      if (ip && !ZIINA_IPS.includes(ip)) return fail(403, 'Not allowed.');
+      const rec = await getJSON('platform/ziina');
+      if (!rec?.secret) return fail(404, 'Not found.');
+      const sig = req.headers.get('x-hmac-signature') || '';
+      const expected = createHmac('sha256', rec.secret).update(raw).digest('hex');
+      if (sig.length !== expected.length || !timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return fail(403, 'Bad signature.');
+      if (body.event === 'payment_intent.status.updated' && body.data?.id) {
+        const index = await getJSON(`ziinapay/${clean(body.data.id, 60)}`);
+        if (index) await applyPayment(index.pid, body.data.status);
+      }
+      return json({ ok: true });
+    }
+
+    // --- the Elheen owner's admin view, protected by a separate key
+    if (parts[0] === 'admin') {
+      const key = req.headers.get('x-admin-key') || '';
+      const want = env.ELHEEN_ADMIN_KEY || '';
+      if (want.length < 16 || key.length !== want.length || !timingSafeEqual(Buffer.from(key), Buffer.from(want))) return fail(401, 'Wrong admin key.');
+      if (parts[1] === 'businesses' && method === 'GET') {
+        const { blobs } = await store.list({ prefix: 'biz/' });
+        const all = (await Promise.all(blobs.map((x) => getJSON(x.key)))).filter(Boolean);
+        const rows = await Promise.all(all.map(async (b) => ({
+          slug: b.slug, name: b.name, kind: b.kind, area: b.area, createdAt: b.createdAt, comp: !!b.comp,
+          billing: billingOf(b), payments: b.payments || [], leads: await countLeads(b.slug), aiOn: !!b.aiOn, facebook: !!b.meta?.pages?.length,
+        })));
+        return json({ businesses: rows.sort((a, b) => b.createdAt - a.createdAt) });
+      }
+      if (parts[1] === 'business' && parts[2] && method === 'POST') {
+        const b = await getJSON(`biz/${slugify(parts[2])}`);
+        if (!b) return fail(404, 'That business was not found.');
+        let password = null;
+        if (PLANS[body.plan]) b.plan = body.plan;
+        if ('comp' in body) b.comp = !!body.comp;
+        if (Number(body.addMonths)) {
+          const months = Math.max(-12, Math.min(24, Number(body.addMonths) | 0));
+          b.paidUntil = Math.max(Date.now(), billingOf(b).paidUntil) + months * MONTH_MS;
+          if (months > 0) {
+            b.paidOnce = true;
+            b.payments = [{ at: Date.now(), plan: billingOf(b).plan, amount: 0, months, manual: true }, ...(b.payments || [])].slice(0, 24);
+          }
+        }
+        if (body.resetPassword) { password = randomBytes(5).toString('hex'); b.pass = hashPassword(password); }
+        await setJSON(`biz/${b.slug}`, b);
+        return json({ billing: billingOf(b), comp: !!b.comp, password });
+      }
+      return fail(404, 'Not found.');
     }
 
     // --- leads sent in by another system, such as an ad form
@@ -296,7 +400,8 @@ export function makeHandler(store, env = {}) {
     const safeBiz = () => {
       const { pass, push, meta, ...safe } = biz;
       return {
-        ...safe, alerts: (push || []).length, aiAvailable: !!env.ask, pushKey: env.pushKey || null, metaAvailable: metaReady(),
+        ...safe, alerts: (push || []).length, aiAvailable: !!env.ask && entitled(biz, 'assistant'), pushKey: env.pushKey || null, metaAvailable: metaReady(),
+        billing: { ...billingOf(biz), online: !!env.billing?.token, plans: PLANS }, payments: biz.payments || [],
         meta: meta ? { pages: meta.pages.map((p) => ({ id: p.id, name: p.name, live: !!p.live })), lastSync: meta.lastSync || 0, error: meta.error || null } : null,
       };
     };
@@ -304,6 +409,34 @@ export function makeHandler(store, env = {}) {
       if (!env.ask) return json({ ok: false, reason: 'No AI key is set.' });
       try { await env.ask('Reply with the single word: ready', [{ role: 'user', content: 'Are you there?' }]); return json({ ok: true }); }
       catch (e) { return json({ ok: false, reason: clean(e.message, 300) }); }
+    }
+    if (parts[0] === 'billing' && parts[1] === 'pay' && method === 'POST') {
+      if (!env.billing?.token || !env.ziina) return fail(503, 'Card payment is not switched on yet. Message us on WhatsApp to pay.');
+      const plan = PLANS[body.plan] ? body.plan : billingOf(biz).plan;
+      await ensureBillingWebhook();
+      const pid = id();
+      let intent;
+      try {
+        intent = await env.ziina(env.billing.token, 'payment_intent', { method: 'POST', body: {
+          amount: PLANS[plan].price * 100, currency_code: 'AED', message: `Elheen ${PLANS[plan].name} plan, 1 month, for ${biz.name}`,
+          success_url: `${env.siteUrl}/app?billing=${pid}`, cancel_url: `${env.siteUrl}/app?billing=cancelled`, failure_url: `${env.siteUrl}/app?billing=cancelled`,
+          test: !!env.billing.test,
+        } });
+      } catch (e) { return fail(502, `The payment page could not be opened: ${clean(e.message, 120)}`); }
+      await setJSON(`payments/${pid}`, { slug: biz.slug, plan, months: 1, amount: PLANS[plan].price, intentId: String(intent.id), status: 'pending', test: !!env.billing.test, createdAt: Date.now() });
+      await setJSON(`ziinapay/${intent.id}`, { pid });
+      return json({ url: intent.redirect_url });
+    }
+    if (parts[0] === 'billing' && parts[1] === 'check' && method === 'POST') {
+      const pid = clean(body.id, 20);
+      let rec = await getJSON(`payments/${pid}`);
+      if (!rec || rec.slug !== biz.slug) return fail(404, 'That payment was not found.');
+      if (rec.status === 'pending' && env.billing?.token && env.ziina) {
+        try { rec = await applyPayment(pid, (await env.ziina(env.billing.token, `payment_intent/${rec.intentId}`)).status); }
+        catch { /* keep what we know */ }
+      }
+      const fresh = await getJSON(`biz/${biz.slug}`);
+      return json({ status: rec.status, billing: billingOf(fresh || biz) });
     }
     if (parts[0] === 'meta' && parts[1] === 'start' && method === 'POST') {
       if (!metaReady()) return fail(503, 'The Facebook connection is not set up yet.');
@@ -423,6 +556,16 @@ async function graphFetch(path, { method = 'GET', params = {} } = {}) {
   return data;
 }
 
+// Calls Ziina's payment API.
+async function ziinaFetch(token, path, { method = 'GET', body } = {}) {
+  const res = await fetch(`https://api-v2.ziina.com/api/${path}`, {
+    method, headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.message || data.error || `Ziina said ${res.status}`);
+  return data;
+}
+
 // Asks Claude for the assistant's next reply.
 async function askClaude(system, messages) {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -437,6 +580,10 @@ async function askClaude(system, messages) {
 
 export default (req) => makeHandler(getStore({ name: 'elheen', consistency: 'strong' }), {
   ELHEEN_INVITE: process.env.ELHEEN_INVITE,
+  ELHEEN_ADMIN_KEY: process.env.ELHEEN_ADMIN_KEY,
+  ziina: ziinaFetch,
+  billing: process.env.ZIINA_TOKEN ? { token: process.env.ZIINA_TOKEN, test: process.env.ZIINA_TEST === 'true' } : null,
+  siteUrl: process.env.ELHEEN_URL || process.env.URL || 'https://elheen.netlify.app',
   pushKey: process.env.VAPID_PUBLIC_KEY || null,
   notify: pushNotify,
   ask: process.env.ANTHROPIC_API_KEY ? askClaude : null,

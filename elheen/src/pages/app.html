@@ -37,6 +37,7 @@
   <!-- the app -->
   <section id="appView" hidden>
     <div id="inboxTab">
+      <div class="plan-banner" id="planBanner" hidden><span id="planBannerText"></span><button class="btn btn-primary btn-sm" type="button" id="planBannerBtn">Pay now</button></div>
       <div class="stats" id="stats"></div>
       <div class="inbox-head"><button class="btn btn-primary btn-sm" type="button" id="addLeadBtn">+ Add enquiry</button></div>
       <form class="panel" id="addLeadForm" hidden>
@@ -65,6 +66,16 @@
     <div id="calendarTab" hidden><div id="agenda"></div></div>
 
     <div id="settingsTab" hidden>
+      <div class="panel" id="planPanel">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+          <h2 style="font-size:1.4rem">Your plan</h2><span class="badge" id="planBadge"></span>
+        </div>
+        <p style="margin-top:8px;font-weight:600" id="planText"></p>
+        <div class="plan-pick" id="planPick" role="radiogroup" aria-label="Choose a plan"></div>
+        <button class="btn btn-primary wide-btn" type="button" id="planPay" style="margin-top:14px"></button>
+        <p class="hint" id="planStatus" role="status" style="margin-top:10px"></p>
+        <div id="planHistory"></div>
+      </div>
       <div class="panel">
         <h2 style="font-size:1.4rem">Your enquiry link</h2>
         <p class="hint" style="margin-top:6px">Put this in your Instagram bio, your ads and your Google profile.</p>
