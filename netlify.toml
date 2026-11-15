@@ -1,6 +1,11 @@
 [build]
   command = "npm run build"
   publish = "dist"
+  # Skip the build (and the deploy credits it costs) when a push only changes
+  # the cold-email/ or lead-hunter/ tools: the website itself is identical.
+  # Exit 0 = skip, anything else = build. Retries of the same commit, a first
+  # build, or a git error all fall through to a normal build.
+  ignore = 'if [ -n "$CACHED_COMMIT_REF" ] && [ "$CACHED_COMMIT_REF" != "$COMMIT_REF" ]; then git diff --quiet "$CACHED_COMMIT_REF" "$COMMIT_REF" -- . ":(exclude)cold-email" ":(exclude)lead-hunter"; else exit 1; fi'
 
 [build.environment]
   NODE_VERSION = "22"
