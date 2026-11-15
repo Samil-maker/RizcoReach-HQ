@@ -17,14 +17,7 @@ const store = {
   async delete(key) { m.delete(key); },
 };
 // The assistant here is a stand-in that gives one fixed answer, so no key is needed.
-// Ziina here is a stand-in: any token works and every payment succeeds at once.
-const intents = {};
-const ziina = async (token, path, { method = 'GET', body } = {}) => {
-  if (path === 'payment_intent' && method === 'POST') { const id = `pi${Object.keys(intents).length + 1}`; intents[id] = { id, status: 'completed', redirect_url: body.success_url || '/' }; return intents[id]; }
-  if (path.startsWith('payment_intent/')) return intents[path.split('/')[1]];
-  return { success: true };
-};
-const api = makeHandler(store, { ELHEEN_INVITE: 'letmein', ziina, siteUrl: `http://127.0.0.1:${process.env.PORT || 8770}`, ask: async () => 'Yes, we cover all of Dubai. Add your details below and pick a time.' });
+const api = makeHandler(store, { ELHEEN_INVITE: 'letmein', ask: async () => 'Yes, we cover all of Dubai. Add your details below and pick a time.' });
 const types = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2' };
 
 createServer(async (req, res) => {

@@ -4,36 +4,12 @@
   const slug = decodeURIComponent(location.pathname.split('/').filter(Boolean)[1] || new URLSearchParams(location.search).get('b') || '');
   const source = new URLSearchParams(location.search).get('src') || (document.referrer.includes('instagram') ? 'instagram' : document.referrer.includes('google') ? 'google' : 'link');
   const state = { serviceId: null, when: null, location: null, photos: [], chat: [] };
-  const params = new URLSearchParams(location.search);
-  const returning = params.get('paid') || params.get('unpaid');
-  let biz = null;
-  const fmtWhen = (iso) => { const t = new Date(iso); return `${t.toLocaleDateString('en', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Dubai' })} at ${t.toLocaleTimeString('en', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Dubai' })}`; };
-  const depositAmount = (price) => {
-    const d = biz && biz.deposit;
-    if (!d || !(price > 0)) return 0;
-    const a = d.mode === 'percent' ? Math.round((price * d.value) / 100) : Math.min(d.value, price);
-    return a >= 2 ? a : 0;
-  };
-  const drawDeposit = () => {
-    const s = biz && biz.services.find((x) => x.id === state.serviceId);
-    const amount = s ? depositAmount(s.price) : 0;
-    $('depositNote').hidden = !(amount && state.when);
-    $('depositNote').textContent = `To confirm your time, a deposit of AED ${amount} is paid by card on the next screen. The rest is paid at your appointment.`;
-    if (!$('send').disabled) $('send').textContent = amount && state.when ? `Book and pay AED ${amount}` : 'Send enquiry';
-  };
-  const showDone = (title, text, payUrl) => {
-    $('form').hidden = true; $('done').hidden = false;
-    $('doneTitle').textContent = title; $('doneText').textContent = text;
-    $('payAgain').hidden = !payUrl; if (payUrl) $('payAgain').href = payUrl;
-    scrollTo(0, 0);
-  };
   const DUBAI = 4; // hours ahead of UTC, all year
 
   const showError = (text) => { $('error').textContent = text; $('error').hidden = !text; };
   const press = (list, on) => list.forEach((b) => b.setAttribute('aria-pressed', String(b === on)));
 
   fetch(`/api/public/${encodeURIComponent(slug)}`).then((r) => r.ok ? r.json() : Promise.reject()).then(({ business: b, taken, chat }) => {
-    biz = b;
     $('chatBlock').hidden = !chat;
     document.title = `${b.name} | Book`;
     $('initial').textContent = b.name[0].toUpperCase();
@@ -49,7 +25,7 @@
       btn.type = 'button'; btn.className = 'choice'; btn.setAttribute('aria-pressed', 'false');
       const small = document.createElement('small'); small.textContent = `${s.minutes} min · ${price(s)}`;
       btn.append(s.name, small);
-      btn.addEventListener('click', () => { state.serviceId = s.id; press([...$('services').children], btn); drawDeposit(); });
+      btn.addEventListener('click', () => { state.serviceId = s.id; press([...$('services').children], btn); });
       return btn;
     }));
 
@@ -73,13 +49,11 @@
           const off = state.when === at.toISOString();
           state.when = off ? null : at.toISOString();
           press(buttons, off ? null : btn);
-          drawDeposit();
         });
         buttons.push(btn);
       }
       state.when = null;
       $('slots').replaceChildren(...buttons);
-      drawDeposit();
     };
     const dayButtons = days.map((d, i) => {
       const btn = document.createElement('button');
@@ -93,14 +67,7 @@
     $('days').replaceChildren(...dayButtons);
     if (dayButtons[0]) dayButtons[0].click();
 
-    $('loading').hidden = true;
-    if (!returning) { $('form').hidden = false; return; }
-    history.replaceState(null, '', location.pathname);
-    fetch(`/api/public/${encodeURIComponent(slug)}/deposit/${encodeURIComponent(returning)}`).then((r) => r.json()).then((d) => {
-      if (d.status === 'paid') showDone('Booked and paid.', `Your deposit of AED ${d.amount} is paid. See you ${fmtWhen(d.when)}. We will message you on WhatsApp.`);
-      else if (d.status === 'pending' && d.payUrl) showDone('Almost done.', `Your time is held for a few minutes. Pay the AED ${d.amount} deposit to confirm it.`, d.payUrl);
-      else showDone('Payment not completed.', 'Your deposit was not paid, so the time was not confirmed. Please book again or message the business.');
-    }).catch(() => { $('form').hidden = false; });
+    $('loading').hidden = true; $('form').hidden = false;
   }).catch(() => { $('loading').hidden = true; $('missing').hidden = false; });
 
   // Questions: the assistant answers from the business's own details.
@@ -183,11 +150,6 @@
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Something went wrong. Please try again.');
-      if (data.payUrl) {
-        showDone('Taking you to payment…', `Pay the AED ${data.deposit} deposit to confirm your time.`, data.payUrl);
-        location.href = data.payUrl;
-        return;
-      }
       $('form').hidden = true; $('done').hidden = false;
       if (data.when) {
         const t = new Date(data.when);
@@ -199,7 +161,7 @@
       scrollTo(0, 0);
     } catch (err) {
       showError(err.message);
-      $('send').disabled = false; drawDeposit();
+      $('send').disabled = false; $('send').textContent = 'Send enquiry';
     }
   });
 })();

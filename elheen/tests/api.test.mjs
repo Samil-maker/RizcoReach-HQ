@@ -15,8 +15,7 @@ function memoryStore() {
   };
 }
 const setup = (extra = {}) => {
-  const store = memoryStore();
-  const h = makeHandler(store, { ELHEEN_INVITE: 'letmein', ...extra });
+  const h = makeHandler(memoryStore(), { ELHEEN_INVITE: 'letmein', ...extra });
   const call = async (method, path, body, token, extraHeaders = {}) => {
     const res = await h(new Request(`https://x.test/api/${path}`, {
       method, headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}), ...extraHeaders },
@@ -25,7 +24,6 @@ const setup = (extra = {}) => {
     const type = res.headers.get('content-type') || '';
     return { status: res.status, data: type.includes('json') ? await res.json() : await res.arrayBuffer(), type, headers: res.headers };
   };
-  call.store = store;
   return call;
 };
 const signup = (call, extra = {}) => call('POST', 'signup', { invite: 'letmein', name: 'Studio Layali', kind: 'interior', password: 'longenough', ...extra });
@@ -289,107 +287,4 @@ test('disconnecting removes the page', async () => {
   const { token } = await connectedBusiness(call);
   const off = await call('POST', 'meta/disconnect', null, token);
   assert.equal(off.data.business.meta, null);
-});
-
-// --- card deposits through each business's own Ziina account
-function fakeZiina({ rejectToken = false } = {}) {
-  const calls = [];
-  const intents = {};
-  const ziina = async (token, path, { method = 'GET', body } = {}) => {
-    calls.push({ token, path, method, body });
-    if (rejectToken) throw new Error('Unauthorized');
-    if (path === 'payment_intent' && method === 'POST') {
-      const id = `pi_${calls.length}`;
-      intents[id] = { id, status: 'requires_payment_instrument', redirect_url: `https://pay.ziina.test/${id}` };
-      return intents[id];
-    }
-    if (path === 'webhook') return { success: true };
-    if (path.startsWith('payment_intent/')) return intents[path.split('/')[1]];
-    throw new Error(`unexpected ${path}`);
-  };
-  return { ziina, calls, intents };
-}
-async function depositBusiness(call) {
-  const { data: { token } } = await signup(call);
-  const saved = await call('PUT', 'me', { ziinaToken: 'ZIINA-TOKEN', depositMode: 'percent', depositValue: 20, ziinaTest: true }, token);
-  const page = await call('GET', 'public/studio-layali');
-  const paid = page.data.business.services.find((s) => s.price > 0);
-  const free = page.data.business.services.find((s) => !s.price);
-  return { token, saved, page, paid, free };
-}
-
-test('connecting Ziina checks the token and never shows it back', async () => {
-  const z = fakeZiina();
-  const call = setup({ ziina: z.ziina, siteUrl: 'https://x.test' });
-  const { saved, page } = await depositBusiness(call);
-  assert.equal(saved.status, 200);
-  assert.deepEqual(saved.data.business.ziina, { connected: true, test: true, webhook: true });
-  assert.ok(!JSON.stringify(saved.data).includes('ZIINA-TOKEN'));
-  assert.deepEqual(page.data.business.deposit, { mode: 'percent', value: 20 });
-  assert.ok(z.calls.some((c) => c.path === 'webhook' && c.body.url === 'https://x.test/api/ziina/webhook/studio-layali'));
-  const bad = setup({ ziina: fakeZiina({ rejectToken: true }).ziina, siteUrl: 'https://x.test' });
-  const { data: { token } } = await signup(bad);
-  assert.equal((await bad('PUT', 'me', { ziinaToken: 'nope' }, token)).status, 400);
-});
-
-test('booking a paid service asks for a deposit and holds the time', async () => {
-  const z = fakeZiina();
-  const call = setup({ ziina: z.ziina, siteUrl: 'https://x.test' });
-  const { token, paid } = await depositBusiness(call);
-  const when = '2030-03-01T10:00:00.000Z';
-  const res = await call('POST', 'public/studio-layali/lead', { name: 'Layla', phone: '0501234567', serviceId: paid.id, when });
-  assert.equal(res.data.deposit, Math.round(paid.price * 0.2));
-  assert.match(res.data.payUrl, /^https:\/\/pay\.ziina\.test\//);
-  const intentCall = z.calls.filter((c) => c.path === 'payment_intent' && c.method === 'POST').pop();
-  assert.equal(intentCall.body.amount, Math.round(paid.price * 0.2) * 100);
-  assert.equal(intentCall.body.currency_code, 'AED');
-  assert.equal(intentCall.body.test, true);
-  assert.match(intentCall.body.success_url, /\/b\/studio-layali\?paid=/);
-  assert.equal((await call('POST', 'public/studio-layali/lead', { name: 'B', phone: '0507654321', when })).status, 409);
-  const { data: { leads } } = await call('GET', 'leads', null, token);
-  assert.equal(leads[0].deposit.status, 'pending');
-  assert.ok(!('url' in leads[0].deposit) || leads[0].deposit.url);
-});
-
-test('a free service or an enquiry without a time takes no deposit', async () => {
-  const call = setup({ ziina: fakeZiina().ziina, siteUrl: 'https://x.test' });
-  const { paid, free } = await depositBusiness(call);
-  assert.equal((await call('POST', 'public/studio-layali/lead', { name: 'A', phone: '0501234567', serviceId: free.id, when: '2030-03-02T10:00:00Z' })).data.payUrl, null);
-  assert.equal((await call('POST', 'public/studio-layali/lead', { name: 'A', phone: '0501234567', serviceId: paid.id })).data.payUrl, null);
-});
-
-test('the Ziina webhook marks the deposit paid only with the right signature', async () => {
-  const z = fakeZiina();
-  const sent = [];
-  const call = setup({ ziina: z.ziina, siteUrl: 'https://x.test', notify: async (subs, payload) => { sent.push(payload); return []; } });
-  const { token, paid } = await depositBusiness(call);
-  await call('POST', 'push', { subscription: { endpoint: 'https://push.example/a', keys: { p256dh: 'k', auth: 'a' } } }, token);
-  const res = await call('POST', 'public/studio-layali/lead', { name: 'Layla', phone: '0501234567', serviceId: paid.id, when: '2030-03-03T10:00:00Z' });
-  const intentId = new URL(res.data.payUrl).pathname.slice(1);
-  const payload = { event: 'payment_intent.status.updated', data: { id: intentId, status: 'completed' } };
-  assert.equal((await call('POST', 'ziina/webhook/studio-layali', payload, null, { 'x-hmac-signature': 'nope' })).status, 403);
-  assert.equal((await call('POST', 'ziina/webhook/studio-layali', payload, null, { 'x-nf-client-connection-ip': '1.2.3.4' })).status, 403);
-  assert.equal((await call('GET', 'leads', null, token)).data.leads[0].deposit.status, 'pending');
-  const { ziina: { secret } } = await call.store.get('biz/studio-layali', { type: 'json' });
-  const sig = createHmac('sha256', secret).update(JSON.stringify(payload)).digest('hex');
-  assert.equal((await call('POST', 'ziina/webhook/studio-layali', payload, null, { 'x-hmac-signature': sig, 'x-nf-client-connection-ip': '3.29.184.186' })).status, 200);
-  const lead = (await call('GET', 'leads', null, token)).data.leads[0];
-  assert.equal(lead.deposit.status, 'paid');
-  assert.ok(sent.some((p) => /Deposit paid: Layla/.test(p.title)));
-});
-
-test('coming back from Ziina checks the payment directly', async () => {
-  const z = fakeZiina();
-  const call = setup({ ziina: z.ziina, siteUrl: 'https://x.test' });
-  const { token, paid } = await depositBusiness(call);
-  const res = await call('POST', 'public/studio-layali/lead', { name: 'Layla', phone: '0501234567', serviceId: paid.id, when: '2030-03-04T10:00:00Z' });
-  const intentId = new URL(res.data.payUrl).pathname.slice(1);
-  const waiting = await call('GET', `public/studio-layali/deposit/${res.data.id}`);
-  assert.equal(waiting.data.status, 'pending');
-  assert.ok(waiting.data.payUrl);
-  z.intents[intentId].status = 'completed';
-  const done = await call('GET', `public/studio-layali/deposit/${res.data.id}`);
-  assert.equal(done.data.status, 'paid');
-  assert.equal(done.data.payUrl, null);
-  assert.equal((await call('GET', 'leads', null, token)).data.leads[0].deposit.status, 'paid');
 });

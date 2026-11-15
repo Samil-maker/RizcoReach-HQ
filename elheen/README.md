@@ -63,13 +63,3 @@ npm install
 npm test                      # server tests
 node build.mjs && node tests/local-server.mjs   # full app at localhost:8770, invite code "letmein"
 ```
-
-## Card deposits (Ziina)
-
-Each business connects its own Ziina Business account in Set-up by pasting
-an access token from ziina.com/business/connect ("Other builder or custom").
-Deposits are paid into that account directly; Elheen never holds the money.
-When a client books a paid service with a time, they are sent to Ziina's
-payment page and the time is held for 30 minutes. Payment is confirmed by
-Ziina's webhook (signed per business, `/api/ziina/webhook/<business>`) and
-again when the client returns to the booking page.
