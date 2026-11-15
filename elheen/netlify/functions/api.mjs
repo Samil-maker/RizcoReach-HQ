@@ -13,6 +13,8 @@ const SESSION_DAYS = 30;
 const GRAPH_VERSION = 'v26.0';
 const META_SCOPES = 'pages_show_list,pages_read_engagement,pages_manage_metadata,pages_manage_ads,leads_retrieval';
 const META_LOOKBACK_DAYS = 30;   // on first connect, bring in lead-form leads from the last month
+const DEPOSIT_HOLD_MINUTES = 30;  // an unpaid deposit holds the time this long
+const ZIINA_IPS = ['3.29.184.186', '3.29.190.95', '20.233.47.127', '13.202.161.181'];
 
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
@@ -42,9 +44,16 @@ const defaultServices = (kind) => ({
   other: [['Consultation', 30, 0]],
 }[kind] || []).map(([name, minutes, price]) => ({ id: id(4), name, minutes, price }));
 
+const depositOn = (b) => !!(b.ziina?.token && b.deposit && b.deposit.mode !== 'off' && b.deposit.value > 0);
+const depositFor = (b, price) => {
+  if (!depositOn(b) || !(price > 0)) return 0;
+  const amount = b.deposit.mode === 'percent' ? Math.round((price * b.deposit.value) / 100) : Math.min(b.deposit.value, price);
+  return amount >= 2 ? amount : 0;
+};
 const publicBusiness = (b) => ({
   slug: b.slug, name: b.name, kind: b.kind, area: b.area, services: b.services,
   askPhotos: b.askPhotos, askAddress: b.askAddress, openHour: b.openHour, closeHour: b.closeHour, closedDays: b.closedDays,
+  deposit: depositOn(b) ? { mode: b.deposit.mode, value: b.deposit.value } : null,
 });
 
 const MAX_CHAT_TURNS = 12;
@@ -83,8 +92,29 @@ export function makeHandler(store, env = {}) {
     const leads = (await Promise.all(blobs.map((b) => getJSON(b.key)))).filter(Boolean);
     return leads.sort((a, b) => b.createdAt - a.createdAt);
   }
+  const expiredHold = (l) => l.deposit?.status === 'pending' && Date.now() - l.createdAt > (DEPOSIT_HOLD_MINUTES + 5) * 6e4;
   async function takenTimes(slug) {
-    return (await listLeads(slug)).filter((l) => l.when && l.status !== 'lost').map((l) => l.when);
+    return (await listLeads(slug)).filter((l) => l.when && l.status !== 'lost' && !expiredHold(l)).map((l) => l.when);
+  }
+  async function alertOwner(biz, payload) {
+    if (!env.notify || !(biz.push || []).length) return;
+    try {
+      const dead = await env.notify(biz.push, payload);
+      if (dead && dead.length) { biz.push = biz.push.filter((p) => !dead.includes(p.endpoint)); await setJSON(`biz/${biz.slug}`, biz); }
+    } catch { /* an alert failing must never lose the enquiry */ }
+  }
+  // Card deposits go straight to the business's own Ziina account.
+  async function updateDeposit(biz, leadId, ziinaStatus) {
+    const key = `leads/${biz.slug}/${leadId}`;
+    const lead = await getJSON(key);
+    if (!lead?.deposit) return null;
+    const next = ziinaStatus === 'completed' ? 'paid' : ['failed', 'canceled'].includes(ziinaStatus) ? 'failed' : 'pending';
+    if (next === lead.deposit.status || lead.deposit.status === 'paid') return lead;
+    lead.deposit.status = next;
+    lead.history.push({ at: Date.now(), text: next === 'paid' ? `Deposit of AED ${lead.deposit.amount} paid` : 'Deposit payment did not go through' });
+    await setJSON(key, lead);
+    if (next === 'paid') await alertOwner(biz, { title: `Deposit paid: ${lead.name}`, body: `AED ${lead.deposit.amount}${lead.service ? ` · ${lead.service}` : ''}`, url: '/app' });
+    return lead;
   }
 
   async function saveLead(biz, body, source, opts = {}) {
@@ -110,6 +140,7 @@ export function makeHandler(store, env = {}) {
       await store.set(`photos/${biz.slug}/${leadId}/${i}`, bytes, { metadata: { type: `image/${m[1]}` } });
       photos.push(i);
     }
+    const depositAmount = opts.deposit && when ? depositFor(biz, service?.price) : 0;
     const lead = {
       id: leadId, name, phone, serviceId: service?.id || null, service: service?.name || clean(body.service, 80) || null,
       price: service?.price ?? null, note: clean(body.note, 1000), address: clean(body.address, 300),
@@ -120,18 +151,30 @@ export function makeHandler(store, env = {}) {
       photos, source: clean(source, 30) || 'link', status: when ? 'booked' : 'new', when, createdAt: opts.createdAt || Date.now(),
       history: [{ at: Date.now(), text: when ? 'Booked through the enquiry page' : 'Enquiry received' }],
     };
-    await setJSON(`leads/${biz.slug}/${leadId}`, lead);
-    if (env.notify && (biz.push || []).length) {
+    let payUrl = null;
+    if (depositAmount && env.ziina) {
+      const page = `${env.siteUrl}/b/${biz.slug}`;
       try {
-        const dead = await env.notify(biz.push, {
-          title: when ? `New booking: ${name}` : `New enquiry: ${name}`,
-          body: [lead.service, lead.source !== 'link' ? `from ${lead.source}` : null].filter(Boolean).join(' · ') || 'Tap to open',
-          url: '/app',
-        });
-        if (dead && dead.length) { biz.push = biz.push.filter((p) => !dead.includes(p.endpoint)); await setJSON(`biz/${biz.slug}`, biz); }
-      } catch { /* an alert failing must never lose the enquiry */ }
+        const intent = await env.ziina(biz.ziina.token, 'payment_intent', { method: 'POST', body: {
+          amount: depositAmount * 100, currency_code: 'AED', message: `Deposit for ${service.name} at ${biz.name}`,
+          success_url: `${page}?paid=${leadId}`, cancel_url: `${page}?unpaid=${leadId}`, failure_url: `${page}?unpaid=${leadId}`,
+          expiry: String(Date.now() + DEPOSIT_HOLD_MINUTES * 6e4), test: !!biz.ziina.test,
+        } });
+        lead.deposit = { amount: depositAmount, status: 'pending', intentId: String(intent.id), url: intent.redirect_url, test: !!biz.ziina.test };
+        await setJSON(`ziina/${intent.id}`, { slug: biz.slug, leadId });
+        payUrl = intent.redirect_url;
+      } catch (e) {
+        lead.deposit = { amount: depositAmount, status: 'error' };
+        lead.history.push({ at: Date.now(), text: `Deposit could not be requested: ${clean(e.message, 120)}` });
+      }
     }
-    return json({ ok: true, id: leadId, when });
+    await setJSON(`leads/${biz.slug}/${leadId}`, lead);
+    await alertOwner(biz, {
+      title: when ? `New booking: ${name}` : `New enquiry: ${name}`,
+      body: [lead.service, payUrl ? 'deposit pending' : null, lead.source !== 'link' ? `from ${lead.source}` : null].filter(Boolean).join(' · ') || 'Tap to open',
+      url: '/app',
+    });
+    return json({ ok: true, id: leadId, when, payUrl, deposit: lead.deposit ? lead.deposit.amount : 0 });
   }
 
   // --- Facebook and Instagram lead forms
@@ -276,7 +319,33 @@ export function makeHandler(store, env = {}) {
         try { return json({ reply: await env.ask(assistantBrief(biz), messages) }); }
         catch (e) { console.error('assistant failed:', e.message); return fail(502, 'The assistant is not available right now. Please send your enquiry below.'); }
       }
-      if (method === 'POST' && parts[2] === 'lead') return saveLead(biz, body, body.source || url.searchParams.get('src'));
+      if (method === 'POST' && parts[2] === 'lead') return saveLead(biz, body, body.source || url.searchParams.get('src'), { deposit: true });
+      if (method === 'GET' && parts[2] === 'deposit' && parts[3]) {
+        let lead = await getJSON(`leads/${biz.slug}/${clean(parts[3], 20)}`);
+        if (!lead?.deposit) return fail(404, 'Not found.');
+        if (lead.deposit.status === 'pending' && biz.ziina?.token && env.ziina) {
+          try { lead = (await updateDeposit(biz, lead.id, (await env.ziina(biz.ziina.token, `payment_intent/${lead.deposit.intentId}`)).status)) || lead; }
+          catch { /* keep what we know */ }
+        }
+        const d = lead.deposit;
+        return json({ status: expiredHold(lead) ? 'expired' : d.status, amount: d.amount, when: lead.when, payUrl: d.status === 'pending' && !expiredHold(lead) ? d.url : null });
+      }
+    }
+
+    // --- Ziina tells us when a deposit is paid
+    if (parts[0] === 'ziina' && parts[1] === 'webhook' && parts[2] && method === 'POST') {
+      const ip = req.headers.get('x-nf-client-connection-ip');
+      if (ip && !ZIINA_IPS.includes(ip)) return fail(403, 'Not allowed.');
+      const b = await getJSON(`biz/${slugify(parts[2])}`);
+      if (!b?.ziina?.secret) return fail(404, 'Not found.');
+      const sig = req.headers.get('x-hmac-signature') || '';
+      const expected = createHmac('sha256', b.ziina.secret).update(raw).digest('hex');
+      if (sig.length !== expected.length || !timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return fail(403, 'Bad signature.');
+      if (body.event === 'payment_intent.status.updated' && body.data?.id) {
+        const index = await getJSON(`ziina/${clean(body.data.id, 60)}`);
+        if (index && index.slug === b.slug) await updateDeposit(b, index.leadId, body.data.status);
+      }
+      return json({ ok: true });
     }
 
     // --- leads sent in by another system, such as an ad form
@@ -294,8 +363,10 @@ export function makeHandler(store, env = {}) {
     if (!biz) return fail(401, 'Please sign in.');
 
     const safeBiz = () => {
-      const { pass, push, meta, ...safe } = biz;
+      const { pass, push, meta, ziina, ...safe } = biz;
       return {
+        ziina: ziina?.token ? { connected: true, test: !!ziina.test, webhook: !!ziina.webhook } : null,
+        deposit: biz.deposit || { mode: 'off', value: 0 },
         ...safe, alerts: (push || []).length, aiAvailable: !!env.ask, pushKey: env.pushKey || null, metaAvailable: metaReady(),
         meta: meta ? { pages: meta.pages.map((p) => ({ id: p.id, name: p.name, live: !!p.live })), lastSync: meta.lastSync || 0, error: meta.error || null } : null,
       };
@@ -353,6 +424,25 @@ export function makeHandler(store, env = {}) {
       if ('askAddress' in body) biz.askAddress = !!body.askAddress;
       if ('aiOn' in body) biz.aiOn = !!body.aiOn;
       if ('aiNotes' in body) biz.aiNotes = clean(body.aiNotes, 1500);
+      if (body.ziinaRemove) biz.ziina = null;
+      if (body.ziinaToken && env.ziina) {
+        const token = clean(body.ziinaToken, 2000);
+        try {
+          await env.ziina(token, 'payment_intent', { method: 'POST', body: { amount: 200, currency_code: 'AED', message: 'Elheen connection check', test: true } });
+        } catch (e) { return fail(400, `Ziina did not accept that token: ${clean(e.message, 150)}`); }
+        const secret = id(24);
+        let webhook = false;
+        try { await env.ziina(token, 'webhook', { method: 'POST', body: { url: `${env.siteUrl}/api/ziina/webhook/${biz.slug}`, secret } }); webhook = true; }
+        catch { /* payments are still confirmed when the client comes back to the page */ }
+        biz.ziina = { token, secret, webhook, test: biz.ziina?.test ?? false };
+      }
+      if ('ziinaTest' in body && biz.ziina) biz.ziina.test = !!body.ziinaTest;
+      if ('depositMode' in body || 'depositValue' in body) {
+        const mode = ['off', 'percent', 'fixed'].includes(body.depositMode) ? body.depositMode : (biz.deposit?.mode || 'off');
+        const value = Math.max(0, Number('depositValue' in body ? body.depositValue : biz.deposit?.value) || 0);
+        if (mode === 'percent' && value > 100) return fail(400, 'A percentage deposit cannot be more than 100.');
+        biz.deposit = { mode, value };
+      }
       for (const k of ['openHour', 'closeHour']) {
         if (k in body) biz[k] = Math.min(24, Math.max(0, Number(body[k]) | 0));
       }
@@ -423,6 +513,16 @@ async function graphFetch(path, { method = 'GET', params = {} } = {}) {
   return data;
 }
 
+// Calls Ziina's payment API with one business's own token.
+async function ziinaFetch(token, path, { method = 'GET', body } = {}) {
+  const res = await fetch(`https://api-v2.ziina.com/api/${path}`, {
+    method, headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.message || data.error || `Ziina said ${res.status}`);
+  return data;
+}
+
 // Asks Claude for the assistant's next reply.
 async function askClaude(system, messages) {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -441,6 +541,8 @@ export default (req) => makeHandler(getStore({ name: 'elheen', consistency: 'str
   notify: pushNotify,
   ask: process.env.ANTHROPIC_API_KEY ? askClaude : null,
   graph: graphFetch,
+  ziina: ziinaFetch,
+  siteUrl: process.env.ELHEEN_URL || process.env.URL || 'https://elheen.netlify.app',
   meta: {
     appId: process.env.META_APP_ID, appSecret: process.env.META_APP_SECRET, verifyToken: process.env.META_VERIFY_TOKEN,
     redirectUri: `${process.env.ELHEEN_URL || process.env.URL || 'https://elheen.netlify.app'}/api/meta/callback`,

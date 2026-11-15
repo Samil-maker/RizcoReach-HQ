@@ -71,6 +71,27 @@
         <div class="link-box"><input id="shareLink" readonly><button class="btn btn-primary btn-sm" id="copyLink" type="button">Copy</button></div>
         <p class="hint" id="copyStatus" role="status"></p>
       </div>
+      <form class="panel" id="payForm">
+        <h2 style="font-size:1.4rem">Card deposits</h2>
+        <p class="hint" style="margin-top:6px" id="payHint">Ask clients to pay a deposit by card when they book a paid service. The money goes straight to your own Ziina account.</p>
+        <div id="payConnect">
+          <label class="field">Ziina access token <span class="hint">(from ziina.com/business/connect, choose “Other builder or custom”)</span><input id="ziinaToken" type="password" autocomplete="off"></label>
+        </div>
+        <p style="margin-top:10px;font-weight:650" id="payConnected" hidden>Ziina is connected.</p>
+        <div id="paySettings" hidden>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px">
+            <label>Deposit<select id="depositMode"><option value="off">No deposit</option><option value="percent">Percentage of price</option><option value="fixed">Fixed amount (AED)</option></select></label>
+            <label>Amount<input id="depositValue" type="number" min="0" step="1"></label>
+          </div>
+          <label class="check"><input type="checkbox" id="ziinaTest">Test mode (no real money is taken)</label>
+        </div>
+        <p class="error" id="payError" role="alert" hidden></p>
+        <div class="btn-row" style="margin-top:12px">
+          <button class="btn btn-primary btn-sm" type="submit" id="paySave">Connect Ziina</button>
+          <button class="btn btn-ghost btn-sm" type="button" id="payRemove" hidden>Disconnect</button>
+        </div>
+        <p class="hint" id="payStatus" role="status" style="margin-top:8px"></p>
+      </form>
       <div class="panel">
         <h2 style="font-size:1.4rem">Facebook and Instagram lead ads</h2>
         <p class="hint" style="margin-top:6px" id="metaHint"></p>

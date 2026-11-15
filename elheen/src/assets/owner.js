@@ -72,7 +72,8 @@
       const card = el('button', { className: 'lead', type: 'button' },
         el('b', {}, l.name), el('time', {}, ago(l.createdAt)),
         el('span', { className: 'meta' }, [l.service, l.when ? dubai(l.when, { weekday: 'short', hour: 'numeric', minute: '2-digit' }) : null].filter(Boolean).join(' · ') || 'General enquiry'),
-        el('span', {}, el('span', { className: `badge ${l.status}` }, STATUS[l.status]), ' ', el('span', { className: 'badge src' }, SOURCES[l.source] || l.source)));
+        el('span', {}, el('span', { className: `badge ${l.status}` }, STATUS[l.status]), ' ', el('span', { className: 'badge src' }, SOURCES[l.source] || l.source),
+          ...(l.deposit?.status === 'paid' ? [' ', el('span', { className: 'badge booked' }, 'Deposit paid')] : [])));
       card.addEventListener('click', () => openLead(l.id));
       return card;
     }));
@@ -117,7 +118,8 @@
         ...(l.email ? [el('a', { className: 'btn btn-ghost', href: `mailto:${l.email}` }, 'Email')] : []),
         ...(l.location ? [el('a', { className: 'btn btn-ghost', href: `https://maps.google.com/?q=${l.location}`, target: '_blank', rel: 'noopener' }, 'Open map')] : [])),
       el('div', { className: 'rows' },
-        row('Phone', l.phone), row('Email', l.email), row('Ad', [l.adName, l.campaign].filter(Boolean).join(' · ')), row('Wants', l.service), row('Price', l.price ? `AED ${l.price}` : (l.price === 0 ? 'Free' : '')),
+        row('Phone', l.phone), row('Email', l.email), row('Ad', [l.adName, l.campaign].filter(Boolean).join(' · ')), row('Wants', l.service),
+        row('Deposit', l.deposit ? `AED ${l.deposit.amount} · ${{ paid: 'paid', pending: 'waiting for payment', failed: 'not paid', error: 'could not be requested' }[l.deposit.status] || l.deposit.status}${l.deposit.test ? ' (test)' : ''}` : ''), row('Price', l.price ? `AED ${l.price}` : (l.price === 0 ? 'Free' : '')),
         row('Message', l.note), row('Address', l.address), row('Received', dubai(l.createdAt, { dateStyle: 'medium', timeStyle: 'short' }))),
       ...((l.photos || []).length ? [el('p', { className: 'step-title' }, 'Photos'), gallery] : []),
       ...((l.chat || []).length ? [el('p', { className: 'step-title' }, 'Chat with the assistant'),
@@ -256,6 +258,36 @@
     catch (err) { $('passStatus').textContent = err.message; }
   });
 
+  // --- card deposits through Ziina
+  function drawPay() {
+    const on = !!biz.ziina;
+    $('payConnect').hidden = on; $('payConnected').hidden = !on; $('paySettings').hidden = !on; $('payRemove').hidden = !on;
+    $('paySave').textContent = on ? 'Save deposit settings' : 'Connect Ziina';
+    $('depositMode').value = biz.deposit?.mode || 'off';
+    $('depositValue').value = biz.deposit?.value || '';
+    $('ziinaTest').checked = !!biz.ziina?.test;
+    if (on) $('payConnected').textContent = biz.ziina.test ? 'Ziina is connected, in test mode.' : 'Ziina is connected.';
+  }
+  $('payForm').addEventListener('submit', async (e) => {
+    e.preventDefault(); say('payError', ''); $('payStatus').textContent = '';
+    const change = biz.ziina
+      ? { depositMode: $('depositMode').value, depositValue: $('depositValue').value, ziinaTest: $('ziinaTest').checked }
+      : { ziinaToken: $('ziinaToken').value.trim() };
+    if (!biz.ziina && !change.ziinaToken) { say('payError', 'Paste your Ziina access token first.'); return; }
+    $('paySave').disabled = true;
+    try {
+      biz = (await api('PUT', 'me', change)).business;
+      $('ziinaToken').value = ''; drawPay();
+      $('payStatus').textContent = change.ziinaToken ? 'Connected. Now choose your deposit and save.' : 'Saved.';
+    } catch (err) { say('payError', err.message); }
+    $('paySave').disabled = false;
+  });
+  $('payRemove').addEventListener('click', async () => {
+    if (!confirm('Stop taking deposits by card?')) return;
+    try { biz = (await api('PUT', 'me', { ziinaRemove: true })).business; drawPay(); $('payStatus').textContent = 'Disconnected.'; }
+    catch (err) { say('payError', err.message); }
+  });
+
   // --- Facebook lead ads
   function drawMeta() {
     const m = biz.meta, on = !!(m && m.pages.length);
@@ -304,7 +336,7 @@
   async function start() {
     biz = (await api('GET', 'me')).business;
     $('authView').hidden = true; $('appView').hidden = false; $('signOut').hidden = false;
-    drawSettings(); drawAlerts(); drawAssistant(); drawMeta(); await refresh();
+    drawSettings(); drawAlerts(); drawAssistant(); drawMeta(); drawPay(); await refresh();
     const result = new URLSearchParams(location.search).get('meta');
     if (result) {
       history.replaceState(null, '', '/app');
