@@ -274,7 +274,7 @@ export function makeHandler(store, env = {}) {
         if (!messages.length || messages[messages.length - 1].role !== 'user') return fail(400, 'Say something first.');
         if (messages.filter((m) => m.role === 'user').length > MAX_CHAT_TURNS) return json({ reply: 'Thanks. Please fill in your details below and the team will take it from here.' });
         try { return json({ reply: await env.ask(assistantBrief(biz), messages) }); }
-        catch { return fail(502, 'The assistant is not available right now. Please send your enquiry below.'); }
+        catch (e) { console.error('assistant failed:', e.message); return fail(502, 'The assistant is not available right now. Please send your enquiry below.'); }
       }
       if (method === 'POST' && parts[2] === 'lead') return saveLead(biz, body, body.source || url.searchParams.get('src'));
     }
@@ -300,6 +300,11 @@ export function makeHandler(store, env = {}) {
         meta: meta ? { pages: meta.pages.map((p) => ({ id: p.id, name: p.name, live: !!p.live })), lastSync: meta.lastSync || 0, error: meta.error || null } : null,
       };
     };
+    if (parts[0] === 'ai-check' && method === 'GET') {
+      if (!env.ask) return json({ ok: false, reason: 'No AI key is set.' });
+      try { await env.ask('Reply with the single word: ready', [{ role: 'user', content: 'Are you there?' }]); return json({ ok: true }); }
+      catch (e) { return json({ ok: false, reason: clean(e.message, 300) }); }
+    }
     if (parts[0] === 'meta' && parts[1] === 'start' && method === 'POST') {
       if (!metaReady()) return fail(503, 'The Facebook connection is not set up yet.');
       const st = id(18);
@@ -425,8 +430,8 @@ async function askClaude(system, messages) {
     headers: { 'content-type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
     body: JSON.stringify({ model: process.env.ELHEEN_AI_MODEL || 'claude-haiku-5-5', max_tokens: 300, system, messages }),
   });
-  if (!res.ok) throw new Error(`AI request failed: ${res.status}`);
-  const data = await res.json();
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(`The AI service said ${res.status}: ${data.error?.message || 'no reason given'}`);
   return (data.content || []).filter((c) => c.type === 'text').map((c) => c.text).join('').trim();
 }
 
