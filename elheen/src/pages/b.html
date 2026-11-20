@@ -8,6 +8,16 @@
     <p class="step-title" id="svcTitle">What do you need?</p>
     <div class="choices" id="services" role="group" aria-labelledby="svcTitle"></div>
 
+    <div id="qualifyBlock" hidden>
+      <p class="step-title" id="budgetTitle">Your budget</p>
+      <p class="hint" id="minNote" hidden></p>
+      <div class="pills" id="budgets" role="group" aria-labelledby="budgetTitle"></div>
+      <p class="step-title" id="startTitle">When do you want to start?</p>
+      <div class="pills" id="starts" role="group" aria-labelledby="startTitle"></div>
+      <p class="step-title" id="propTitle">The property</p>
+      <div class="pills" id="properties" role="group" aria-labelledby="propTitle"></div>
+    </div>
+
     <p class="step-title">Your details</p>
     <label>Your name<input id="name" autocomplete="name" required></label>
     <label class="field">WhatsApp number<input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+971 5X XXX XXXX" required></label>

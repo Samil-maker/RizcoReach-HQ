@@ -11,6 +11,25 @@ export const PROJECT_KINDS = new Set(['interior', 'home', 'cleaning', 'other']);
 export const VISIT_KINDS = new Set(['cleaning', 'home', 'interior']);              // the team goes to the client
 export const PHOTO_KINDS = new Set(['home', 'interior']);                          // property photos matter
 
+// Screening questions on the enquiry link, so time-wasters show up before a site visit, not after.
+export const BUDGETS = {
+  u10: ['Under AED 10,000', 0, 10000], b10: ['AED 10,000 to 50,000', 10000, 50000],
+  b50: ['AED 50,000 to 150,000', 50000, 150000], o150: ['Over AED 150,000', 150000, null], unsure: ['Not sure yet', null, null],
+};
+export const STARTS = { now: 'As soon as possible', m3: 'Within 3 months', m6: 'In 3 to 6 months', ideas: 'Just getting ideas' };
+export const PROPERTIES = { villa: 'Villa or townhouse', apartment: 'Apartment', office: 'Office or shop', other: 'Something else' };
+// 'good': a real budget at or above the owner's minimum, starting soon. 'check': below the minimum, or only getting ideas.
+export function fitOf(biz, l) {
+  const band = BUDGETS[l.budgetBand];
+  const min = Number(biz.minJob) || 0;
+  const why = [];
+  if (band && band[2] != null && min && band[2] <= min) why.push('budget');
+  if (l.start === 'ideas') why.push('ideas');
+  if (why.length) return { fit: 'check', why };
+  if (band && band[1] != null && ['now', 'm3'].includes(l.start)) return { fit: 'good', why: [] };
+  return null;
+}
+
 // Elheen's own price, paid into the Elheen Ziina account. One plan, everything included.
 export const PLANS = {
   month: { name: 'Monthly', price: 79, months: 1 },
@@ -105,7 +124,7 @@ export function computeTasks(biz, leads, quotes, now = Date.now()) {
     if (snoozed(l) || l.status === 'lost') continue;
     const touched = l.lastTouch || l.createdAt;
     if (l.status === 'new') {
-      tasks.push({ type: 'reply', leadId: l.id, dueAt: l.createdAt, title: `Reply to ${l.name}`, detail: l.service || 'New enquiry' });
+      tasks.push({ type: 'reply', leadId: l.id, dueAt: l.createdAt, fit: fitOf(biz, l)?.fit || null, title: `Reply to ${l.name}`, detail: l.service || 'New enquiry' });
     } else if (l.status === 'talking' && now - touched >= 3 * DAY) {
       tasks.push({ type: 'checkin', leadId: l.id, dueAt: touched + 3 * DAY, title: `Check in with ${l.name}`, detail: 'No contact for 3 days' });
     }
@@ -133,7 +152,8 @@ export function computeTasks(biz, leads, quotes, now = Date.now()) {
   for (const q of quotes) {
     if (q.status !== 'sent' || snoozed(q) || !q.sentAt) continue;
     const l = byLead.get(q.leadId);
-    if (!l || l.status === 'lost' || l.status === 'won') continue;
+    // extra work on a won job is chased too: it must be approved before the work starts
+    if (!l || l.status === 'lost' || (['won', 'done'].includes(l.status) && !q.variation)) continue;
     const step = (q.followUps || []).length;
     if (step >= QUOTE_FOLLOW_DAYS.length) continue;
     // opened but no answer after a day is the best moment to call, so the first chase comes early
@@ -141,7 +161,7 @@ export function computeTasks(biz, leads, quotes, now = Date.now()) {
     if (now < dueAt) continue;
     const days = Math.floor((now - q.sentAt) / DAY);
     tasks.push({
-      type: 'quote', leadId: l.id, quoteId: q.id, dueAt, step: step + 1, number: q.number, total: q.totals.total, publicKey: q.publicKey, viewed: !!q.viewedAt, external: !!q.external, title2: q.title,
+      type: 'quote', leadId: l.id, quoteId: q.id, dueAt, step: step + 1, number: q.number, total: q.totals.total, publicKey: q.publicKey, viewed: !!q.viewedAt, external: !!q.external, variation: !!q.variation, title2: q.title,
       title: `Follow up ${q.number} with ${l.name}`, detail: `${aedText(q.totals.total)} · sent ${days} day${days === 1 ? '' : 's'} ago${q.viewedAt ? ' · opened' : q.external ? '' : ' · not opened yet'}`,
     });
   }

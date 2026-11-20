@@ -23,7 +23,7 @@
     document.title = `${q.number} from ${b.name}`;
     $('bizName').textContent = b.name;
     $('bizLine').textContent = [b.area, b.trn ? `TRN ${b.trn}` : ''].filter(Boolean).join(' · ');
-    $('qNumber').textContent = `Quote ${q.number}`;
+    $('qNumber').textContent = `${q.variation ? 'Extra work' : 'Quote'} ${q.number}`;
     $('qDate').textContent = q.sentAt ? date(q.sentAt) : '';
     $('qValid').textContent = q.validUntil ? `Valid until ${date(q.validUntil)}` : '';
     $('client').textContent = client || 'You';
@@ -47,9 +47,13 @@
 
     const open = q.state === 'sent';
     $('acceptForm').hidden = !open; $('declineShow').hidden = !open; $('declineForm').hidden = true;
-    $('acceptNote').textContent = open ? `By accepting, you agree to the price and terms above. ${b.name} will be told straight away.` : '';
+    $('acceptNote').textContent = !open ? '' : q.variation
+      ? `By approving, you agree to this extra work and its price before it starts. It is added to your existing job with ${b.name}.`
+      : `By accepting, you agree to the price and terms above. ${b.name} will be told straight away.`;
+    $('acceptTitle').textContent = q.variation ? 'Approve this extra work?' : 'Happy with this quote?';
+    $('acceptBtn').textContent = q.variation ? 'Approve extra work' : 'Accept quote';
     const msg = {
-      accepted: `Accepted by ${q.acceptedBy} on ${date(q.acceptedAt)}. ${b.name} has been told and will be in touch about the next steps.`,
+      accepted: `${q.variation ? 'Approved' : 'Accepted'} by ${q.acceptedBy} on ${date(q.acceptedAt)}. ${b.name} has been told and will be in touch about the next steps.`,
       declined: `You declined this quote. If you change your mind, message ${b.name} for an updated one.`,
       expired: `This quote expired on ${date(q.validUntil)}. Message ${b.name} for an updated one.`,
     }[q.state];
@@ -79,7 +83,7 @@
     $('acceptBtn').disabled = true; $('acceptBtn').textContent = 'Accepting…';
     try { data = await post('accept', { name }); draw(); scrollTo({ top: 0, behavior: 'smooth' }); }
     catch (err) { $('acceptError').textContent = err.message; $('acceptError').hidden = false; }
-    $('acceptBtn').disabled = false; $('acceptBtn').textContent = 'Accept quote';
+    $('acceptBtn').disabled = false; $('acceptBtn').textContent = data?.quote?.variation ? 'Approve extra work' : 'Accept quote';
   });
   $('declineShow').addEventListener('click', () => { $('declineForm').hidden = false; $('declineShow').hidden = true; $('declineReason').focus(); });
   $('declineCancel').addEventListener('click', () => { $('declineForm').hidden = true; $('declineShow').hidden = false; });

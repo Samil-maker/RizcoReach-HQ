@@ -27,6 +27,11 @@
   // --- words
   const STAGES = { new: 'New', talking: 'Talking', booked: 'Visit booked', quoted: 'Quote sent', won: 'Won', done: 'Finished', lost: 'Lost' };
   const SHOP_STAGES = { new: 'New', talking: 'Talking', booked: 'Booked', quoted: 'Quote sent', won: 'Won', done: 'Done', lost: 'Lost' };
+  const BUDGET_WORDS = { u10: 'Under AED 10,000', b10: 'AED 10,000 to 50,000', b50: 'AED 50,000 to 150,000', o150: 'Over AED 150,000', unsure: 'Not sure yet' };
+  const START_WORDS = { now: 'As soon as possible', m3: 'Within 3 months', m6: 'In 3 to 6 months', ideas: 'Just getting ideas' };
+  const PROPERTY_WORDS = { villa: 'Villa or townhouse', apartment: 'Apartment', office: 'Office or shop', other: 'Something else' };
+  const fitBadge = (f) => (!f ? null : f.fit === 'good' ? el('span', { class: 'badge fit-good' }, 'Good fit')
+    : el('span', { class: 'badge fit-check' }, f.why.includes('budget') ? 'Below your minimum' : 'Just getting ideas'));
   const SOURCES = { instagram: 'Instagram', google: 'Google', link: 'Enquiry link', ad: 'Ad', 'meta-ad': 'Facebook ad', website: 'Website', 'instagram-dm': 'Instagram message', whatsapp: 'WhatsApp', call: 'Phone call', 'walk-in': 'Walk-in', referral: 'Referral', other: 'Other' };
   const QSTATE = { draft: 'Draft', sent: 'Sent', accepted: 'Accepted', declined: 'Declined', expired: 'Expired' };
   const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -240,6 +245,7 @@
     const link = t.publicKey ? `${siteUrl}/q/${t.publicKey}` : '';
     const at = t.when ? whenText(t.when).replace(/^(Today|Tomorrow)/, (w) => w.toLowerCase()) : '';
     if (t.type === 'reply' && t.when) return `${hi}, this is ${biz.name}. Thank you for booking. Your ${visitWord()} is confirmed for ${at}${l.address && biz.project ? ` at ${l.address}` : ''}. Reply here if anything changes. See you then.`;
+    if (t.type === 'reply' && l.fit?.why?.includes('budget') && biz.minJob) return `${hi}, this is ${biz.name}. Thank you for your enquiry${l.service ? ` about ${lower(l.service)}` : ''}. Just so you know, our projects usually start from ${aed(biz.minJob)}. If that works for you, I would be happy to arrange a visit.`;
     if (t.type === 'reply') return `${hi}, this is ${biz.name}. Thank you for your enquiry${l.service ? ` about ${lower(l.service)}` : ''}. ${biz.project ? 'When would suit you for a quick call, or for us to come and see the space?' : 'Which day and time suit you best?'}`;
     if (t.type === 'checkin') return `${hi}, ${biz.name} here. Just checking in${l.service ? ` about your ${lower(l.service)}` : ''}. Is there anything I can help with?`;
     if (t.type === 'visit') return `${hi}, this is ${biz.name} confirming your ${visitWord()} ${at}${l.address && biz.project ? ` at ${l.address}` : ''}. Reply here if anything changes. See you then.`;
@@ -252,6 +258,7 @@
       return `${hi}, our quote${job} is still open. If the timing is not right, no problem. Just let me know and I will close it.`;
     }
     if (t.type === 'quote') {
+      if (t.variation) return `${hi}, following up on the extra work we discussed (${aed(t.total)}). Could you approve it here so we can go ahead: ${link}`;
       if (t.step === 1) return `${hi}, did you get a chance to look at your quote from ${biz.name}? Here it is again: ${link}\n\nHappy to answer any questions, or walk you through it on a quick call.`;
       if (t.step === 2) return `${hi}, following up on quote ${t.number}. Would you like to change anything, or shall we book a start date?\n\n${link}`;
       return `${hi}, your quote ${t.number} is still open: ${link}\n\nIf the timing is not right, no problem. Just let me know and I will close it.`;
@@ -355,7 +362,7 @@
       tasks.length ? ' Everything else is on track.' : '');
     fill($('stats'), ...stats());
     const groups = [
-      ['Reply first', tasks.filter((t) => t.type === 'reply')],
+      ['Reply first', tasks.filter((t) => t.type === 'reply').sort((a, b) => ({ good: 0, check: 2 }[a.fit] ?? 1) - ({ good: 0, check: 2 }[b.fit] ?? 1))],
       ['Send quotes', tasks.filter((t) => t.type === 'toquote')],
       ['Confirm tomorrow', tasks.filter((t) => t.type === 'visit')],
       ['Chase quotes', tasks.filter((t) => t.type === 'quote')],
@@ -383,7 +390,7 @@
       el('span', { class: 'meta' }, leadMeta(l)), l.value ? el('span', { class: 'amount' }, aed(l.value)) : el('span'),
       el('span', { class: 'tags' }, stageBadge(l.status), el('span', { class: 'badge src' }, SOURCES[l.source] || l.source),
         (l.photos || []).length ? el('span', { class: 'badge src' }, `${l.photos.length} photo${l.photos.length > 1 ? 's' : ''}`) : null,
-        l.assignee ? el('span', { class: 'badge src' }, l.assignee) : null));
+        l.assignee ? el('span', { class: 'badge src' }, l.assignee) : null, l.status === 'new' ? fitBadge(l.fit) : null));
   }
   function searched() {
     const q = $('leadSearch').value.trim().toLowerCase();
@@ -477,9 +484,10 @@
     const mine = quotes.filter((q) => q.leadId === l.id);
     const quotesBox = box('Quotes',
       mine.length ? el('div', { class: 'mini-list' }, ...mine.map((q) => el('button', { type: 'button', on: { click: () => { location.hash = `#quote/${q.id}`; } } },
-        el('div', {}, el('b', {}, `${q.number} · ${q.title}`), el('br'), el('span', {}, q.sentAt ? `Sent ${dateOf(q.sentAt)}${q.viewedAt ? ' · opened' : ''}` : `Made ${dateOf(q.createdAt)}`)),
+        el('div', {}, el('b', {}, `${q.number} · ${q.title}`), q.variation ? ' ' : null, q.variation ? el('span', { class: 'badge extra' }, 'Extra work') : null, el('br'), el('span', {}, q.sentAt ? `Sent ${dateOf(q.sentAt)}${q.viewedAt ? ' · opened' : ''}` : `Made ${dateOf(q.createdAt)}`)),
         el('div', {}, el('b', {}, aed(q.totals.total)), ' ', el('span', { class: `badge ${q.state}` }, QSTATE[q.state]))))) : el('p', { class: 'muted small' }, biz.project ? 'Price the job and send it on WhatsApp. The client opens a proper quote, accepts it with one tap, and you get told.' : 'Send a priced quote for packages or bigger jobs.'),
-      el('div', { class: 'row-actions' }, el('a', { class: `btn ${biz.project ? 'btn-primary' : 'btn-ghost'} btn-sm`, href: `/app#newquote/${l.id}` }, 'New quote')));
+      el('div', { class: 'row-actions' }, el('a', { class: `btn ${biz.project ? 'btn-primary' : 'btn-ghost'} btn-sm`, href: `/app#newquote/${l.id}` }, ['won', 'done'].includes(l.status) ? 'Quote extra work' : 'New quote'),
+        ['won', 'done'].includes(l.status) ? el('p', { class: 'muted small' }, 'Extra work is approved by the client in writing, then added to this job and its payments.') : null));
 
     // payments on a won job
     const showPay = ['won', 'done'].includes(l.status) || (l.milestones || []).length || l.value;
@@ -529,7 +537,8 @@
     // details, editable
     const row = (label, value) => (value ? el('div', {}, el('span', {}, label), el('span', {}, value)) : null);
     const facts = el('div', { class: 'facts' },
-      row('Phone', l.phone), row('Email', l.email), row('Wants', l.service), row('Budget', l.budget), row('Price', l.price ? aed(l.price) : null),
+      row('Phone', l.phone), row('Email', l.email), row('Wants', l.service), row('Budget', BUDGET_WORDS[l.budgetBand] || l.budget),
+      row('Start', START_WORDS[l.start]), row('Property', PROPERTY_WORDS[l.property]), row('Price', l.price ? aed(l.price) : null),
       row('Address', l.address), row('Message', l.note), row('Ad', [l.adName, l.campaign].filter(Boolean).join(' · ')),
       row('Came from', SOURCES[l.source] || l.source), row('Received', fmt(l.createdAt, { day: 'numeric', month: 'long', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })));
     const fields = [['name', 'Name'], ['phone', 'Phone'], ['email', 'Email'], ['service', 'What they want'], ['budget', 'Budget'], ['address', 'Address']];
@@ -660,7 +669,9 @@
     const l = await api('GET', 'leads').catch(() => null); if (l) leads = l.leads;
     return q;
   }
-  const quoteMessage = (q, l) => `Hi ${first(l?.name)}, here is your quote from ${biz.name}${q.title ? ` for ${lower(q.title)}` : ''}: ${aed(q.totals.total)}${q.totals.vat ? ' including VAT' : ''}.\n\nYou can see the details and accept it here:\n${q.link}\n\nAny questions, just reply to this message.`;
+  const quoteMessage = (q, l) => q.variation
+    ? `Hi ${first(l?.name)}, as discussed, here is the extra work for your job: ${aed(q.totals.total)}${q.totals.vat ? ' including VAT' : ''}.\n\nPlease approve it here before we start:\n${q.link}`
+    : `Hi ${first(l?.name)}, here is your quote from ${biz.name}${q.title ? ` for ${lower(q.title)}` : ''}: ${aed(q.totals.total)}${q.totals.vat ? ' including VAT' : ''}.\n\nYou can see the details and accept it here:\n${q.link}\n\nAny questions, just reply to this message.`;
 
   function drawQuoteEditor(kind, arg) {
     $('view-quote').hidden = false;
@@ -677,19 +688,20 @@
         id: existing.id, leadId, state: existing.state, title: existing.title, items: existing.items.map((it) => ({ ...it })), discount: existing.discount || 0,
         vat: !!existing.vat, notes: existing.notes || '', terms: existing.terms || '', validDays: existing.state === 'sent' ? '' : (biz.quoteValidDays || 14), validChanged: false, dirty: false,
       } : {
-        id: null, leadId, state: 'draft', title: l.service || '', vat: !!biz.vatRegistered, discount: 0, notes: '', terms: biz.quoteTerms || '',
+        id: null, leadId, state: 'draft', title: ['won', 'done'].includes(l.status) ? 'Extra work' : (l.service || ''), vat: !!biz.vatRegistered, discount: 0, notes: '', terms: biz.quoteTerms || '',
         validDays: biz.quoteValidDays || 14, validChanged: false, dirty: false,
-        items: l.price ? [{ desc: l.service, qty: 1, price: l.price }] : [blankItem()],
+        items: l.price && !['won', 'done'].includes(l.status) ? [{ desc: l.service, qty: 1, price: l.price }] : [blankItem()],
       };
     }
     const s = qState, q = existing, ro = s.state === 'accepted';
     back(l ? `/app#lead/${l.id}` : '/app#quotes');
-    $('viewTitle').textContent = q ? `${q.number}${l ? ` · ${l.name}` : ''}` : `New quote${l ? ` · ${l.name}` : ''}`;
+    const extraWork = q ? q.variation : ['won', 'done'].includes(l?.status);
+    $('viewTitle').textContent = q ? `${q.number}${l ? ` · ${l.name}` : ''}` : `${extraWork ? 'Extra work' : 'New quote'}${l ? ` · ${l.name}` : ''}`;
     const dirty = () => { s.dirty = true; drawTotals(); };
 
     // state line
     const stateLine = q ? el('div', { class: `q-state ${q.state}` }, {
-      draft: 'Draft. Only you can see it until you send it.',
+      draft: q.variation ? 'Extra work, not sent yet. Send it so the client approves the price in writing before the work starts.' : 'Draft. Only you can see it until you send it.',
       sent: `Sent ${dateOf(q.sentAt)}. ${q.viewedAt ? `Opened by the client ${ago(q.viewedAt)}.` : 'Not opened yet.'} Valid until ${dateOf(q.validUntil, true)}.`,
       accepted: `Accepted by ${q.acceptedBy} on ${dateOf(q.acceptedAt, true)}. The lead is now Won.`,
       declined: `Declined ${q.declinedAt ? dateOf(q.declinedAt) : ''}${q.declineReason ? `: “${q.declineReason}”` : '.'} You can change it and send it again.`,
@@ -849,6 +861,7 @@
     fill($('teamList'), ...(biz.team || []).map(teamRow));
     fill($('svcList'), ...biz.services.map(svcRow));
     $('askPhotos').checked = !!biz.askPhotos; $('askAddress').checked = !!biz.askAddress;
+    $('askBudget').checked = !!biz.askBudget; $('minJob').value = biz.minJob || '';
     for (const id of ['openHour', 'closeHour']) {
       $(id).replaceChildren(...Array.from({ length: 25 }, (_, h) => el('option', { value: h }, h === 24 ? 'Midnight' : `${((h + 11) % 12) + 1}:00 ${h < 12 ? 'AM' : 'PM'}`)));
       $(id).value = String(biz[id]);
@@ -896,7 +909,7 @@
     e.preventDefault();
     const services = [...$('svcList').children].map((r) => { const [n, m, p] = r.querySelectorAll('input'); return { id: r.dataset.id, name: n.value, minutes: m.value, price: p.value }; });
     saveMe({
-      services, askPhotos: $('askPhotos').checked, askAddress: $('askAddress').checked, openHour: $('openHour').value, closeHour: $('closeHour').value,
+      services, askPhotos: $('askPhotos').checked, askAddress: $('askAddress').checked, askBudget: $('askBudget').checked, minJob: $('minJob').value, openHour: $('openHour').value, closeHour: $('closeHour').value,
       closedDays: [...$('closedDays').children].filter((b) => b.getAttribute('aria-pressed') === 'true').map((b) => Number(b.dataset.day)),
     }, 'servicesError', 'servicesStatus');
   });

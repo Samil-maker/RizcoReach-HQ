@@ -260,7 +260,7 @@ test('disconnecting removes the page', async () => {
 
 
 // --- Elheen's own billing through Ziina, the paywall and the admin view
-import { computeTasks, quoteTotals, DAY } from '../netlify/lib/core.mjs';
+import { computeTasks, quoteTotals, DAY, fitOf } from '../netlify/lib/core.mjs';
 import { morningDigest } from '../netlify/functions/daily.mjs';
 
 function fakeZiinaPay() {
@@ -625,6 +625,55 @@ test('a quote already sent some other way is added and chased at once', async ()
   assert.equal(tasks[0].type, 'quote');
   assert.ok(tasks[0].external);
   assert.equal((await call('GET', `quote/${r.data.quote.publicKey}`)).status, 200);
+});
+
+test('screening questions mark each enquiry as a good fit or one to check', async () => {
+  const call = setup();
+  const { data: { token } } = await signup(call);
+  const me = (await call('GET', 'me', null, token)).data.business;
+  assert.equal(me.askBudget, true);   // on by default for interior design
+  await call('PUT', 'me', { minJob: 20000 }, token);
+  const pub = (await call('GET', 'public/studio-layali')).data.business;
+  assert.equal(pub.askBudget, true);
+  assert.equal(pub.minJob, 20000);
+  const send = (name, extra) => call('POST', 'public/studio-layali/lead', { name, phone: '0501234567', ...extra });
+  await send('Serious', { budgetBand: 'b50', start: 'now', property: 'villa' });
+  await send('Too small', { budgetBand: 'u10', start: 'now' });
+  await send('Dreaming', { budgetBand: 'o150', start: 'ideas' });
+  await send('Unknown', { budgetBand: 'made-up', start: 'whenever' });
+  const leads = Object.fromEntries((await call('GET', 'leads', null, token)).data.leads.map((l) => [l.name, l]));
+  assert.equal(leads.Serious.fit.fit, 'good');
+  assert.equal(leads.Serious.property, 'villa');
+  assert.deepEqual(leads['Too small'].fit, { fit: 'check', why: ['budget'] });
+  assert.deepEqual(leads.Dreaming.fit, { fit: 'check', why: ['ideas'] });
+  assert.equal(leads.Unknown.fit, null);
+  assert.equal(leads.Unknown.budgetBand, null);
+  const reply = (await call('GET', 'today', null, token)).data.tasks.find((t) => t.leadId === leads.Serious.id);
+  assert.equal(reply.fit, 'good');
+  assert.equal(fitOf({ minJob: 0 }, { budgetBand: 'u10', start: 'm3' }).fit, 'good');   // no minimum set: any real budget can be a good fit
+});
+
+test('extra work on a won job is approved in writing and adds to the job, never replacing it', async () => {
+  const call = setup({ siteUrl: 'https://x.test' });
+  const { data: { token } } = await signup(call);
+  const lead = await newLead(call);
+  const send = async (items) => (await call('PATCH', `quotes/${(await call('POST', 'quotes', { leadId: lead.id, items }, token)).data.quote.id}`, { send: true }, token)).data.quote;
+  const first = await send([{ desc: 'Kitchen', qty: 1, price: 30000 }]);
+  assert.ok(!first.variation);
+  await call('POST', `quote/${first.publicKey}/accept`, { name: 'Layla' });
+  const extra = await send([{ desc: 'Move the sink to the island', qty: 1, price: 4000 }]);
+  assert.ok(extra.variation);
+  assert.equal(extra.title, 'Extra work');
+  assert.ok((await call('GET', `quote/${extra.publicKey}`)).data.quote.variation);
+  const chase = computeTasks({}, (await call('GET', 'leads', null, token)).data.leads, [{ ...extra, sentAt: Date.now() - 3 * DAY }], Date.now());
+  assert.equal(chase.filter((t) => t.type === 'quote' && t.variation).length, 1);   // chased even though the job is won
+  await call('POST', `quote/${extra.publicKey}/accept`, { name: 'Layla' });
+  const [l] = (await call('GET', 'leads', null, token)).data.leads;
+  assert.equal(l.status, 'won');
+  assert.equal(l.value, 34000);
+  assert.equal(l.milestones.length, 4);
+  assert.deepEqual(l.milestones.map((m) => m.amount), [15000, 12000, 3000, 4000]);
+  assert.match(l.milestones[3].label, /Extra work Q-0002/);
 });
 
 test('marking a follow-up done or snoozing it takes it off today\'s list', async () => {

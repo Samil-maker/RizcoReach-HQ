@@ -3,7 +3,12 @@
   const $ = (id) => document.getElementById(id);
   const slug = decodeURIComponent(location.pathname.split('/').filter(Boolean)[1] || new URLSearchParams(location.search).get('b') || '');
   const source = new URLSearchParams(location.search).get('src') || (document.referrer.includes('instagram') ? 'instagram' : document.referrer.includes('google') ? 'google' : 'link');
-  const state = { serviceId: null, when: null, location: null, photos: [] };
+  const state = { serviceId: null, when: null, location: null, photos: [], budgetBand: null, start: null, property: null };
+  const ASK = {
+    budgets: ['budgetBand', [['u10', 'Under AED 10,000'], ['b10', 'AED 10,000 to 50,000'], ['b50', 'AED 50,000 to 150,000'], ['o150', 'Over AED 150,000'], ['unsure', 'Not sure yet']]],
+    starts: ['start', [['now', 'As soon as possible'], ['m3', 'Within 3 months'], ['m6', 'In 3 to 6 months'], ['ideas', 'Just getting ideas']]],
+    properties: ['property', [['villa', 'Villa or townhouse'], ['apartment', 'Apartment'], ['office', 'Office or shop'], ['other', 'Something else']]],
+  };
   const MAX_PHOTOS = 6;
   const DUBAI = 4; // hours ahead of UTC, all year
 
@@ -17,6 +22,18 @@
     $('bizArea').textContent = b.area || '';
     $('addressBlock').hidden = !b.askAddress;
     $('photoBlock').hidden = !b.askPhotos;
+    // a few quick questions so the business knows the job is real before it visits
+    $('qualifyBlock').hidden = !b.askBudget;
+    if (b.minJob) { $('minNote').hidden = false; $('minNote').textContent = `Our projects usually start from AED ${Number(b.minJob).toLocaleString('en')}.`; }
+    for (const [box, [field, options]] of Object.entries(ASK)) {
+      const buttons = options.map(([value, label]) => {
+        const btn = document.createElement('button');
+        btn.type = 'button'; btn.className = 'pill'; btn.textContent = label; btn.setAttribute('aria-pressed', 'false');
+        btn.addEventListener('click', () => { state[field] = state[field] === value ? null : value; press(buttons, state[field] ? btn : null); });
+        return btn;
+      });
+      $(box).replaceChildren(...buttons);
+    }
     if (b.askAddress) $('timeTitle').textContent = 'Pick a visit time';
 
     const price = (s) => (s.price ? `AED ${s.price}` : 'Free');
@@ -124,7 +141,7 @@
     try {
       const res = await fetch(`/api/public/${encodeURIComponent(slug)}/lead`, {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name, phone, note: $('note').value, address: $('address').value, location: state.location, serviceId: state.serviceId, when: state.when, photos: state.photos, source }),
+        body: JSON.stringify({ name, phone, note: $('note').value, address: $('address').value, location: state.location, serviceId: state.serviceId, when: state.when, photos: state.photos, budgetBand: state.budgetBand, start: state.start, property: state.property, source }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Something went wrong. Please try again.');

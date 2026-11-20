@@ -270,6 +270,11 @@ input[type="search"]{min-height:44px}
 .choice:hover{background:#EEEEF2}
 .choice[aria-pressed="true"]{background:#fff;box-shadow:inset 0 0 0 2px var(--brand)}
 .field{margin-top:14px}
+.pills{display:flex;flex-wrap:wrap;gap:8px}
+.pill{min-height:44px;padding:0 16px;border-radius:999px;border:0;background:var(--soft);box-shadow:inset 0 0 0 1.5px transparent;font-weight:650;font-size:.92rem;color:var(--text)}
+.pill:hover{background:#EEEEF2}
+.pill[aria-pressed="true"]{background:#fff;box-shadow:inset 0 0 0 2px var(--brand)}
+#minNote{margin:-4px 0 10px}
 .hint{font-size:.84rem;color:var(--muted);font-weight:500}
 .photos{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px}
 @media(min-width:480px){.photos{grid-template-columns:repeat(4,1fr)}}
@@ -372,3 +377,7 @@ input[type="search"]{min-height:44px}
 
 .greet b{color:var(--text)}
 .task.toquote .task-ico{background:#FDF0DC;color:#7A4A00}
+
+.badge.fit-good{background:#E4F3EA;color:#1B6B36}
+.badge.fit-check{background:#FDF0DC;color:#7A4A00}
+.badge.extra{background:#E9EAFB;color:#35399A}

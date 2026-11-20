@@ -3,7 +3,7 @@
 import { getStore } from '@netlify/blobs';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import {
-  STATUSES, KINDS, PROJECT_KINDS, VISIT_KINDS, PHOTO_KINDS, PLANS, TRIAL_DAYS, MONTH_MS,
+  STATUSES, KINDS, PROJECT_KINDS, VISIT_KINDS, PHOTO_KINDS, PLANS, TRIAL_DAYS, MONTH_MS, BUDGETS, STARTS, PROPERTIES, fitOf,
   json, fail, clean, cleanLine, id, slugify, money, aedText, hashPassword, checkPassword, sameSecret,
   billingOf, defaultServices, cleanItems, quoteTotals, quoteState, defaultMilestones, computeTasks,
 } from '../lib/core.mjs';
@@ -21,6 +21,7 @@ const OWNER_SOURCES = ['instagram-dm', 'whatsapp', 'call', 'walk-in', 'referral'
 const publicBusiness = (b) => ({
   slug: b.slug, name: b.name, kind: b.kind, area: b.area, services: b.services,
   askPhotos: b.askPhotos, askAddress: b.askAddress, openHour: b.openHour, closeHour: b.closeHour, closedDays: b.closedDays,
+  askBudget: !!b.askBudget, minJob: Number(b.minJob) || 0,
 });
 
 export function makeHandler(store, env = {}) {
@@ -89,7 +90,8 @@ export function makeHandler(store, env = {}) {
       id: leadId, name, phone, serviceId: service?.id || null, service: service?.name || cleanLine(body.service, 80) || null,
       price: service?.price ?? null, note: clean(body.note, 2000), address: cleanLine(body.address, 300),
       location: /^-?\d{1,3}\.\d+,-?\d{1,3}\.\d+$/.test(body.location || '') ? body.location : null,
-      budget: cleanLine(body.budget, 60), email: cleanLine(body.email, 120), adName: cleanLine(body.adName, 120), campaign: cleanLine(body.campaign, 120),
+      budget: cleanLine(body.budget, 60), budgetBand: BUDGETS[body.budgetBand] ? body.budgetBand : null, start: STARTS[body.start] ? body.start : null,
+      property: PROPERTIES[body.property] ? body.property : null, email: cleanLine(body.email, 120), adName: cleanLine(body.adName, 120), campaign: cleanLine(body.campaign, 120),
       photos, source: cleanLine(source, 30) || 'link', status: when ? 'booked' : (opts.byOwner ? 'talking' : 'new'), when, createdAt: now, lastTouch: opts.byOwner ? now : null,
       assignee: '', milestones: [], history: [{ at: now, text: opts.byOwner ? 'Added by you' : when ? 'Booked through the enquiry page' : 'Enquiry received' }],
     };
@@ -274,7 +276,7 @@ export function makeHandler(store, env = {}) {
       if (await getJSON(`biz/${slug}`)) slug = `${slug}-${id(3).toLowerCase().replace(/[^a-z0-9]/g, 'x')}`;
       const biz = {
         slug, name, kind, area: cleanLine(body.area, 60), phone,
-        services: defaultServices(kind), askPhotos: PHOTO_KINDS.has(kind), askAddress: VISIT_KINDS.has(kind),
+        services: defaultServices(kind), askPhotos: PHOTO_KINDS.has(kind), askAddress: VISIT_KINDS.has(kind), askBudget: PHOTO_KINDS.has(kind), minJob: 0,
         openHour: 9, closeHour: 19, closedDays: [5], intakeKey: id(12), pass: hashPassword(password), createdAt: Date.now(),
         paidUntil: Date.now() + TRIAL_DAYS * 864e5, team: [], vatRegistered: false, trn: '',
         quoteTerms: 'Prices are valid until the date shown. Work starts once the deposit is received.', quoteValidDays: 14, quoteCounter: 0,
@@ -305,7 +307,7 @@ export function makeHandler(store, env = {}) {
         business: { name: biz.name, area: biz.area, phone: biz.phone, trn: biz.vatRegistered ? biz.trn : '' },
         client: lead ? lead.name : '',
         quote: {
-          number: quote.number, title: quote.title, items: quote.items, notes: quote.notes, terms: quote.terms, vat: !!(biz.vatRegistered && quote.vat),
+          number: quote.number, title: quote.title, items: quote.items, notes: quote.notes, terms: quote.terms, vat: !!(biz.vatRegistered && quote.vat), variation: !!quote.variation,
           validUntil: quote.validUntil, sentAt: quote.sentAt, state: quoteState(quote), acceptedAt: quote.acceptedAt, acceptedBy: quote.acceptedBy,
           totals: quoteTotals(quote, !!biz.vatRegistered),
         },
@@ -331,12 +333,21 @@ export function makeHandler(store, env = {}) {
         const total = quoteTotals(quote, !!biz.vatRegistered).total;
         if (lead) {
           await moveLead(biz.slug, lead.id, (l) => {
+            if (quote.variation && ['won', 'done'].includes(l.status)) {
+              // extra work adds to the job and its payments; it never replaces them
+              l.value = money((l.value || 0) + total);
+              l.milestones = [...(l.milestones || []), { id: id(4), label: `Extra work ${quote.number}`, amount: total, paidAt: null }];
+              note(l, `Approved extra work ${quote.number} (${aedText(total)}), signed by ${by}`);
+              return;
+            }
             l.status = 'won'; l.wonAt = Date.now(); l.value = total;
             if (!(l.milestones || []).length) l.milestones = defaultMilestones(biz.kind, total);
             note(l, `Accepted quote ${quote.number} (${aedText(total)}), signed by ${by}`);
           });
         }
-        await alertOwner(biz, { title: `Quote accepted: ${quote.number}`, body: `${by} accepted ${aedText(total)}` });
+        await alertOwner(biz, quote.variation
+          ? { title: `Extra work approved: ${quote.number}`, body: `${by} approved ${aedText(total)}` }
+          : { title: `Quote accepted: ${quote.number}`, body: `${by} accepted ${aedText(total)}` });
         return json(view());
       }
       if (method === 'POST' && parts[2] === 'decline') {
@@ -477,7 +488,8 @@ export function makeHandler(store, env = {}) {
       if (body.name) biz.name = cleanLine(body.name, 60);
       for (const k of ['area', 'trn']) if (k in body) biz[k] = cleanLine(body[k], 60);
       if ('phone' in body) biz.phone = cleanLine(body.phone, 30).replace(/[^\d+]/g, '');
-      for (const k of ['askPhotos', 'askAddress', 'vatRegistered', 'linkShared', 'checklistHidden']) if (k in body) biz[k] = !!body[k];
+      for (const k of ['askPhotos', 'askAddress', 'askBudget', 'vatRegistered', 'linkShared', 'checklistHidden']) if (k in body) biz[k] = !!body[k];
+      if ('minJob' in body) biz.minJob = Math.max(0, money(body.minJob));
       if ('quoteTerms' in body) biz.quoteTerms = clean(body.quoteTerms, 2000);
       if ('quoteValidDays' in body) biz.quoteValidDays = Math.min(180, Math.max(1, Number(body.quoteValidDays) | 0));
       if (Array.isArray(body.team)) biz.team = [...new Set(body.team.map((t) => cleanLine(t, 40)).filter(Boolean))].slice(0, 30);
@@ -525,7 +537,7 @@ export function makeHandler(store, env = {}) {
     if (parts[0] === 'leads' && !parts[1] && method === 'POST') {
       return saveLead(biz, body, OWNER_SOURCES.includes(body.source) ? body.source : 'other', { requirePhone: false, byOwner: true });
     }
-    if (parts[0] === 'leads' && !parts[1] && method === 'GET') return json({ leads: await listLeads(biz.slug) });
+    if (parts[0] === 'leads' && !parts[1] && method === 'GET') return json({ leads: (await listLeads(biz.slug)).map((l) => ({ ...l, fit: fitOf(biz, l) })) });
     if (parts[0] === 'leads' && parts[1] && method === 'PATCH') {
       const key = `leads/${biz.slug}/${cleanLine(parts[1], 20)}`;
       const lead = await getJSON(key);
@@ -611,11 +623,12 @@ export function makeHandler(store, env = {}) {
     if (parts[0] === 'quotes' && !parts[1] && method === 'POST') {
       const lead = await getJSON(`leads/${biz.slug}/${cleanLine(body.leadId, 20)}`);
       if (!lead) return fail(404, 'That lead was not found.');
+      const variation = ['won', 'done'].includes(lead.status);
       biz.quoteCounter = (biz.quoteCounter || 0) + 1;
       await saveBiz();
       const q = {
-        id: id(), publicKey: id(15), number: `Q-${String(biz.quoteCounter).padStart(4, '0')}`, leadId: lead.id,
-        title: cleanLine(body.title, 120) || lead.service || 'Quote', items: cleanItems(body.items), discount: Math.max(0, money(body.discount)),
+        id: id(), publicKey: id(15), number: `Q-${String(biz.quoteCounter).padStart(4, '0')}`, leadId: lead.id, variation,
+        title: cleanLine(body.title, 120) || (variation ? 'Extra work' : lead.service) || 'Quote', items: cleanItems(body.items), discount: Math.max(0, money(body.discount)),
         vat: body.vat === undefined ? !!biz.vatRegistered : !!body.vat, notes: clean(body.notes, 3000), terms: clean(body.terms ?? biz.quoteTerms, 3000),
         validUntil: Date.now() + Math.min(180, Math.max(1, Number(body.validDays) || biz.quoteValidDays || 14)) * 864e5,
         status: 'draft', followUps: [], createdAt: Date.now(), updatedAt: Date.now(),
