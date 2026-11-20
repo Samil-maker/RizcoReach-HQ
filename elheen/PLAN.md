@@ -21,7 +21,7 @@ These apply Alex Hormozi's principles to Elheen. They are his ideas, not quotes.
 
 ## Stage 1: First sales (now to January 2027)
 
-- **Do:** 100 outreach messages a day to renovation, fit-out and interior design businesses, offering a free set-up call and 14 days free.
+- **Do:** 100 outreach messages a day to renovation, fit-out and interior design businesses, sending them to start 14 days free. Elheen sets itself up; no calls.
 - **Built already:** enquiry link, leads and board, quotes clients accept, daily follow-ups, site visits by team member, stage payments, phone alerts, card billing.
 - **Money in:** AED 79 a month or AED 790 a year, plus the optional AED 749 website through RizcoReach.
 - **Money out:** the domain.

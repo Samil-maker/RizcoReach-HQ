@@ -354,3 +354,18 @@ input[type="search"]{min-height:44px}
 .rows{margin-top:16px;border-top:1px solid var(--line)}
 .rows div{display:grid;grid-template-columns:110px 1fr;gap:12px;padding:12px 0;border-bottom:1px solid var(--line);font-size:.95rem}
 .rows span:first-child{color:var(--muted);font-weight:600}
+
+/* the five-step start, on Today */
+#setupSlot{margin-bottom:18px}
+.setup-list ol{list-style:none;margin:0;padding:0;display:grid}
+.setup-list li{display:grid;grid-template-columns:28px 1fr auto;gap:12px;align-items:center;padding:12px 0;border-top:1px solid var(--line)}
+.setup-list li b{display:block;font-size:.97rem;line-height:1.35}
+.setup-list li span{display:block;font-size:.86rem;color:var(--muted)}
+.setup-list .tick{width:24px;height:24px;border-radius:50%;box-shadow:inset 0 0 0 1.5px #C8C8D0;display:grid!important;place-items:center;font-size:.8rem;font-weight:800;color:#fff}
+.setup-list li.ok .tick{background:#1F8F4E;box-shadow:none}
+.setup-list li.ok b{color:var(--muted);text-decoration:line-through;text-decoration-thickness:1px}
+.setup-list .link{justify-self:start;color:var(--muted)}
+@media(max-width:520px){.setup-list li{grid-template-columns:28px 1fr}.setup-list li .btn{grid-column:2;justify-self:start}}
+.hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
+.flash{animation:flash 1.6s var(--ease)}
+@keyframes flash{0%,60%{box-shadow:inset 0 0 0 2px var(--brand)}100%{box-shadow:inset 0 0 0 1px var(--line)}}

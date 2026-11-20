@@ -15,6 +15,7 @@ const SESSION_DAYS = 30;
 const META_SCOPES = 'pages_show_list,pages_read_engagement,pages_manage_metadata,pages_manage_ads,leads_retrieval';
 const META_LOOKBACK_DAYS = 30;
 const ZIINA_IPS = ['3.29.184.186', '3.29.190.95', '20.233.47.127', '13.202.161.181'];
+const SIGNUPS_PER_DAY = 5;
 const OWNER_SOURCES = ['instagram-dm', 'whatsapp', 'call', 'walk-in', 'referral', 'other'];
 
 const publicBusiness = (b) => ({
@@ -253,17 +254,26 @@ export function makeHandler(store, env = {}) {
     }
 
     // --- sign up and sign in
+    // Anyone can start a free trial. A hidden field catches bots, and one connection can make a few accounts a day.
     if (parts[0] === 'signup' && method === 'POST') {
-      if (!env.ELHEEN_INVITE) return fail(503, 'Sign-up is not open yet.');
-      if (cleanLine(body.invite, 80) !== env.ELHEEN_INVITE) return fail(403, 'That invite code is not right.');
+      if (cleanLine(body.website, 200)) return fail(400, 'Please try again.');
       const name = cleanLine(body.name, 60);
       const kind = KINDS.includes(body.kind) ? body.kind : 'other';
       const password = String(body.password || '');
+      const phone = cleanLine(body.phone, 30).replace(/[^\d+]/g, '');
       if (!name || password.length < 8) return fail(400, 'Give a business name and a password of at least 8 characters.');
+      if (phone.replace(/\D/g, '').length < 7) return fail(400, 'Add the WhatsApp number your clients reach you on.');
+      const ip = cleanLine(req.headers.get('x-nf-client-connection-ip'), 60);
+      if (ip) {
+        const key = `signupip/${ip}/${new Date().toISOString().slice(0, 10)}`;
+        const seen = (await getJSON(key)) || { n: 0 };
+        if (seen.n >= SIGNUPS_PER_DAY) return fail(429, 'Too many new accounts from this connection today. Please try again tomorrow.');
+        await setJSON(key, { n: seen.n + 1 });
+      }
       let slug = slugify(name) || `b-${id(4).toLowerCase()}`;
       if (await getJSON(`biz/${slug}`)) slug = `${slug}-${id(3).toLowerCase().replace(/[^a-z0-9]/g, 'x')}`;
       const biz = {
-        slug, name, kind, area: cleanLine(body.area, 60), phone: cleanLine(body.phone, 30).replace(/[^\d+]/g, ''),
+        slug, name, kind, area: cleanLine(body.area, 60), phone,
         services: defaultServices(kind), askPhotos: PHOTO_KINDS.has(kind), askAddress: VISIT_KINDS.has(kind),
         openHour: 9, closeHour: 19, closedDays: [5], intakeKey: id(12), pass: hashPassword(password), createdAt: Date.now(),
         paidUntil: Date.now() + TRIAL_DAYS * 864e5, team: [], vatRegistered: false, trn: '',
@@ -467,7 +477,7 @@ export function makeHandler(store, env = {}) {
       if (body.name) biz.name = cleanLine(body.name, 60);
       for (const k of ['area', 'trn']) if (k in body) biz[k] = cleanLine(body[k], 60);
       if ('phone' in body) biz.phone = cleanLine(body.phone, 30).replace(/[^\d+]/g, '');
-      for (const k of ['askPhotos', 'askAddress', 'vatRegistered']) if (k in body) biz[k] = !!body[k];
+      for (const k of ['askPhotos', 'askAddress', 'vatRegistered', 'linkShared', 'checklistHidden']) if (k in body) biz[k] = !!body[k];
       if ('quoteTerms' in body) biz.quoteTerms = clean(body.quoteTerms, 2000);
       if ('quoteValidDays' in body) biz.quoteValidDays = Math.min(180, Math.max(1, Number(body.quoteValidDays) | 0));
       if (Array.isArray(body.team)) biz.team = [...new Set(body.team.map((t) => cleanLine(t, 40)).filter(Boolean))].slice(0, 30);
@@ -479,6 +489,7 @@ export function makeHandler(store, env = {}) {
           id: cleanLine(s.id, 12) || id(4), name: cleanLine(s.name, 60),
           minutes: Math.min(600, Math.max(5, Number(s.minutes) | 0)), price: Math.max(0, Number(s.price) || 0),
         })).filter((s) => s.name);
+        biz.servicesSaved = true;
       }
       await saveBiz();
       return json({ business: safeBiz() });

@@ -14,9 +14,10 @@
     </form>
     <form class="box" id="signupForm" hidden>
       <h1>Set up your business</h1>
-      <p class="muted">Free for 14 days. No card needed. Takes about a minute.</p>
-      <label>Invite code<input id="suInvite" required autocomplete="off"></label>
+      <p class="muted">Free for 14 days. No card needed. Ready in about five minutes.</p>
       <label>Business name<input id="suName" autocomplete="organization" required></label>
+      <label>WhatsApp number <span class="optional">your clients reach you here</span><input id="suPhone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+971 5X XXX XXXX" required></label>
+      <p class="hp" aria-hidden="true"><label>Leave this empty<input id="suWebsite" tabindex="-1" autocomplete="off"></label></p>
       <label>What do you do?
         <select id="suKind">
           <option value="interior">Interior design and fit-out</option>
@@ -69,6 +70,7 @@
 
     <section class="view" id="view-today" hidden>
       <p class="greet" id="greet"></p>
+      <div id="setupSlot" hidden></div>
       <div class="stats" id="stats"></div>
       <div id="tasks"></div>
     </section>
@@ -127,7 +129,7 @@
         <div id="planHistory"></div>
       </div>
 
-      <div class="box unlocked">
+      <div class="box unlocked" id="linkBox">
         <h2>Your enquiry link</h2>
         <p class="muted">Put it in your Instagram bio, your WhatsApp Business profile, your Google listing and your ads. Clients send their details, photos and a time that suits them, and it lands in Leads.</p>
         <div class="copy-row"><input id="shareLink" readonly aria-label="Your enquiry link"><button class="btn btn-primary btn-sm" id="copyLink" type="button">Copy</button><a class="btn btn-ghost btn-sm" id="openLink" target="_blank" rel="noopener">Open</a></div>
@@ -175,7 +177,7 @@
         <p class="muted small" id="servicesStatus" role="status"></p>
       </form>
 
-      <div class="box unlocked">
+      <div class="box unlocked" id="alertBox">
         <h2>Phone alerts</h2>
         <p class="muted" id="alertHint">A notification the moment a lead comes in or a client opens or accepts a quote, and your follow-up list at 9am.</p>
         <button class="btn btn-primary btn-sm" id="alertBtn" type="button">Turn on alerts on this device</button>

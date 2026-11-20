@@ -113,7 +113,7 @@
   }
   document.querySelectorAll('[data-show]').forEach((b) => b.addEventListener('click', () => {
     $('loginForm').hidden = b.dataset.show !== 'login'; $('signupForm').hidden = b.dataset.show !== 'signup';
-    ($('loginForm').hidden ? $('suInvite') : $('loginSlug')).focus();
+    ($('loginForm').hidden ? $('suName') : $('loginSlug')).focus();
   }));
   $('loginForm').addEventListener('submit', async (e) => {
     e.preventDefault(); say('loginError', '');
@@ -126,10 +126,10 @@
     e.preventDefault(); say('signupError', '');
     const btn = e.submitter; if (btn) btn.disabled = true;
     try {
-      setToken((await api('POST', 'signup', { invite: $('suInvite').value, name: $('suName').value, kind: $('suKind').value, area: $('suArea').value, password: $('suPass').value })).token);
-      location.hash = '#setup';
+      setToken((await api('POST', 'signup', { name: $('suName').value, phone: $('suPhone').value, kind: $('suKind').value, area: $('suArea').value, password: $('suPass').value, website: $('suWebsite').value })).token);
+      history.replaceState(null, '', '/app#today');
       await start();
-      toast('Your account is ready. Check your services, then share your link.');
+      toast('Your account is ready. Five quick steps and you are live.');
     } catch (err) { say('signupError', err.message); }
     if (btn) btn.disabled = false;
   });
@@ -291,8 +291,41 @@
     drawActs();
     return card;
   }
+  // five steps that replace a set-up call; each ticks itself off
+  function checklist() {
+    const steps = [
+      [!!biz.phone, 'Add your WhatsApp number', 'It goes on your quotes so clients can reply to you.', 'Add it', '/app#setup/details'],
+      [!!biz.servicesSaved, 'Check your services and prices', 'We filled in common ones for your trade. Change them to match what you sell.', 'Check them', '/app#setup/services'],
+      [!!biz.linkShared, 'Put your enquiry link in your Instagram bio', 'Also in your WhatsApp Business profile and your Google listing.', 'Copy my link', 'copy'],
+      [!!biz.alerts, 'Turn on phone alerts', 'Know the second a lead comes in or a quote is accepted.', 'Turn on', '/app#setup/alerts'],
+      [leads.length > 0, 'Send yourself a test enquiry', 'See exactly what your clients see, then delete it.', 'Open my page', `/b/${biz.slug}`],
+    ];
+    const done = steps.filter(([ok]) => ok).length;
+    if (biz.checklistHidden || done === steps.length) return null;
+    return el('div', { class: 'box setup-list' },
+      el('div', { class: 'box-head' }, el('h2', {}, 'Get ready in five minutes'), el('span', { class: 'muted small' }, `${done} of ${steps.length} done`)),
+      el('div', { class: 'progress', role: 'img', 'aria-label': `${done} of ${steps.length} done` }, el('i', { style: `width:${(done / steps.length) * 100}%` })),
+      el('ol', {}, ...steps.map(([ok, title, text, label, href]) => el('li', { class: ok ? 'ok' : '' },
+        el('span', { class: 'tick', 'aria-hidden': 'true' }, ok ? '✓' : ''),
+        el('div', {}, el('b', {}, title), el('span', {}, ok ? 'Done.' : text)),
+        ok ? null : href === 'copy'
+          ? el('button', { class: 'btn btn-primary btn-sm', type: 'button', on: { click: copyMyLink } }, label)
+          : el('a', { class: 'btn btn-ghost btn-sm', href, ...(href.startsWith('/b/') ? { target: '_blank', rel: 'noopener' } : {}) }, label)))),
+      el('button', { class: 'link', type: 'button', on: { click: () => api('PUT', 'me', { checklistHidden: true }).then((r) => { biz = r.business; render(); }).catch(oops) } }, 'Hide this list'));
+  }
+  async function copyMyLink() {
+    const link = `${location.origin}/b/${biz.slug}`;
+    const ok = await copy(link);
+    toast(ok ? 'Link copied. Paste it in your Instagram bio.' : `Your link: ${link}`);
+    if (!biz.linkShared) { try { biz = (await api('PUT', 'me', { linkShared: true })).business; if (current.name === 'today') render(); } catch { /* not important */ } }
+    return ok;
+  }
+
   function drawToday() {
     $('view-today').hidden = false;
+    const setupBox = checklist();
+    $('setupSlot').hidden = !setupBox;
+    fill($('setupSlot'), setupBox);
     const h = new Date(Date.now() + DUBAI).getUTCHours();
     $('greet').textContent = `${h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'}. ${fmt(Date.now(), { weekday: 'long', day: 'numeric', month: 'long' })}.`;
     fill($('stats'), ...stats());
@@ -308,7 +341,7 @@
         el('b', {}, leads.length ? 'All caught up.' : 'Your first lead is one link away.'),
         el('p', {}, leads.length ? 'Nothing to chase right now. New enquiries, quotes to follow up and visits to confirm will show up here on their own.'
           : 'Share your enquiry link on Instagram, WhatsApp and Google. Every enquiry lands in Leads and shows up here until you reply.'),
-        el('button', { class: 'btn btn-primary btn-sm', type: 'button', on: { click: async () => { if (await copy(`${location.origin}/b/${biz.slug}`)) toast('Link copied. Paste it in your Instagram bio.'); else location.hash = '#setup'; } } }, 'Copy my enquiry link')));
+        el('button', { class: 'btn btn-primary btn-sm', type: 'button', on: { click: copyMyLink } }, 'Copy my enquiry link')));
       return;
     }
     fill($('tasks'), groups.flatMap(([title, list]) => [el('h2', { class: 'section-title' }, `${title} · ${list.length}`), ...list.map(taskCard)]));
@@ -784,6 +817,8 @@
       on: { click: (e) => e.currentTarget.setAttribute('aria-pressed', String(e.currentTarget.getAttribute('aria-pressed') !== 'true')) },
     }, d)));
     drawAlerts(); drawMeta();
+    const target = { details: 'detailsForm', services: 'servicesForm', alerts: 'alertBox', link: 'linkBox' }[current.arg];
+    if (target) setTimeout(() => { $(target).scrollIntoView({ behavior: 'smooth', block: 'start' }); $(target).classList.add('flash'); setTimeout(() => $(target).classList.remove('flash'), 1600); }, 60);
   }
   const teamRow = (name = '') => {
     const row = el('div', { class: 'team-row' }, el('input', { value: name, placeholder: 'Name', 'aria-label': 'Team member name' }));
@@ -801,7 +836,10 @@
   $('addTeam').addEventListener('click', () => { const r = teamRow(); $('teamList').append(r); r.querySelector('input').focus(); });
   $('addSvc').addEventListener('click', () => { const r = svcRow({ minutes: 60, price: 0 }); $('svcList').append(r); r.querySelector('input').focus(); });
   $('sVat').addEventListener('change', () => { $('trnRow').hidden = !$('sVat').checked; });
-  $('copyLink').addEventListener('click', async () => { $('copyStatus').textContent = (await copy($('shareLink').value, $('shareLink'))) ? 'Copied. Paste it in your Instagram bio and WhatsApp profile.' : 'Press and hold the link to copy it.'; });
+  $('copyLink').addEventListener('click', async () => {
+    $('copyStatus').textContent = (await copy($('shareLink').value, $('shareLink'))) ? 'Copied. Paste it in your Instagram bio and WhatsApp profile.' : 'Press and hold the link to copy it.';
+    if (!biz.linkShared) api('PUT', 'me', { linkShared: true }).then((r) => { biz = r.business; }).catch(() => {});
+  });
   const saveMe = async (body, errId, statusId) => {
     say(errId, ''); $(statusId).textContent = '';
     try { biz = (await api('PUT', 'me', body)).business; fillLists(); $(statusId).textContent = 'Saved.'; $('sideBiz').textContent = biz.name; } catch (err) { if (!err.locked) say(errId, err.message); }

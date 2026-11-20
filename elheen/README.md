@@ -53,8 +53,8 @@ Shared rules (prices, quote maths, the daily follow-up list) are in
 `netlify/lib/core.mjs`. A scheduled function, `netlify/functions/daily.mjs`,
 sends each owner their follow-up count at 9am Dubai time.
 
-Data is stored in Netlify Blobs (store `elheen`). New businesses can only be
-created with the invite code held in the Netlify setting `ELHEEN_INVITE`.
+Data is stored in Netlify Blobs (store `elheen`). Anyone can start a 14-day trial at `/app?new`; a hidden field and a limit of
+five sign-ups a day per connection keep bots out.
 
 Leads from an ad form or another system can be posted to
 `/api/intake/<business-name>/<intake key>`. The key is shown to the owner's
@@ -65,7 +65,7 @@ Test it on your computer:
 ```
 npm install
 npm test                      # server tests
-node build.mjs && node tests/local-server.mjs   # full app at localhost:8770, invite code "letmein"
+node build.mjs && node tests/local-server.mjs   # full app at localhost:8770
 ```
 
 ## Billing (Elheen's own price)

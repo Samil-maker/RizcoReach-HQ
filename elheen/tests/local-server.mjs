@@ -1,5 +1,5 @@
 // Runs the built site and the API on one port with an in-memory store, for local testing.
-// Usage: node build.mjs && node tests/local-server.mjs   (invite code: letmein)
+// Usage: node build.mjs && node tests/local-server.mjs
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, dirname } from 'node:path';
@@ -23,7 +23,7 @@ const ziina = async (token, path, { method = 'GET', body } = {}) => {
   if (path.startsWith('payment_intent/')) return intents[path.split('/')[1]];
   return { success: true };
 };
-const api = makeHandler(store, { ELHEEN_INVITE: 'letmein', ELHEEN_ADMIN_KEY: 'local-admin-key-123', ziina, billing: { token: 'local', test: true }, siteUrl: `http://127.0.0.1:${process.env.PORT || 8770}` });
+const api = makeHandler(store, { ELHEEN_ADMIN_KEY: 'local-admin-key-123', ziina, billing: { token: 'local', test: true }, siteUrl: `http://127.0.0.1:${process.env.PORT || 8770}` });
 const types = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2' };
 
 createServer(async (req, res) => {

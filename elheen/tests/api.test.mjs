@@ -16,7 +16,7 @@ function memoryStore() {
 }
 const setup = (extra = {}) => {
   const store = memoryStore();
-  const h = makeHandler(store, { ELHEEN_INVITE: 'letmein', ...extra });
+  const h = makeHandler(store, { ...extra });
   const call = async (method, path, body, token, extraHeaders = {}) => {
     const res = await h(new Request(`https://x.test/api/${path}`, {
       method, headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}), ...extraHeaders },
@@ -28,13 +28,14 @@ const setup = (extra = {}) => {
   call.store = store;
   return call;
 };
-const signup = (call, extra = {}) => call('POST', 'signup', { invite: 'letmein', name: 'Studio Layali', kind: 'interior', password: 'longenough', ...extra });
+const signup = (call, extra = {}, headers = {}) => call('POST', 'signup', { name: 'Studio Layali', kind: 'interior', password: 'longenough', phone: '0581112233', ...extra }, null, headers);
 const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
 
-test('sign-up needs the invite code and a real password', async () => {
+test('anyone can sign up with a name, a WhatsApp number and a real password', async () => {
   const call = setup();
-  assert.equal((await signup(call, { invite: 'wrong' })).status, 403);
   assert.equal((await signup(call, { password: 'short' })).status, 400);
+  assert.equal((await signup(call, { phone: '' })).status, 400);
+  assert.equal((await signup(call, { website: 'http://spam.example' })).status, 400);
   const ok = await signup(call);
   assert.equal(ok.status, 200);
   assert.equal(ok.data.slug, 'studio-layali');
@@ -566,6 +567,24 @@ test('leads the owner adds start as talking, with no alert and nothing to chase 
   assert.ok(l.lastTouch);
   assert.equal(sent.length, 0);
   assert.equal((await call('GET', 'today', null, token)).data.tasks.length, 0);
+});
+
+test('one connection can only open a few accounts a day', async () => {
+  const call = setup();
+  const ip = { 'x-nf-client-connection-ip': '203.0.113.9' };
+  for (let i = 0; i < 5; i++) assert.equal((await signup(call, { name: `Shop ${i}` }, ip)).status, 200);
+  assert.equal((await signup(call, { name: 'Shop 6' }, ip)).status, 429);
+  assert.equal((await signup(call, { name: 'Shop 7' }, { 'x-nf-client-connection-ip': '203.0.113.10' })).status, 200);
+});
+
+test('the set-up checklist remembers what the owner has done', async () => {
+  const call = setup();
+  const { data: { token } } = await signup(call);
+  let me = (await call('GET', 'me', null, token)).data.business;
+  assert.equal(me.phone, '0581112233');
+  assert.ok(!me.servicesSaved && !me.linkShared);
+  me = (await call('PUT', 'me', { services: me.services, linkShared: true }, token)).data.business;
+  assert.ok(me.servicesSaved && me.linkShared);
 });
 
 test('marking a follow-up done or snoozing it takes it off today\'s list', async () => {
