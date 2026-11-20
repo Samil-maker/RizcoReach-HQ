@@ -209,7 +209,8 @@ test('connecting Facebook stores the page without ever showing its token', async
   assert.equal(back.status, 302);
   assert.equal(back.headers.get('location'), '/app?meta=connected');
   const { data: { business } } = await call('GET', 'me', null, token);
-  assert.deepEqual(business.meta.pages, [{ id: '111', name: 'Layali Page', live: true }]);
+  assert.deepEqual(business.meta.pages, [{ id: '111', name: 'Layali Page', live: true, ig: '' }]);
+  assert.doesNotMatch(start.data.url, /instagram_manage_messages/);   // messaging is only asked for once Meta has approved it
   assert.ok(!JSON.stringify(business).includes('PAGETOKEN'));
   assert.ok(fb.calls.some((c) => c.path === '111/subscribed_apps' && c.method === 'POST'));
   assert.equal((await call('GET', `meta/callback?code=abc&state=${state}`)).headers.get('location'), '/app?meta=expired');
@@ -721,6 +722,136 @@ test('lead sources from tracked links are kept short and plain', async () => {
   await call('POST', 'public/studio-layali/lead', { name: 'B', phone: '0501234567', source: 'van <script>' });
   const sources = (await call('GET', 'leads', null, token)).data.leads.map((l) => l.source).sort();
   assert.deepEqual(sources, ['instagram', 'vanscript']);
+});
+
+test('team members sign in with their own password and only see what their role allows', async () => {
+  const call = setup({ siteUrl: 'https://x.test' });
+  const { data: { token: owner } } = await signup(call);
+  assert.equal((await call('POST', 'team', { name: '' }, owner)).status, 400);
+  const sara = (await call('POST', 'team', { name: 'Sara', role: 'full' }, owner)).data;
+  const ahmed = (await call('POST', 'team', { name: 'Ahmed', role: 'visits' }, owner)).data;
+  assert.ok(sara.password.length >= 8 && !('pass' in sara.user));
+  assert.equal((await call('POST', 'team', { name: 'sara' }, owner)).status, 409);
+  const me = (await call('GET', 'me', null, owner)).data.business;
+  assert.deepEqual(me.team.sort(), ['Ahmed', 'Sara']);
+  assert.ok(me.users.every((u) => !('pass' in u)));
+
+  const login = async (password) => (await call('POST', 'login', { slug: 'studio-layali', password })).data.token;
+  const s = await login(sara.password), a = await login(ahmed.password);
+  assert.ok(s && a);
+  assert.equal((await call('GET', 'me', null, a)).data.business.you.role, 'visits');
+  assert.equal((await call('GET', 'me', null, a)).data.business.users.length, 0);
+
+  // one lead for Ahmed, one for nobody
+  await call('POST', 'public/studio-layali/lead', { name: 'Given', phone: '0501234567' });
+  await call('POST', 'public/studio-layali/lead', { name: 'Other', phone: '0501234567' });
+  const all = (await call('GET', 'leads', null, s)).data.leads;
+  assert.equal(all.length, 2);   // full access sees everything
+  const given = all.find((l) => l.name === 'Given');
+  await call('PATCH', `leads/${given.id}`, { assignee: 'Ahmed', when: new Date(Date.now() + 20 * 3600e3).toISOString() }, s);
+  assert.match((await call('GET', 'leads', null, owner)).data.leads.find((l) => l.id === given.id).history.map((h) => h.text).join('|'), /Time set \(Sara\)/);
+  const mine = (await call('GET', 'leads', null, a)).data.leads;
+  assert.deepEqual(mine.map((l) => l.name), ['Given']);
+  assert.equal((await call('PATCH', `leads/${all.find((l) => l.name === 'Other').id}`, { ownerNote: 'x' }, a)).status, 404);
+  const noted = (await call('PATCH', `leads/${given.id}`, { status: 'lost', siteNote: 'Measured the kitchen, 4.2 m wall' }, a)).data.lead;
+  assert.equal(noted.status, 'booked');   // the visits role cannot move the stage
+  assert.match(noted.history.at(-1).text, /Ahmed: Measured the kitchen/);
+  assert.deepEqual((await call('GET', 'quotes', null, a)).data.quotes, []);
+  assert.equal((await call('POST', 'quotes', { leadId: given.id, items: ITEMS }, a)).status, 403);
+  assert.equal((await call('POST', 'leads', { name: 'X' }, a)).status, 403);
+  assert.equal((await call('PUT', 'me', { name: 'Hacked' }, a)).status, 403);
+  assert.ok((await call('GET', 'today', null, a)).data.tasks.every((t) => t.type === 'visit'));
+  // only the owner manages billing, logins and connections
+  assert.equal((await call('POST', 'billing/pay', { option: 'month' }, s)).status, 403);
+  assert.equal((await call('GET', 'team', null, s)).status, 403);
+  assert.equal((await call('PUT', 'me', { area: 'Al Quoz' }, s)).status, 200);
+  // a member changes their own password, never to one already in use
+  assert.equal((await call('POST', 'password', { current: ahmed.password, next: sara.password }, a)).status, 400);
+  assert.equal((await call('POST', 'password', { current: ahmed.password, next: 'ahmed-new-pass' }, a)).status, 200);
+  assert.ok(await login('ahmed-new-pass'));
+  assert.ok(await login('longenough'));   // the owner is untouched
+  // removing a login signs that person out everywhere
+  await call('DELETE', `team/${ahmed.user.id}`, null, owner);
+  assert.equal((await call('GET', 'leads', null, a)).status, 401);
+  const reset = (await call('PATCH', `team/${sara.user.id}`, { resetPassword: true, role: 'visits' }, owner)).data;
+  assert.equal(reset.user.role, 'visits');
+  assert.ok(await login(reset.password));
+});
+
+test('Google Ads lead forms land as leads, once, only with the right key', async () => {
+  const call = setup();
+  const { data: { token } } = await signup(call);
+  const key = (await call('GET', 'me', null, token)).data.business.googleKey;
+  assert.ok(key);
+  const lead = { lead_id: 'G-1', api_version: '1.0', form_id: 9, campaign_id: 77, gcl_id: 'EAIaIQ-test', google_key: key,
+    user_column_data: [{ column_id: 'FULL_NAME', string_value: 'Noor Hassan' }, { column_id: 'PHONE_NUMBER', string_value: '+971 50 123 4567' },
+      { column_id: 'EMAIL', string_value: 'noor@example.com' }, { column_name: 'What do you need?', column_id: 'what_do_you_need', string_value: 'Villa painting' }] };
+  assert.equal((await call('POST', 'google/studio-layali', { ...lead, google_key: 'wrong' })).status, 403);
+  assert.equal((await call('POST', 'google/studio-layali', lead)).status, 200);
+  assert.equal((await call('POST', 'google/studio-layali', lead)).status, 200);   // Google may send it again
+  const leads = (await call('GET', 'leads', null, token)).data.leads;
+  assert.equal(leads.length, 1);
+  assert.equal(leads[0].name, 'Noor Hassan');
+  assert.equal(leads[0].source, 'google-ads');
+  assert.equal(leads[0].gclid, 'EAIaIQ-test');
+  assert.match(leads[0].note, /What do you need\?: Villa painting/);
+  await call('POST', 'google/studio-layali', { google_key: key, is_test: true, user_column_data: [{ column_id: 'FULL_NAME', string_value: 'Sample' }] });
+  assert.ok((await call('GET', 'leads', null, token)).data.leads.some((l) => l.name === 'Test: Sample'));
+});
+
+test('Instagram, Facebook and WhatsApp messages become leads, and a reply goes back the same way', async () => {
+  const sent = [];
+  const fb = fakeMeta();
+  const graph = async (path, opts = {}) => {
+    if (path === '111' && opts.params?.fields?.includes('instagram')) return { instagram_business_account: { id: 'IG9', username: 'layali.studio' } };
+    if (path === 'IGSID1') return { name: 'Reem Khalid' };
+    if (path === '111/messages' || path === 'PHONE7/messages') { sent.push({ path, body: opts.body }); return { message_id: 'm1' }; }
+    if (path === 'oauth/access_token' && opts.params?.code === 'WACODE') return { access_token: 'WATOKEN' };
+    if (path === 'WABA1/subscribed_apps') return { success: true };
+    if (path === 'PHONE7') return { display_phone_number: '+971 50 000 0000' };
+    return fb.graph(path, opts);
+  };
+  const call = setup({ graph, meta: { ...META, messaging: true, waConfigId: 'CFG' } });
+  const { token } = await connectedBusiness(call);
+  assert.ok(fb.calls.some((c) => c.path === '111/subscribed_apps' && c.params.subscribed_fields === 'leadgen,messages'));
+  const signedPost = async (payload) => {
+    const sig = `sha256=${createHmac('sha256', 'SECRET').update(JSON.stringify(payload)).digest('hex')}`;
+    return call('POST', 'meta/webhook', payload, null, { 'x-hub-signature-256': sig });
+  };
+  const dm = (mid, text) => ({ object: 'instagram', entry: [{ id: 'IG9', messaging: [{ sender: { id: 'IGSID1' }, recipient: { id: 'IG9' }, timestamp: Date.now(), message: { mid, text } }] }] });
+  await signedPost(dm('mid.1', 'Hi, how much for a majlis design?'));
+  await signedPost(dm('mid.1', 'Hi, how much for a majlis design?'));   // delivered twice
+  await signedPost({ object: 'instagram', entry: [{ id: 'IG9', messaging: [{ sender: { id: 'IG9' }, recipient: { id: 'IGSID1' }, message: { mid: 'mid.echo', text: 'ours', is_echo: true } }] }] });
+  let leads = (await call('GET', 'leads', null, token)).data.leads;
+  assert.equal(leads.length, 1);
+  assert.equal(leads[0].name, 'Reem Khalid');
+  assert.equal(leads[0].source, 'instagram-dm');
+  assert.equal(leads[0].messages.length, 1);
+  // reply from Elheen, then a second message continues the same lead
+  const replied = (await call('POST', `leads/${leads[0].id}/reply`, { text: 'Hi Reem, happy to help. When can we call?' }, token)).data.lead;
+  assert.equal(replied.status, 'talking');
+  assert.deepEqual(sent[0], { path: '111/messages', body: { recipient: { id: 'IGSID1' }, message: { text: 'Hi Reem, happy to help. When can we call?' }, messaging_type: 'RESPONSE' } });
+  await signedPost(dm('mid.2', 'Tomorrow at 4 works'));
+  leads = (await call('GET', 'leads', null, token)).data.leads;
+  assert.equal(leads.length, 1);
+  assert.deepEqual(leads[0].messages.map((m) => m.from), ['them', 'us', 'them']);
+  const tasks = (await call('GET', 'today', null, token)).data.tasks;
+  assert.ok(tasks.some((t) => t.type === 'message' && /Tomorrow at 4/.test(t.detail)));
+
+  // WhatsApp: connect through Meta's sign-up window, then a message arrives
+  assert.equal((await call('POST', 'whatsapp/connect', { code: 'WACODE', phone_number_id: 'PHONE7', waba_id: 'WABA1' }, token)).data.business.whatsapp.display, '+971 50 000 0000');
+  await signedPost({ object: 'whatsapp_business_account', entry: [{ id: 'WABA1', changes: [{ field: 'messages', value: { messaging_product: 'whatsapp', metadata: { phone_number_id: 'PHONE7' },
+    contacts: [{ wa_id: '971501112222', profile: { name: 'Omar' } }], messages: [{ from: '971501112222', id: 'wamid.1', timestamp: String(Math.floor(Date.now() / 1000)), type: 'text', text: { body: 'Need a deep clean on Saturday' } }] } }] }] });
+  const wa = (await call('GET', 'leads', null, token)).data.leads.find((l) => l.source === 'whatsapp');
+  assert.equal(wa.name, 'Omar');
+  assert.equal(wa.phone, '971501112222');
+  await call('POST', `leads/${wa.id}/reply`, { text: 'Yes, Saturday 10am works.' }, token);
+  assert.deepEqual(sent[1], { path: 'PHONE7/messages', body: { messaging_product: 'whatsapp', to: '971501112222', type: 'text', text: { body: 'Yes, Saturday 10am works.' } } });
+  // after 24 hours the platforms only allow replies from their own apps
+  const stored = await call.store.get(`leads/studio-layali/${wa.id}`, { type: 'json' });
+  stored.lastInboundAt = Date.now() - 25 * 3600e3;
+  await call.store.setJSON(`leads/studio-layali/${wa.id}`, stored);
+  assert.equal((await call('POST', `leads/${wa.id}/reply`, { text: 'Late' }, token)).status, 409);
 });
 
 test('marking a follow-up done or snoozing it takes it off today\'s list', async () => {

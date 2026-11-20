@@ -106,6 +106,10 @@
         items: [['First consultation', '45 min · Free', 'free'], ['Measurement visit', '60 min · AED 300', 'AED 300'], ['Full design package', 'Priced on a quote', 'quote']] },
       home: { name: 'Bright Build Renovation', place: 'Example business · All of Dubai', step1: '1. What do you need?', step2: '2. Pick a visit time tomorrow', visit: true, word: 'site visit',
         items: [['Kitchen renovation', 'Free site visit and quote', 'quote'], ['Bathroom renovation', 'Free site visit and quote', 'quote'], ['Painting, full villa', 'Free site visit and quote', 'quote']] },
+      automotive: { name: 'Gloss Lab Detailing', place: 'Example business · Al Quoz', step1: '1. Choose a service', step2: '2. Pick a time tomorrow', visit: false, word: 'appointment',
+        items: [['Full detailing', '3 hours · AED 600', 'AED 600'], ['Ceramic coating', '1 day · AED 2,200', 'AED 2,200'], ['Interior clean', '90 min · AED 250', 'AED 250']] },
+      salon: { name: 'Lumière Salon and Spa', place: 'Example business · Jumeirah Lakes Towers', step1: '1. Choose a service', step2: '2. Pick a time tomorrow', visit: false, word: 'appointment',
+        items: [['Hair colour', '90 min · AED 450', 'AED 450'], ['Gel manicure', '45 min · AED 140', 'AED 140'], ['Signature facial', '60 min · AED 320', 'AED 320']] },
       maintenance: { name: 'Cool Home Maintenance', place: 'Example business · Arabian Ranches and Dubai Hills', step1: '1. What do you need?', step2: '2. Pick a visit time tomorrow', visit: true, word: 'visit',
         items: [['AC service, whole villa', '2 hours · AED 450', 'AED 450'], ['Pool cleaning, monthly', 'Priced on a quote', 'quote'], ['Garden maintenance', 'Free visit and quote', 'quote']] },
     };

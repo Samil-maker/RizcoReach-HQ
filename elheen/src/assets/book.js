@@ -2,7 +2,10 @@
 (() => {
   const $ = (id) => document.getElementById(id);
   const slug = decodeURIComponent(location.pathname.split('/').filter(Boolean)[1] || new URLSearchParams(location.search).get('b') || '');
-  const source = new URLSearchParams(location.search).get('src') || (document.referrer.includes('instagram') ? 'instagram' : document.referrer.includes('google') ? 'google' : 'link');
+  const params = new URLSearchParams(location.search);
+  // ad click IDs, so a won job can be reported back to Google Ads or Meta
+  const clicks = { gclid: params.get('gclid') || '', fbclid: params.get('fbclid') || '', campaign: params.get('utm_campaign') || '' };
+  const source = (params.get('src') || (clicks.gclid ? 'google-ads' : '')) || new URLSearchParams(location.search).get('src') || (document.referrer.includes('instagram') ? 'instagram' : document.referrer.includes('google') ? 'google' : 'link');
   const state = { serviceId: null, when: null, location: null, photos: [], budgetBand: null, start: null, property: null };
   const ASK = {
     budgets: ['budgetBand', [['u10', 'Under AED 10,000'], ['b10', 'AED 10,000 to 50,000'], ['b50', 'AED 50,000 to 150,000'], ['o150', 'Over AED 150,000'], ['unsure', 'Not sure yet']]],
@@ -141,7 +144,7 @@
     try {
       const res = await fetch(`/api/public/${encodeURIComponent(slug)}/lead`, {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name, phone, note: $('note').value, address: $('address').value, location: state.location, serviceId: state.serviceId, when: state.when, photos: state.photos, budgetBand: state.budgetBand, start: state.start, property: state.property, source }),
+        body: JSON.stringify({ name, phone, note: $('note').value, address: $('address').value, location: state.location, serviceId: state.serviceId, when: state.when, photos: state.photos, budgetBand: state.budgetBand, start: state.start, property: state.property, source, ...clicks }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Something went wrong. Please try again.');

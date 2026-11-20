@@ -12,10 +12,10 @@ export async function pushNotify(subscriptions, payload) {
   return dead;
 }
 
-export async function graphFetch(path, { method = 'GET', params = {} } = {}) {
+export async function graphFetch(path, { method = 'GET', params = {}, body } = {}) {
   const u = new URL(`https://graph.facebook.com/${GRAPH_VERSION}/${path}`);
   for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
-  const res = await fetch(u, { method });
+  const res = await fetch(u, { method, ...(body ? { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {}) });
   const data = await res.json().catch(() => ({}));
   if (!res.ok || data.error) throw new Error(data.error?.message || `Facebook request failed: ${res.status}`);
   return data;
@@ -45,6 +45,9 @@ export function envFromProcess() {
     meta: {
       appId: process.env.META_APP_ID, appSecret: process.env.META_APP_SECRET, verifyToken: process.env.META_VERIFY_TOKEN,
       redirectUri: `${siteUrl}/api/meta/callback`,
+      // switched on once Meta approves the messaging permissions and WhatsApp Tech Provider set-up
+      messaging: process.env.META_MESSAGING === 'on',
+      waConfigId: process.env.META_WA_CONFIG_ID || '',
     },
   };
 }

@@ -82,6 +82,22 @@ Netlify settings: `ZIINA_TOKEN` (the Elheen Ziina access token, secret),
 Payments are confirmed by a signed Ziina webhook at `/api/billing/webhook` and
 again when the owner returns to the app.
 
+## Connections
+
+Facebook and Instagram lead ads, Instagram and Facebook messages, WhatsApp and
+Google Ads lead forms. What the owner must set up at Meta is in `META-SETUP.md`.
+Netlify settings: `META_APP_ID`, `META_APP_SECRET`, `META_VERIFY_TOKEN`,
+`META_MESSAGING` (`on` once Meta approves messaging) and `META_WA_CONFIG_ID`
+(the WhatsApp Embedded Signup configuration). Google Ads lead forms post to
+`/api/google/<business>` with the business's key, shown in Set-up.
+
+## Team logins
+
+The owner creates a login per person in Set-up. "Full access" sees everything
+except the plan, logins and connections; "Their visits only" sees just the
+leads given to them and can add site notes. Removing a login signs that person
+out everywhere.
+
 ## Admin
 
 `/admin` lists every business with its plan, payments, leads and quotes, and

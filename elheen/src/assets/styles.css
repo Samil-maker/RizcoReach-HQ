@@ -406,3 +406,10 @@ input:focus,select:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0
 .anchor b{color:#fff;font-size:1.15rem}
 
 @media(min-width:900px){.offer #join{position:sticky;top:110px;align-self:start}}
+
+/* the three-part headline must fit beside the text on desktop */
+.hero h1.trio{font-size:clamp(2.15rem,5vw,4.15rem)}
+.hero h1.trio em{font-style:normal;color:var(--brand)}
+.pillars .card .tag{margin-bottom:14px}
+.pillars .card .ico{margin-bottom:14px}
+.foot-bottom a{color:inherit;text-decoration:underline;text-underline-offset:3px}

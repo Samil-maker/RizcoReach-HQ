@@ -19,6 +19,7 @@
     checkin: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
     visit: '<path d="M12 21s-7-6.100-7-11.500a7 7 0 0 1 14 0C19 14.900 12 21 12 21z"/><circle cx="12" cy="9.500" r="2.500"/>',
     deposit: '<rect x="2.500" y="6" width="19" height="13" rx="2"/><path d="M2.500 10h19M6.500 15h3"/>',
+    message: '<path d="M4 5h16v11H8l-4 4z"/><path d="M8 10h8"/>',
     review: '<path d="M12 3l2.700 5.500 6 .900-4.350 4.250 1 6L12 16.800 6.650 19.650l1-6L3.300 9.400l6-.900z"/>',
     toquote: '<path d="M12 20h9"/><path d="M16.500 3.500a2.100 2.100 0 0 1 3 3L7 19l-4 1 1-4z"/>',
     quote: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/>',
@@ -44,7 +45,7 @@
     ['qr', 'Flyers and business cards', 'Print the QR code.', true],
     ['site', 'Vans and site boards', 'Print the QR code large, so people can scan it from the road.', true],
   ];
-  const SOURCES = { facebook: 'Facebook', tiktok: 'TikTok', ads: 'Ads', qr: 'QR code', site: 'Van or site board', instagram: 'Instagram', google: 'Google', link: 'Enquiry link', ad: 'Ad', 'meta-ad': 'Facebook ad', website: 'Website', 'instagram-dm': 'Instagram message', whatsapp: 'WhatsApp', call: 'Phone call', 'walk-in': 'Walk-in', referral: 'Referral', other: 'Other' };
+  const SOURCES = { 'google-ads': 'Google Ads', messenger: 'Facebook message', facebook: 'Facebook', tiktok: 'TikTok', ads: 'Ads', qr: 'QR code', site: 'Van or site board', instagram: 'Instagram', google: 'Google', link: 'Enquiry link', ad: 'Ad', 'meta-ad': 'Facebook ad', website: 'Website', 'instagram-dm': 'Instagram message', whatsapp: 'WhatsApp', call: 'Phone call', 'walk-in': 'Walk-in', referral: 'Referral', other: 'Other' };
   const QSTATE = { draft: 'Draft', sent: 'Sent', accepted: 'Accepted', declined: 'Declined', expired: 'Expired' };
   const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const stageWords = () => (biz.project ? STAGES : SHOP_STAGES);
@@ -97,6 +98,7 @@
   let current = { name: '', arg: '' }, prevHash = '', leadView = 'list', leadFilter = 'all', quoteFilter = 'all', calFilter = 'all';
   let photoUrls = [], qState = null, chosenOption = 'month', asked = new Set();
   const leadById = (id) => leads.find((l) => l.id === id);
+  const role = () => biz?.you?.role || 'owner';
 
   const api = async (method, path, body) => {
     const res = await fetch(`/api/${path}`, {
@@ -203,7 +205,8 @@
     document.querySelectorAll('.view').forEach((v) => { v.hidden = true; });
     fill($('headActions'), );
     $('backBtn').hidden = true;
-    $('sideBiz').textContent = biz.name;
+    $('sideBiz').textContent = biz.you && biz.you.role !== 'owner' ? `${biz.name} · ${biz.you.name}` : biz.name;
+    document.body.dataset.role = biz.you?.role || 'owner';
     drawBanner();
     if (locked && name !== 'setup') { $('viewTitle').textContent = 'Plan ended'; $('view-locked').hidden = false; document.title = 'Elheen'; return; }
     $('viewTitle').textContent = TITLES[name] || '';
@@ -311,6 +314,13 @@
           el('button', { class: 'btn btn-ghost btn-sm', type: 'button', on: { click: () => { asked.delete(key); drawActs(); } } }, 'Not yet')));
         return;
       }
+      if (l.thread && ['reply', 'message', 'checkin'].includes(t.type)) {
+        fill(acts,
+          el('a', { class: 'btn btn-primary btn-sm', href: `/app#lead/${l.id}` }, 'Reply'),
+          el('button', { class: 'btn btn-ghost btn-sm', type: 'button', on: { click: () => finishTask(t, 'snooze', 1) } }, 'Tomorrow'),
+          el('button', { class: 'btn btn-ghost btn-sm', type: 'button', on: { click: () => finishTask(t, 'done') } }, 'Done'));
+        return;
+      }
       if (t.type === 'toquote') {
         fill(acts,
           el('a', { class: 'btn btn-primary btn-sm', href: `/app#newquote/${l.id}` }, 'Make the quote'),
@@ -342,7 +352,7 @@
       ...(biz.project ? [] : [test]),
     ];
     const done = steps.filter(([ok]) => ok).length;
-    if (biz.checklistHidden || done === steps.length) return null;
+    if (role() !== 'owner' || biz.checklistHidden || done === steps.length) return null;
     return el('div', { class: 'box setup-list' },
       el('div', { class: 'box-head' }, el('h2', {}, 'Get ready in five minutes'), el('span', { class: 'muted small' }, `${done} of ${steps.length} done`)),
       el('div', { class: 'progress', role: 'img', 'aria-label': `${done} of ${steps.length} done` }, el('i', { style: `width:${(done / steps.length) * 100}%` })),
@@ -372,9 +382,10 @@
       + leads.filter((l) => ['won', 'done'].includes(l.status)).flatMap((l) => l.milestones || []).filter((m) => !m.paidAt).reduce((n, m) => n + m.amount, 0);
     fill($('greet'), `${h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'}. `,
       el('b', {}, tasks.length ? `${tasks.length} thing${tasks.length === 1 ? '' : 's'} need${tasks.length === 1 ? 's' : ''} you today.` : 'Nothing needs you right now.'),
-      waiting ? ` ${aed(waiting)} is waiting on quotes and payments.` : '',
+      waiting && role() !== 'visits' ? ` ${aed(waiting)} is waiting on quotes and payments.` : '',
       tasks.length ? ' Everything else is on track.' : '');
-    fill($('stats'), ...stats());
+    fill($('stats'), role() === 'visits' ? [] : stats());
+    $('stats').previousElementSibling.hidden = role() === 'visits';
     const groups = [
       ['Reply first', tasks.filter((t) => t.type === 'reply').sort((a, b) => ({ good: 0, check: 2 }[a.fit] ?? 1) - ({ good: 0, check: 2 }[b.fit] ?? 1))],
       ['Send quotes', tasks.filter((t) => t.type === 'toquote')],
@@ -382,6 +393,7 @@
       ['Chase quotes', tasks.filter((t) => t.type === 'quote')],
       ['Collect payments', tasks.filter((t) => t.type === 'deposit')],
       ['Ask for reviews', tasks.filter((t) => t.type === 'review')],
+      ['New messages', tasks.filter((t) => t.type === 'message')],
       ['Check in', tasks.filter((t) => t.type === 'checkin')],
     ].filter(([, list]) => list.length);
     if (!groups.length) {
@@ -414,7 +426,7 @@
   }
   function drawLeads() {
     $('view-leads').hidden = false;
-    fill($('headActions'), el('button', { class: 'btn btn-primary btn-sm', type: 'button', on: { click: () => { $('addLeadForm').hidden = false; $('alName').focus(); } } }, 'Add lead'));
+    if (role() !== 'visits') fill($('headActions'), el('button', { class: 'btn btn-primary btn-sm', type: 'button', on: { click: () => { $('addLeadForm').hidden = false; $('alName').focus(); } } }, 'Add lead'));
     const list = searched();
     const count = (s) => list.filter((l) => l.status === s).length;
     const chips = [['all', 'All', list.length], ...stageList().map((s) => [s, stageWords()[s], count(s)])];
@@ -463,9 +475,98 @@
         el('div', { class: 'src-table', role: 'table', 'aria-label': 'Leads by source' },
           el('div', { class: 'src-row src-head', role: 'row' }, ['Came from', 'Leads', 'Quoted', 'Won', 'Won AED'].map((h) => el('span', { role: 'columnheader' }, h))),
           sorted.map((r) => el('div', { class: 'src-row', role: 'row' }, el('span', { role: 'cell' }, SOURCES[r.key] || r.key), el('span', { role: 'cell' }, String(r.leads)), el('span', { role: 'cell' }, String(r.quoted)), el('span', { role: 'cell' }, String(r.won)), el('b', { role: 'cell' }, aed(r.value))))),
-        el('p', { class: 'muted small' }, 'Give every channel its own link in Set-up, so each lead is counted in the right place.'))
+        el('p', { class: 'muted small' }, 'Give every channel its own link in Set-up, so each lead is counted in the right place.'),
+        list.some((l) => l.gclid && ['won', 'done'].includes(l.status)) ? el('div', { class: 'row-actions' }, el('button', { class: 'btn btn-ghost btn-sm', type: 'button', on: { click: googleConversions } }, 'Download won jobs for Google Ads')) : null)
         : el('div', { class: 'empty' }, el('b', {}, 'No leads in this period.'), 'Leads from each of your links are counted here.'));
   }
+
+  // Google Ads: upload this file under Goals › Conversions › Uploads, with a conversion action named "Elheen won job"
+  function googleConversions() {
+    const stamp = (t) => { const d = new Date(t + DUBAI); return d.toISOString().slice(0, 19).replace('T', ' '); };
+    const rows = leads.filter((l) => l.gclid && ['won', 'done'].includes(l.status))
+      .map((l) => [l.gclid, 'Elheen won job', stamp(l.wonAt || l.lastTouch || l.createdAt), money(l.value || l.price || 0), 'AED']);
+    const csv = ['Parameters:TimeZone=Asia/Dubai', 'Google Click ID,Conversion Name,Conversion Time,Conversion Value,Conversion Currency', ...rows.map((r) => r.join(','))].join('\r\n');
+    const a = el('a', { href: URL.createObjectURL(new Blob([csv], { type: 'text/csv' })), download: `elheen-google-ads-conversions-${new Date().toISOString().slice(0, 10)}.csv` });
+    document.body.append(a); a.click(); a.remove();
+    toast(`${rows.length} won job${rows.length === 1 ? '' : 's'} ready to upload to Google Ads.`);
+  }
+
+  // team logins, for the owner
+  function shareLogin(name, password) {
+    const msg = `Hi ${first(name)}, here is your Elheen login.\n\nGo to ${location.origin}/app\nBusiness name: ${biz.name}\nPassword: ${password}\n\nYou can change the password after you sign in.`;
+    fill($('loginCard'), el('p', {}, `${name}'s password: `, el('code', {}, password)),
+      el('p', { class: 'muted small' }, 'It is shown only now. Send it to them, then close this.'),
+      el('div', { class: 'row-actions' }, el('a', { class: 'btn btn-wa btn-sm', href: wa('', msg), target: '_blank', rel: 'noopener' }, 'Send on WhatsApp'),
+        el('button', { class: 'btn btn-ghost btn-sm', type: 'button', on: { click: () => { $('loginCard').hidden = true; } } }, 'Close')));
+    $('loginCard').hidden = false;
+  }
+  const ROLE_WORDS = { full: 'Full access', visits: 'Their visits only' };
+  function drawTeam() {
+    if (role() !== 'owner') return;
+    fill($('teamNames'), (biz.team || []).filter((n) => !(biz.users || []).some((u) => u.name === n)).map((n) => el('option', { value: n })));
+    fill($('userList'), (biz.users || []).length ? biz.users.map((u) => el('div', { class: 'user-row' },
+      el('div', {}, el('b', {}, u.name), el('span', { class: 'muted small' }, `Login since ${dateOf(u.createdAt, true)}`)),
+      el('div', { class: 'user-acts' },
+        el('select', { 'aria-label': `What ${u.name} can see`, on: { change: async (e) => { try { await api('PATCH', `team/${u.id}`, { role: e.target.value }); biz = (await api('GET', 'me')).business; toast(`${u.name}: ${ROLE_WORDS[e.target.value]}.`); } catch (err) { oops(err); } } } },
+          Object.entries(ROLE_WORDS).map(([k, v]) => el('option', { value: k, selected: u.role === k }, v))),
+        el('button', { class: 'link', type: 'button', on: { click: async () => {
+          if (!confirm(`Give ${u.name} a new password? The old one stops working.`)) return;
+          try { const r = await api('PATCH', `team/${u.id}`, { resetPassword: true }); shareLogin(u.name, r.password); } catch (err) { oops(err); }
+        } } }, 'New password'),
+        el('button', { class: 'link', type: 'button', on: { click: async () => {
+          if (!confirm(`Remove ${u.name}'s login? They are signed out straight away.`)) return;
+          try { await api('DELETE', `team/${u.id}`); biz = (await api('GET', 'me')).business; drawTeam(); } catch (err) { oops(err); }
+        } } }, 'Remove')))) : [el('p', { class: 'muted small' }, 'No logins yet. Only you can sign in.')]);
+  }
+  $('addUser').addEventListener('click', async () => {
+    $('userStatus').textContent = '';
+    try {
+      const r = await api('POST', 'team', { name: $('newUserName').value, role: $('newUserRole').value });
+      $('newUserName').value = '';
+      biz = (await api('GET', 'me')).business; drawTeam(); fillLists();
+      shareLogin(r.user.name, r.password);
+    } catch (err) { $('userStatus').textContent = err.message; }
+  });
+
+  // WhatsApp, through Meta's sign-up window
+  let fbReady = null;
+  const loadFb = () => fbReady || (fbReady = new Promise((resolve, reject) => {
+    window.fbAsyncInit = () => { window.FB.init({ appId: biz.metaAppId, autoLogAppEvents: true, xfbml: false, version: 'v26.0' }); resolve(); };
+    document.head.append(el('script', { src: 'https://connect.facebook.net/en_US/sdk.js', async: true, crossOrigin: 'anonymous', onerror: reject }));
+  }));
+  function drawWa() {
+    const on = !!biz.whatsapp;
+    $('waPanel').hidden = !biz.waAvailable && !on;
+    $('waConnect').hidden = on; $('waOff').hidden = !on; $('waNumber').hidden = !on;
+    if (on) $('waNumber').textContent = `Connected: ${biz.whatsapp.display || 'your WhatsApp number'}`;
+  }
+  $('waConnect').addEventListener('click', async () => {
+    $('waStatus').textContent = 'Opening WhatsApp…';
+    try { await loadFb(); } catch { $('waStatus').textContent = 'Facebook could not be reached. Check your connection and try again.'; return; }
+    let picked = null;
+    const listen = (e) => {
+      try {
+        if (!/(^|\.)facebook\.com$/.test(new URL(e.origin).hostname)) return;
+        const d = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+        if (d && d.type === 'WA_EMBEDDED_SIGNUP' && String(d.event || '').startsWith('FINISH')) picked = d.data;
+      } catch { /* other messages */ }
+    };
+    window.addEventListener('message', listen);
+    window.FB.login((resp) => {
+      setTimeout(async () => {
+        window.removeEventListener('message', listen);
+        const code = resp?.authResponse?.code;
+        if (!code || !picked?.phone_number_id) { $('waStatus').textContent = 'WhatsApp was not connected. Nothing was changed.'; return; }
+        try { biz = (await api('POST', 'whatsapp/connect', { code, phone_number_id: picked.phone_number_id, waba_id: picked.waba_id })).business; drawWa(); $('waStatus').textContent = 'WhatsApp is connected. New chats will land in Leads.'; }
+        catch (err) { $('waStatus').textContent = err.message; }
+      }, 400);
+    }, { config_id: biz.waConfigId, response_type: 'code', override_default_response_type: true, extras: { setup: {}, featureType: 'whatsapp_business_app_onboarding', sessionInfoVersion: '3' } });
+  });
+  $('waOff').addEventListener('click', async () => {
+    if (!confirm('Stop bringing WhatsApp chats into Elheen? Leads already here stay.')) return;
+    try { biz = (await api('POST', 'whatsapp/disconnect')).business; drawWa(); $('waStatus').textContent = 'Disconnected.'; } catch (err) { $('waStatus').textContent = err.message; }
+  });
+  document.querySelectorAll('[data-copy]').forEach((b) => b.addEventListener('click', async () => { $('gStatus').textContent = (await copy($(b.dataset.copy).value, $(b.dataset.copy))) ? 'Copied.' : 'Select it and copy.'; }));
 
   // one link per channel, a QR code for print, and a form for any website
   function drawChannels() {
@@ -673,23 +774,52 @@
     note.addEventListener('change', () => patchLead(l.id, { ownerNote: note.value }, true).then(() => { noteStatus.textContent = 'Saved.'; }).catch(oops));
     const hist = (l.history || []).slice().reverse().slice(0, 30);
 
-    fill($('view-lead'), 
+    // the conversation from Instagram, Facebook or WhatsApp, answered from here
+    let convoBox = null;
+    if ((l.messages || []).length) {
+      const channel = { instagram: 'Instagram', messenger: 'Facebook', whatsapp: 'WhatsApp' }[l.thread?.channel] || 'Messages';
+      const list = el('div', { class: 'convo' }, l.messages.map((m) => el('div', { class: `msg ${m.from}` }, m.text, el('small', {}, `${m.from === 'us' && m.by ? `${m.by} · ` : ''}${fmt(m.at, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true })}`))));
+      const open = Date.now() - (l.lastInboundAt || 0) < 24 * 36e5;
+      const text = el('textarea', { rows: 2, placeholder: open ? `Reply on ${channel}…` : '', disabled: !open });
+      const send = el('button', { class: 'btn btn-primary btn-sm', type: 'button', disabled: !open, on: { click: async () => {
+        if (!text.value.trim()) return;
+        send.disabled = true;
+        try { await api('POST', `leads/${l.id}/reply`, { text: text.value }); await loadAll(); render(); toast('Sent.'); } catch (err) { oops(err); send.disabled = false; }
+      } } }, 'Send');
+      convoBox = box(`Conversation · ${channel}`, list,
+        l.thread ? el('div', { class: 'reply-row' }, text, send) : null,
+        l.thread && !open ? el('p', { class: 'muted small' }, `It has been more than 24 hours since their last message, so ${channel} only allows a reply from its own app.`) : null);
+      requestAnimationFrame(() => { list.scrollTop = list.scrollHeight; });
+      if (l.unread) api('POST', 'today/done', { type: 'message', leadId: l.id }).then(() => { l.unread = false; }).catch(() => {});
+    }
+    const visitsOnly = role() === 'visits';
+    let siteBox = null;
+    if (visitsOnly) {
+      const sn = el('textarea', { rows: 2, placeholder: 'Measurements, what you found, what the client asked for' });
+      siteBox = box('Add a site note', sn, el('div', { class: 'row-actions' }, el('button', { class: 'btn btn-primary btn-sm', type: 'button', on: { click: async () => {
+        if (!sn.value.trim()) return;
+        try { await patchLead(l.id, { siteNote: sn.value }); toast('Note added for the office.'); } catch (err) { oops(err); }
+      } } }, 'Add note')));
+    }
+    fill($('view-lead'),
       el('div', { class: 'lead-top' }, stageBadge(l.status), el('span', { class: 'badge src' }, SOURCES[l.source] || l.source), el('span', { class: 'badge src' }, `Came in ${ago(l.createdAt)}`)),
       el('div', { class: 'contact' },
         el('a', { class: 'btn btn-wa', href: wa(l.phone, greeting), target: '_blank', rel: 'noopener' }, 'WhatsApp'),
         l.phone ? el('a', { class: 'btn btn-ghost', href: `tel:${l.phone}` }, 'Call') : null,
         l.email ? el('a', { class: 'btn btn-ghost', href: `mailto:${l.email}` }, 'Email') : null,
         map ? el('a', { class: 'btn btn-ghost', href: map, target: '_blank', rel: 'noopener' }, 'Map') : null),
-      box('Stage', stages),
-      whenBox,
-      biz.project ? quotesBox : null,
-      payBox,
+      convoBox,
+      visitsOnly ? null : box('Stage', stages),
+      visitsOnly ? (l.when ? box(biz.project ? 'Site visit' : 'Appointment', el('p', { class: 'strong' }, `${whenText(l.when)}${l.assignee ? ` · ${l.assignee}` : ''}`)) : null) : whenBox,
+      siteBox,
+      biz.project && !visitsOnly ? quotesBox : null,
+      visitsOnly ? null : payBox,
       detailsBox,
       photosBox,
-      biz.project ? null : quotesBox,
-      box('Your notes', note, noteStatus),
+      biz.project || visitsOnly ? null : quotesBox,
+      box(visitsOnly ? 'Notes' : 'Your notes', note, noteStatus),
       hist.length ? box('History', el('div', { class: 'history' }, ...hist.map((h) => el('div', {}, el('time', {}, fmt(h.at, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true })), el('span', {}, h.text))))) : null,
-      el('div', { class: 'row-actions', style: 'margin-top:14px' }, el('button', { class: 'btn btn-danger btn-sm', type: 'button', on: { click: async () => {
+      visitsOnly ? null : el('div', { class: 'row-actions', style: 'margin-top:14px' }, el('button', { class: 'btn btn-danger btn-sm', type: 'button', on: { click: async () => {
         if (!confirm(`Delete ${l.name} and everything with them, including quotes and photos? This cannot be undone.`)) return;
         try { await api('DELETE', `leads/${l.id}`); await loadAll(); location.hash = '#leads'; toast('Lead deleted.'); } catch (err) { oops(err); }
       } } }, 'Delete lead')));
@@ -1004,7 +1134,8 @@
       on: { click: (e) => e.currentTarget.setAttribute('aria-pressed', String(e.currentTarget.getAttribute('aria-pressed') !== 'true')) },
     }, d)));
     $('sReview').value = biz.reviewLink || '';
-    drawChannels(); drawPriceBook();
+    drawChannels(); drawPriceBook(); drawTeam(); drawWa();
+    $('gUrl').value = `${location.origin}/api/google/${biz.slug}`; $('gKey').value = biz.googleKey || '';
     drawAlerts(); drawMeta();
     const target = { details: 'detailsForm', services: 'servicesForm', alerts: 'alertBox', link: 'linkBox', prices: 'bookForm' }[current.arg];
     if (target) setTimeout(() => { $(target).scrollIntoView({ behavior: 'smooth', block: 'start' }); $(target).classList.add('flash'); setTimeout(() => $(target).classList.remove('flash'), 1600); }, 60);
@@ -1107,10 +1238,11 @@
     $('metaPanel').hidden = !biz.metaAvailable && !on;
     $('metaConnect').hidden = !biz.metaAvailable || on;
     $('metaSync').hidden = !on; $('metaOff').hidden = !on; $('metaPages').hidden = !on;
-    if (!on) $('metaHint').textContent = 'Connect the Facebook page your ads run from. Every lead from your Facebook and Instagram lead forms lands in Leads on its own.';
+    const what = biz.messaging ? 'lead-form leads, Instagram messages and Facebook messages' : 'lead-form leads';
+    if (!on) $('metaHint').textContent = `Connect the Facebook page your ads run from${biz.messaging ? ' and the Instagram account linked to it' : ''}. Your ${what} land in Leads on their own.${biz.messaging ? ' On Instagram, turn on Settings › Messages › Connected tools › Allow access to messages.' : ''}`;
     else {
-      $('metaHint').textContent = 'Leads from your Facebook and Instagram lead forms arrive in Leads on their own.';
-      $('metaPages').textContent = `Connected: ${m.pages.map((p) => p.name).join(', ')}`;
+      $('metaHint').textContent = `Your ${what} arrive in Leads on their own.`;
+      $('metaPages').textContent = `Connected: ${m.pages.map((p) => (p.ig ? `${p.name} and @${p.ig}` : p.name)).join(', ')}`;
       if (!$('metaStatus').dataset.keep) $('metaStatus').textContent = m.error ? `The last check did not work: ${m.error}` : (m.lastSync ? `Last checked ${timeOf(m.lastSync)}.` : 'Checking for the first time…');
     }
   }

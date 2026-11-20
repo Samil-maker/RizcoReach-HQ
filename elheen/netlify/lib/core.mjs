@@ -154,6 +154,11 @@ export function computeTasks(biz, leads, quotes, now = Date.now()) {
     if (PROJECT_KINDS.has(biz.kind) && l.status === 'booked' && t && t < now - 2 * HOUR && !sentFor.has(l.id) && !l.quoteHandled) {
       tasks.push({ type: 'toquote', leadId: l.id, dueAt: t + 2 * HOUR, when: l.when, title: `Send ${l.name} their quote`, detail: l.service || 'After the site visit' });
     }
+    // a client wrote again on Instagram, Facebook or WhatsApp
+    if (l.unread && l.status !== 'new' && l.lastInboundAt) {
+      const last = (l.messages || []).filter((m) => m.from === 'them').slice(-1)[0];
+      tasks.push({ type: 'message', leadId: l.id, dueAt: l.lastInboundAt, title: `New message from ${l.name}`, detail: last ? last.text.slice(0, 120) : 'Tap to read it' });
+    }
     // a finished job is the best moment to ask for a review
     if (l.status === 'done' && biz.reviewLink && !l.reviewAsked) {
       tasks.push({ type: 'review', leadId: l.id, dueAt: touched, title: `Ask ${l.name} for a review`, detail: l.service || 'Job finished' });

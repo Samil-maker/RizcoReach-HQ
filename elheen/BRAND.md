@@ -21,9 +21,15 @@ WhatsApp and ads.
 
 ## Headline
 
-**Every lead from Instagram, WhatsApp, Google, your ads and your website, in one place.** Arabic sign-off: **رد الحين** (reply now).
+**Capture every lead. Book every client. Convert them faster.** Arabic sign-off: **رد الحين** (reply now).
 
-Position Elheen as lead management software in the spirit of Fresha and GoHighLevel: everything flows in, and the business's prices, reviews and history live in it.
+Elheen is always described as three things in one, in this order, everywhere (site, Instagram, pitches, investors):
+
+1. **Capture (lead management):** every lead from Instagram, WhatsApp, Facebook, Google, ads, the website and the van, in one list, with its source.
+2. **Book (booking system):** clients book visits and appointments themselves; the team calendar and every client's history live in Elheen.
+3. **Convert (follow-up):** contact leads faster and follow up on time, so more enquiries become paying clients.
+
+Inspired by Fresha (the business runs on it) and GoHighLevel (every channel flows in). Speak to all service businesses roughly half and half: home improvement (renovation, interiors, maintenance) and appointment businesses (car care, salons, clinics, studios).
 
 Lead with renovation, fit-out and interior design. Salons, clinics, car care
 and studios are served by the same product with simpler stages, through their

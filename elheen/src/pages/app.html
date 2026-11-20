@@ -47,7 +47,7 @@
     <nav class="tabs" aria-label="Sections">
       <a href="/app#today" data-tab="today"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5"/></svg><span>Today</span><b class="count" id="todayCount" hidden></b></a>
       <a href="/app#leads" data-tab="leads"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.900-6 6.500-6s6.500 2.400 6.500 6"/><path d="M16 4.600a3.500 3.500 0 0 1 0 6.800M18 14.300c2 .7 3.500 2.700 3.500 5.700"/></svg><span>Leads</span></a>
-      <a href="/app#quotes" data-tab="quotes"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg><span>Quotes</span></a>
+      <a href="/app#quotes" data-tab="quotes" class="no-visits"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg><span>Quotes</span></a>
       <a href="/app#calendar" data-tab="calendar"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.500" y="5" width="17" height="15.500" rx="2"/><path d="M3.500 10h17M8 3v4M16 3v4"/></svg><span>Calendar</span></a>
       <a href="/app#setup" data-tab="setup"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg><span>Set-up</span></a>
     </nav>
@@ -66,7 +66,7 @@
       </div>
     </header>
 
-    <div class="banner" id="planBanner" hidden><span id="planBannerText"></span><a class="btn btn-primary btn-sm" href="/app#setup">See plan</a></div>
+    <div class="banner owner-only" id="planBanner" hidden><span id="planBannerText"></span><a class="btn btn-primary btn-sm" href="/app#setup">See plan</a></div>
 
     <section class="view" id="view-today" hidden>
       <p class="greet" id="greet"></p>
@@ -98,7 +98,7 @@
         <div class="seg" role="group" aria-label="Show leads as">
           <button type="button" data-leadview="list" aria-pressed="true">List</button>
           <button type="button" data-leadview="board" aria-pressed="false">Board</button>
-          <button type="button" data-leadview="sources" aria-pressed="false">Sources</button>
+          <button type="button" data-leadview="sources" aria-pressed="false" class="no-visits">Sources</button>
         </div>
       </div>
       <div class="chips" id="leadFilters" role="group" aria-label="Filter by stage"></div>
@@ -138,7 +138,7 @@
     </section>
 
     <section class="view" id="view-setup" hidden>
-      <div class="box" id="planPanel">
+      <div class="box owner-only" id="planPanel">
         <div class="box-head"><h2>Your plan</h2><span class="badge" id="planBadge"></span></div>
         <p id="planText"></p>
         <div class="plan-pick" id="planPick" role="radiogroup" aria-label="How long to pay for"></div>
@@ -147,7 +147,7 @@
         <div id="planHistory"></div>
       </div>
 
-      <div class="box unlocked" id="linkBox">
+      <div class="box unlocked no-visits" id="linkBox">
         <h2>Every lead, from everywhere, in one place</h2>
         <p class="muted">Clients send their details, photos and a time that suits them, and it lands in Leads. Give each channel its own link below, so Leads › Sources shows which ones bring you work.</p>
         <div class="copy-row"><input id="shareLink" readonly aria-label="Your enquiry link"><button class="btn btn-primary btn-sm" id="copyLink" type="button">Copy</button><a class="btn btn-ghost btn-sm" id="openLink" target="_blank" rel="noopener">Open</a></div>
@@ -162,7 +162,7 @@
         <p class="muted small">Calls, WhatsApp chats and Instagram messages: add them in Leads with "Add lead", so they get the same follow-ups.</p>
       </div>
 
-      <form class="box unlocked" id="detailsForm">
+      <form class="box unlocked no-visits" id="detailsForm">
         <h2>Business and quotes</h2>
         <div class="grid-2">
           <label>Business name<input id="sName" required></label>
@@ -183,7 +183,7 @@
         <p class="muted small" id="detailsStatus" role="status"></p>
       </form>
 
-      <form class="box unlocked" id="servicesForm">
+      <form class="box unlocked no-visits" id="servicesForm">
         <h2>Enquiry page</h2>
         <p class="muted small">What clients can choose. Leave the price at 0 for a free visit or a job you price on a quote.</p>
         <div class="svc-row svc-head" aria-hidden="true"><span>Service</span><span>Minutes</span><span>AED</span><span></span></div>
@@ -206,7 +206,7 @@
         <p class="muted small" id="servicesStatus" role="status"></p>
       </form>
 
-      <form class="box unlocked" id="bookForm">
+      <form class="box unlocked no-visits" id="bookForm">
         <h2>Price list and quote templates</h2>
         <p class="muted small">Your usual items and prices. Pick them in any quote instead of typing, and a quote takes two minutes.</p>
         <div class="book-row book-head" aria-hidden="true"><span>Item</span><span>Unit</span><span>AED</span><span></span></div>
@@ -224,8 +224,8 @@
         <p class="muted small" id="alertStatus" role="status"></p>
       </div>
 
-      <div class="box unlocked" id="metaPanel" hidden>
-        <h2>Facebook and Instagram lead ads</h2>
+      <div class="box unlocked owner-only" id="metaPanel" hidden>
+        <h2>Facebook and Instagram</h2>
         <p class="muted" id="metaHint"></p>
         <p class="strong" id="metaPages" hidden></p>
         <div class="row-actions">
@@ -236,7 +236,41 @@
         <p class="muted small" id="metaStatus" role="status"></p>
       </div>
 
-      <div class="box unlocked">
+      <div class="box unlocked owner-only" id="waPanel" hidden>
+        <h2>WhatsApp</h2>
+        <p class="muted" id="waHint">Connect your WhatsApp Business number. New chats land in Leads and you can reply from Elheen. You keep using the WhatsApp Business app on your phone as normal.</p>
+        <p class="strong" id="waNumber" hidden></p>
+        <div class="row-actions">
+          <button class="btn btn-primary btn-sm" id="waConnect" type="button">Connect WhatsApp</button>
+          <button class="btn btn-ghost btn-sm" id="waOff" type="button" hidden>Disconnect</button>
+        </div>
+        <p class="muted small" id="waStatus" role="status"></p>
+      </div>
+
+      <div class="box unlocked owner-only" id="googlePanel">
+        <h2>Google Ads lead forms</h2>
+        <p class="muted small">Leads from your Google Ads lead forms land in Leads on their own. In Google Ads, open your lead form, choose <b>Export leads from Google Ads</b>, then <b>Webhook integration</b>, and paste these two:</p>
+        <label>Webhook URL<div class="copy-row"><input id="gUrl" readonly><button class="btn btn-ghost btn-sm" type="button" data-copy="gUrl">Copy</button></div></label>
+        <label>Key<div class="copy-row"><input id="gKey" readonly><button class="btn btn-ghost btn-sm" type="button" data-copy="gKey">Copy</button></div></label>
+        <p class="muted small">Then press <b>Send test data</b> in Google Ads. A lead called "Test: …" appears in Leads within a few seconds. Won jobs from Google clicks can be sent back to Google Ads from Leads › Sources, so Google learns which clicks turn into paid work.</p>
+        <p class="muted small" id="gStatus" role="status"></p>
+      </div>
+
+      <div class="box unlocked owner-only" id="teamPanel">
+        <h2>Team logins</h2>
+        <p class="muted small">Give each person their own password. <b>Full access</b> sees everything except your plan, logins and connections. <b>Their visits only</b> sees just the jobs given to them, with the address, photos and notes, and can add site notes.</p>
+        <div id="userList"></div>
+        <div class="grid-2">
+          <label>Name<input id="newUserName" list="teamNames" placeholder="Ahmed"></label>
+          <label>Can see<select id="newUserRole"><option value="visits">Their visits only</option><option value="full">Full access</option></select></label>
+        </div>
+        <div class="row-actions"><button class="btn btn-primary btn-sm" id="addUser" type="button">Create login</button></div>
+        <div class="box login-card" id="loginCard" hidden></div>
+        <p class="muted small" id="userStatus" role="status"></p>
+      </div>
+      <datalist id="teamNames"></datalist>
+
+      <div class="box unlocked no-visits">
         <h2>Your data</h2>
         <p class="muted">Download every lead with their stage, value and what has been paid, as a spreadsheet you can open in Excel or Google Sheets.</p>
         <div class="row-actions"><button class="btn btn-ghost btn-sm" id="exportBtn" type="button">Download leads (CSV)</button></div>
@@ -267,7 +301,7 @@
   <nav class="bar" aria-label="Sections">
     <a href="/app#today" data-tab="today"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5"/></svg><span>Today</span><b class="count" id="todayCountBar" hidden></b></a>
     <a href="/app#leads" data-tab="leads"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.900-6 6.500-6s6.500 2.400 6.500 6"/><path d="M16 4.600a3.500 3.500 0 0 1 0 6.800M18 14.300c2 .7 3.500 2.700 3.500 5.700"/></svg><span>Leads</span></a>
-    <a href="/app#quotes" data-tab="quotes"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg><span>Quotes</span></a>
+    <a href="/app#quotes" data-tab="quotes" class="no-visits"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg><span>Quotes</span></a>
     <a href="/app#calendar" data-tab="calendar"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.500" y="5" width="17" height="15.500" rx="2"/><path d="M3.500 10h17M8 3v4M16 3v4"/></svg><span>Calendar</span></a>
     <a href="/app#setup" data-tab="setup"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg><span>Set-up</span></a>
   </nav>
