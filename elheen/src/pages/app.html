@@ -71,8 +71,9 @@
     <section class="view" id="view-today" hidden>
       <p class="greet" id="greet"></p>
       <div id="setupSlot" hidden></div>
-      <div class="stats" id="stats"></div>
       <div id="tasks"></div>
+      <h2 class="section-title">This month</h2>
+      <div class="stats" id="stats"></div>
     </section>
 
     <section class="view" id="view-leads" hidden>
@@ -107,6 +108,21 @@
     <section class="view" id="view-lead" hidden></section>
 
     <section class="view" id="view-quotes" hidden>
+      <form class="box add-lead" id="oldQuoteForm" hidden>
+        <h2>Add a quote you are waiting on</h2>
+        <p class="muted small">Sent as a PDF, by email or in person? Add it here and Elheen reminds you to follow up, with the message written for you.</p>
+        <div class="grid-2">
+          <label>Client's name<input id="oqName" required></label>
+          <label>Their WhatsApp<input id="oqPhone" type="tel" inputmode="tel" placeholder="+971"></label>
+          <label>What the job is<input id="oqTitle" placeholder="Kitchen renovation" list="serviceList"></label>
+          <label>Amount quoted (AED)<input id="oqAmount" type="number" min="1" step="any" inputmode="decimal" required></label>
+        </div>
+        <label>When did you send it?
+          <select id="oqWhen"><option value="0">Today</option><option value="2">1 or 2 days ago</option><option value="4">3 to 5 days ago</option><option value="7">About a week ago</option><option value="14">Two weeks or more</option></select>
+        </label>
+        <p class="form-error" id="oqError" role="alert" hidden></p>
+        <div class="row-actions"><button class="btn btn-primary" type="submit">Add and start chasing</button><button class="btn btn-ghost" type="button" id="oqCancel">Cancel</button></div>
+      </form>
       <div class="stats" id="quoteStats"></div>
       <div class="chips" id="quoteFilters" role="group" aria-label="Filter quotes"></div>
       <div id="quoteList"></div>

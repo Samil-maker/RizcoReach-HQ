@@ -587,6 +587,46 @@ test('the set-up checklist remembers what the owner has done', async () => {
   assert.ok(me.servicesSaved && me.linkShared);
 });
 
+test('only exceptions show: a visit with no quote, a finished job still owed money, a quote opened but unanswered', () => {
+  const project = { kind: 'interior' };
+  const visited = lead0({ id: 'V', name: 'Visited', status: 'booked', when: new Date(T0 - 5 * 3600e3).toISOString() });
+  assert.deepEqual(computeTasks(project, [visited], [], T0).map((t) => t.type), ['toquote']);
+  assert.equal(computeTasks(project, [visited], [quote0({ leadId: 'V' })], T0).filter((t) => t.type === 'toquote').length, 0);
+  assert.equal(computeTasks(project, [{ ...visited, quoteHandled: true }], [], T0).length, 0);
+  assert.equal(computeTasks({ kind: 'salon' }, [visited], [], T0).length, 0);   // appointment businesses do not quote after a visit
+
+  const finished = lead0({ id: 'F', name: 'Finished', status: 'done', lastTouch: T0 - 3 * DAY,
+    milestones: [{ label: 'Deposit', amount: 5000, paidAt: T0 - 9 * DAY }, { label: 'On handover', amount: 1200, paidAt: null }, { label: 'Snag list', amount: 300, paidAt: null }] });
+  const [owed] = computeTasks(project, [finished], [], T0);
+  assert.equal(owed.type, 'deposit');
+  assert.ok(owed.final);
+  assert.equal(owed.amount, 1500);
+  assert.equal(computeTasks(project, [{ ...finished, lastTouch: T0 - DAY }], [], T0).length, 0);   // just asked: wait two days
+
+  const opened = (days) => computeTasks({}, [lead0()], [quote0({ viewedAt: T0 + 2 * 3600e3 })], T0 + days * DAY).filter((t) => t.type === 'quote');
+  assert.equal(opened(0.5).length, 0);
+  assert.equal(opened(1.2).length, 1);
+});
+
+test('a quote already sent some other way is added and chased at once', async () => {
+  const call = setup({ siteUrl: 'https://x.test' });
+  const { data: { token } } = await signup(call);
+  assert.equal((await call('POST', 'quotes/existing', { name: 'Hessa', amount: 0 }, token)).status, 400);
+  const r = await call('POST', 'quotes/existing', { name: 'Hessa', phone: '0507778888', title: 'Kitchen renovation', amount: 45000, sentDaysAgo: 6 }, token);
+  assert.equal(r.status, 200);
+  assert.equal(r.data.quote.state, 'sent');
+  assert.equal(r.data.quote.totals.total, 45000);
+  assert.ok(r.data.quote.external);
+  const [lead] = (await call('GET', 'leads', null, token)).data.leads;
+  assert.equal(lead.status, 'quoted');
+  assert.equal(lead.value, 45000);
+  const tasks = (await call('GET', 'today', null, token)).data.tasks;
+  assert.equal(tasks.length, 1);
+  assert.equal(tasks[0].type, 'quote');
+  assert.ok(tasks[0].external);
+  assert.equal((await call('GET', `quote/${r.data.quote.publicKey}`)).status, 200);
+});
+
 test('marking a follow-up done or snoozing it takes it off today\'s list', async () => {
   const call = setup({ siteUrl: 'https://x.test' });
   const { data: { token } } = await signup(call);

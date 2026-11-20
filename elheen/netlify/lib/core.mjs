@@ -94,10 +94,12 @@ export function defaultMilestones(kind, total) {
 // When a sent quote is chased: days after sending.
 export const QUOTE_FOLLOW_DAYS = [2, 5, 10];
 
-// Everything that needs the owner's attention today, oldest first.
+// Management by exception: only what has gone off track, or is about to, oldest first.
+// Everything that is on track stays out of the owner's way.
 export function computeTasks(biz, leads, quotes, now = Date.now()) {
   const tasks = [];
   const byLead = new Map(leads.map((l) => [l.id, l]));
+  const sentFor = new Set(quotes.filter((q) => q.status !== 'draft').map((q) => q.leadId));
   const snoozed = (x) => x.snoozeUntil && x.snoozeUntil > now;
   for (const l of leads) {
     if (snoozed(l) || l.status === 'lost') continue;
@@ -115,9 +117,17 @@ export function computeTasks(biz, leads, quotes, now = Date.now()) {
       // booked through the enquiry link and nobody has said hello yet
       tasks.push({ type: 'reply', leadId: l.id, dueAt: l.createdAt, when: l.when, title: `Confirm the booking with ${l.name}`, detail: l.service || 'Booked through your link' });
     }
+    // the site visit happened, but no quote has gone out
+    if (PROJECT_KINDS.has(biz.kind) && l.status === 'booked' && t && t < now - 2 * HOUR && !sentFor.has(l.id) && !l.quoteHandled) {
+      tasks.push({ type: 'toquote', leadId: l.id, dueAt: t + 2 * HOUR, when: l.when, title: `Send ${l.name} their quote`, detail: l.service || 'After the site visit' });
+    }
+    // money owed: the deposit once a job is won, and anything left once it is finished
     const unpaid = (l.milestones || []).find((m) => !m.paidAt);
     if (l.status === 'won' && unpaid && unpaid === l.milestones[0] && l.wonAt && now - Math.max(l.wonAt, touched) >= 2 * DAY) {
       tasks.push({ type: 'deposit', leadId: l.id, dueAt: Math.max(l.wonAt, touched) + 2 * DAY, amount: unpaid.amount, label: unpaid.label, title: `Collect the ${unpaid.label.toLowerCase()} from ${l.name}`, detail: aedText(unpaid.amount) });
+    } else if (l.status === 'done' && unpaid && now - touched >= 2 * DAY) {
+      const owed = money(l.milestones.filter((m) => !m.paidAt).reduce((n, m) => n + m.amount, 0));
+      tasks.push({ type: 'deposit', final: true, leadId: l.id, dueAt: touched + 2 * DAY, amount: owed, label: unpaid.label, title: `Collect what ${l.name} still owes`, detail: `Job finished · ${aedText(owed)} unpaid` });
     }
   }
   for (const q of quotes) {
@@ -126,12 +136,13 @@ export function computeTasks(biz, leads, quotes, now = Date.now()) {
     if (!l || l.status === 'lost' || l.status === 'won') continue;
     const step = (q.followUps || []).length;
     if (step >= QUOTE_FOLLOW_DAYS.length) continue;
-    const dueAt = q.sentAt + QUOTE_FOLLOW_DAYS[step] * DAY;
+    // opened but no answer after a day is the best moment to call, so the first chase comes early
+    const dueAt = step === 0 && q.viewedAt ? Math.min(q.sentAt + QUOTE_FOLLOW_DAYS[0] * DAY, q.viewedAt + DAY) : q.sentAt + QUOTE_FOLLOW_DAYS[step] * DAY;
     if (now < dueAt) continue;
     const days = Math.floor((now - q.sentAt) / DAY);
     tasks.push({
-      type: 'quote', leadId: l.id, quoteId: q.id, dueAt, step: step + 1, number: q.number, total: q.totals.total, publicKey: q.publicKey, viewed: !!q.viewedAt,
-      title: `Follow up ${q.number} with ${l.name}`, detail: `${aedText(q.totals.total)} · sent ${days} day${days === 1 ? '' : 's'} ago${q.viewedAt ? ' · opened' : ' · not opened yet'}`,
+      type: 'quote', leadId: l.id, quoteId: q.id, dueAt, step: step + 1, number: q.number, total: q.totals.total, publicKey: q.publicKey, viewed: !!q.viewedAt, external: !!q.external, title2: q.title,
+      title: `Follow up ${q.number} with ${l.name}`, detail: `${aedText(q.totals.total)} · sent ${days} day${days === 1 ? '' : 's'} ago${q.viewedAt ? ' · opened' : q.external ? '' : ' · not opened yet'}`,
     });
   }
   return tasks.sort((a, b) => a.dueAt - b.dueAt);

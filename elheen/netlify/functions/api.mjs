@@ -586,6 +586,28 @@ export function makeHandler(store, env = {}) {
 
     // --- quotes
     if (parts[0] === 'quotes' && !parts[1] && method === 'GET') return json({ quotes: (await listQuotes(biz.slug)).map((q) => readQuote(q, biz)) });
+    // A quote already sent some other way (PDF, email, in person). Elheen starts chasing it straight away.
+    if (parts[0] === 'quotes' && parts[1] === 'existing' && method === 'POST') {
+      const amount = money(body.amount);
+      const title = cleanLine(body.title, 120) || 'Quote';
+      if (!cleanLine(body.name, 80) || !(amount > 0)) return fail(400, 'Add the client\'s name and the amount you quoted.');
+      const days = Math.min(90, Math.max(0, Number(body.sentDaysAgo) | 0));
+      const sentAt = Date.now() - days * 864e5;
+      const made = await saveLead(biz, { name: body.name, phone: body.phone, service: title }, 'other', { requirePhone: false, byOwner: true, createdAt: sentAt });
+      if (made.status !== 200) return made;
+      const { id: leadId } = await made.json();
+      biz.quoteCounter = (biz.quoteCounter || 0) + 1;
+      await saveBiz();
+      const q = {
+        id: id(), publicKey: id(15), number: `Q-${String(biz.quoteCounter).padStart(4, '0')}`, leadId, title, items: [{ desc: title, qty: 1, price: amount }],
+        discount: 0, vat: false, notes: '', terms: biz.quoteTerms || '', external: true,
+        validUntil: Date.now() + (biz.quoteValidDays || 14) * 864e5, status: 'sent', sentAt, followUps: [], createdAt: sentAt, updatedAt: Date.now(),
+      };
+      await setJSON(`quotes/${biz.slug}/${q.id}`, q);
+      await setJSON(`quotepub/${q.publicKey}`, { slug: biz.slug, id: q.id });
+      await moveLead(biz.slug, leadId, (l) => { l.status = 'quoted'; l.value = amount; l.lastTouch = sentAt; note(l, `Quote of ${aedText(amount)} sent ${days ? `${days} day${days > 1 ? 's' : ''} ago` : 'today'}, added to Elheen to follow up`); });
+      return json({ quote: readQuote(q, biz), leadId });
+    }
     if (parts[0] === 'quotes' && !parts[1] && method === 'POST') {
       const lead = await getJSON(`leads/${biz.slug}/${cleanLine(body.leadId, 20)}`);
       if (!lead) return fail(404, 'That lead was not found.');
@@ -662,6 +684,7 @@ export function makeHandler(store, env = {}) {
         if (body.type === 'reply' && l.status === 'new') { l.status = 'talking'; note(l, 'Replied'); }
         else if (body.type === 'visit') { l.remindedAt = Date.now(); note(l, 'Confirmed the time with the client'); }
         else if (body.type === 'reply') note(l, 'Confirmed the booking');
+        else if (body.type === 'toquote') { l.quoteHandled = true; note(l, 'Quote handled outside Elheen'); }
         else if (body.type === 'deposit') note(l, 'Asked for the payment');
         else note(l, 'Checked in');
       });

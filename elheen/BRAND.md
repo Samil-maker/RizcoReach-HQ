@@ -24,7 +24,12 @@ WhatsApp and ads.
 **Turn enquiries into signed jobs.** Arabic sign-off: **رد الحين** (reply now).
 
 Lead with renovation, fit-out and interior design. Salons, clinics, car care
-and studios are served by the same product with simpler stages.
+and studios are served by the same product with simpler stages, through their
+own page (`appointments.html`), never on the home page.
+
+Offer: the **Quote Rescue** (add the quotes you are waiting on and Elheen chases
+them from day one), 14 days free, AED 79 a month, first paid month refundable,
+and AED 79 kept for good by the first 100 businesses.
 
 ## What we promise (and must be able to prove)
 

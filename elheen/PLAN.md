@@ -18,6 +18,17 @@ These apply Alex Hormozi's principles to Elheen. They are his ideas, not quotes.
 6. **Keep customers before chasing more.** Do not scale while more than 3% leave each month.
 7. **More, then better, then new.** Do more of what works before improving it, and improve it before adding anything new.
 8. **RizcoReach stays the main business** until Elheen pays more than it does.
+9. **Management by exception.** The app shows the owner only what has slipped or is about to: an enquiry with no reply, a visit with no quote, a quote gone quiet, money owed. Everything on track stays hidden. Every new feature must either add a useful exception or remove effort; anything else waits.
+10. **One rabbit at a time.** All marketing, outreach and the home page speak to home improvement (fit-out, renovation, interior design, maintenance). Appointment businesses can still sign up through their own page, but get no outreach until home improvement works.
+
+### The offer, through the value equation
+
+Value = (dream outcome × likelihood it works) ÷ (time until it works × effort).
+
+- **Dream outcome:** win more of the jobs you already quote for, and get paid on time.
+- **Likelihood:** the Quote Rescue works on quotes they already have, a live demo, the maths (one job pays for years), and a refund on the first paid month.
+- **Time:** ready in five minutes; the first follow-up is due the same day.
+- **Effort:** every message is written; one tap sends it from their own WhatsApp. No calls, no training.
 
 ## Stage 1: First sales (now to January 2027)
 

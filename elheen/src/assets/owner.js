@@ -19,6 +19,7 @@
     checkin: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
     visit: '<path d="M12 21s-7-6.100-7-11.500a7 7 0 0 1 14 0C19 14.900 12 21 12 21z"/><circle cx="12" cy="9.500" r="2.500"/>',
     deposit: '<rect x="2.500" y="6" width="19" height="13" rx="2"/><path d="M2.500 10h19M6.500 15h3"/>',
+    toquote: '<path d="M12 20h9"/><path d="M16.500 3.500a2.100 2.100 0 0 1 3 3L7 19l-4 1 1-4z"/>',
     quote: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/>',
   };
   const icon = (name) => { const s = el('span', { class: 'task-ico', 'aria-hidden': 'true' }); s.innerHTML = `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.reply}</svg>`; return s; };
@@ -242,9 +243,16 @@
     if (t.type === 'reply') return `${hi}, this is ${biz.name}. Thank you for your enquiry${l.service ? ` about ${lower(l.service)}` : ''}. ${biz.project ? 'When would suit you for a quick call, or for us to come and see the space?' : 'Which day and time suit you best?'}`;
     if (t.type === 'checkin') return `${hi}, ${biz.name} here. Just checking in${l.service ? ` about your ${lower(l.service)}` : ''}. Is there anything I can help with?`;
     if (t.type === 'visit') return `${hi}, this is ${biz.name} confirming your ${visitWord()} ${at}${l.address && biz.project ? ` at ${l.address}` : ''}. Reply here if anything changes. See you then.`;
+    if (t.type === 'deposit' && t.final) return `${hi}, thank you again for choosing ${biz.name}. Now that the work is finished, the remaining ${aed(t.amount)} is due. Shall I send you the bank details or a card payment link?`;
     if (t.type === 'deposit') return `${hi}, thank you for choosing ${biz.name}. To lock in your start date, the ${lower(t.label)} is ${aed(t.amount)}. Shall I send you the bank details or a card payment link?`;
+    if (t.type === 'quote' && t.external) {
+      const job = t.title2 && t.title2 !== 'Quote' ? ` for your ${lower(t.title2)}` : '';
+      if (t.step === 1) return `${hi}, this is ${biz.name}. Did you get a chance to look at our quote${job}? Happy to answer any questions, or walk you through it on a quick call.`;
+      if (t.step === 2) return `${hi}, following up on our quote${job} (${aed(t.total)}). Would you like to change anything, or shall we book a start date?`;
+      return `${hi}, our quote${job} is still open. If the timing is not right, no problem. Just let me know and I will close it.`;
+    }
     if (t.type === 'quote') {
-      if (t.step === 1) return `${hi}, did you get a chance to look at your quote from ${biz.name}? Here it is again: ${link}\n\nHappy to answer any questions.`;
+      if (t.step === 1) return `${hi}, did you get a chance to look at your quote from ${biz.name}? Here it is again: ${link}\n\nHappy to answer any questions, or walk you through it on a quick call.`;
       if (t.step === 2) return `${hi}, following up on quote ${t.number}. Would you like to change anything, or shall we book a start date?\n\n${link}`;
       return `${hi}, your quote ${t.number} is still open: ${link}\n\nIf the timing is not right, no problem. Just let me know and I will close it.`;
     }
@@ -254,7 +262,8 @@
     if (t.type === 'reply' && t.when) return `Booked for ${whenText(t.when)} · came in ${ago(l.createdAt)}`;
     if (t.type === 'reply') return `Came in ${ago(l.createdAt)}${l.source ? ` · ${SOURCES[l.source] || l.source}` : ''}`;
     if (t.type === 'visit') return whenText(t.when);
-    if (t.type === 'quote') return `Follow-up ${t.step} of 3`;
+    if (t.type === 'quote') return `Follow-up ${t.step} of 3${t.viewed && t.step === 1 ? ' · they opened it, a good moment to call' : ''}`;
+    if (t.type === 'toquote') return `Visited ${whenText(t.when)} · send it while the visit is fresh`;
     return '';
   };
   async function finishTask(t, kind, days) {
@@ -281,7 +290,15 @@
           el('button', { class: 'btn btn-ghost btn-sm', type: 'button', on: { click: () => { asked.delete(key); drawActs(); } } }, 'Not yet')));
         return;
       }
-      fill(acts, 
+      if (t.type === 'toquote') {
+        fill(acts,
+          el('a', { class: 'btn btn-primary btn-sm', href: `/app#newquote/${l.id}` }, 'Make the quote'),
+          el('a', { class: 'btn btn-ghost btn-sm', href: `/app#lead/${l.id}` }, 'Open'),
+          el('button', { class: 'btn btn-ghost btn-sm', type: 'button', on: { click: () => finishTask(t, 'snooze', 1) } }, 'Tomorrow'),
+          el('button', { class: 'btn btn-ghost btn-sm', type: 'button', on: { click: () => finishTask(t, 'done') } }, 'Sent it another way'));
+        return;
+      }
+      fill(acts,
         el('a', { class: 'btn btn-wa btn-sm', href: wa(l.phone, taskMessage(t, l)), target: '_blank', rel: 'noopener', on: { click: () => { asked.add(key); setTimeout(drawActs, 400); } } }, 'WhatsApp'),
         l.phone ? el('a', { class: 'btn btn-ghost btn-sm', href: `tel:${l.phone}` }, 'Call') : null,
         el('a', { class: 'btn btn-ghost btn-sm', href: `/app#lead/${l.id}` }, 'Open'),
@@ -293,12 +310,15 @@
   }
   // five steps that replace a set-up call; each ticks itself off
   function checklist() {
+    const rescue = [quotes.length > 0, 'Add a quote you are still waiting on', 'Elheen starts chasing it today, with the message written for you.', 'Add one', '/app#quotes/existing'];
+    const test = [leads.length > 0, 'Send yourself a test enquiry', 'See exactly what your clients see, then delete it.', 'Open my page', `/b/${biz.slug}`];
     const steps = [
+      ...(biz.project ? [rescue] : []),
       [!!biz.phone, 'Add your WhatsApp number', 'It goes on your quotes so clients can reply to you.', 'Add it', '/app#setup/details'],
       [!!biz.servicesSaved, 'Check your services and prices', 'We filled in common ones for your trade. Change them to match what you sell.', 'Check them', '/app#setup/services'],
       [!!biz.linkShared, 'Put your enquiry link in your Instagram bio', 'Also in your WhatsApp Business profile and your Google listing.', 'Copy my link', 'copy'],
       [!!biz.alerts, 'Turn on phone alerts', 'Know the second a lead comes in or a quote is accepted.', 'Turn on', '/app#setup/alerts'],
-      [leads.length > 0, 'Send yourself a test enquiry', 'See exactly what your clients see, then delete it.', 'Open my page', `/b/${biz.slug}`],
+      ...(biz.project ? [] : [test]),
     ];
     const done = steps.filter(([ok]) => ok).length;
     if (biz.checklistHidden || done === steps.length) return null;
@@ -327,10 +347,16 @@
     $('setupSlot').hidden = !setupBox;
     fill($('setupSlot'), setupBox);
     const h = new Date(Date.now() + DUBAI).getUTCHours();
-    $('greet').textContent = `${h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'}. ${fmt(Date.now(), { weekday: 'long', day: 'numeric', month: 'long' })}.`;
+    const waiting = quotes.filter((q) => q.state === 'sent').reduce((n, q) => n + q.totals.total, 0)
+      + leads.filter((l) => ['won', 'done'].includes(l.status)).flatMap((l) => l.milestones || []).filter((m) => !m.paidAt).reduce((n, m) => n + m.amount, 0);
+    fill($('greet'), `${h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'}. `,
+      el('b', {}, tasks.length ? `${tasks.length} thing${tasks.length === 1 ? '' : 's'} need${tasks.length === 1 ? 's' : ''} you today.` : 'Nothing needs you right now.'),
+      waiting ? ` ${aed(waiting)} is waiting on quotes and payments.` : '',
+      tasks.length ? ' Everything else is on track.' : '');
     fill($('stats'), ...stats());
     const groups = [
       ['Reply first', tasks.filter((t) => t.type === 'reply')],
+      ['Send quotes', tasks.filter((t) => t.type === 'toquote')],
       ['Confirm tomorrow', tasks.filter((t) => t.type === 'visit')],
       ['Chase quotes', tasks.filter((t) => t.type === 'quote')],
       ['Collect payments', tasks.filter((t) => t.type === 'deposit')],
@@ -339,7 +365,7 @@
     if (!groups.length) {
       fill($('tasks'), el('div', { class: 'all-clear' },
         el('b', {}, leads.length ? 'All caught up.' : 'Your first lead is one link away.'),
-        el('p', {}, leads.length ? 'Nothing to chase right now. New enquiries, quotes to follow up and visits to confirm will show up here on their own.'
+        el('p', {}, leads.length ? 'Elheen only shows you what has gone quiet, is overdue or is about to slip. Right now, nothing has.'
           : 'Share your enquiry link on Instagram, WhatsApp and Google. Every enquiry lands in Leads and shows up here until you reply.'),
         el('button', { class: 'btn btn-primary btn-sm', type: 'button', on: { click: copyMyLink } }, 'Copy my enquiry link')));
       return;
@@ -558,8 +584,23 @@
   }
 
   // ---------- quotes ----------
+  const openOldQuote = () => { $('oldQuoteForm').hidden = false; $('oqName').focus(); };
+  $('oqCancel').addEventListener('click', () => { $('oldQuoteForm').hidden = true; $('oldQuoteForm').reset(); say('oqError', ''); });
+  $('oldQuoteForm').addEventListener('submit', async (e) => {
+    e.preventDefault(); say('oqError', '');
+    try {
+      await api('POST', 'quotes/existing', { name: $('oqName').value, phone: $('oqPhone').value, title: $('oqTitle').value, amount: $('oqAmount').value, sentDaysAgo: $('oqWhen').value });
+      e.target.reset(); $('oldQuoteForm').hidden = true;
+      await loadAll();
+      const due = tasks.some((t) => t.type === 'quote');
+      location.hash = due ? '#today' : '#quotes';
+      toast(due ? 'Added. Your follow-up is on Today.' : 'Added. Elheen will remind you to follow up in two days.');
+    } catch (err) { say('oqError', err.message); }
+  });
   function drawQuotes() {
     $('view-quotes').hidden = false;
+    fill($('headActions'), el('button', { class: 'btn btn-primary btn-sm', type: 'button', on: { click: openOldQuote } }, 'Add a quote you sent'));
+    if (current.arg === 'existing' && $('oldQuoteForm').hidden) setTimeout(openOldQuote, 0);
     const m0 = monthStart();
     const open = quotes.filter((q) => q.state === 'sent');
     const accepted = quotes.filter((q) => q.state === 'accepted');
@@ -581,7 +622,7 @@
         el('b', {}, `${l ? l.name : 'Client'} · ${q.title}`), el('span', { class: 'amount' }, aed(q.totals.total)),
         el('span', { class: 'meta' }, `${q.number} · ${q.state === 'accepted' ? `accepted ${dateOf(q.acceptedAt)}` : q.sentAt ? `sent ${dateOf(q.sentAt)}` : `made ${dateOf(q.createdAt)}`}`), el('span'),
         el('span', { class: 'tags' }, el('span', { class: `badge ${q.state}` }, QSTATE[q.state]), q.state === 'sent' ? el('span', { class: 'badge src' }, q.viewedAt ? 'Opened' : 'Not opened yet') : null));
-    }) : [el('div', { class: 'empty' }, el('b', {}, quotes.length ? 'No quotes here.' : 'No quotes yet.'), quotes.length ? 'Try another filter.' : 'Open a lead and press New quote. Quotes you send are chased for you on day 2, 5 and 10.')]));
+    }) : [el('div', { class: 'empty' }, el('b', {}, quotes.length ? 'No quotes here.' : 'No quotes yet.'), quotes.length ? 'Try another filter.' : 'Open a lead and press New quote, or add a quote you already sent. Quotes are chased for you on day 2, 5 and 10.')]));
   }
 
   // the quote editor works on a copy, saved only when the owner says so
