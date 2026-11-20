@@ -102,16 +102,16 @@
   const demo = $('[data-demo]');
   if (demo) {
     const kinds = {
-      salon: { name: 'Lumière Salon', place: 'Example business · Jumeirah Lakes Towers', step1: '1. Choose a service', step2: '2. Pick a time tomorrow', visit: false,
+      interior: { name: 'Studio Layali Interiors', place: 'Example business · Dubai Design District', step1: '1. What do you need?', step2: '2. Pick a visit time tomorrow', visit: true, word: 'site visit',
+        items: [['First consultation', '45 min · Free', 'free'], ['Measurement visit', '60 min · AED 300', 'AED 300'], ['Full design package', 'Priced on a quote', 'quote']] },
+      home: { name: 'Bright Build Renovation', place: 'Example business · All of Dubai', step1: '1. What do you need?', step2: '2. Pick a visit time tomorrow', visit: true, word: 'site visit',
+        items: [['Kitchen renovation', 'Free site visit and quote', 'quote'], ['Bathroom renovation', 'Free site visit and quote', 'quote'], ['Painting, full villa', 'Free site visit and quote', 'quote']] },
+      automotive: { name: 'Gloss Lab Detailing', place: 'Example business · Al Quoz', step1: '1. Choose a service', step2: '2. Pick a time tomorrow', visit: false, word: 'appointment',
+        items: [['Full detailing', '3 hours · AED 600', 'AED 600'], ['Ceramic coating', '1 day · AED 2,200', 'AED 2,200'], ['Interior clean', '90 min · AED 250', 'AED 250']] },
+      salon: { name: 'Lumière Salon', place: 'Example business · Jumeirah Lakes Towers', step1: '1. Choose a service', step2: '2. Pick a time tomorrow', visit: false, word: 'appointment',
         items: [['Hair colour', '90 min · AED 450', 'AED 450'], ['Gel manicure', '45 min · AED 140', 'AED 140'], ['Signature facial', '60 min · AED 320', 'AED 320']] },
-      clinic: { name: 'Noor Aesthetic Clinic', place: 'Example business · Jumeirah', step1: '1. Choose a treatment', step2: '2. Pick a time tomorrow', visit: false,
-        items: [['Skin consultation', '30 min · Free', 'free'], ['Laser session', '45 min · AED 600', 'AED 600'], ['HydraFacial', '60 min · AED 550', 'AED 550']] },
-      home: { name: 'Bright Home Maintenance', place: 'Example business · Serving all of Dubai', step1: '1. What do you need?', step2: '2. Pick a visit time tomorrow', visit: true,
-        items: [['Kitchen renovation quote', 'Site visit · Free', 'free'], ['AC service', '60 min · AED 180', 'AED 180'], ['Bathroom remodel quote', 'Site visit · Free', 'free']] },
-      interior: { name: 'Studio Layali Interiors', place: 'Example business · Dubai Design District', step1: '1. What do you need?', step2: '2. Pick a visit time tomorrow', visit: true,
-        items: [['First consultation', '45 min · Free', 'free'], ['Measurement visit', '60 min · AED 300', 'AED 300'], ['Design review', '60 min · AED 400', 'AED 400']] },
     };
-    const state = { kind: 'salon', service: null, price: null, time: null };
+    const state = { kind: 'interior', service: null, price: null, time: null };
     const confirmBtn = $('[data-confirm]', demo);
     const out = $('[data-wa]');
     const opts = $('[data-opts]', demo);
@@ -135,7 +135,7 @@
         return b;
       }));
       press($$('[data-time]', demo), null);
-      confirmBtn.textContent = 'Confirm booking';
+      confirmBtn.textContent = 'Send';
       out.innerHTML = hint;
       sync();
     };
@@ -154,20 +154,15 @@
     };
     confirmBtn.addEventListener('click', () => {
       const k = kinds[state.kind];
-      const cost = state.price === 'free' ? 'This one is free.' : `Total ${state.price}.`;
-      out.replaceChildren(...(k.visit ? [
-        bubble('us', `Booked. ${state.service}, tomorrow at ${state.time}.`, 0),
-        bubble('us', `${cost} Please share your location so our team finds you.`, 450),
-        bubble('them', 'Location sent.', 1100),
-        bubble('us', 'Got it. We will message you when the team is on the way.', 1700),
-      ] : [
-        bubble('us', `Booked. ${state.service}, tomorrow at ${state.time}.`, 0),
-        bubble('us', `${cost} We will remind you 2 hours before.`, 450),
-        bubble('them', 'Perfect, thank you.', 1100),
-        bubble('us', 'See you tomorrow.', 1700),
-      ]));
-      confirmBtn.textContent = 'Booked. Try another';
-      $('[data-status]', demo).textContent = `Booking confirmed for ${state.service} at ${state.time}.`;
+      const note = (text, delay) => { const d = bubble('them', text, delay); d.classList.add('alert'); return d; };
+      out.replaceChildren(
+        note(`New booking: Mariam · ${state.service}, tomorrow ${state.time}`, 0),
+        bubble('us', `Hi Mariam, this is ${k.name}. Thank you for booking. Your ${k.word} is confirmed for tomorrow at ${state.time}.${k.visit ? ' Please share your location so our team finds you.' : ' See you then.'}`, 600),
+        bubble('them', k.visit ? 'Location sent. See you tomorrow.' : 'Perfect, thank you.', 1400),
+        note(state.price === 'quote' ? 'Today: send Mariam a quote after the visit' : 'Today: confirm with Mariam the day before', 2100),
+      );
+      confirmBtn.textContent = 'Sent. Try another';
+      $('[data-status]', demo).textContent = `Request sent for ${state.service} at ${state.time}.`;
     });
     render();
   }

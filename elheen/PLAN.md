@@ -13,7 +13,7 @@ These apply Alex Hormozi's principles to Elheen. They are his ideas, not quotes.
 1. **Sell before you build.** No feature is built until someone has paid for it or asked twice.
 2. **One customer type at a time.** The product can serve many; the marketing serves one.
 3. **Customers pay for growth.** The website fee and upfront months fund finding the next customer. No loans, no burning savings.
-4. **Sell an outcome with a guarantee.** "Website and booking, live in 7 days, nothing upfront."
+4. **Sell an outcome with no risk.** "Win more of the jobs you quote for. Set up for you, 14 days free, AED 79 a month, no contract."
 5. **Free channels first.** Outreach and content before paid ads.
 6. **Keep customers before chasing more.** Do not scale while more than 3% leave each month.
 7. **More, then better, then new.** Do more of what works before improving it, and improve it before adding anything new.
@@ -21,9 +21,9 @@ These apply Alex Hormozi's principles to Elheen. They are his ideas, not quotes.
 
 ## Stage 1: First sales (now to January 2027)
 
-- **Do:** 100 outreach messages a day offering "website + booking, nothing upfront" to salons, clinics and home improvement businesses.
-- **Build:** only the landing page and a stopgap booking page that sends requests to the owner's WhatsApp.
-- **Money in:** website fee (AED 749) plus the AED 480 monthly plan.
+- **Do:** 100 outreach messages a day to renovation, fit-out and interior design businesses, offering a free set-up call and 14 days free.
+- **Built already:** enquiry link, leads and board, quotes clients accept, daily follow-ups, site visits by team member, stage payments, phone alerts, card billing.
+- **Money in:** AED 79 a month or AED 790 a year, plus the optional AED 749 website through RizcoReach.
 - **Money out:** the domain.
 - **Gate:** 3 businesses buy. Whichever type buys first becomes the only type you market to.
 
@@ -37,9 +37,9 @@ These apply Alex Hormozi's principles to Elheen. They are his ideas, not quotes.
 ## Stage 3: A real product (July 2027 to end of 2028)
 
 - **Do:** the same offer, more volume. Collect real numbers and turn each client into a case study.
-- **Build:** deposits and payments, the "where did this booking come from" report, a self-serve signup.
+- **Build:** only what paying clients ask for twice. Likely: an Arabic enquiry page, a self-serve signup, the "where did this lead come from" report.
 - **Hire:** one support person once you cannot answer WhatsApp within the hour.
-- **Target:** 100 paying locations. At about AED 300 a month each that is AED 30,000 a month.
+- **Target:** 300 paying businesses. At AED 79 a month each that is about AED 24,000 a month. Raise the price for new businesses once there are case studies; founding businesses keep AED 79.
 - **Gate:** a new business can sign up and take its first booking without talking to you.
 
 ## Stage 4: Own the UAE niche (2029 to 2030)

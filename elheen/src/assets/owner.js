@@ -907,6 +907,23 @@
     catch (err) { $('metaStatus').textContent = err.message; }
   });
 
+  // all leads as a spreadsheet, made on the phone itself
+  $('exportBtn').addEventListener('click', () => {
+    const cell = (v) => { const t = String(v ?? ''); return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+    const head = ['Name', 'Phone', 'Email', 'Stage', 'Came from', 'Wants', 'Address', 'Budget', 'Visit or appointment', 'Team member', 'Job value (AED)', 'Paid (AED)', 'Quotes', 'Received', 'Message', 'Your notes'];
+    const rows = leads.map((l) => {
+      const paid = (l.milestones || []).filter((m) => m.paidAt).reduce((n, m) => n + m.amount, 0);
+      return [l.name, l.phone, l.email, stageWords()[l.status], SOURCES[l.source] || l.source, l.service, l.address, l.budget,
+        l.when ? fmt(l.when, { dateStyle: 'medium', timeStyle: 'short' }) : '', l.assignee, l.value || '', paid || '',
+        quotes.filter((q) => q.leadId === l.id).map((q) => `${q.number} ${QSTATE[q.state]} ${q.totals.total}`).join('; '),
+        fmt(l.createdAt, { dateStyle: 'medium' }), l.note, l.ownerNote];
+    });
+    const csv = '\ufeff' + [head, ...rows].map((r) => r.map(cell).join(',')).join('\r\n');
+    const a = el('a', { href: URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })), download: `elheen-leads-${new Date().toISOString().slice(0, 10)}.csv` });
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  });
+
   $('passForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     try { await api('POST', 'password', { current: $('passCurrent').value, next: $('passNext').value }); e.target.reset(); $('passStatus').textContent = 'Password changed.'; }

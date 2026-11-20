@@ -5,7 +5,7 @@ rizcoreach.ae site: nothing here is built or deployed by the main site.
 
 | Path | What it is |
 |---|---|
-| `src/pages/` | The pages: home, product, who it's for, founding offer, about, thanks |
+| `src/pages/` | The marketing pages, plus the app (`app`), enquiry page (`b`), quote page (`q`) and admin |
 | `src/partials/` | Header, footer and the founding-place form, shared by every page |
 | `src/assets/` | Styles, script, fonts, logo mark, link-preview image |
 | `brand/` | Logo mark and the Instagram profile picture |
@@ -26,11 +26,9 @@ fonts only load through a local server.
 
 ## Putting it live
 
-1. Buy elheen.com.
-2. In Netlify, add a new site from this repository and set **Base directory** to `elheen`.
-   The build command and publish folder are read from `netlify.toml`.
-3. Add elheen.com as the site's domain.
-4. In Netlify, turn on email notifications for the form `elheen-founders`.
+The site is live on Netlify (site `elheen`) at elheen.com. Turn on email
+notifications for the form `elheen-founders` in Netlify to hear about every
+set-up request.
 
 ## Editing
 
@@ -45,9 +43,15 @@ The software lives in the same site as the marketing pages.
 
 | Address | What it is |
 |---|---|
-| `/app` | The owner's app: enquiries, calendar, set-up |
+| `/app` | The owner's app: Today, Leads, Quotes, Calendar, Set-up |
 | `/b/<business-name>` | That business's public enquiry page |
+| `/q/<link>` | A client's quote: accept, decline, ask on WhatsApp, save as PDF |
+| `/admin` | Every business, its plan and payments (needs the admin key) |
 | `/api/...` | The server, in `netlify/functions/api.mjs` |
+
+Shared rules (prices, quote maths, the daily follow-up list) are in
+`netlify/lib/core.mjs`. A scheduled function, `netlify/functions/daily.mjs`,
+sends each owner their follow-up count at 9am Dubai time.
 
 Data is stored in Netlify Blobs (store `elheen`). New businesses can only be
 created with the invite code held in the Netlify setting `ELHEEN_INVITE`.
@@ -66,20 +70,20 @@ node build.mjs && node tests/local-server.mjs   # full app at localhost:8770, in
 
 ## Billing (Elheen's own price)
 
-Businesses pay Elheen's monthly price by card into the Elheen Ziina account.
-New businesses get a 14-day trial of Grow. Start is AED 149 a month and Grow
-(with the assistant) AED 349. Ziina has no subscriptions, so each payment
-buys one month; the app reminds the owner 5 days before the end. After a
-7-day grace period the assistant switches off; the booking page keeps
-working.
+One plan with everything: AED 79 a month or AED 790 a year, paid by card into
+the Elheen Ziina account. New businesses get 14 days free. Ziina has no
+subscriptions, so each payment buys one or twelve months; the app shows a
+banner 5 days before the end. After a 7-day grace period the app asks for
+payment before showing leads again; the enquiry page keeps taking enquiries.
 
-Netlify settings: `ZIINA_TOKEN` (the Elheen Ziina access token, secret) and
-`ZIINA_TEST` (`true` while testing). Payments are confirmed by a signed Ziina
-webhook at `/api/billing/webhook` and again when the owner returns to the app.
+Netlify settings: `ZIINA_TOKEN` (the Elheen Ziina access token, secret),
+`ZIINA_TEST` (`true` while testing) and `ELHEEN_URL` (`https://elheen.com`).
+Payments are confirmed by a signed Ziina webhook at `/api/billing/webhook` and
+again when the owner returns to the app.
 
 ## Admin
 
-`/admin` lists every business with its plan, payments and enquiry count, and
-can change a plan, add or remove months (for cash or bank payments), mark a
-business as included (done-for-you clients), and reset a password. It needs
-the key in the Netlify setting `ELHEEN_ADMIN_KEY`.
+`/admin` lists every business with its plan, payments, leads and quotes, and
+can add or remove months (for cash or bank payments), mark a business as
+included (done-for-you clients), and reset a password. It needs the key in the
+Netlify setting `ELHEEN_ADMIN_KEY`.

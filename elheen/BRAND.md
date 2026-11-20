@@ -21,15 +21,21 @@ WhatsApp and ads.
 
 ## Headline
 
-**Turn enquiries into booked appointments.** Arabic sign-off: **احجز الحين**
+**Turn enquiries into signed jobs.** Arabic sign-off: **رد الحين** (reply now).
+
+Lead with renovation, fit-out and interior design. Salons, clinics, car care
+and studios are served by the same product with simpler stages.
 
 ## What we promise (and must be able to prove)
 
 1. Your clients stay yours. We never show them a competitor.
-2. Booking takes seconds, on the channels clients already use.
-3. You can see which ad or post brought each booking.
-4. One flat price per location.
-5. A person in Dubai answers you on WhatsApp.
+2. Every enquiry, visit, quote and payment is in one place.
+3. Each morning you know exactly who to follow up, with the message written.
+4. One flat price: AED 79 a month, whole team, everything included.
+5. A person in Dubai answers you.
+
+Do not claim automatic WhatsApp sending (messages open in the owner's own
+WhatsApp, ready to send) or Arabic pages (not built yet).
 
 Never claim a number (bookings added, no-shows cut), a client logo or a review
 until a real client's data backs it. The first three clients exist to earn those.
