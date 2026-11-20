@@ -200,15 +200,15 @@ input[type="search"]{min-height:44px}
 
 /* quote editor */
 .items{display:grid;gap:8px}
-.item{display:grid;grid-template-columns:1fr 72px 110px 36px;gap:8px;align-items:start}
+.item{display:grid;grid-template-columns:1fr 70px 76px 104px 36px;gap:8px;align-items:start}
 .item textarea{min-height:48px;padding:12px;resize:vertical}
 .item input{padding:0 10px}
 .item .x{height:48px;border:0;border-radius:10px;background:var(--soft);color:var(--muted);font-weight:700;font-size:1.1rem}
 .item .line-total{grid-column:1/-1;text-align:right;font-size:.84rem;color:var(--muted);margin-top:-4px}
-.item-head{display:grid;grid-template-columns:1fr 72px 110px 36px;gap:8px;font-size:.74rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.item-head{display:grid;grid-template-columns:1fr 70px 76px 104px 36px;gap:8px;font-size:.74rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
 @media(max-width:600px){
   .item-head{display:none}
-  .item{grid-template-columns:1fr 1.4fr 44px;gap:8px;padding-bottom:10px;border-bottom:1px solid var(--line)}
+  .item{grid-template-columns:1fr 1fr 1.3fr 44px;gap:8px;padding-bottom:10px;border-bottom:1px solid var(--line)}
   .item textarea{grid-column:1/-1}
 }
 .totals{display:grid;gap:6px;background:#fff;border-radius:16px;padding:16px 22px;box-shadow:inset 0 0 0 1px var(--line);margin-top:14px}
@@ -383,3 +383,23 @@ input[type="search"]{min-height:44px}
 .badge.extra{background:#E9EAFB;color:#35399A}
 .task-fit{margin-top:6px}
 .task-text .badge{display:inline-flex}
+
+/* every lead in one place: links per channel, website form, sources report */
+.channels{display:grid}
+.channel{display:grid;gap:10px;padding:12px 0;border-top:1px solid var(--line)}
+.channel>div:first-child b{display:block;font-size:.97rem}
+.channel>div:first-child span{display:block}
+@media(min-width:700px){.channel{grid-template-columns:1fr auto;align-items:center}}
+.code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.8rem;min-height:0;background:var(--soft)}
+.src-table{display:grid}
+.src-row{display:grid;grid-template-columns:1.6fr .7fr .7fr .7fr 1.2fr;gap:8px;padding:10px 0;border-bottom:1px solid var(--line);font-size:.92rem;align-items:center}
+.src-row>*:not(:first-child){text-align:right}
+.src-head{font-size:.72rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+#leadSources .chips{margin-bottom:4px}
+/* price list */
+.book-row{display:grid;grid-template-columns:1fr 90px 96px 40px;gap:8px;margin-bottom:8px}
+.book-row input{min-height:46px;padding:0 10px}
+.book-row button{border:0;border-radius:10px;background:var(--soft);color:var(--muted);font-weight:700;font-size:1.1rem}
+.book-head{font-size:.74rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:-2px}
+.tpl-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--line);font-size:.95rem}
+.task.review .task-ico{background:#FDF6E3;color:#8A6100}

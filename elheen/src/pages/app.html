@@ -98,11 +98,13 @@
         <div class="seg" role="group" aria-label="Show leads as">
           <button type="button" data-leadview="list" aria-pressed="true">List</button>
           <button type="button" data-leadview="board" aria-pressed="false">Board</button>
+          <button type="button" data-leadview="sources" aria-pressed="false">Sources</button>
         </div>
       </div>
       <div class="chips" id="leadFilters" role="group" aria-label="Filter by stage"></div>
       <div id="leadList"></div>
       <div class="board" id="leadBoard" hidden></div>
+      <div id="leadSources" hidden></div>
     </section>
 
     <section class="view" id="view-lead" hidden></section>
@@ -146,10 +148,18 @@
       </div>
 
       <div class="box unlocked" id="linkBox">
-        <h2>Your enquiry link</h2>
-        <p class="muted">Put it in your Instagram bio, your WhatsApp Business profile, your Google listing and your ads. Clients send their details, photos and a time that suits them, and it lands in Leads.</p>
+        <h2>Every lead, from everywhere, in one place</h2>
+        <p class="muted">Clients send their details, photos and a time that suits them, and it lands in Leads. Give each channel its own link below, so Leads › Sources shows which ones bring you work.</p>
         <div class="copy-row"><input id="shareLink" readonly aria-label="Your enquiry link"><button class="btn btn-primary btn-sm" id="copyLink" type="button">Copy</button><a class="btn btn-ghost btn-sm" id="openLink" target="_blank" rel="noopener">Open</a></div>
         <p class="muted small" id="copyStatus" role="status"></p>
+        <h3>A link for each channel</h3>
+        <div id="channelList" class="channels"></div>
+        <h3>On your own website</h3>
+        <p class="muted small">Paste this where you want the enquiry form to appear. It works on WordPress, Wix, Squarespace and any other site.</p>
+        <textarea id="embedCode" rows="3" readonly aria-label="Code for your website" class="code"></textarea>
+        <div class="row-actions"><button class="btn btn-ghost btn-sm" id="copyEmbed" type="button">Copy the code</button></div>
+        <p class="muted small" id="embedStatus" role="status"></p>
+        <p class="muted small">Calls, WhatsApp chats and Instagram messages: add them in Leads with "Add lead", so they get the same follow-ups.</p>
       </div>
 
       <form class="box unlocked" id="detailsForm">
@@ -159,6 +169,7 @@
           <label>Area<input id="sArea" placeholder="Al Quoz, Dubai"></label>
         </div>
         <label><span>WhatsApp number for clients <span class="optional">shown on your quotes</span></span><input id="sPhone" type="tel" inputmode="tel" placeholder="+971"></label>
+        <label><span>Google review link <span class="optional">Google Business Profile › Ask for reviews › copy the link</span></span><input id="sReview" type="url" inputmode="url" placeholder="https://g.page/r/..."></label>
         <label class="check"><input type="checkbox" id="sVat">My business is VAT registered (adds 5% VAT to quotes)</label>
         <label id="trnRow">Tax registration number (TRN)<input id="sTrn" inputmode="numeric"></label>
         <label>Quotes are valid for<select id="sValid"><option value="7">7 days</option><option value="14">14 days</option><option value="30">30 days</option><option value="60">60 days</option></select></label>
@@ -193,6 +204,17 @@
         <p class="form-error" id="servicesError" role="alert" hidden></p>
         <button class="btn btn-primary btn-block" type="submit">Save</button>
         <p class="muted small" id="servicesStatus" role="status"></p>
+      </form>
+
+      <form class="box unlocked" id="bookForm">
+        <h2>Price list and quote templates</h2>
+        <p class="muted small">Your usual items and prices. Pick them in any quote instead of typing, and a quote takes two minutes.</p>
+        <div class="book-row book-head" aria-hidden="true"><span>Item</span><span>Unit</span><span>AED</span><span></span></div>
+        <div id="bookList"></div>
+        <div class="row-actions"><button class="btn btn-ghost btn-sm" type="button" id="addBook">Add an item</button><button class="btn btn-primary btn-sm" type="submit">Save price list</button></div>
+        <p class="muted small" id="bookStatus" role="status"></p>
+        <h3>Templates</h3>
+        <div id="tplList"></div>
       </form>
 
       <div class="box unlocked" id="alertBox">
@@ -251,4 +273,5 @@
   </nav>
 </div>
 <datalist id="serviceList"></datalist>
+<datalist id="unitList"><option value="sqm"></option><option value="sqft"></option><option value="m"></option><option value="piece"></option><option value="day"></option><option value="hour"></option><option value="room"></option><option value="lump sum"></option></datalist>
 <div class="pop" id="toast" role="status" aria-live="polite" hidden></div>

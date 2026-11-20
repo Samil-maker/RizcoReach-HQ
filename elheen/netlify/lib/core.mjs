@@ -87,8 +87,22 @@ export function cleanItems(items) {
   return (Array.isArray(items) ? items : []).slice(0, 60).map((it) => ({
     desc: clean(it.desc, 300),
     qty: Math.min(100000, Math.max(0, money(it.qty))),
+    unit: cleanLine(it.unit, 12),
     price: Math.min(10_000_000, Math.max(0, money(it.price))),
   })).filter((it) => it.desc && it.qty > 0);
+}
+// The business's own prices, so a quote takes two minutes. Kept in Elheen, so it is worth staying.
+export function cleanPriceBook(list) {
+  return (Array.isArray(list) ? list : []).slice(0, 300).map((it) => ({
+    id: cleanLine(it.id, 12) || id(4), name: cleanLine(it.name, 120), unit: cleanLine(it.unit, 12),
+    price: Math.min(10_000_000, Math.max(0, money(it.price))),
+  })).filter((it) => it.name);
+}
+export function cleanTemplates(list) {
+  return (Array.isArray(list) ? list : []).slice(0, 30).map((t) => ({
+    id: cleanLine(t.id, 12) || id(4), name: cleanLine(t.name, 60), title: cleanLine(t.title, 120),
+    items: cleanItems(t.items), notes: clean(t.notes, 3000),
+  })).filter((t) => t.name && t.items.length);
 }
 export function quoteTotals(quote, vatRegistered) {
   const subtotal = money((quote.items || []).reduce((n, it) => n + it.qty * it.price, 0));
@@ -139,6 +153,10 @@ export function computeTasks(biz, leads, quotes, now = Date.now()) {
     // the site visit happened, but no quote has gone out
     if (PROJECT_KINDS.has(biz.kind) && l.status === 'booked' && t && t < now - 2 * HOUR && !sentFor.has(l.id) && !l.quoteHandled) {
       tasks.push({ type: 'toquote', leadId: l.id, dueAt: t + 2 * HOUR, when: l.when, title: `Send ${l.name} their quote`, detail: l.service || 'After the site visit' });
+    }
+    // a finished job is the best moment to ask for a review
+    if (l.status === 'done' && biz.reviewLink && !l.reviewAsked) {
+      tasks.push({ type: 'review', leadId: l.id, dueAt: touched, title: `Ask ${l.name} for a review`, detail: l.service || 'Job finished' });
     }
     // money owed: the deposit once a job is won, and anything left once it is finished
     const unpaid = (l.milestones || []).find((m) => !m.paidAt);

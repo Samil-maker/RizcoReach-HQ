@@ -19,6 +19,7 @@
     checkin: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
     visit: '<path d="M12 21s-7-6.100-7-11.500a7 7 0 0 1 14 0C19 14.900 12 21 12 21z"/><circle cx="12" cy="9.500" r="2.500"/>',
     deposit: '<rect x="2.500" y="6" width="19" height="13" rx="2"/><path d="M2.500 10h19M6.500 15h3"/>',
+    review: '<path d="M12 3l2.700 5.500 6 .900-4.350 4.250 1 6L12 16.800 6.650 19.650l1-6L3.300 9.400l6-.900z"/>',
     toquote: '<path d="M12 20h9"/><path d="M16.500 3.500a2.100 2.100 0 0 1 3 3L7 19l-4 1 1-4z"/>',
     quote: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/>',
   };
@@ -32,7 +33,18 @@
   const PROPERTY_WORDS = { villa: 'Villa or townhouse', apartment: 'Apartment', office: 'Office or shop', other: 'Something else' };
   const fitBadge = (f) => (!f ? null : f.fit === 'good' ? el('span', { class: 'badge fit-good' }, 'Good fit')
     : el('span', { class: 'badge fit-check' }, f.why.includes('budget') ? 'Below your minimum' : 'Just getting ideas'));
-  const SOURCES = { instagram: 'Instagram', google: 'Google', link: 'Enquiry link', ad: 'Ad', 'meta-ad': 'Facebook ad', website: 'Website', 'instagram-dm': 'Instagram message', whatsapp: 'WhatsApp', call: 'Phone call', 'walk-in': 'Walk-in', referral: 'Referral', other: 'Other' };
+  const CHANNELS = [
+    ['instagram', 'Instagram', 'Paste it in your bio and in story link stickers.'],
+    ['whatsapp', 'WhatsApp Business', 'Add it to your profile, and to your greeting and away messages.'],
+    ['google', 'Google Business Profile', 'Set it as your website or booking link.'],
+    ['facebook', 'Facebook page', 'Use it for your page button.'],
+    ['tiktok', 'TikTok', 'Paste it in your bio.'],
+    ['ads', 'Ads', 'Use it as the link in your Instagram and Facebook ads.'],
+    ['website', 'Your website', 'Link your "Get a quote" button to it, or add the form below.'],
+    ['qr', 'Flyers and business cards', 'Print the QR code.', true],
+    ['site', 'Vans and site boards', 'Print the QR code large, so people can scan it from the road.', true],
+  ];
+  const SOURCES = { facebook: 'Facebook', tiktok: 'TikTok', ads: 'Ads', qr: 'QR code', site: 'Van or site board', instagram: 'Instagram', google: 'Google', link: 'Enquiry link', ad: 'Ad', 'meta-ad': 'Facebook ad', website: 'Website', 'instagram-dm': 'Instagram message', whatsapp: 'WhatsApp', call: 'Phone call', 'walk-in': 'Walk-in', referral: 'Referral', other: 'Other' };
   const QSTATE = { draft: 'Draft', sent: 'Sent', accepted: 'Accepted', declined: 'Declined', expired: 'Expired' };
   const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const stageWords = () => (biz.project ? STAGES : SHOP_STAGES);
@@ -249,6 +261,7 @@
     if (t.type === 'reply') return `${hi}, this is ${biz.name}. Thank you for your enquiry${l.service ? ` about ${lower(l.service)}` : ''}. ${biz.project ? 'When would suit you for a quick call, or for us to come and see the space?' : 'Which day and time suit you best?'}`;
     if (t.type === 'checkin') return `${hi}, ${biz.name} here. Just checking in${l.service ? ` about your ${lower(l.service)}` : ''}. Is there anything I can help with?`;
     if (t.type === 'visit') return `${hi}, this is ${biz.name} confirming your ${visitWord()} ${at}${l.address && biz.project ? ` at ${l.address}` : ''}. Reply here if anything changes. See you then.`;
+    if (t.type === 'review') return `${hi}, thank you for choosing ${biz.name}. It was a pleasure working with you${l.service ? ` on your ${lower(l.service)}` : ''}. If you are happy with the result, a short Google review would mean a lot to us:\n${biz.reviewLink}`;
     if (t.type === 'deposit' && t.final) return `${hi}, thank you again for choosing ${biz.name}. Now that the work is finished, the remaining ${aed(t.amount)} is due. Shall I send you the bank details or a card payment link?`;
     if (t.type === 'deposit') return `${hi}, thank you for choosing ${biz.name}. To lock in your start date, the ${lower(t.label)} is ${aed(t.amount)}. Shall I send you the bank details or a card payment link?`;
     if (t.type === 'quote' && t.external) {
@@ -368,6 +381,7 @@
       ['Confirm tomorrow', tasks.filter((t) => t.type === 'visit')],
       ['Chase quotes', tasks.filter((t) => t.type === 'quote')],
       ['Collect payments', tasks.filter((t) => t.type === 'deposit')],
+      ['Ask for reviews', tasks.filter((t) => t.type === 'review')],
       ['Check in', tasks.filter((t) => t.type === 'checkin')],
     ].filter(([, list]) => list.length);
     if (!groups.length) {
@@ -404,12 +418,13 @@
     const list = searched();
     const count = (s) => list.filter((l) => l.status === s).length;
     const chips = [['all', 'All', list.length], ...stageList().map((s) => [s, stageWords()[s], count(s)])];
-    $('leadFilters').hidden = leadView === 'board';
+    $('leadFilters').hidden = leadView !== 'list';
     fill($('leadFilters'), ...chips.map(([key, label, n]) => el('button', {
       class: 'chip-btn', type: 'button', 'aria-pressed': String(leadFilter === key), on: { click: () => { leadFilter = key; drawLeads(); } },
     }, label, el('b', {}, String(n)))));
     document.querySelectorAll('[data-leadview]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.leadview === leadView)));
-    $('leadList').hidden = leadView !== 'list'; $('leadBoard').hidden = leadView !== 'board';
+    $('leadList').hidden = leadView !== 'list'; $('leadBoard').hidden = leadView !== 'board'; $('leadSources').hidden = leadView !== 'sources';
+    if (leadView === 'sources') { $('leadFilters').hidden = true; drawSources(list); return; }
     if (leadView === 'list') {
       const shown = list.filter((l) => leadFilter === 'all' || l.status === leadFilter);
       fill($('leadList'), ...(shown.length ? shown.map(leadRow) : [el('div', { class: 'empty' },
@@ -425,6 +440,93 @@
       }));
     }
   }
+  // where leads come from, and which channels turn into paid work
+  let sourcePeriod = 30;
+  function drawSources(list) {
+    const since = sourcePeriod ? Date.now() - sourcePeriod * DAY : 0;
+    const rows = new Map();
+    for (const l of list.filter((x) => x.createdAt >= since)) {
+      const key = l.source || 'link';
+      const r = rows.get(key) || { key, leads: 0, quoted: 0, won: 0, value: 0 };
+      r.leads++;
+      if (quotes.some((q) => q.leadId === l.id && q.state !== 'draft')) r.quoted++;
+      if (['won', 'done'].includes(l.status)) { r.won++; r.value += l.value || l.price || 0; }
+      rows.set(key, r);
+    }
+    const sorted = [...rows.values()].sort((a, b) => b.value - a.value || b.leads - a.leads);
+    const best = sorted.find((r) => r.value > 0);
+    const periods = [[30, 'Last 30 days'], [90, 'Last 90 days'], [0, 'All time']];
+    fill($('leadSources'),
+      el('div', { class: 'chips' }, periods.map(([d, label]) => el('button', { class: 'chip-btn', type: 'button', 'aria-pressed': String(sourcePeriod === d), on: { click: () => { sourcePeriod = d; drawSources(list); } } }, label))),
+      sorted.length ? el('div', { class: 'box' },
+        best ? el('p', { class: 'strong' }, `${SOURCES[best.key] || best.key} brought you the most work: ${aed(best.value)} from ${best.leads} lead${best.leads === 1 ? '' : 's'}.`) : el('p', { class: 'muted' }, 'Once jobs are won, this shows which channel brings the most work.'),
+        el('div', { class: 'src-table', role: 'table', 'aria-label': 'Leads by source' },
+          el('div', { class: 'src-row src-head', role: 'row' }, ['Came from', 'Leads', 'Quoted', 'Won', 'Won AED'].map((h) => el('span', { role: 'columnheader' }, h))),
+          sorted.map((r) => el('div', { class: 'src-row', role: 'row' }, el('span', { role: 'cell' }, SOURCES[r.key] || r.key), el('span', { role: 'cell' }, String(r.leads)), el('span', { role: 'cell' }, String(r.quoted)), el('span', { role: 'cell' }, String(r.won)), el('b', { role: 'cell' }, aed(r.value))))),
+        el('p', { class: 'muted small' }, 'Give every channel its own link in Set-up, so each lead is counted in the right place.'))
+        : el('div', { class: 'empty' }, el('b', {}, 'No leads in this period.'), 'Leads from each of your links are counted here.'));
+  }
+
+  // one link per channel, a QR code for print, and a form for any website
+  function drawChannels() {
+    const base = `${location.origin}/b/${biz.slug}`;
+    fill($('channelList'), CHANNELS.map(([key, label, tip, qr]) => {
+      const link = `${base}?src=${key}`;
+      const status = el('span', { class: 'muted small', role: 'status' });
+      return el('div', { class: 'channel' },
+        el('div', {}, el('b', {}, label), el('span', { class: 'muted small' }, tip)),
+        el('div', { class: 'row-actions' },
+          qr ? el('button', { class: 'btn btn-ghost btn-sm', type: 'button', on: { click: () => downloadQr(link, key).catch(() => toast('The QR code could not be made here.')) } }, 'Download QR code') : null,
+          el('button', { class: 'btn btn-ghost btn-sm', type: 'button', on: { click: async () => { status.textContent = (await copy(link)) ? 'Copied' : link; if (!biz.linkShared) api('PUT', 'me', { linkShared: true }).then((r) => { biz = r.business; }).catch(() => {}); } } }, 'Copy link'), status));
+    }));
+    $('embedCode').value = `<iframe src="${base}?src=website" title="Get a quote from ${biz.name.replace(/"/g, '')}" style="width:100%;height:1400px;border:0" loading="lazy"></iframe>`;
+  }
+  $('copyEmbed').addEventListener('click', async () => { $('embedStatus').textContent = (await copy($('embedCode').value, $('embedCode'))) ? 'Copied. Paste it into your website where the form should go.' : 'Select the code and copy it.'; });
+  let qrReady = null;
+  const loadQr = () => qrReady || (qrReady = new Promise((resolve, reject) => { const sc = el('script', { src: '/assets/qrcode.js', onload: resolve, onerror: reject }); document.head.append(sc); }));
+  async function downloadQr(link, key) {
+    await loadQr();
+    const qr = window.qrcode(0, 'M'); qr.addData(link); qr.make();
+    const n = qr.getModuleCount(), W = 1200, H = 1500, cell = Math.floor(860 / n), size = cell * n;
+    const c = el('canvas', { width: W, height: H }); const g = c.getContext('2d');
+    g.fillStyle = '#ffffff'; g.fillRect(0, 0, W, H);
+    g.fillStyle = '#1F0A24'; g.textAlign = 'center';
+    g.font = '700 64px system-ui, sans-serif'; g.fillText(biz.name, W / 2, 150, W - 120);
+    g.fillStyle = '#A31A8A'; g.font = '700 46px system-ui, sans-serif'; g.fillText('Scan for a free quote', W / 2, 230);
+    const x0 = (W - size) / 2, y0 = 300;
+    g.fillStyle = '#1F0A24';
+    for (let r = 0; r < n; r++) for (let col = 0; col < n; col++) if (qr.isDark(r, col)) g.fillRect(x0 + col * cell, y0 + r * cell, cell, cell);
+    g.fillStyle = '#5D5D69'; g.font = '500 34px system-ui, sans-serif'; g.fillText(link.replace(/^https?:\/\//, '').replace(/\?src=.*/, ''), W / 2, y0 + size + 90);
+    g.font = '600 28px system-ui, sans-serif'; g.fillText('Powered by elheen', W / 2, H - 60);
+    const a = el('a', { href: c.toDataURL('image/png'), download: `${biz.slug}-qr-${key}.png` });
+    document.body.append(a); a.click(); a.remove();
+  }
+
+  // the price list in Set-up
+  const bookRow = (it = {}) => {
+    const row = el('div', { class: 'book-row', 'data-id': it.id || '' },
+      el('input', { value: it.name || '', placeholder: 'Gypsum ceiling, supply and fit', 'aria-label': 'Item' }),
+      el('input', { value: it.unit || '', placeholder: 'sqm', list: 'unitList', 'aria-label': 'Unit' }),
+      el('input', { type: 'number', min: 0, step: 'any', value: it.price ?? '', placeholder: '0', 'aria-label': 'Price in AED' }));
+    row.append(el('button', { type: 'button', 'aria-label': 'Remove item', on: { click: () => row.remove() } }, '×'));
+    return row;
+  };
+  function drawPriceBook() {
+    fill($('bookList'), (biz.priceBook || []).map(bookRow));
+    fill($('tplList'), (biz.templates || []).length ? biz.templates.map((t) => el('div', { class: 'tpl-row' },
+      el('span', {}, el('b', {}, t.name), ` · ${t.items.length} line${t.items.length === 1 ? '' : 's'}`),
+      el('button', { class: 'link', type: 'button', on: { click: async () => {
+        if (!confirm(`Delete the ${t.name} template?`)) return;
+        try { biz = (await api('PUT', 'me', { templates: biz.templates.filter((x) => x.id !== t.id) })).business; drawPriceBook(); } catch (err) { oops(err); }
+      } } }, 'Delete'))) : [el('p', { class: 'muted small' }, 'No templates yet. In any quote, press "save this quote as a template".')]);
+  }
+  $('addBook').addEventListener('click', () => { const r = bookRow(); $('bookList').append(r); r.querySelector('input').focus(); });
+  $('bookForm').addEventListener('submit', async (e) => {
+    e.preventDefault(); $('bookStatus').textContent = '';
+    const priceBook = [...$('bookList').children].map((r) => { const [n, u, p] = r.querySelectorAll('input'); return { id: r.dataset.id, name: n.value, unit: u.value, price: p.value }; });
+    try { biz = (await api('PUT', 'me', { priceBook })).business; drawPriceBook(); $('bookStatus').textContent = 'Saved.'; } catch (err) { if (!err.locked) $('bookStatus').textContent = err.message; }
+  });
+
   $('leadSearch').addEventListener('input', () => drawLeads());
   document.querySelectorAll('[data-leadview]').forEach((b) => b.addEventListener('click', () => { leadView = b.dataset.leadview; drawLeads(); }));
   $('alCancel').addEventListener('click', () => { $('addLeadForm').hidden = true; $('addLeadForm').reset(); say('alError', ''); });
@@ -636,7 +738,7 @@
   }
 
   // the quote editor works on a copy, saved only when the owner says so
-  const blankItem = () => ({ desc: '', qty: 1, price: 0 });
+  const blankItem = () => ({ desc: '', qty: 1, unit: '', price: 0 });
   const grow = (t) => { t.style.height = 'auto'; t.style.height = `${Math.max(48, t.scrollHeight + 3)}px`; };
   const totalsOf = (s) => {
     const subtotal = money(s.items.filter((it) => it.desc.trim() && Number(it.qty) > 0).reduce((n, it) => n + money(it.qty) * money(it.price), 0));
@@ -646,7 +748,7 @@
     return { subtotal, discount, vat, total: money(taxable + vat) };
   };
   const quoteBody = (s, withValid) => ({
-    title: s.title, items: s.items.filter((it) => it.desc.trim()).map((it) => ({ desc: it.desc, qty: money(it.qty), price: money(it.price) })),
+    title: s.title, items: s.items.filter((it) => it.desc.trim()).map((it) => ({ desc: it.desc, qty: money(it.qty), unit: it.unit || '', price: money(it.price) })),
     discount: money(s.discount), vat: !!s.vat, notes: s.notes, terms: s.terms,
     ...(withValid || (s.validChanged && s.validDays) ? { validDays: Number(s.validDays) || biz.quoteValidDays || 14 } : {}),
   });
@@ -712,30 +814,56 @@
     // lines
     const items = el('div', { class: 'items' });
     const drawItems = () => {
-      fill(items, el('div', { class: 'item-head', 'aria-hidden': 'true' }, el('span', {}, 'Description'), el('span', {}, 'Qty'), el('span', {}, 'Unit AED'), el('span')),
+      fill(items, el('div', { class: 'item-head', 'aria-hidden': 'true' }, el('span', {}, 'Description'), el('span', {}, 'Qty'), el('span', {}, 'Unit'), el('span', {}, 'Price AED'), el('span')),
         ...s.items.map((it, i) => {
           const lt = el('span', { class: 'line-total' }, aed(money(it.qty) * money(it.price)));
           return el('div', { class: 'item' },
             el('textarea', { value: it.desc, rows: 1, disabled: ro, placeholder: 'e.g. Supply and fit kitchen cabinets', 'aria-label': `Line ${i + 1} description`, on: { input: (e) => { it.desc = e.target.value; grow(e.target); dirty(); } } }),
             el('input', { type: 'number', min: 0, step: 'any', inputMode: 'decimal', value: it.qty, disabled: ro, placeholder: 'Qty', 'aria-label': `Line ${i + 1} quantity`, on: { input: (e) => { it.qty = e.target.value; lt.textContent = aed(money(it.qty) * money(it.price)); dirty(); } } }),
-            el('input', { type: 'number', min: 0, step: 'any', inputMode: 'decimal', value: it.price, disabled: ro, placeholder: 'Unit price', 'aria-label': `Line ${i + 1} unit price`, on: { input: (e) => { it.price = e.target.value; lt.textContent = aed(money(it.qty) * money(it.price)); dirty(); } } }),
+            el('input', { value: it.unit || '', disabled: ro, placeholder: 'sqm', maxLength: 12, list: 'unitList', 'aria-label': `Line ${i + 1} unit`, on: { input: (e) => { it.unit = e.target.value; dirty(); } } }),
+            el('input', { type: 'number', min: 0, step: 'any', inputMode: 'decimal', value: it.price, disabled: ro, placeholder: 'Price', 'aria-label': `Line ${i + 1} unit price`, on: { input: (e) => { it.price = e.target.value; lt.textContent = aed(money(it.qty) * money(it.price)); dirty(); } } }),
             ro ? el('span') : el('button', { class: 'x', type: 'button', 'aria-label': `Remove line ${i + 1}`, on: { click: () => { s.items.splice(i, 1); if (!s.items.length) s.items.push(blankItem()); drawItems(); dirty(); } } }, '×'),
             lt);
         }));
     };
     drawItems();
     requestAnimationFrame(() => items.querySelectorAll('textarea').forEach(grow));
-    const fromServices = el('select', { 'aria-label': 'Add one of your services', disabled: ro, on: { change: (e) => {
-      const svc = biz.services.find((x) => x.id === e.target.value);
+    const book = biz.priceBook || [];
+    const fromServices = el('select', { 'aria-label': 'Add from your price list', disabled: ro, on: { change: (e) => {
+      const [kind, pick] = e.target.value.split(':');
+      const svc = kind === 'p' ? book.find((x) => x.id === pick) : biz.services.find((x) => x.id === pick);
       if (svc) {
         const blank = s.items.findIndex((it) => !it.desc.trim());
-        const line = { desc: svc.name, qty: 1, price: svc.price || 0 };
+        const line = { desc: svc.name, qty: 1, unit: svc.unit || '', price: svc.price || 0 };
         if (blank >= 0) s.items[blank] = line; else s.items.push(line);
         drawItems(); dirty();
         requestAnimationFrame(() => items.querySelectorAll('textarea').forEach(grow));
       }
       e.target.value = '';
-    } } }, el('option', { value: '' }, 'Add one of your services…'), ...biz.services.map((x) => el('option', { value: x.id }, `${x.name}${x.price ? ` · ${aed(x.price)}` : ''}`)));
+    } } }, el('option', { value: '' }, book.length ? 'Add from your price list…' : 'Add one of your services…'),
+      book.length ? el('optgroup', { label: 'Price list' }, ...book.map((x) => el('option', { value: `p:${x.id}` }, `${x.name} · ${aed(x.price)}${x.unit ? ` / ${x.unit}` : ''}`))) : null,
+      biz.services.length ? el('optgroup', { label: 'Services' }, ...biz.services.map((x) => el('option', { value: `s:${x.id}` }, `${x.name}${x.price ? ` · ${aed(x.price)}` : ''}`))) : null);
+    const templates = biz.templates || [];
+    const fromTemplate = templates.length && !ro ? el('select', { 'aria-label': 'Start from a template', on: { change: (e) => {
+      const t = templates.find((x) => x.id === e.target.value);
+      if (!t) return;
+      if (s.items.some((it) => it.desc.trim()) && !confirm(`Replace the lines with the ${t.name} template?`)) { e.target.value = ''; return; }
+      s.items = t.items.map((it) => ({ ...it })); if (t.title) s.title = t.title; if (t.notes) s.notes = t.notes;
+      s.dirty = true; render();
+    } } }, el('option', { value: '' }, 'Start from a template…'), ...templates.map((t) => el('option', { value: t.id }, t.name))) : null;
+    const lines = () => s.items.filter((it) => it.desc.trim() && Number(it.qty) > 0).map((it) => ({ desc: it.desc.trim(), qty: money(it.qty), unit: it.unit || '', price: money(it.price) }));
+    const saveToBook = async () => {
+      const have = new Set(book.map((x) => x.name.toLowerCase()));
+      const add = lines().filter((it) => !have.has(it.desc.toLowerCase())).map((it) => ({ name: it.desc, unit: it.unit, price: it.price }));
+      if (!add.length) { toast('These lines are already in your price list.'); return; }
+      try { biz = (await api('PUT', 'me', { priceBook: [...book, ...add] })).business; toast(`${add.length} line${add.length > 1 ? 's' : ''} added to your price list.`); render(); } catch (err) { oops(err); }
+    };
+    const saveTemplate = async () => {
+      if (!lines().length) { toast('Add some lines first.'); return; }
+      const name = prompt('Name this template, for example "Standard kitchen"', s.title || '');
+      if (!name) return;
+      try { biz = (await api('PUT', 'me', { templates: [...templates, { name, title: s.title, items: lines(), notes: s.notes }] })).business; toast('Template saved. Start your next quote from it.'); render(); } catch (err) { oops(err); }
+    };
 
     // extras
     const title = el('input', { value: s.title, disabled: ro, placeholder: 'Kitchen renovation, villa 12', on: { input: (e) => { s.title = e.target.value; dirty(); } } });
@@ -795,11 +923,15 @@
     fill($('view-quote'), 
       stateLine,
       el('div', { class: 'box' },
+        fromTemplate,
         el('label', {}, 'What the quote is for', title),
         el('h3', {}, 'Lines'), items,
         ro ? null : el('div', { class: 'row-actions' },
           el('button', { class: 'btn btn-ghost btn-sm', type: 'button', on: { click: () => { s.items.push(blankItem()); drawItems(); dirty(); items.querySelector('.item:last-of-type textarea')?.focus(); } } }, 'Add a line'),
-          biz.services.length ? fromServices : null)),
+          book.length || biz.services.length ? fromServices : null),
+        ro ? null : el('p', { class: 'muted small' }, 'Quote faster next time: ',
+          el('button', { class: 'link', type: 'button', on: { click: saveToBook } }, 'save these lines to your price list'), ' or ',
+          el('button', { class: 'link', type: 'button', on: { click: saveTemplate } }, 'save this quote as a template'), '.')),
       el('div', { class: 'box' },
         el('div', { class: 'grid-2' },
           el('label', {}, 'Discount (AED)', discount),
@@ -871,8 +1003,10 @@
       class: 'chip-btn', type: 'button', 'aria-pressed': String((biz.closedDays || []).includes(i)), 'data-day': i,
       on: { click: (e) => e.currentTarget.setAttribute('aria-pressed', String(e.currentTarget.getAttribute('aria-pressed') !== 'true')) },
     }, d)));
+    $('sReview').value = biz.reviewLink || '';
+    drawChannels(); drawPriceBook();
     drawAlerts(); drawMeta();
-    const target = { details: 'detailsForm', services: 'servicesForm', alerts: 'alertBox', link: 'linkBox' }[current.arg];
+    const target = { details: 'detailsForm', services: 'servicesForm', alerts: 'alertBox', link: 'linkBox', prices: 'bookForm' }[current.arg];
     if (target) setTimeout(() => { $(target).scrollIntoView({ behavior: 'smooth', block: 'start' }); $(target).classList.add('flash'); setTimeout(() => $(target).classList.remove('flash'), 1600); }, 60);
   }
   const teamRow = (name = '') => {
@@ -903,7 +1037,7 @@
     e.preventDefault();
     saveMe({
       name: $('sName').value, area: $('sArea').value, phone: $('sPhone').value, vatRegistered: $('sVat').checked, trn: $('sTrn').value,
-      quoteValidDays: $('sValid').value, quoteTerms: $('sTerms').value, team: [...$('teamList').querySelectorAll('input')].map((i) => i.value),
+      quoteValidDays: $('sValid').value, quoteTerms: $('sTerms').value, reviewLink: $('sReview').value.trim(), team: [...$('teamList').querySelectorAll('input')].map((i) => i.value),
     }, 'detailsError', 'detailsStatus');
   });
   $('servicesForm').addEventListener('submit', (e) => {

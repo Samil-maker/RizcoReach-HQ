@@ -21,7 +21,9 @@ WhatsApp and ads.
 
 ## Headline
 
-**Turn enquiries into signed jobs.** Arabic sign-off: **رد الحين** (reply now).
+**Every lead from Instagram, WhatsApp, Google, your ads and your website, in one place.** Arabic sign-off: **رد الحين** (reply now).
+
+Position Elheen as lead management software in the spirit of Fresha and GoHighLevel: everything flows in, and the business's prices, reviews and history live in it.
 
 Lead with renovation, fit-out and interior design. Salons, clinics, car care
 and studios are served by the same product with simpler stages, through their

@@ -5,7 +5,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import {
   STATUSES, KINDS, PROJECT_KINDS, VISIT_KINDS, PHOTO_KINDS, PLANS, TRIAL_DAYS, MONTH_MS, BUDGETS, STARTS, PROPERTIES, fitOf,
   json, fail, clean, cleanLine, id, slugify, money, aedText, hashPassword, checkPassword, sameSecret,
-  billingOf, defaultServices, cleanItems, quoteTotals, quoteState, defaultMilestones, computeTasks,
+  billingOf, defaultServices, cleanItems, cleanPriceBook, cleanTemplates, quoteTotals, quoteState, defaultMilestones, computeTasks,
 } from '../lib/core.mjs';
 import { GRAPH_VERSION, envFromProcess } from '../lib/services.mjs';
 
@@ -92,7 +92,7 @@ export function makeHandler(store, env = {}) {
       location: /^-?\d{1,3}\.\d+,-?\d{1,3}\.\d+$/.test(body.location || '') ? body.location : null,
       budget: cleanLine(body.budget, 60), budgetBand: BUDGETS[body.budgetBand] ? body.budgetBand : null, start: STARTS[body.start] ? body.start : null,
       property: PROPERTIES[body.property] ? body.property : null, email: cleanLine(body.email, 120), adName: cleanLine(body.adName, 120), campaign: cleanLine(body.campaign, 120),
-      photos, source: cleanLine(source, 30) || 'link', status: when ? 'booked' : (opts.byOwner ? 'talking' : 'new'), when, createdAt: now, lastTouch: opts.byOwner ? now : null,
+      photos, source: cleanLine(source, 30).toLowerCase().replace(/[^a-z0-9-]/g, '') || 'link', status: when ? 'booked' : (opts.byOwner ? 'talking' : 'new'), when, createdAt: now, lastTouch: opts.byOwner ? now : null,
       assignee: '', milestones: [], history: [{ at: now, text: opts.byOwner ? 'Added by you' : when ? 'Booked through the enquiry page' : 'Enquiry received' }],
     };
     await setJSON(`leads/${biz.slug}/${leadId}`, lead);
@@ -490,6 +490,13 @@ export function makeHandler(store, env = {}) {
       if ('phone' in body) biz.phone = cleanLine(body.phone, 30).replace(/[^\d+]/g, '');
       for (const k of ['askPhotos', 'askAddress', 'askBudget', 'vatRegistered', 'linkShared', 'checklistHidden']) if (k in body) biz[k] = !!body[k];
       if ('minJob' in body) biz.minJob = Math.max(0, money(body.minJob));
+      if (Array.isArray(body.priceBook)) biz.priceBook = cleanPriceBook(body.priceBook);
+      if (Array.isArray(body.templates)) biz.templates = cleanTemplates(body.templates);
+      if ('reviewLink' in body) {
+        const link = cleanLine(body.reviewLink, 300);
+        if (link && !/^https:\/\/\S+$/.test(link)) return fail(400, 'The review link should start with https://');
+        biz.reviewLink = link;
+      }
       if ('quoteTerms' in body) biz.quoteTerms = clean(body.quoteTerms, 2000);
       if ('quoteValidDays' in body) biz.quoteValidDays = Math.min(180, Math.max(1, Number(body.quoteValidDays) | 0));
       if (Array.isArray(body.team)) biz.team = [...new Set(body.team.map((t) => cleanLine(t, 40)).filter(Boolean))].slice(0, 30);
@@ -698,6 +705,7 @@ export function makeHandler(store, env = {}) {
         else if (body.type === 'visit') { l.remindedAt = Date.now(); note(l, 'Confirmed the time with the client'); }
         else if (body.type === 'reply') note(l, 'Confirmed the booking');
         else if (body.type === 'toquote') { l.quoteHandled = true; note(l, 'Quote handled outside Elheen'); }
+        else if (body.type === 'review') { l.reviewAsked = Date.now(); note(l, 'Asked for a review'); }
         else if (body.type === 'deposit') note(l, 'Asked for the payment');
         else note(l, 'Checked in');
       });

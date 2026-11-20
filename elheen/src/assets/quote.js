@@ -30,7 +30,7 @@
     $('qTitle').textContent = q.title || '';
     $('lines').replaceChildren(...q.items.map((it) => {
       const tr = document.createElement('tr');
-      tr.append(td(it.desc, 'desc'), td(num(it.qty), 'num'), td(amt(it.price), 'num unit'), td(amt(it.qty * it.price), 'num'));
+      tr.append(td(it.desc, 'desc'), td(`${num(it.qty)}${it.unit ? ` ${it.unit}` : ''}`, 'num'), td(amt(it.price), 'num unit'), td(amt(it.qty * it.price), 'num'));
       return tr;
     }));
     const t = q.totals;

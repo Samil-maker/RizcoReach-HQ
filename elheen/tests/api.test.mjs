@@ -676,6 +676,53 @@ test('extra work on a won job is approved in writing and adds to the job, never 
   assert.match(l.milestones[3].label, /Extra work Q-0002/);
 });
 
+test('the price list and quote templates are kept clean, and quote lines keep their unit', async () => {
+  const call = setup({ siteUrl: 'https://x.test' });
+  const { data: { token } } = await signup(call);
+  const me = (await call('PUT', 'me', {
+    priceBook: [{ name: 'Gypsum ceiling', unit: 'sqm', price: 45 }, { name: '', price: 9 }, { name: 'Painting', unit: 'sqm', price: -5 }],
+    templates: [{ name: 'Standard kitchen', title: 'Kitchen renovation', items: [{ desc: 'Cabinets', qty: 6, unit: 'm', price: 2300 }] }, { name: 'Empty', items: [] }],
+  }, token)).data.business;
+  assert.equal(me.priceBook.length, 2);
+  assert.ok(me.priceBook[0].id);
+  assert.equal(me.priceBook[1].price, 0);
+  assert.equal(me.templates.length, 1);
+  assert.equal(me.templates[0].items[0].unit, 'm');
+  const lead = await newLead(call);
+  const q = (await call('POST', 'quotes', { leadId: lead.id, items: [{ desc: 'Gypsum ceiling', qty: 32, unit: 'sqm', price: 45 }] }, token)).data.quote;
+  assert.equal(q.items[0].unit, 'sqm');
+  assert.equal(q.totals.subtotal, 1440);
+  const sent = (await call('PATCH', `quotes/${q.id}`, { send: true }, token)).data.quote;
+  assert.equal((await call('GET', `quote/${sent.publicKey}`)).data.quote.items[0].unit, 'sqm');
+});
+
+test('a finished job asks for a review once, only when the review link is set', async () => {
+  const done = lead0({ id: 'R', name: 'Happy', status: 'done', lastTouch: T0 - 3600e3 });
+  assert.equal(computeTasks({}, [done], [], T0).filter((t) => t.type === 'review').length, 0);
+  const biz = { reviewLink: 'https://g.page/r/example/review' };
+  assert.equal(computeTasks(biz, [done], [], T0).filter((t) => t.type === 'review').length, 1);
+  assert.equal(computeTasks(biz, [{ ...done, reviewAsked: T0 }], [], T0).length, 0);
+  const call = setup();
+  const { data: { token } } = await signup(call);
+  assert.equal((await call('PUT', 'me', { reviewLink: 'not a link' }, token)).status, 400);
+  assert.equal((await call('PUT', 'me', { reviewLink: 'https://g.page/r/abc/review' }, token)).status, 200);
+  const lead = await newLead(call);
+  await call('PATCH', `leads/${lead.id}`, { status: 'done' }, token);
+  const t = (await call('GET', 'today', null, token)).data.tasks.find((x) => x.type === 'review');
+  assert.ok(t);
+  await call('POST', 'today/done', { type: 'review', leadId: lead.id }, token);
+  assert.equal((await call('GET', 'today', null, token)).data.tasks.filter((x) => x.type === 'review').length, 0);
+});
+
+test('lead sources from tracked links are kept short and plain', async () => {
+  const call = setup();
+  const { data: { token } } = await signup(call);
+  await call('POST', 'public/studio-layali/lead?src=Instagram', { name: 'A', phone: '0501234567' });
+  await call('POST', 'public/studio-layali/lead', { name: 'B', phone: '0501234567', source: 'van <script>' });
+  const sources = (await call('GET', 'leads', null, token)).data.leads.map((l) => l.source).sort();
+  assert.deepEqual(sources, ['instagram', 'vanscript']);
+});
+
 test('marking a follow-up done or snoozing it takes it off today\'s list', async () => {
   const call = setup({ siteUrl: 'https://x.test' });
   const { data: { token } } = await signup(call);
