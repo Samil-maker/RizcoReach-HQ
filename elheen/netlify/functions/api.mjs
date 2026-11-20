@@ -4,7 +4,7 @@ import { getStore } from '@netlify/blobs';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import {
   STATUSES, KINDS, PROJECT_KINDS, VISIT_KINDS, PHOTO_KINDS, PLANS, TRIAL_DAYS, MONTH_MS,
-  json, fail, clean, cleanLine, id, slugify, money, hashPassword, checkPassword, sameSecret,
+  json, fail, clean, cleanLine, id, slugify, money, aedText, hashPassword, checkPassword, sameSecret,
   billingOf, defaultServices, cleanItems, quoteTotals, quoteState, defaultMilestones, computeTasks,
 } from '../lib/core.mjs';
 import { GRAPH_VERSION, envFromProcess } from '../lib/services.mjs';
@@ -89,11 +89,11 @@ export function makeHandler(store, env = {}) {
       price: service?.price ?? null, note: clean(body.note, 2000), address: cleanLine(body.address, 300),
       location: /^-?\d{1,3}\.\d+,-?\d{1,3}\.\d+$/.test(body.location || '') ? body.location : null,
       budget: cleanLine(body.budget, 60), email: cleanLine(body.email, 120), adName: cleanLine(body.adName, 120), campaign: cleanLine(body.campaign, 120),
-      photos, source: cleanLine(source, 30) || 'link', status: when ? 'booked' : 'new', when, createdAt: now, lastTouch: null,
-      assignee: '', milestones: [], history: [{ at: now, text: when ? 'Booked through the enquiry page' : 'Enquiry received' }],
+      photos, source: cleanLine(source, 30) || 'link', status: when ? 'booked' : (opts.byOwner ? 'talking' : 'new'), when, createdAt: now, lastTouch: opts.byOwner ? now : null,
+      assignee: '', milestones: [], history: [{ at: now, text: opts.byOwner ? 'Added by you' : when ? 'Booked through the enquiry page' : 'Enquiry received' }],
     };
     await setJSON(`leads/${biz.slug}/${leadId}`, lead);
-    await alertOwner(biz, {
+    if (!opts.byOwner) await alertOwner(biz, {
       title: when ? `New booking: ${name}` : `New enquiry: ${name}`,
       body: [lead.service, photos.length ? `${photos.length} photo${photos.length > 1 ? 's' : ''}` : null, lead.source !== 'link' ? `from ${lead.source}` : null].filter(Boolean).join(' · ') || 'Tap to open',
     });
@@ -323,10 +323,10 @@ export function makeHandler(store, env = {}) {
           await moveLead(biz.slug, lead.id, (l) => {
             l.status = 'won'; l.wonAt = Date.now(); l.value = total;
             if (!(l.milestones || []).length) l.milestones = defaultMilestones(biz.kind, total);
-            note(l, `Accepted quote ${quote.number} (AED ${total.toLocaleString('en')}), signed by ${by}`);
+            note(l, `Accepted quote ${quote.number} (${aedText(total)}), signed by ${by}`);
           });
         }
-        await alertOwner(biz, { title: `Quote accepted: ${quote.number}`, body: `${by} accepted AED ${total.toLocaleString('en')}` });
+        await alertOwner(biz, { title: `Quote accepted: ${quote.number}`, body: `${by} accepted ${aedText(total)}` });
         return json(view());
       }
       if (method === 'POST' && parts[2] === 'decline') {
@@ -512,7 +512,7 @@ export function makeHandler(store, env = {}) {
 
     // --- leads
     if (parts[0] === 'leads' && !parts[1] && method === 'POST') {
-      return saveLead(biz, body, OWNER_SOURCES.includes(body.source) ? body.source : 'other', { requirePhone: false });
+      return saveLead(biz, body, OWNER_SOURCES.includes(body.source) ? body.source : 'other', { requirePhone: false, byOwner: true });
     }
     if (parts[0] === 'leads' && !parts[1] && method === 'GET') return json({ leads: await listLeads(biz.slug) });
     if (parts[0] === 'leads' && parts[1] && method === 'PATCH') {
@@ -548,7 +548,7 @@ export function makeHandler(store, env = {}) {
         lead.milestones = body.milestones.slice(0, 12).map((m) => {
           const old = before.get(m.id);
           const paid = !!m.paid;
-          if (paid && !old?.paidAt) note(lead, `Received ${cleanLine(m.label, 60) || 'a payment'} (AED ${money(m.amount).toLocaleString('en')})`);
+          if (paid && !old?.paidAt) note(lead, `Received ${cleanLine(m.label, 60) || 'a payment'} (${aedText(money(m.amount))})`);
           return { id: cleanLine(m.id, 12) || id(4), label: cleanLine(m.label, 60) || 'Payment', amount: Math.max(0, money(m.amount)), paidAt: paid ? (old?.paidAt || Date.now()) : null };
         });
       }
@@ -617,7 +617,7 @@ export function makeHandler(store, env = {}) {
         await moveLead(biz.slug, q.leadId, (l) => {
           if (['new', 'talking', 'booked'].includes(l.status)) l.status = 'quoted';
           l.lastTouch = Date.now();
-          if (fresh) note(l, `Sent quote ${q.number} (AED ${quoteTotals(q, !!biz.vatRegistered).total.toLocaleString('en')})`);
+          if (fresh) note(l, `Sent quote ${q.number} (${aedText(quoteTotals(q, !!biz.vatRegistered).total)})`);
         });
       }
       q.updatedAt = Date.now();
@@ -650,6 +650,7 @@ export function makeHandler(store, env = {}) {
         l.lastTouch = Date.now();
         if (body.type === 'reply' && l.status === 'new') { l.status = 'talking'; note(l, 'Replied'); }
         else if (body.type === 'visit') { l.remindedAt = Date.now(); note(l, 'Confirmed the time with the client'); }
+        else if (body.type === 'reply') note(l, 'Confirmed the booking');
         else if (body.type === 'deposit') note(l, 'Asked for the payment');
         else note(l, 'Checked in');
       });

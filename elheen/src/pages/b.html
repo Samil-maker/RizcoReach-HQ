@@ -1,15 +1,9 @@
-<!--{"title":"Book with us | Elheen","description":"Send an enquiry and pick a time.","nav":"","noindex":true,"bare":true,"scripts":["book.js"]}-->
+<!--{"title":"Book with us | Elheen","description":"Send your details and pick a time.","nav":"","noindex":true,"bare":true,"scripts":["book.js"]}-->
 <div class="shell" id="book">
   <div class="panel" id="loading"><p class="hint">Loading…</p></div>
 
   <form class="panel" id="form" hidden novalidate>
     <div class="biz-head"><i id="initial" aria-hidden="true"></i><div><h1 id="bizName"></h1><span id="bizArea"></span></div></div>
-
-    <div id="chatBlock" hidden>
-      <p class="step-title">Have a question?</p>
-      <div class="thread" id="thread" aria-live="polite"></div>
-      <div class="chat-row"><input id="chatInput" placeholder="Ask us anything" aria-label="Your question" maxlength="500"><button class="btn btn-primary btn-sm" type="button" id="chatSend">Send</button></div>
-    </div>
 
     <p class="step-title" id="svcTitle">What do you need?</p>
     <div class="choices" id="services" role="group" aria-labelledby="svcTitle"></div>
@@ -17,7 +11,7 @@
     <p class="step-title">Your details</p>
     <label>Your name<input id="name" autocomplete="name" required></label>
     <label class="field">WhatsApp number<input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+971 5X XXX XXXX" required></label>
-    <label class="field">Tell us more <span class="hint">(optional)</span><textarea id="note" maxlength="1000"></textarea></label>
+    <label class="field"><span>Tell us more <span class="hint">(optional)</span></span><textarea id="note" maxlength="1000"></textarea></label>
 
     <div id="addressBlock" hidden>
       <label class="field">Address or area<input id="address" autocomplete="street-address"></label>
@@ -26,7 +20,8 @@
     </div>
 
     <div id="photoBlock" hidden>
-      <p class="step-title">Photos of the space <span class="hint" style="text-transform:none;letter-spacing:0">(up to 4)</span></p>
+      <p class="step-title">Photos of the space <span class="hint">(up to 6)</span></p>
+      <p class="hint">Photos help us price the job before we visit.</p>
       <div class="photos" id="photos"><button class="add-photo" type="button" id="addPhoto">Add photos</button></div>
       <input id="photoInput" type="file" accept="image/*" multiple hidden>
     </div>

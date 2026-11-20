@@ -1,144 +1,228 @@
-<!--{"title":"Elheen","description":"Your enquiries, bookings and calendar.","nav":"","noindex":true,"bare":true,"scripts":["owner.js"]}-->
-<div class="shell wide">
-  <div class="topbar"><img src="assets/logo.svg" alt="elheen"><button class="btn btn-ghost btn-sm" id="signOut" hidden>Sign out</button></div>
-
-  <!-- sign in / create -->
-  <section id="authView" hidden style="max-width:460px;margin:24px auto 0">
-    <form class="panel" id="loginForm">
-      <h1 style="font-size:1.8rem;margin-bottom:6px">Sign in</h1>
-      <p class="hint" style="margin-bottom:16px">See your enquiries and your calendar.</p>
-      <label>Business name<input id="loginSlug" autocomplete="organization" required></label>
-      <label class="field">Password<input id="loginPass" type="password" autocomplete="current-password" required></label>
-      <p class="error" id="loginError" role="alert" hidden></p>
-      <button class="btn btn-primary wide-btn" type="submit">Sign in</button>
-      <p class="auth-switch">New here? <button type="button" data-show="signup">Set up a business</button></p>
+<!--{"title":"Elheen","description":"Your leads, quotes, visits and follow-ups.","nav":"","noindex":true,"bare":true,"scripts":["owner.js"]}-->
+<!-- signed out: one centred box -->
+<div class="auth" id="authView" hidden>
+  <div class="auth-box">
+    <a href="/" class="auth-logo"><img src="assets/logo.svg" alt="elheen" width="140" height="37"></a>
+    <form class="box" id="loginForm">
+      <h1>Sign in</h1>
+      <p class="muted">Your leads, quotes and visits in one place.</p>
+      <label>Business name<input id="loginSlug" autocomplete="username" required></label>
+      <label>Password<input id="loginPass" type="password" autocomplete="current-password" required></label>
+      <p class="form-error" id="loginError" role="alert" hidden></p>
+      <button class="btn btn-primary btn-block" type="submit">Sign in</button>
+      <p class="switch">New to Elheen? <button type="button" class="link" data-show="signup">Set up your business</button></p>
     </form>
-    <form class="panel" id="signupForm" hidden>
-      <h1 style="font-size:1.8rem;margin-bottom:6px">Set up your business</h1>
-      <p class="hint" style="margin-bottom:16px">It takes about a minute.</p>
-      <label>Invite code<input id="suInvite" required></label>
-      <label class="field">Business name<input id="suName" autocomplete="organization" required></label>
-      <label class="field">Type of business
+    <form class="box" id="signupForm" hidden>
+      <h1>Set up your business</h1>
+      <p class="muted">Free for 14 days. No card needed. Takes about a minute.</p>
+      <label>Invite code<input id="suInvite" required autocomplete="off"></label>
+      <label>Business name<input id="suName" autocomplete="organization" required></label>
+      <label>What do you do?
         <select id="suKind">
-          <option value="interior">Interior design</option><option value="home">Home improvement</option>
-          <option value="cleaning">Cleaning</option><option value="salon">Salon or barber</option>
-          <option value="clinic">Clinic</option><option value="fitness">Fitness or studio</option>
-          <option value="automotive">Car care</option><option value="other">Something else</option>
+          <option value="interior">Interior design and fit-out</option>
+          <option value="home">Renovation and home improvement</option>
+          <option value="cleaning">Cleaning and maintenance</option>
+          <option value="automotive">Car care and detailing</option>
+          <option value="salon">Salon, barber or spa</option>
+          <option value="clinic">Clinic</option>
+          <option value="fitness">Fitness studio</option>
+          <option value="other">Something else</option>
         </select>
       </label>
-      <label class="field">Area <span class="hint">(optional)</span><input id="suArea" placeholder="Jumeirah, Dubai"></label>
-      <label class="field">Password <span class="hint">(8 characters or more)</span><input id="suPass" type="password" autocomplete="new-password" minlength="8" required></label>
-      <p class="error" id="signupError" role="alert" hidden></p>
-      <button class="btn btn-primary wide-btn" type="submit">Create my page</button>
-      <p class="auth-switch">Already set up? <button type="button" data-show="login">Sign in</button></p>
+      <label><span>Area <span class="optional">optional</span></span><input id="suArea" placeholder="Al Quoz, Dubai"></label>
+      <label><span>Password <span class="optional">8 characters or more</span></span><input id="suPass" type="password" autocomplete="new-password" minlength="8" required></label>
+      <p class="form-error" id="signupError" role="alert" hidden></p>
+      <button class="btn btn-primary btn-block" type="submit">Create my account</button>
+      <p class="switch">Already have an account? <button type="button" class="link" data-show="login">Sign in</button></p>
     </form>
-  </section>
+    <p class="auth-foot"><a href="/">Back to elheen.com</a></p>
+  </div>
+</div>
 
-  <!-- the app -->
-  <section id="appView" hidden>
-    <div id="inboxTab">
-      <div class="plan-banner" id="planBanner" hidden><span id="planBannerText"></span><button class="btn btn-primary btn-sm" type="button" id="planBannerBtn">Pay now</button></div>
+<!-- signed in -->
+<div class="owner" id="appView" hidden>
+  <aside class="side">
+    <a class="side-logo" href="/app#today"><img src="assets/logo.svg" alt="elheen" width="112" height="30"></a>
+    <nav class="tabs" aria-label="Sections">
+      <a href="/app#today" data-tab="today"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5"/></svg><span>Today</span><b class="count" id="todayCount" hidden></b></a>
+      <a href="/app#leads" data-tab="leads"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.900-6 6.500-6s6.500 2.400 6.500 6"/><path d="M16 4.600a3.500 3.500 0 0 1 0 6.800M18 14.300c2 .7 3.500 2.700 3.500 5.700"/></svg><span>Leads</span></a>
+      <a href="/app#quotes" data-tab="quotes"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg><span>Quotes</span></a>
+      <a href="/app#calendar" data-tab="calendar"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.500" y="5" width="17" height="15.500" rx="2"/><path d="M3.500 10h17M8 3v4M16 3v4"/></svg><span>Calendar</span></a>
+      <a href="/app#setup" data-tab="setup"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg><span>Set-up</span></a>
+    </nav>
+    <div class="side-foot">
+      <p class="side-biz" id="sideBiz"></p>
+      <button class="link" type="button" id="signOut">Sign out</button>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="main-head">
+      <div class="head-row">
+        <a class="back" href="/app#leads" id="backBtn" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg><span>Back</span></a>
+        <h1 id="viewTitle">Today</h1>
+        <div class="head-actions" id="headActions"></div>
+      </div>
+    </header>
+
+    <div class="banner" id="planBanner" hidden><span id="planBannerText"></span><a class="btn btn-primary btn-sm" href="/app#setup">See plan</a></div>
+
+    <section class="view" id="view-today" hidden>
+      <p class="greet" id="greet"></p>
       <div class="stats" id="stats"></div>
-      <div class="inbox-head"><button class="btn btn-primary btn-sm" type="button" id="addLeadBtn">+ Add enquiry</button></div>
-      <form class="panel" id="addLeadForm" hidden>
-        <h2 style="font-size:1.3rem;margin-bottom:12px">Add an enquiry</h2>
-        <p class="hint" style="margin-bottom:14px">For leads that reached you by phone, WhatsApp, Instagram message or in person.</p>
-        <label>Name<input id="alName" required></label>
-        <label class="field">Phone<input id="alPhone" type="tel" inputmode="tel" required></label>
-        <label class="field">Came from
-          <select id="alSource"><option value="whatsapp">WhatsApp</option><option value="instagram-dm">Instagram message</option><option value="call">Phone call</option><option value="walk-in">Walk-in</option><option value="referral">Referral</option><option value="other">Other</option></select>
-        </label>
-        <label class="field">What they want <span class="hint">(optional)</span><textarea id="alNote" maxlength="1000"></textarea></label>
-        <p class="error" id="alError" role="alert" hidden></p>
-        <div class="btn-row" style="margin-top:16px"><button class="btn btn-primary btn-sm" type="submit">Save</button><button class="btn btn-ghost btn-sm" type="button" id="alCancel">Cancel</button></div>
-      </form>
-      <div class="chips" id="filters" role="group" aria-label="Filter enquiries"></div>
-      <div id="leadList"></div>
-    </div>
+      <div id="tasks"></div>
+    </section>
 
-    <div id="detailTab" hidden>
-      <button class="back" id="backBtn" type="button">← All enquiries</button>
-      <div class="panel detail" id="detail"></div>
-    </div>
-
-    <div id="boardTab" hidden><div class="board" id="board"></div></div>
-
-    <div id="calendarTab" hidden><div id="agenda"></div></div>
-
-    <div id="settingsTab" hidden>
-      <div class="panel" id="planPanel">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
-          <h2 style="font-size:1.4rem">Your plan</h2><span class="badge" id="planBadge"></span>
+    <section class="view" id="view-leads" hidden>
+      <form class="box add-lead" id="addLeadForm" hidden>
+        <h2>Add a lead</h2>
+        <p class="muted small">For enquiries that came by phone, WhatsApp, an Instagram message, a referral or a walk-in.</p>
+        <div class="grid-2">
+          <label>Name<input id="alName" required></label>
+          <label>Phone<input id="alPhone" type="tel" inputmode="tel" placeholder="+971"></label>
+          <label>Came from
+            <select id="alSource"><option value="whatsapp">WhatsApp</option><option value="instagram-dm">Instagram message</option><option value="call">Phone call</option><option value="referral">Referral</option><option value="walk-in">Walk-in</option><option value="other">Other</option></select>
+          </label>
+          <label>What they want<input id="alService" list="serviceList" placeholder="Kitchen renovation"></label>
         </div>
-        <p style="margin-top:8px;font-weight:600" id="planText"></p>
-        <div class="plan-pick" id="planPick" role="radiogroup" aria-label="Choose a plan"></div>
-        <button class="btn btn-primary wide-btn" type="button" id="planPay" style="margin-top:14px"></button>
-        <p class="hint" id="planStatus" role="status" style="margin-top:10px"></p>
+        <label><span>Address or area <span class="optional">optional</span></span><input id="alAddress"></label>
+        <label><span>Notes <span class="optional">optional</span></span><textarea id="alNote" rows="3"></textarea></label>
+        <p class="form-error" id="alError" role="alert" hidden></p>
+        <div class="row-actions"><button class="btn btn-primary" type="submit">Save lead</button><button class="btn btn-ghost" type="button" id="alCancel">Cancel</button></div>
+      </form>
+      <div class="toolbar">
+        <input type="search" id="leadSearch" placeholder="Search name, phone or area" aria-label="Search leads">
+        <div class="seg" role="group" aria-label="Show leads as">
+          <button type="button" data-leadview="list" aria-pressed="true">List</button>
+          <button type="button" data-leadview="board" aria-pressed="false">Board</button>
+        </div>
+      </div>
+      <div class="chips" id="leadFilters" role="group" aria-label="Filter by stage"></div>
+      <div id="leadList"></div>
+      <div class="board" id="leadBoard" hidden></div>
+    </section>
+
+    <section class="view" id="view-lead" hidden></section>
+
+    <section class="view" id="view-quotes" hidden>
+      <div class="stats" id="quoteStats"></div>
+      <div class="chips" id="quoteFilters" role="group" aria-label="Filter quotes"></div>
+      <div id="quoteList"></div>
+    </section>
+
+    <section class="view" id="view-quote" hidden></section>
+
+    <section class="view" id="view-calendar" hidden>
+      <div class="chips" id="calFilters" role="group" aria-label="Filter by team member"></div>
+      <div id="agenda"></div>
+    </section>
+
+    <section class="view" id="view-setup" hidden>
+      <div class="box" id="planPanel">
+        <div class="box-head"><h2>Your plan</h2><span class="badge" id="planBadge"></span></div>
+        <p id="planText"></p>
+        <div class="plan-pick" id="planPick" role="radiogroup" aria-label="How long to pay for"></div>
+        <button class="btn btn-primary btn-block" type="button" id="planPay"></button>
+        <p class="muted small" id="planStatus" role="status"></p>
         <div id="planHistory"></div>
       </div>
-      <div class="panel">
-        <h2 style="font-size:1.4rem">Your enquiry link</h2>
-        <p class="hint" style="margin-top:6px">Put this in your Instagram bio, your ads and your Google profile.</p>
-        <div class="link-box"><input id="shareLink" readonly><button class="btn btn-primary btn-sm" id="copyLink" type="button">Copy</button></div>
-        <p class="hint" id="copyStatus" role="status"></p>
+
+      <div class="box unlocked">
+        <h2>Your enquiry link</h2>
+        <p class="muted">Put it in your Instagram bio, your WhatsApp Business profile, your Google listing and your ads. Clients send their details, photos and a time that suits them, and it lands in Leads.</p>
+        <div class="copy-row"><input id="shareLink" readonly aria-label="Your enquiry link"><button class="btn btn-primary btn-sm" id="copyLink" type="button">Copy</button><a class="btn btn-ghost btn-sm" id="openLink" target="_blank" rel="noopener">Open</a></div>
+        <p class="muted small" id="copyStatus" role="status"></p>
       </div>
-      <div class="panel">
-        <h2 style="font-size:1.4rem">Facebook and Instagram lead ads</h2>
-        <p class="hint" style="margin-top:6px" id="metaHint"></p>
-        <p style="margin-top:10px;font-weight:650" id="metaPages" hidden></p>
-        <div class="btn-row" style="margin-top:12px">
+
+      <form class="box unlocked" id="detailsForm">
+        <h2>Business and quotes</h2>
+        <div class="grid-2">
+          <label>Business name<input id="sName" required></label>
+          <label>Area<input id="sArea" placeholder="Al Quoz, Dubai"></label>
+        </div>
+        <label><span>WhatsApp number for clients <span class="optional">shown on your quotes</span></span><input id="sPhone" type="tel" inputmode="tel" placeholder="+971"></label>
+        <label class="check"><input type="checkbox" id="sVat">My business is VAT registered (adds 5% VAT to quotes)</label>
+        <label id="trnRow">Tax registration number (TRN)<input id="sTrn" inputmode="numeric"></label>
+        <label>Quotes are valid for<select id="sValid"><option value="7">7 days</option><option value="14">14 days</option><option value="30">30 days</option><option value="60">60 days</option></select></label>
+        <label>Terms printed on every quote<textarea id="sTerms" rows="3"></textarea></label>
+        <h3>Team</h3>
+        <p class="muted small">The people who go to site visits or take appointments. Give each visit to one of them and the calendar shows who is where.</p>
+        <div id="teamList" class="team-list"></div>
+        <button class="btn btn-ghost btn-sm" type="button" id="addTeam">Add a person</button>
+        <p class="form-error" id="detailsError" role="alert" hidden></p>
+        <button class="btn btn-primary btn-block" type="submit">Save</button>
+        <p class="muted small" id="detailsStatus" role="status"></p>
+      </form>
+
+      <form class="box unlocked" id="servicesForm">
+        <h2>Enquiry page</h2>
+        <p class="muted small">What clients can choose. Leave the price at 0 for a free visit or a job you price on a quote.</p>
+        <div class="svc-row svc-head" aria-hidden="true"><span>Service</span><span>Minutes</span><span>AED</span><span></span></div>
+        <div id="svcList"></div>
+        <button class="btn btn-ghost btn-sm" type="button" id="addSvc">Add a service</button>
+        <h3>Ask clients for</h3>
+        <label class="check"><input type="checkbox" id="askPhotos">Photos of the space</label>
+        <label class="check"><input type="checkbox" id="askAddress">Their address and location</label>
+        <h3>Hours</h3>
+        <div class="grid-2">
+          <label>From<select id="openHour"></select></label>
+          <label>Until<select id="closeHour"></select></label>
+        </div>
+        <p class="muted small">Closed on</p>
+        <div class="day-picks" id="closedDays" role="group" aria-label="Closed days"></div>
+        <p class="form-error" id="servicesError" role="alert" hidden></p>
+        <button class="btn btn-primary btn-block" type="submit">Save</button>
+        <p class="muted small" id="servicesStatus" role="status"></p>
+      </form>
+
+      <div class="box unlocked">
+        <h2>Phone alerts</h2>
+        <p class="muted" id="alertHint">A notification the moment a lead comes in or a client opens or accepts a quote, and your follow-up list at 9am.</p>
+        <button class="btn btn-primary btn-sm" id="alertBtn" type="button">Turn on alerts on this device</button>
+        <p class="muted small" id="alertStatus" role="status"></p>
+      </div>
+
+      <div class="box unlocked" id="metaPanel" hidden>
+        <h2>Facebook and Instagram lead ads</h2>
+        <p class="muted" id="metaHint"></p>
+        <p class="strong" id="metaPages" hidden></p>
+        <div class="row-actions">
           <button class="btn btn-primary btn-sm" id="metaConnect" type="button" hidden>Connect Facebook</button>
           <button class="btn btn-ghost btn-sm" id="metaSync" type="button" hidden>Check for new leads</button>
           <button class="btn btn-ghost btn-sm" id="metaOff" type="button" hidden>Disconnect</button>
         </div>
-        <p class="hint" id="metaStatus" role="status" style="margin-top:8px"></p>
+        <p class="muted small" id="metaStatus" role="status"></p>
       </div>
-      <div class="panel">
-        <h2 style="font-size:1.4rem">Phone alerts</h2>
-        <p class="hint" style="margin-top:6px" id="alertHint">Get a notification on this device the moment an enquiry arrives.</p>
-        <button class="btn btn-primary btn-sm" id="alertBtn" type="button" style="margin-top:12px">Turn on alerts on this device</button>
-        <p class="hint" id="alertStatus" role="status" style="margin-top:8px"></p>
-      </div>
-      <div class="panel">
-        <h2 style="font-size:1.4rem">Assistant</h2>
-        <p class="hint" style="margin-top:6px" id="aiHint">When this is on, the assistant answers questions on your enquiry page and guides people to book. You can read every chat on the enquiry.</p>
-        <label class="check" style="margin-top:8px"><input type="checkbox" id="aiOn">Let the assistant reply for me</label>
-        <label class="field">Things it should know <span class="hint">(parking, areas you cover, what you do not do)</span><textarea id="aiNotes" maxlength="1500"></textarea></label>
-        <button class="btn btn-ghost btn-sm" id="aiSave" type="button" style="margin-top:12px">Save assistant settings</button>
-        <p class="hint" id="aiStatus" role="status" style="margin-top:8px"></p>
-      </div>
-      <form class="panel" id="settingsForm">
-        <h2 style="font-size:1.4rem;margin-bottom:14px">Services</h2>
-        <div class="svc-row hint" aria-hidden="true"><span>Name</span><span>Minutes</span><span>AED</span><span></span></div>
-        <div id="svcList"></div>
-        <button class="btn btn-ghost btn-sm" type="button" id="addSvc">Add a service</button>
-        <h2 style="font-size:1.4rem;margin:26px 0 8px">What clients are asked</h2>
-        <label class="check"><input type="checkbox" id="askPhotos">Ask for photos of the space</label>
-        <label class="check"><input type="checkbox" id="askAddress">Ask for an address and location</label>
-        <h2 style="font-size:1.4rem;margin:26px 0 8px">Opening hours</h2>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-          <label>Open from<select id="openHour"></select></label>
-          <label>Close at<select id="closeHour"></select></label>
-        </div>
-        <p class="error" id="settingsError" role="alert" hidden></p>
-        <button class="btn btn-primary wide-btn" type="submit" id="saveSettings">Save changes</button>
-        <p class="hint" id="saveStatus" role="status" style="text-align:center;margin-top:10px"></p>
-      </form>
-      <form class="panel" id="passForm">
-        <h2 style="font-size:1.4rem;margin-bottom:14px">Change password</h2>
-        <label>Current password<input id="passCurrent" type="password" autocomplete="current-password" required></label>
-        <label class="field">New password <span class="hint">(8 characters or more)</span><input id="passNext" type="password" autocomplete="new-password" minlength="8" required></label>
-        <button class="btn btn-ghost btn-sm" type="submit" style="margin-top:14px">Change password</button>
-        <p class="hint" id="passStatus" role="status" style="margin-top:8px"></p>
-      </form>
-    </div>
 
-    <div id="passwordPanel" hidden></div>
-    <nav class="tabs" role="tablist" aria-label="Sections">
-      <button role="tab" aria-selected="true" data-tab="inbox"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 13l2-8h12l2 8M4 13v6h16v-6M4 13h5l1 2h4l1-2h5"/></svg>Enquiries</button>
-      <button role="tab" aria-selected="false" data-tab="board"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="5" height="16" rx="1.500"/><rect x="10" y="4" width="5" height="11" rx="1.500"/><rect x="17" y="4" width="4" height="7" rx="1.500"/></svg>Pipeline</button>
-      <button role="tab" aria-selected="false" data-tab="calendar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Calendar</button>
-      <button role="tab" aria-selected="false" data-tab="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg>Set-up</button>
-    </nav>
-  </section>
+      <form class="box" id="passForm">
+        <h2>Password</h2>
+        <div class="grid-2">
+          <label>Current password<input id="passCurrent" type="password" autocomplete="current-password" required></label>
+          <label>New password<input id="passNext" type="password" autocomplete="new-password" minlength="8" required></label>
+        </div>
+        <div class="row-actions"><button class="btn btn-ghost btn-sm" type="submit">Change password</button></div>
+        <p class="muted small" id="passStatus" role="status"></p>
+      </form>
+
+      <p class="help">Stuck on anything? <a href="https://ig.me/m/getelheen" target="_blank" rel="noopener">Message us on Instagram</a> and we will set it up with you.</p>
+    </section>
+
+    <section class="view" id="view-locked" hidden>
+      <div class="box locked">
+        <h2>Your Elheen plan has ended</h2>
+        <p>Your enquiry page is still taking enquiries and nothing has been lost. Pay to open your leads, quotes and follow-ups again.</p>
+        <a class="btn btn-primary" href="/app#setup">Pay now</a>
+      </div>
+    </section>
+  </div>
+
+  <nav class="bar" aria-label="Sections">
+    <a href="/app#today" data-tab="today"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5"/></svg><span>Today</span><b class="count" id="todayCountBar" hidden></b></a>
+    <a href="/app#leads" data-tab="leads"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.900-6 6.500-6s6.500 2.400 6.500 6"/><path d="M16 4.600a3.500 3.500 0 0 1 0 6.800M18 14.300c2 .7 3.500 2.700 3.500 5.700"/></svg><span>Leads</span></a>
+    <a href="/app#quotes" data-tab="quotes"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg><span>Quotes</span></a>
+    <a href="/app#calendar" data-tab="calendar"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.500" y="5" width="17" height="15.500" rx="2"/><path d="M3.500 10h17M8 3v4M16 3v4"/></svg><span>Calendar</span></a>
+    <a href="/app#setup" data-tab="setup"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg><span>Set-up</span></a>
+  </nav>
 </div>
+<datalist id="serviceList"></datalist>
+<div class="pop" id="toast" role="status" aria-live="polite" hidden></div>

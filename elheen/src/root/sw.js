@@ -3,8 +3,8 @@ self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
 self.addEventListener('push', (e) => {
   let data = {};
-  try { data = e.data.json(); } catch { data = { title: 'New enquiry', body: '' }; }
-  e.waitUntil(self.registration.showNotification(data.title || 'New enquiry', {
+  try { data = e.data.json(); } catch { data = { title: 'Elheen', body: '' }; }
+  e.waitUntil(self.registration.showNotification(data.title || 'Elheen', {
     body: data.body || '', icon: '/assets/icon-192.png', badge: '/assets/icon-192.png', data: { url: data.url || '/app' },
   }));
 });

@@ -544,6 +544,30 @@ test('new enquiries, quiet leads, tomorrow\'s visits and unpaid deposits all app
   assert.deepEqual(tasks.map((t) => t.type).sort(), ['checkin', 'deposit', 'reply', 'visit']);
 });
 
+test('a booking from the enquiry link asks the owner to confirm it, once', () => {
+  const booked = (extra) => lead0({ id: 'K', name: 'Booked', status: 'booked', lastTouch: null, when: new Date(T0 + 3 * DAY).toISOString(), ...extra });
+  const t = computeTasks({}, [booked()], [], T0);
+  assert.equal(t.length, 1);
+  assert.equal(t[0].type, 'reply');
+  assert.match(t[0].title, /Confirm the booking/);
+  assert.equal(computeTasks({}, [booked({ lastTouch: T0 })], [], T0).length, 0);
+  // within a day of the visit, only the day-before reminder shows
+  assert.deepEqual(computeTasks({}, [booked({ when: new Date(T0 + 20 * 3600e3).toISOString() })], [], T0).map((x) => x.type), ['visit']);
+});
+
+test('leads the owner adds start as talking, with no alert and nothing to chase yet', async () => {
+  const sent = [];
+  const call = setup({ pushKey: 'PUBLIC', notify: async (subs, p) => { sent.push(p); return []; } });
+  const { data: { token } } = await signup(call);
+  await call('POST', 'push', { subscription: { endpoint: 'https://push.example/abc', keys: { p256dh: 'k', auth: 'a' } } }, token);
+  await call('POST', 'leads', { name: 'From a call', phone: '0501112222', source: 'call' }, token);
+  const [l] = (await call('GET', 'leads', null, token)).data.leads;
+  assert.equal(l.status, 'talking');
+  assert.ok(l.lastTouch);
+  assert.equal(sent.length, 0);
+  assert.equal((await call('GET', 'today', null, token)).data.tasks.length, 0);
+});
+
 test('marking a follow-up done or snoozing it takes it off today\'s list', async () => {
   const call = setup({ siteUrl: 'https://x.test' });
   const { data: { token } } = await signup(call);

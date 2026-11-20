@@ -3,7 +3,7 @@
   const $ = (id) => document.getElementById(id);
   const el = (tag, props = {}, ...kids) => { const n = Object.assign(document.createElement(tag), props); n.append(...kids); return n; };
   const STATE = { trial: 'Free trial', active: 'Paid', due: 'Payment due', overdue: 'Overdue', included: 'Included' };
-  const BADGE = { trial: 'new', active: 'booked', due: 'lost', overdue: 'lost', included: 'booked' };
+  const BADGE = { trial: 'trial', active: 'active', due: 'due', overdue: 'overdue', included: 'included' };
   const date = (ms) => new Date(ms).toLocaleDateString('en', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Dubai' });
   let key = ''; try { key = sessionStorage.getItem('elheen-admin') || ''; } catch { /* private window */ }
   let rows = [], filter = 'all';
@@ -19,8 +19,8 @@
   function draw() {
     const count = (s) => rows.filter((r) => r.billing.state === s).length;
     const monthly = rows.filter((r) => r.billing.state === 'active').reduce((n, r) => n + r.billing.price, 0);
-    $('summary').replaceChildren(...[['Businesses', rows.length], ['Paying', count('active')], ['On trial', count('trial')], ['Monthly income', `AED ${monthly.toLocaleString('en')}`]]
-      .map(([label, value]) => el('div', { className: 'stat-tile' }, el('small', {}, label), el('b', {}, String(value)))));
+    $('summary').replaceChildren(...[['Businesses', rows.length], ['Paying', count('active')], ['On trial', count('trial')], ['Monthly income', `AED ${monthly.toLocaleString('en')}`, 'paying businesses × monthly price']]
+      .map(([label, value]) => el('div', { className: 'kpi' }, el('small', {}, label), el('b', {}, String(value)))));
     $('adminFilters').replaceChildren(...[['all', 'All', rows.length], ...Object.entries(STATE).map(([k, v]) => [k, v, count(k)])].map(([k, label, n]) => {
       const b = el('button', { className: 'chip-btn', type: 'button' }, label, el('b', {}, String(n)));
       b.setAttribute('aria-pressed', String(filter === k));
@@ -28,7 +28,7 @@
       return b;
     }));
     const shown = rows.filter((r) => filter === 'all' || r.billing.state === filter);
-    $('bizList').replaceChildren(...(shown.length ? shown.map(card) : [el('div', { className: 'panel empty' }, 'No businesses here.')]));
+    $('bizList').replaceChildren(...(shown.length ? shown.map(card) : [el('div', { className: 'empty' }, 'No businesses here.')]));
   }
 
   function card(r) {
@@ -42,21 +42,17 @@
       } catch (err) { notes[r.slug] = err.message; }
       draw();
     };
-    const plan = el('select', { ariaLabel: `Plan for ${r.name}` }, el('option', { value: 'start' }, 'Start · AED 149'), el('option', { value: 'grow' }, 'Grow · AED 349'));
-    plan.value = r.billing.plan;
-    plan.addEventListener('change', () => act({ plan: plan.value }));
     const last = r.payments[0];
-    return el('div', { className: 'panel admin-card' },
+    return el('div', { className: 'box admin-card' },
       el('div', { className: 'admin-top' },
         el('div', {}, el('b', { className: 'admin-name' }, r.name), el('span', { className: 'hint' }, ` · ${r.kind}${r.area ? ` · ${r.area}` : ''}`)),
         el('span', { className: `badge ${BADGE[r.billing.state]}` }, STATE[r.billing.state])),
       el('div', { className: 'rows' },
         el('div', {}, el('span', {}, 'Paid until'), el('span', {}, r.billing.state === 'included' ? 'Included' : date(r.billing.paidUntil))),
-        el('div', {}, el('span', {}, 'Last payment'), el('span', {}, last ? `${date(last.at)} · ${last.amount ? `AED ${last.amount}` : 'added by you'}` : 'None yet')),
-        el('div', {}, el('span', {}, 'Enquiries'), el('span', {}, `${r.leads}${r.aiOn ? ' · assistant on' : ''}${r.facebook ? ' · Facebook connected' : ''}`)),
+        el('div', {}, el('span', {}, 'Last payment'), el('span', {}, last ? `${date(last.at)} · ${last.amount ? `AED ${last.amount} for ${last.months} month${last.months > 1 ? 's' : ''}` : `${last.months} month${last.months > 1 ? 's' : ''} added by you`}` : 'None yet')),
+        el('div', {}, el('span', {}, 'Using it'), el('span', {}, `${r.leads} lead${r.leads === 1 ? '' : 's'} · ${r.quotes} quote${r.quotes === 1 ? '' : 's'}${r.facebook ? ' · Facebook connected' : ''}`)),
         el('div', {}, el('span', {}, 'Joined'), el('span', {}, date(r.createdAt)))),
       el('div', { className: 'admin-actions' },
-        el('label', {}, 'Plan', plan),
         btn('+1 month', () => act({ addMonths: 1 })),
         btn('−1 month', () => act({ addMonths: -1 })),
         btn(r.comp ? 'Stop including' : 'Mark as included', () => act({ comp: !r.comp })),

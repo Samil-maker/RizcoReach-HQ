@@ -17,6 +17,12 @@
   to = "/b.html"
   status = 200
 
+# A client's quote: elheen.com/q/<link>
+[[redirects]]
+  from = "/q/*"
+  to = "/q.html"
+  status = 200
+
 [[redirects]]
   from = "/app"
   to = "/app.html"

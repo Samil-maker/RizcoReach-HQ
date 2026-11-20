@@ -30,6 +30,7 @@ export const cleanLine = (v, max = 200) => String(v ?? '').replace(/[\u0000-\u00
 export const id = (bytes = 9) => randomBytes(bytes).toString('base64url');
 export const slugify = (name) => cleanLine(name, 60).toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
 export const money = (n) => Math.round((Number(n) || 0) * 100) / 100;
+export const aedText = (n) => { const v = money(n); return `AED ${v.toLocaleString('en', { minimumFractionDigits: Number.isInteger(v) ? 0 : 2, maximumFractionDigits: 2 })}`; };
 
 export const hashPassword = (password, salt = randomBytes(16).toString('hex')) =>
   `${salt}:${scryptSync(password, salt, 32).toString('hex')}`;
@@ -106,13 +107,17 @@ export function computeTasks(biz, leads, quotes, now = Date.now()) {
     } else if (l.status === 'talking' && now - touched >= 3 * DAY) {
       tasks.push({ type: 'checkin', leadId: l.id, dueAt: touched + 3 * DAY, title: `Check in with ${l.name}`, detail: 'No contact for 3 days' });
     }
-    if (l.when && ['booked', 'quoted', 'won'].includes(l.status) && !l.remindedAt) {
-      const t = Date.parse(l.when);
-      if (t > now && t - now <= 26 * HOUR) tasks.push({ type: 'visit', leadId: l.id, dueAt: t - 24 * HOUR, when: l.when, title: `Confirm tomorrow with ${l.name}`, detail: l.service || 'Booked' });
+    const t = l.when ? Date.parse(l.when) : 0;
+    const soon = t > now && t - now <= 26 * HOUR;
+    if (l.when && ['booked', 'quoted', 'won'].includes(l.status) && !l.remindedAt && soon) {
+      tasks.push({ type: 'visit', leadId: l.id, dueAt: t - 24 * HOUR, when: l.when, title: `Confirm tomorrow with ${l.name}`, detail: l.service || 'Booked' });
+    } else if (l.status === 'booked' && !l.lastTouch && t > now) {
+      // booked through the enquiry link and nobody has said hello yet
+      tasks.push({ type: 'reply', leadId: l.id, dueAt: l.createdAt, when: l.when, title: `Confirm the booking with ${l.name}`, detail: l.service || 'Booked through your link' });
     }
     const unpaid = (l.milestones || []).find((m) => !m.paidAt);
     if (l.status === 'won' && unpaid && unpaid === l.milestones[0] && l.wonAt && now - Math.max(l.wonAt, touched) >= 2 * DAY) {
-      tasks.push({ type: 'deposit', leadId: l.id, dueAt: Math.max(l.wonAt, touched) + 2 * DAY, amount: unpaid.amount, label: unpaid.label, title: `Collect the ${unpaid.label.toLowerCase()} from ${l.name}`, detail: `AED ${unpaid.amount.toLocaleString('en')}` });
+      tasks.push({ type: 'deposit', leadId: l.id, dueAt: Math.max(l.wonAt, touched) + 2 * DAY, amount: unpaid.amount, label: unpaid.label, title: `Collect the ${unpaid.label.toLowerCase()} from ${l.name}`, detail: aedText(unpaid.amount) });
     }
   }
   for (const q of quotes) {
@@ -126,7 +131,7 @@ export function computeTasks(biz, leads, quotes, now = Date.now()) {
     const days = Math.floor((now - q.sentAt) / DAY);
     tasks.push({
       type: 'quote', leadId: l.id, quoteId: q.id, dueAt, step: step + 1, number: q.number, total: q.totals.total, publicKey: q.publicKey, viewed: !!q.viewedAt,
-      title: `Follow up ${q.number} with ${l.name}`, detail: `AED ${q.totals.total.toLocaleString('en')} · sent ${days} day${days === 1 ? '' : 's'} ago${q.viewedAt ? ' · opened' : ' · not opened yet'}`,
+      title: `Follow up ${q.number} with ${l.name}`, detail: `${aedText(q.totals.total)} · sent ${days} day${days === 1 ? '' : 's'} ago${q.viewedAt ? ' · opened' : ' · not opened yet'}`,
     });
   }
   return tasks.sort((a, b) => a.dueAt - b.dueAt);

@@ -1,0 +1,46 @@
+<!--{"title":"Your quote | Elheen","description":"View and accept your quote.","nav":"","noindex":true,"bare":true,"scripts":["quote.js"]}-->
+<div class="doc">
+  <div class="panel" id="loading"><p class="hint">Loading your quote…</p></div>
+  <div class="panel" id="missing" hidden><h1 style="font-size:1.5rem;letter-spacing:-.03em">This quote is not available.</h1><p class="hint" style="margin-top:8px">The link may be wrong, or the quote was withdrawn. Please ask for a new link.</p></div>
+
+  <article class="doc-paper" id="paper" hidden>
+    <header class="doc-top">
+      <div><h1 id="bizName"></h1><p id="bizLine"></p></div>
+      <div class="doc-num"><b id="qNumber"></b><span id="qDate"></span><span id="qValid"></span></div>
+    </header>
+    <div class="doc-for">
+      <small>Prepared for</small>
+      <b id="client"></b>
+      <h2 id="qTitle"></h2>
+    </div>
+    <table class="doc-table">
+      <thead><tr><th>Description</th><th class="num">Qty</th><th class="num unit">Unit</th><th class="num">Amount</th></tr></thead>
+      <tbody id="lines"></tbody>
+    </table>
+    <div class="doc-totals" id="totals"></div>
+    <div class="doc-notes" id="notes"></div>
+  </article>
+
+  <div class="doc-act" id="actions" hidden>
+    <div class="doc-status" id="status" hidden></div>
+    <form class="box" id="acceptForm" hidden>
+      <h2>Happy with this quote?</h2>
+      <label>Type your full name to accept<input id="acceptName" autocomplete="name" required></label>
+      <p class="form-error" id="acceptError" role="alert" hidden></p>
+      <button class="btn btn-primary" type="submit" id="acceptBtn">Accept quote</button>
+      <p class="hint" id="acceptNote"></p>
+    </form>
+    <a class="btn btn-wa" id="askBtn" target="_blank" rel="noopener" hidden>Ask a question on WhatsApp</a>
+    <form class="box" id="declineForm" hidden>
+      <h2>Not going ahead?</h2>
+      <label><span>A quick reason helps us <span class="optional">optional</span></span><textarea id="declineReason" rows="2" maxlength="500" placeholder="Price, timing, went with someone else…"></textarea></label>
+      <div class="row-actions"><button class="btn btn-ghost btn-sm" type="submit">Decline quote</button><button class="btn btn-ghost btn-sm" type="button" id="declineCancel">Back</button></div>
+    </form>
+    <div class="doc-links">
+      <button type="button" id="printBtn">Save as PDF</button>
+      <button type="button" id="declineShow" hidden>Decline</button>
+    </div>
+  </div>
+
+  <a class="powered" href="/"><span>Sent with</span><img src="assets/logo.svg" alt="elheen" width="70" height="19"></a>
+</div>

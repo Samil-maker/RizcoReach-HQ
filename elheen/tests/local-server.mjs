@@ -16,7 +16,6 @@ const store = {
   async list({ prefix }) { return { blobs: [...m.keys()].filter((k) => k.startsWith(prefix)).map((key) => ({ key })) }; },
   async delete(key) { m.delete(key); },
 };
-// The assistant here is a stand-in that gives one fixed answer, so no key is needed.
 // Ziina here is a stand-in: every payment succeeds at once.
 const intents = {};
 const ziina = async (token, path, { method = 'GET', body } = {}) => {
@@ -24,7 +23,7 @@ const ziina = async (token, path, { method = 'GET', body } = {}) => {
   if (path.startsWith('payment_intent/')) return intents[path.split('/')[1]];
   return { success: true };
 };
-const api = makeHandler(store, { ELHEEN_INVITE: 'letmein', ELHEEN_ADMIN_KEY: 'local-admin-key-123', ziina, billing: { token: 'local', test: true }, siteUrl: `http://127.0.0.1:${process.env.PORT || 8770}`, ask: async () => 'Yes, we cover all of Dubai. Add your details below and pick a time.' });
+const api = makeHandler(store, { ELHEEN_INVITE: 'letmein', ELHEEN_ADMIN_KEY: 'local-admin-key-123', ziina, billing: { token: 'local', test: true }, siteUrl: `http://127.0.0.1:${process.env.PORT || 8770}` });
 const types = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2' };
 
 createServer(async (req, res) => {
@@ -36,6 +35,7 @@ createServer(async (req, res) => {
   }
   let path = url.pathname === '/' ? '/index.html' : url.pathname;
   if (path.startsWith('/b/')) path = '/b.html';
+  if (path.startsWith('/q/')) path = '/q.html';
   if (path === '/app') path = '/app.html';
   if (path === '/admin') path = '/admin.html';
   try { const data = await readFile(join(dist, path)); res.writeHead(200, { 'content-type': types[extname(path)] || 'application/octet-stream' }); res.end(data); }
