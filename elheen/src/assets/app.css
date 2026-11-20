@@ -381,3 +381,5 @@ input[type="search"]{min-height:44px}
 .badge.fit-good{background:#E4F3EA;color:#1B6B36}
 .badge.fit-check{background:#FDF0DC;color:#7A4A00}
 .badge.extra{background:#E9EAFB;color:#35399A}
+.task-fit{margin-top:6px}
+.task-text .badge{display:inline-flex}

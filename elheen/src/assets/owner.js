@@ -288,7 +288,8 @@
     const acts = el('div', { class: 'task-acts' });
     const card = el('div', { class: `task ${t.type}` },
       el('div', { class: 'task-top' }, icon(t.type),
-        el('div', { class: 'task-text' }, el('b', {}, t.title), el('span', {}, t.detail), dueText(t, l) ? el('span', {}, dueText(t, l)) : null)),
+        el('div', { class: 'task-text' }, el('b', {}, t.title), el('span', {}, t.detail), dueText(t, l) ? el('span', {}, dueText(t, l)) : null,
+          t.type === 'reply' && l.fit ? el('span', { class: 'task-fit' }, fitBadge(l.fit)) : null)),
       acts);
     const drawActs = () => {
       if (asked.has(key)) {

@@ -9,6 +9,7 @@ rizcoreach.ae site: nothing here is built or deployed by the main site.
 | `src/partials/` | Header, footer and the founding-place form, shared by every page |
 | `src/assets/` | Styles, script, fonts, logo mark, link-preview image |
 | `brand/` | Logo mark and the Instagram profile picture |
+| `social/` | Instagram posts, captions, schedule and content plan for @getelheen |
 | `build.mjs` | Puts the pages together into `dist/` |
 | `BRAND.md` | Name, voice, logo, colours, type |
 | `PLAN.md` | Stage-by-stage plan from 2026 to 2036 |

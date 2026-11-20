@@ -1,0 +1,55 @@
+[
+  {
+    "slug": "hello", "kind": "statement", "theme": "dark", "eyebrow": "Hello", "arabic": "الحين",
+    "title": "Elheen means *now*.",
+    "body": "We are building the follow-up system for UAE service businesses. Every enquiry answered. Every quote followed up. Every payment collected.",
+    "caption": "الحين means \"now\" in the Gulf. It is also the whole idea.\n\nMost service businesses here do great work and still lose jobs, not on price, but because a message waited too long or a quote was never chased.\n\nElheen keeps every enquiry, quote and payment in one place, and tells you each morning who to follow up, with the message already written.\n\nBuilt in Dubai. Follow along as we build it.\n\n#Elheen #DubaiBusiness #UAEBusiness #SmallBusinessUAE #DubaiEntrepreneur #ServiceBusiness"
+  },
+  {
+    "slug": "lost-jobs", "kind": "statement", "theme": "white", "eyebrow": "Owner lesson",
+    "title": "Most jobs are not lost on price. *They are lost in a busy week.*",
+    "body": "The enquiry that waited until tonight. The quote nobody chased. The visit nobody confirmed.",
+    "caption": "Think about the last three jobs you did not win.\n\nHow many were really about price? And how many went quiet because you were busy on site and the follow-up slipped?\n\nThe fix is not working harder. It is a simple system that reminds you who to reply to, who to confirm and who to chase, every single day.\n\nSave this for the next busy week.\n\n#DubaiBusiness #UAEBusiness #SmallBusinessUAE #FitOutDubai #InteriorDesignDubai #Elheen"
+  },
+  {
+    "slug": "today", "kind": "screen", "theme": "light", "eyebrow": "Inside Elheen", "screen": "today.png",
+    "title": "Every morning, *only what needs you.*",
+    "caption": "This is the first screen you see in Elheen.\n\nNot a dashboard full of charts. Just the few things that have gone quiet, are overdue or are about to slip: new enquiries to reply to, visits to confirm, quotes to chase and payments to collect.\n\nTap WhatsApp and the message is already written, ready to send from your own number. Everything that is on track stays out of your way.\n\n(Example business shown.)\n\n#Elheen #DubaiBusiness #UAEBusiness #SmallBusinessUAE #ServiceBusiness"
+  },
+  {
+    "slug": "2-5-10", "kind": "list", "theme": "dark", "eyebrow": "Owner lesson",
+    "title": "The 2 · 5 · 10 rule for quotes.",
+    "items": [["Day 2", "\"Did you get a chance to look at it?\"", "Short and friendly. Offer a quick call."], ["Day 5", "\"Would you like to change anything?\"", "Give them an easy way to say what is wrong."], ["Day 10", "\"Shall I close it, or keep it open?\"", "A clear question gets a clear answer."]],
+    "caption": "Sending the quote is not the end of the sale. It is the middle.\n\nMost clients are not saying no. They are busy, comparing, or waiting for a nudge. Three short, polite messages are usually enough to get a real answer:\n\nDay 2: did you get a chance to look at it?\nDay 5: would you like to change anything?\nDay 10: shall I close it, or keep it open?\n\nElheen reminds you on each day and writes the message for you.\n\nSave this and try it on your open quotes this week.\n\n#DubaiBusiness #UAEBusiness #SalesTips #SmallBusinessUAE #FitOutDubai #Elheen"
+  },
+  {
+    "slug": "quote", "kind": "screen", "theme": "light", "eyebrow": "Inside Elheen", "screen": "quote.png",
+    "title": "A quote your client can *accept with one tap.*",
+    "caption": "No more PDFs that disappear in a WhatsApp chat.\n\nWith Elheen you send a link. Your client opens a clean quote with your name, your TRN and 5% VAT, and accepts it by typing their name. You get an alert the moment they open it, and another when they accept.\n\nThey can also save it as a PDF or ask you a question on WhatsApp.\n\n(Example quote shown.)\n\n#Elheen #DubaiBusiness #UAEBusiness #InteriorDesignDubai #RenovationDubai #SmallBusinessUAE"
+  },
+  {
+    "slug": "site-visit", "kind": "list", "theme": "white", "eyebrow": "Owner lesson",
+    "title": "Ask 4 things *before a free site visit.*",
+    "items": [["01", "Their budget", "A range is enough."], ["02", "When they want to start", "Now, in 3 months, or just ideas?"], ["03", "The property", "Villa, apartment or office."], ["04", "Photos of the space", "You can price half the job from them."]],
+    "body": "Time-wasters show up before you drive across Dubai, not after.",
+    "caption": "A free site visit can cost you half a day.\n\nBefore you go, ask four simple questions: budget, start date, property type and a few photos. Serious clients answer them happily. People who are only collecting prices usually do not.\n\nIn Elheen these questions are built into your enquiry link, and each lead is marked as a good fit or one to check, based on your smallest job.\n\nSave this for your team.\n\n#DubaiBusiness #FitOutDubai #RenovationDubai #InteriorDesignDubai #UAEBusiness #Elheen"
+  },
+  {
+    "slug": "built-in-dubai", "kind": "statement", "theme": "dark", "eyebrow": "Who we are",
+    "title": "Built in Dubai. *For businesses that quote, visit and build.*",
+    "body": "AED 79 a month · Your whole team · No commission, ever.",
+    "caption": "Elheen is built in Dubai, for the way business works here: enquiries on WhatsApp and Instagram, site visits across the city, quotes with VAT, and payments in stages.\n\nOne flat price: AED 79 a month for your whole team. No charge per person, per message or per client, and no commission on anything you earn.\n\nQuestions? Send us a message. A real person answers.\n\n#Elheen #MadeInDubai #DubaiBusiness #UAEBusiness #SmallBusinessUAE #DubaiStartup"
+  },
+  {
+    "slug": "extra-work", "kind": "statement", "theme": "white", "eyebrow": "Owner lesson",
+    "title": "Extra work? Get it approved in writing. *Before it starts.*",
+    "body": "\"Can you also move the sink?\" is how most payment arguments begin.",
+    "caption": "Halfway through a job, the client asks for something extra. You agree on site, do the work, and then the final payment turns into an argument.\n\nThe simple rule: price the extra work and get it approved in writing before you start. Every time, even for small things.\n\nIn Elheen you send it as a short quote on WhatsApp. The client approves it with their name, and it is added to the job and its payments automatically.\n\n#FitOutDubai #RenovationDubai #InteriorDesignDubai #DubaiBusiness #UAEBusiness #Elheen"
+  },
+  {
+    "slug": "founding-price", "kind": "statement", "theme": "dark", "eyebrow": "Founding price",
+    "title": "The first 100 businesses keep *AED 79* for good.",
+    "body": "14 days free. No card. Ready in five minutes. Link in bio.",
+    "caption": "We are opening Elheen to our first 100 businesses.\n\nEverything included: your enquiry link, leads, quotes your clients accept online, follow-ups written for you, site visits by team member, and stage payments.\n\nTry it free for 14 days with no card. After that it is AED 79 a month, and founding businesses keep that price for as long as they stay. If your first paid month does not feel worth it, we refund it.\n\nStart at elheen.com, link in bio.\n\n#Elheen #DubaiBusiness #UAEBusiness #SmallBusinessUAE #FitOutDubai #InteriorDesignDubai"
+  }
+]
