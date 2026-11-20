@@ -1,90 +1,34 @@
 // Elheen API. One function serves everything under /api/.
-// Data lives in Netlify Blobs: businesses, leads, photos and sign-in sessions.
+// Data lives in Netlify Blobs: businesses, leads, quotes, photos and sign-in sessions.
 import { getStore } from '@netlify/blobs';
-import { randomBytes, scryptSync, timingSafeEqual, createHmac } from 'node:crypto';
+import { createHmac, timingSafeEqual } from 'node:crypto';
+import {
+  STATUSES, KINDS, PROJECT_KINDS, VISIT_KINDS, PHOTO_KINDS, PLANS, TRIAL_DAYS, MONTH_MS,
+  json, fail, clean, cleanLine, id, slugify, money, hashPassword, checkPassword, sameSecret,
+  billingOf, defaultServices, cleanItems, quoteTotals, quoteState, defaultMilestones, computeTasks,
+} from '../lib/core.mjs';
+import { GRAPH_VERSION, envFromProcess } from '../lib/services.mjs';
 
-const STATUSES = ['new', 'talking', 'booked', 'done', 'lost'];
-const KINDS = ['salon', 'clinic', 'fitness', 'automotive', 'cleaning', 'home', 'interior', 'other'];
-const VISIT_KINDS = new Set(['cleaning', 'home', 'interior']);   // the team goes to the client
-const PHOTO_KINDS = new Set(['home', 'interior']);               // property photos matter
-const MAX_PHOTOS = 4;
+const MAX_PHOTOS = 6;
 const MAX_PHOTO_BYTES = 900_000;
 const SESSION_DAYS = 30;
-const GRAPH_VERSION = 'v26.0';
 const META_SCOPES = 'pages_show_list,pages_read_engagement,pages_manage_metadata,pages_manage_ads,leads_retrieval';
-const META_LOOKBACK_DAYS = 30;   // on first connect, bring in lead-form leads from the last month
-
-// Elheen's own prices, paid into the Elheen Ziina account.
-const PLANS = { start: { name: 'Start', price: 149 }, grow: { name: 'Grow', price: 349 } };
-const TRIAL_DAYS = 14;
-const GRACE_DAYS = 7;
-const MONTH_MS = 30 * 864e5;
+const META_LOOKBACK_DAYS = 30;
 const ZIINA_IPS = ['3.29.184.186', '3.29.190.95', '20.233.47.127', '13.202.161.181'];
-const billingOf = (b) => {
-  const plan = PLANS[b.plan] ? b.plan : 'grow';
-  const paidUntil = b.paidUntil || (b.createdAt || Date.now()) + TRIAL_DAYS * 864e5;
-  const now = Date.now();
-  const state = b.comp ? 'included' : now <= paidUntil ? (b.paidOnce ? 'active' : 'trial') : now <= paidUntil + GRACE_DAYS * 864e5 ? 'due' : 'overdue';
-  return { plan, planName: PLANS[plan].name, price: PLANS[plan].price, paidUntil, state };
-};
-const entitled = (b, feature) => {
-  const { plan, state } = billingOf(b);
-  if (state === 'included') return true;
-  if (state === 'overdue') return false;
-  return feature === 'assistant' ? plan === 'grow' : true;
-};
-
-const json = (data, status = 200) =>
-  new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
-const fail = (status, error) => json({ error }, status);
-const clean = (v, max = 200) => String(v ?? '').replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, max);
-const id = (bytes = 9) => randomBytes(bytes).toString('base64url');
-const slugify = (name) => clean(name, 60).toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
-
-const hashPassword = (password, salt = randomBytes(16).toString('hex')) =>
-  `${salt}:${scryptSync(password, salt, 32).toString('hex')}`;
-const checkPassword = (password, stored) => {
-  const [salt, hash] = String(stored).split(':');
-  if (!salt || !hash) return false;
-  const a = Buffer.from(hash, 'hex');
-  const b = scryptSync(password, salt, 32);
-  return a.length === b.length && timingSafeEqual(a, b);
-};
-
-const defaultServices = (kind) => ({
-  salon: [['Haircut', 45, 120], ['Hair colour', 90, 450], ['Manicure', 45, 140]],
-  clinic: [['Consultation', 30, 0], ['Treatment session', 45, 600]],
-  fitness: [['Trial class', 60, 0], ['Personal training', 60, 250]],
-  automotive: [['Full detailing', 180, 600], ['Interior clean', 90, 250]],
-  cleaning: [['Home cleaning', 180, 200], ['Deep cleaning', 300, 600]],
-  home: [['Site visit and quote', 60, 0], ['AC service', 60, 180]],
-  interior: [['First consultation', 45, 0], ['Site measurement', 60, 300]],
-  other: [['Consultation', 30, 0]],
-}[kind] || []).map(([name, minutes, price]) => ({ id: id(4), name, minutes, price }));
+const OWNER_SOURCES = ['instagram-dm', 'whatsapp', 'call', 'walk-in', 'referral', 'other'];
 
 const publicBusiness = (b) => ({
   slug: b.slug, name: b.name, kind: b.kind, area: b.area, services: b.services,
   askPhotos: b.askPhotos, askAddress: b.askAddress, openHour: b.openHour, closeHour: b.closeHour, closedDays: b.closedDays,
 });
 
-const MAX_CHAT_TURNS = 12;
-const assistantBrief = (b) => `You are the front desk for ${b.name}${b.area ? `, in ${b.area}` : ''}, a ${b.kind} business in the UAE. You reply to people enquiring on its booking page.
-
-Services and prices:
-${b.services.map((s) => `- ${s.name}: ${s.minutes} minutes, ${s.price ? `AED ${s.price}` : 'free'}`).join('\n')}
-Open ${b.openHour}:00 to ${b.closeHour}:00.
-${b.aiNotes ? `Notes from the owner:\n${b.aiNotes}\n` : ''}
-How to reply:
-- Write like a friendly person on WhatsApp: one to three short sentences, plain words, no lists, no emoji.
-- Reply in the language the person writes in (Arabic or English).
-- Answer only from the facts above. If you do not know, say the team will confirm, and never invent a price, a time or a promise.
-- Find out what they need${b.askPhotos ? ', and ask them to add photos of the space in the form' : ''}.
-- When they are ready, tell them to fill in their name and number below and pick a time, then press Send enquiry.
-- Never say you are an AI unless asked directly; if asked, say you are the assistant for ${b.name}.`;
-
 export function makeHandler(store, env = {}) {
   const getJSON = (key) => store.get(key, { type: 'json' });
   const setJSON = (key, value) => store.setJSON(key, value);
+  const listJSON = async (prefix) => {
+    const { blobs } = await store.list({ prefix });
+    return (await Promise.all(blobs.map((b) => getJSON(b.key)))).filter(Boolean);
+  };
 
   async function auth(req) {
     const token = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '');
@@ -98,18 +42,27 @@ export function makeHandler(store, env = {}) {
     await setJSON(`sessions/${token}`, { slug, at: Date.now() });
     return token;
   }
-  async function listLeads(slug) {
-    const { blobs } = await store.list({ prefix: `leads/${slug}/` });
-    const leads = (await Promise.all(blobs.map((b) => getJSON(b.key)))).filter(Boolean);
-    return leads.sort((a, b) => b.createdAt - a.createdAt);
-  }
+  const listLeads = async (slug) => (await listJSON(`leads/${slug}/`)).sort((a, b) => b.createdAt - a.createdAt);
+  const listQuotes = async (slug) => (await listJSON(`quotes/${slug}/`)).sort((a, b) => b.createdAt - a.createdAt);
   async function takenTimes(slug) {
-    return (await listLeads(slug)).filter((l) => l.when && l.status !== 'lost').map((l) => l.when);
+    return (await listLeads(slug)).filter((l) => l.when && !['lost', 'done'].includes(l.status)).map((l) => l.when);
   }
+  async function alertOwner(biz, payload) {
+    if (!env.notify || !(biz.push || []).length) return;
+    try {
+      const dead = await env.notify(biz.push, { url: '/app', ...payload });
+      if (dead && dead.length) {
+        const fresh = (await getJSON(`biz/${biz.slug}`)) || biz;
+        fresh.push = (fresh.push || []).filter((p) => !dead.includes(p.endpoint));
+        await setJSON(`biz/${biz.slug}`, fresh);
+      }
+    } catch { /* an alert failing must never lose the enquiry */ }
+  }
+  const note = (lead, text) => { lead.history = [...(lead.history || []), { at: Date.now(), text }].slice(-100); };
 
   async function saveLead(biz, body, source, opts = {}) {
-    const name = clean(body.name, 80);
-    const phone = clean(body.phone, 30).replace(/[^\d+]/g, '');
+    const name = cleanLine(body.name, 80);
+    const phone = cleanLine(body.phone, 30).replace(/[^\d+]/g, '');
     const requirePhone = opts.requirePhone !== false;
     if (!name || (requirePhone && phone.replace(/\D/g, '').length < 7)) return fail(400, 'Please give a name and a phone number.');
     const service = biz.services.find((s) => s.id === body.serviceId);
@@ -130,45 +83,38 @@ export function makeHandler(store, env = {}) {
       await store.set(`photos/${biz.slug}/${leadId}/${i}`, bytes, { metadata: { type: `image/${m[1]}` } });
       photos.push(i);
     }
+    const now = opts.createdAt || Date.now();
     const lead = {
-      id: leadId, name, phone, serviceId: service?.id || null, service: service?.name || clean(body.service, 80) || null,
-      price: service?.price ?? null, note: clean(body.note, 1000), address: clean(body.address, 300),
+      id: leadId, name, phone, serviceId: service?.id || null, service: service?.name || cleanLine(body.service, 80) || null,
+      price: service?.price ?? null, note: clean(body.note, 2000), address: cleanLine(body.address, 300),
       location: /^-?\d{1,3}\.\d+,-?\d{1,3}\.\d+$/.test(body.location || '') ? body.location : null,
-      chat: (Array.isArray(body.chat) ? body.chat : []).slice(-2 * MAX_CHAT_TURNS)
-        .map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: clean(m.content, 600) })).filter((m) => m.content),
-      email: clean(body.email, 120), adName: clean(body.adName, 120), campaign: clean(body.campaign, 120),
-      photos, source: clean(source, 30) || 'link', status: when ? 'booked' : 'new', when, createdAt: opts.createdAt || Date.now(),
-      history: [{ at: Date.now(), text: when ? 'Booked through the enquiry page' : 'Enquiry received' }],
+      budget: cleanLine(body.budget, 60), email: cleanLine(body.email, 120), adName: cleanLine(body.adName, 120), campaign: cleanLine(body.campaign, 120),
+      photos, source: cleanLine(source, 30) || 'link', status: when ? 'booked' : 'new', when, createdAt: now, lastTouch: null,
+      assignee: '', milestones: [], history: [{ at: now, text: when ? 'Booked through the enquiry page' : 'Enquiry received' }],
     };
     await setJSON(`leads/${biz.slug}/${leadId}`, lead);
-    if (env.notify && (biz.push || []).length) {
-      try {
-        const dead = await env.notify(biz.push, {
-          title: when ? `New booking: ${name}` : `New enquiry: ${name}`,
-          body: [lead.service, lead.source !== 'link' ? `from ${lead.source}` : null].filter(Boolean).join(' · ') || 'Tap to open',
-          url: '/app',
-        });
-        if (dead && dead.length) { biz.push = biz.push.filter((p) => !dead.includes(p.endpoint)); await setJSON(`biz/${biz.slug}`, biz); }
-      } catch { /* an alert failing must never lose the enquiry */ }
-    }
+    await alertOwner(biz, {
+      title: when ? `New booking: ${name}` : `New enquiry: ${name}`,
+      body: [lead.service, photos.length ? `${photos.length} photo${photos.length > 1 ? 's' : ''}` : null, lead.source !== 'link' ? `from ${lead.source}` : null].filter(Boolean).join(' · ') || 'Tap to open',
+    });
     return json({ ok: true, id: leadId, when });
   }
 
-  // --- Facebook and Instagram lead forms
+  // --- Facebook and Instagram lead forms (works once the Meta app is set up)
   const metaReady = () => !!(env.meta?.appId && env.meta?.appSecret && env.graph);
   async function fetchLead(leadId, token) {
     try { return await env.graph(String(leadId), { params: { access_token: token, fields: 'id,created_time,field_data,ad_name,campaign_name' } }); }
     catch { return env.graph(String(leadId), { params: { access_token: token, fields: 'id,created_time,field_data' } }); }
   }
   async function importMetaLead(biz, lead) {
-    const seenKey = `metalead/${clean(lead.id, 40)}`;
+    const seenKey = `metalead/${cleanLine(lead.id, 40)}`;
     if (!lead.id || await getJSON(seenKey)) return false;
     const fields = Object.fromEntries((lead.field_data || []).map((f) => [String(f.name || '').toLowerCase(), (f.values || []).join(', ')]));
     const pick = (...keys) => keys.map((k) => fields[k]).find(Boolean) || '';
     const name = pick('full_name', 'name') || [fields.first_name, fields.last_name].filter(Boolean).join(' ') || 'Facebook lead';
     const known = new Set(['full_name', 'name', 'first_name', 'last_name', 'phone_number', 'phone', 'email']);
-    const note = Object.entries(fields).filter(([k, v]) => !known.has(k) && v).map(([k, v]) => `${k.replace(/_/g, ' ')}: ${v}`).join('\n');
-    const res = await saveLead(biz, { name, phone: pick('phone_number', 'phone'), email: pick('email'), note, adName: lead.ad_name, campaign: lead.campaign_name },
+    const text = Object.entries(fields).filter(([k, v]) => !known.has(k) && v).map(([k, v]) => `${k.replace(/_/g, ' ')}: ${v}`).join('\n');
+    const res = await saveLead(biz, { name, phone: pick('phone_number', 'phone'), email: pick('email'), note: text, adName: lead.ad_name, campaign: lead.campaign_name },
       'meta-ad', { requirePhone: false, createdAt: Date.parse(lead.created_time) || Date.now() });
     if (res.status !== 200) return false;
     await setJSON(seenKey, { slug: biz.slug, at: Date.now() });
@@ -204,24 +150,41 @@ export function makeHandler(store, env = {}) {
     await setJSON(`payments/${pid}`, rec);
     const b = await getJSON(`biz/${rec.slug}`);
     if (b) {
-      b.plan = rec.plan;
       b.paidUntil = Math.max(Date.now(), billingOf(b).paidUntil) + rec.months * MONTH_MS;
       b.paidOnce = true;
-      b.payments = [{ at: rec.paidAt, plan: rec.plan, amount: rec.amount, months: rec.months }, ...(b.payments || [])].slice(0, 24);
+      b.payments = [{ at: rec.paidAt, option: rec.option, amount: rec.amount, months: rec.months }, ...(b.payments || [])].slice(0, 24);
       await setJSON(`biz/${b.slug}`, b);
     }
     return rec;
   }
   async function ensureBillingWebhook() {
+    const url = `${env.siteUrl}/api/billing/webhook`;
     const rec = await getJSON('platform/ziina');
-    if (rec?.webhook) return;
+    if (rec?.webhook && rec.url === url) return;
     const secret = rec?.secret || id(24);
     let webhook = false;
-    try { await env.ziina(env.billing.token, 'webhook', { method: 'POST', body: { url: `${env.siteUrl}/api/billing/webhook`, secret } }); webhook = true; }
+    try { await env.ziina(env.billing.token, 'webhook', { method: 'POST', body: { url, secret } }); webhook = true; }
     catch { /* payments are still confirmed when the owner comes back to the app */ }
-    await setJSON('platform/ziina', { secret, webhook });
+    await setJSON('platform/ziina', { secret, webhook, url });
   }
-  async function countLeads(slug) { return (await store.list({ prefix: `leads/${slug}/` })).blobs.length; }
+
+  // --- quotes
+  const quoteLink = (q) => `${env.siteUrl}/q/${q.publicKey}`;
+  const readQuote = (q, biz) => ({ ...q, state: quoteState(q), link: quoteLink(q), totals: quoteTotals(q, !!biz.vatRegistered) });
+  async function quoteFromKey(key) {
+    const index = await getJSON(`quotepub/${cleanLine(key, 40)}`);
+    if (!index) return {};
+    const [biz, quote] = await Promise.all([getJSON(`biz/${index.slug}`), getJSON(`quotes/${index.slug}/${index.id}`)]);
+    return biz && quote ? { biz, quote } : {};
+  }
+  async function moveLead(slug, leadId, change) {
+    const key = `leads/${slug}/${leadId}`;
+    const lead = await getJSON(key);
+    if (!lead) return null;
+    change(lead);
+    await setJSON(key, lead);
+    return lead;
+  }
 
   return async function handler(req) {
     const url = new URL(req.url);
@@ -236,7 +199,7 @@ export function makeHandler(store, env = {}) {
     // --- Facebook sends the owner back here after they approve the connection
     if (parts[0] === 'meta' && parts[1] === 'callback' && method === 'GET') {
       const back = (result) => new Response(null, { status: 302, headers: { location: `/app?meta=${result}` } });
-      const st = clean(url.searchParams.get('state'), 40);
+      const st = cleanLine(url.searchParams.get('state'), 40);
       const state = st ? await getJSON(`metastate/${st}`) : null;
       if (!state || Date.now() - state.at > 15 * 6e4) return back('expired');
       await store.delete(`metastate/${st}`);
@@ -248,7 +211,7 @@ export function makeHandler(store, env = {}) {
         const short = await env.graph('oauth/access_token', { params: { client_id: m.appId, client_secret: m.appSecret, redirect_uri: m.redirectUri, code: url.searchParams.get('code') } });
         const long = await env.graph('oauth/access_token', { params: { grant_type: 'fb_exchange_token', client_id: m.appId, client_secret: m.appSecret, fb_exchange_token: short.access_token } });
         const accounts = await env.graph('me/accounts', { params: { access_token: long.access_token, fields: 'id,name,access_token', limit: 100 } });
-        const pages = (accounts.data || []).filter((p) => p.access_token).map((p) => ({ id: String(p.id), name: clean(p.name, 80), token: p.access_token }));
+        const pages = (accounts.data || []).filter((p) => p.access_token).map((p) => ({ id: String(p.id), name: cleanLine(p.name, 80), token: p.access_token }));
         if (!pages.length) return back('nopages');
         for (const p of pages) {
           try { await env.graph(`${p.id}/subscribed_apps`, { method: 'POST', params: { subscribed_fields: 'leadgen', access_token: p.token } }); p.live = true; }
@@ -278,7 +241,7 @@ export function makeHandler(store, env = {}) {
             if (change.field !== 'leadgen' || !change.value) continue;
             try {
               const pageId = String(change.value.page_id);
-              const index = await getJSON(`metapage/${clean(pageId, 40)}`);
+              const index = await getJSON(`metapage/${cleanLine(pageId, 40)}`);
               const b = index && await getJSON(`biz/${index.slug}`);
               const page = b?.meta?.pages?.find((p) => p.id === pageId);
               if (page) await importMetaLead(b, await fetchLead(change.value.leadgen_id, page.token));
@@ -292,18 +255,19 @@ export function makeHandler(store, env = {}) {
     // --- sign up and sign in
     if (parts[0] === 'signup' && method === 'POST') {
       if (!env.ELHEEN_INVITE) return fail(503, 'Sign-up is not open yet.');
-      if (clean(body.invite, 80) !== env.ELHEEN_INVITE) return fail(403, 'That invite code is not right.');
-      const name = clean(body.name, 60);
+      if (cleanLine(body.invite, 80) !== env.ELHEEN_INVITE) return fail(403, 'That invite code is not right.');
+      const name = cleanLine(body.name, 60);
       const kind = KINDS.includes(body.kind) ? body.kind : 'other';
       const password = String(body.password || '');
       if (!name || password.length < 8) return fail(400, 'Give a business name and a password of at least 8 characters.');
       let slug = slugify(name) || `b-${id(4).toLowerCase()}`;
       if (await getJSON(`biz/${slug}`)) slug = `${slug}-${id(3).toLowerCase().replace(/[^a-z0-9]/g, 'x')}`;
       const biz = {
-        slug, name, kind, area: clean(body.area, 60), phone: clean(body.phone, 30).replace(/[^\d+]/g, ''),
+        slug, name, kind, area: cleanLine(body.area, 60), phone: cleanLine(body.phone, 30).replace(/[^\d+]/g, ''),
         services: defaultServices(kind), askPhotos: PHOTO_KINDS.has(kind), askAddress: VISIT_KINDS.has(kind),
-        openHour: 9, closeHour: 19, closedDays: [], intakeKey: id(12), pass: hashPassword(password), createdAt: Date.now(),
-        plan: 'grow', paidUntil: Date.now() + TRIAL_DAYS * 864e5,
+        openHour: 9, closeHour: 19, closedDays: [5], intakeKey: id(12), pass: hashPassword(password), createdAt: Date.now(),
+        paidUntil: Date.now() + TRIAL_DAYS * 864e5, team: [], vatRegistered: false, trn: '',
+        quoteTerms: 'Prices are valid until the date shown. Work starts once the deposit is received.', quoteValidDays: 14, quoteCounter: 0,
       };
       await setJSON(`biz/${slug}`, biz);
       return json({ token: await newSession(slug), slug });
@@ -318,18 +282,62 @@ export function makeHandler(store, env = {}) {
     if (parts[0] === 'public' && parts[1]) {
       const biz = await getJSON(`biz/${slugify(parts[1])}`);
       if (!biz) return fail(404, 'This page does not exist.');
-      const chatOn = !!(env.ask && biz.aiOn && entitled(biz, 'assistant'));
-      if (method === 'GET' && !parts[2]) return json({ business: publicBusiness(biz), taken: await takenTimes(biz.slug), chat: chatOn });
-      if (method === 'POST' && parts[2] === 'chat') {
-        if (!chatOn) return fail(404, 'Chat is not available.');
-        const messages = (Array.isArray(body.messages) ? body.messages : []).slice(-2 * MAX_CHAT_TURNS)
-          .map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: clean(m.content, 600) })).filter((m) => m.content);
-        if (!messages.length || messages[messages.length - 1].role !== 'user') return fail(400, 'Say something first.');
-        if (messages.filter((m) => m.role === 'user').length > MAX_CHAT_TURNS) return json({ reply: 'Thanks. Please fill in your details below and the team will take it from here.' });
-        try { return json({ reply: await env.ask(assistantBrief(biz), messages) }); }
-        catch (e) { console.error('assistant failed:', e.message); return fail(502, 'The assistant is not available right now. Please send your enquiry below.'); }
-      }
+      if (method === 'GET' && !parts[2]) return json({ business: publicBusiness(biz), taken: await takenTimes(biz.slug) });
       if (method === 'POST' && parts[2] === 'lead') return saveLead(biz, body, body.source || url.searchParams.get('src'));
+    }
+
+    // --- a client opens, accepts or declines a quote
+    if (parts[0] === 'quote' && parts[1]) {
+      const { biz, quote } = await quoteFromKey(parts[1]);
+      if (!quote || quote.status === 'draft') return fail(404, 'This quote does not exist.');
+      const lead = await getJSON(`leads/${biz.slug}/${quote.leadId}`);
+      const view = () => ({
+        business: { name: biz.name, area: biz.area, phone: biz.phone, trn: biz.vatRegistered ? biz.trn : '' },
+        client: lead ? lead.name : '',
+        quote: {
+          number: quote.number, title: quote.title, items: quote.items, notes: quote.notes, terms: quote.terms, vat: !!(biz.vatRegistered && quote.vat),
+          validUntil: quote.validUntil, sentAt: quote.sentAt, state: quoteState(quote), acceptedAt: quote.acceptedAt, acceptedBy: quote.acceptedBy,
+          totals: quoteTotals(quote, !!biz.vatRegistered),
+        },
+      });
+      const save = () => setJSON(`quotes/${biz.slug}/${quote.id}`, quote);
+      if (method === 'GET' && !parts[2]) {
+        if (quote.status === 'sent' && !quote.viewedAt) {
+          quote.viewedAt = Date.now();
+          await save();
+          if (lead) await moveLead(biz.slug, lead.id, (l) => note(l, `Opened quote ${quote.number}`));
+          await alertOwner(biz, { title: `Quote opened: ${quote.number}`, body: `${lead?.name || 'Your client'} is looking at it now` });
+        }
+        return json(view());
+      }
+      if (method === 'POST' && parts[2] === 'accept') {
+        const state = quoteState(quote);
+        if (state === 'accepted') return json(view());
+        if (state !== 'sent') return fail(409, state === 'expired' ? 'This quote has expired. Please ask for an updated one.' : 'This quote can no longer be accepted.');
+        const by = cleanLine(body.name, 80);
+        if (!by) return fail(400, 'Please type your name to accept.');
+        quote.status = 'accepted'; quote.acceptedAt = Date.now(); quote.acceptedBy = by;
+        await save();
+        const total = quoteTotals(quote, !!biz.vatRegistered).total;
+        if (lead) {
+          await moveLead(biz.slug, lead.id, (l) => {
+            l.status = 'won'; l.wonAt = Date.now(); l.value = total;
+            if (!(l.milestones || []).length) l.milestones = defaultMilestones(biz.kind, total);
+            note(l, `Accepted quote ${quote.number} (AED ${total.toLocaleString('en')}), signed by ${by}`);
+          });
+        }
+        await alertOwner(biz, { title: `Quote accepted: ${quote.number}`, body: `${by} accepted AED ${total.toLocaleString('en')}` });
+        return json(view());
+      }
+      if (method === 'POST' && parts[2] === 'decline') {
+        if (quoteState(quote) !== 'sent') return fail(409, 'This quote can no longer be declined.');
+        quote.status = 'declined'; quote.declinedAt = Date.now(); quote.declineReason = clean(body.reason, 500);
+        await save();
+        if (lead) await moveLead(biz.slug, lead.id, (l) => note(l, `Declined quote ${quote.number}${quote.declineReason ? `: ${quote.declineReason}` : ''}`));
+        await alertOwner(biz, { title: `Quote declined: ${quote.number}`, body: quote.declineReason || 'Tap to see it' });
+        return json(view());
+      }
+      return fail(404, 'Not found.');
     }
 
     // --- Ziina tells us when a business has paid for Elheen
@@ -342,7 +350,7 @@ export function makeHandler(store, env = {}) {
       const expected = createHmac('sha256', rec.secret).update(raw).digest('hex');
       if (sig.length !== expected.length || !timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return fail(403, 'Bad signature.');
       if (body.event === 'payment_intent.status.updated' && body.data?.id) {
-        const index = await getJSON(`ziinapay/${clean(body.data.id, 60)}`);
+        const index = await getJSON(`ziinapay/${cleanLine(body.data.id, 60)}`);
         if (index) await applyPayment(index.pid, body.data.status);
       }
       return json({ ok: true });
@@ -350,15 +358,15 @@ export function makeHandler(store, env = {}) {
 
     // --- the Elheen owner's admin view, protected by a separate key
     if (parts[0] === 'admin') {
-      const key = req.headers.get('x-admin-key') || '';
       const want = env.ELHEEN_ADMIN_KEY || '';
-      if (want.length < 16 || key.length !== want.length || !timingSafeEqual(Buffer.from(key), Buffer.from(want))) return fail(401, 'Wrong admin key.');
+      if (want.length < 16 || !sameSecret(req.headers.get('x-admin-key'), want)) return fail(401, 'Wrong admin key.');
       if (parts[1] === 'businesses' && method === 'GET') {
-        const { blobs } = await store.list({ prefix: 'biz/' });
-        const all = (await Promise.all(blobs.map((x) => getJSON(x.key)))).filter(Boolean);
+        const all = await listJSON('biz/');
         const rows = await Promise.all(all.map(async (b) => ({
           slug: b.slug, name: b.name, kind: b.kind, area: b.area, createdAt: b.createdAt, comp: !!b.comp,
-          billing: billingOf(b), payments: b.payments || [], leads: await countLeads(b.slug), aiOn: !!b.aiOn, facebook: !!b.meta?.pages?.length,
+          billing: billingOf(b), payments: b.payments || [], facebook: !!b.meta?.pages?.length,
+          leads: (await store.list({ prefix: `leads/${b.slug}/` })).blobs.length,
+          quotes: (await store.list({ prefix: `quotes/${b.slug}/` })).blobs.length,
         })));
         return json({ businesses: rows.sort((a, b) => b.createdAt - a.createdAt) });
       }
@@ -366,17 +374,16 @@ export function makeHandler(store, env = {}) {
         const b = await getJSON(`biz/${slugify(parts[2])}`);
         if (!b) return fail(404, 'That business was not found.');
         let password = null;
-        if (PLANS[body.plan]) b.plan = body.plan;
         if ('comp' in body) b.comp = !!body.comp;
         if (Number(body.addMonths)) {
           const months = Math.max(-12, Math.min(24, Number(body.addMonths) | 0));
           b.paidUntil = Math.max(Date.now(), billingOf(b).paidUntil) + months * MONTH_MS;
           if (months > 0) {
             b.paidOnce = true;
-            b.payments = [{ at: Date.now(), plan: billingOf(b).plan, amount: 0, months, manual: true }, ...(b.payments || [])].slice(0, 24);
+            b.payments = [{ at: Date.now(), amount: 0, months, manual: true }, ...(b.payments || [])].slice(0, 24);
           }
         }
-        if (body.resetPassword) { password = randomBytes(5).toString('hex'); b.pass = hashPassword(password); }
+        if (body.resetPassword) { password = id(6).replace(/[^a-zA-Z0-9]/g, 'x'); b.pass = hashPassword(password); }
         await setJSON(`biz/${b.slug}`, b);
         return json({ billing: billingOf(b), comp: !!b.comp, password });
       }
@@ -386,9 +393,9 @@ export function makeHandler(store, env = {}) {
     // --- leads sent in by another system, such as an ad form
     if (parts[0] === 'intake' && parts[1] && parts[2] && method === 'POST') {
       const biz = await getJSON(`biz/${slugify(parts[1])}`);
-      if (!biz || parts[2] !== biz.intakeKey) return fail(404, 'This link is not valid.');
+      if (!biz || !sameSecret(parts[2], biz.intakeKey)) return fail(404, 'This link is not valid.');
       return saveLead(biz, {
-        name: body.name || body.full_name, phone: body.phone || body.phone_number,
+        name: body.name || body.full_name, phone: body.phone || body.phone_number, email: body.email,
         service: body.service, note: body.note || body.message, address: body.address,
       }, body.source || 'ad');
     }
@@ -396,39 +403,39 @@ export function makeHandler(store, env = {}) {
     // --- everything below needs the owner to be signed in
     const biz = await auth(req);
     if (!biz) return fail(401, 'Please sign in.');
+    const saveBiz = () => setJSON(`biz/${biz.slug}`, biz);
 
     const safeBiz = () => {
       const { pass, push, meta, ...safe } = biz;
       return {
-        ...safe, alerts: (push || []).length, aiAvailable: !!env.ask && entitled(biz, 'assistant'), pushKey: env.pushKey || null, metaAvailable: metaReady(),
-        billing: { ...billingOf(biz), online: !!env.billing?.token, plans: PLANS }, payments: biz.payments || [],
+        ...safe, team: biz.team || [], alerts: (push || []).length, pushKey: env.pushKey || null, metaAvailable: metaReady(),
+        project: PROJECT_KINDS.has(biz.kind), billing: { ...billingOf(biz), online: !!env.billing?.token, plans: PLANS }, payments: biz.payments || [],
         meta: meta ? { pages: meta.pages.map((p) => ({ id: p.id, name: p.name, live: !!p.live })), lastSync: meta.lastSync || 0, error: meta.error || null } : null,
       };
     };
-    if (parts[0] === 'ai-check' && method === 'GET') {
-      if (!env.ask) return json({ ok: false, reason: 'No AI key is set.' });
-      try { await env.ask('Reply with the single word: ready', [{ role: 'user', content: 'Are you there?' }]); return json({ ok: true }); }
-      catch (e) { return json({ ok: false, reason: clean(e.message, 300) }); }
-    }
+
+    // Paying, signing in on another device and changing the password always work.
+    if (parts[0] === 'me' && method === 'GET') return json({ business: safeBiz() });
     if (parts[0] === 'billing' && parts[1] === 'pay' && method === 'POST') {
       if (!env.billing?.token || !env.ziina) return fail(503, 'Card payment is not switched on yet. Message us on WhatsApp to pay.');
-      const plan = PLANS[body.plan] ? body.plan : billingOf(biz).plan;
+      const option = PLANS[body.option] ? body.option : 'month';
+      const plan = PLANS[option];
       await ensureBillingWebhook();
       const pid = id();
       let intent;
       try {
         intent = await env.ziina(env.billing.token, 'payment_intent', { method: 'POST', body: {
-          amount: PLANS[plan].price * 100, currency_code: 'AED', message: `Elheen ${PLANS[plan].name} plan, 1 month, for ${biz.name}`,
+          amount: plan.price * 100, currency_code: 'AED', message: `Elheen, ${plan.months === 12 ? '12 months' : '1 month'}, for ${biz.name}`,
           success_url: `${env.siteUrl}/app?billing=${pid}`, cancel_url: `${env.siteUrl}/app?billing=cancelled`, failure_url: `${env.siteUrl}/app?billing=cancelled`,
           test: !!env.billing.test,
         } });
-      } catch (e) { return fail(502, `The payment page could not be opened: ${clean(e.message, 120)}`); }
-      await setJSON(`payments/${pid}`, { slug: biz.slug, plan, months: 1, amount: PLANS[plan].price, intentId: String(intent.id), status: 'pending', test: !!env.billing.test, createdAt: Date.now() });
+      } catch (e) { return fail(502, `The payment page could not be opened: ${cleanLine(e.message, 120)}`); }
+      await setJSON(`payments/${pid}`, { slug: biz.slug, option, months: plan.months, amount: plan.price, intentId: String(intent.id), status: 'pending', test: !!env.billing.test, createdAt: Date.now() });
       await setJSON(`ziinapay/${intent.id}`, { pid });
       return json({ url: intent.redirect_url });
     }
     if (parts[0] === 'billing' && parts[1] === 'check' && method === 'POST') {
-      const pid = clean(body.id, 20);
+      const pid = cleanLine(body.id, 20);
       let rec = await getJSON(`payments/${pid}`);
       if (!rec || rec.slug !== biz.slug) return fail(404, 'That payment was not found.');
       if (rec.status === 'pending' && env.billing?.token && env.ziina) {
@@ -438,6 +445,45 @@ export function makeHandler(store, env = {}) {
       const fresh = await getJSON(`biz/${biz.slug}`);
       return json({ status: rec.status, billing: billingOf(fresh || biz) });
     }
+    if (parts[0] === 'password' && method === 'POST') {
+      if (!checkPassword(String(body.current || ''), biz.pass)) return fail(403, 'Your current password is not right.');
+      if (String(body.next || '').length < 8) return fail(400, 'The new password needs at least 8 characters.');
+      biz.pass = hashPassword(String(body.next));
+      await saveBiz();
+      return json({ ok: true });
+    }
+    if (parts[0] === 'push' && method === 'POST') {
+      const sub = body.subscription;
+      if (!sub || typeof sub.endpoint !== 'string' || !/^https:\/\//.test(sub.endpoint) || !sub.keys) return fail(400, 'That device could not be registered.');
+      biz.push = [...(biz.push || []).filter((p) => p.endpoint !== sub.endpoint), { endpoint: sub.endpoint.slice(0, 600), keys: { p256dh: cleanLine(sub.keys.p256dh, 200), auth: cleanLine(sub.keys.auth, 100) } }].slice(-5);
+      await saveBiz();
+      return json({ business: safeBiz() });
+    }
+
+    // After the grace period, the app waits for payment. The booking page keeps taking enquiries.
+    if (billingOf(biz).state === 'overdue') return fail(402, 'Your Elheen plan has ended. Pay to see your leads again; nothing has been lost.', { locked: true });
+
+    if (parts[0] === 'me' && method === 'PUT') {
+      if (body.name) biz.name = cleanLine(body.name, 60);
+      for (const k of ['area', 'trn']) if (k in body) biz[k] = cleanLine(body[k], 60);
+      if ('phone' in body) biz.phone = cleanLine(body.phone, 30).replace(/[^\d+]/g, '');
+      for (const k of ['askPhotos', 'askAddress', 'vatRegistered']) if (k in body) biz[k] = !!body[k];
+      if ('quoteTerms' in body) biz.quoteTerms = clean(body.quoteTerms, 2000);
+      if ('quoteValidDays' in body) biz.quoteValidDays = Math.min(180, Math.max(1, Number(body.quoteValidDays) | 0));
+      if (Array.isArray(body.team)) biz.team = [...new Set(body.team.map((t) => cleanLine(t, 40)).filter(Boolean))].slice(0, 30);
+      for (const k of ['openHour', 'closeHour']) if (k in body) biz[k] = Math.min(24, Math.max(0, Number(body[k]) | 0));
+      if (biz.closeHour <= biz.openHour) return fail(400, 'Closing time must be after opening time.');
+      if (Array.isArray(body.closedDays)) biz.closedDays = [...new Set(body.closedDays.map(Number).filter((d) => d >= 0 && d <= 6))];
+      if (Array.isArray(body.services)) {
+        biz.services = body.services.slice(0, 40).map((s) => ({
+          id: cleanLine(s.id, 12) || id(4), name: cleanLine(s.name, 60),
+          minutes: Math.min(600, Math.max(5, Number(s.minutes) | 0)), price: Math.max(0, Number(s.price) || 0),
+        })).filter((s) => s.name);
+      }
+      await saveBiz();
+      return json({ business: safeBiz() });
+    }
+
     if (parts[0] === 'meta' && parts[1] === 'start' && method === 'POST') {
       if (!metaReady()) return fail(503, 'The Facebook connection is not set up yet.');
       const st = id(18);
@@ -450,147 +496,169 @@ export function makeHandler(store, env = {}) {
       if (!metaReady() || !biz.meta?.pages?.length) return json({ added: 0 });
       if (!body.force && Date.now() - (biz.meta.lastSync || 0) < 3 * 6e4) return json({ added: 0, skipped: true });
       biz.meta.lastSync = Date.now();
-      await setJSON(`biz/${biz.slug}`, biz);
+      await saveBiz();
       let added = 0;
       try { added = await syncMeta(biz); biz.meta.error = null; }
-      catch (e) { biz.meta.error = clean(e.message, 200) || 'Facebook did not answer.'; }
-      await setJSON(`biz/${biz.slug}`, biz);
+      catch (e) { biz.meta.error = cleanLine(e.message, 200) || 'Facebook did not answer.'; }
+      await saveBiz();
       return json({ added, business: safeBiz() });
     }
     if (parts[0] === 'meta' && parts[1] === 'disconnect' && method === 'POST') {
       for (const p of biz.meta?.pages || []) await store.delete(`metapage/${p.id}`);
       biz.meta = null;
-      await setJSON(`biz/${biz.slug}`, biz);
+      await saveBiz();
       return json({ business: safeBiz() });
     }
-    if (parts[0] === 'me' && method === 'GET') return json({ business: safeBiz() });
-    if (parts[0] === 'password' && method === 'POST') {
-      if (!checkPassword(String(body.current || ''), biz.pass)) return fail(403, 'Your current password is not right.');
-      if (String(body.next || '').length < 8) return fail(400, 'The new password needs at least 8 characters.');
-      biz.pass = hashPassword(String(body.next));
-      await setJSON(`biz/${biz.slug}`, biz);
-      return json({ ok: true });
+
+    // --- leads
+    if (parts[0] === 'leads' && !parts[1] && method === 'POST') {
+      return saveLead(biz, body, OWNER_SOURCES.includes(body.source) ? body.source : 'other', { requirePhone: false });
     }
-    if (parts[0] === 'push' && method === 'POST') {
-      const sub = body.subscription;
-      if (!sub || typeof sub.endpoint !== 'string' || !/^https:\/\//.test(sub.endpoint) || !sub.keys) return fail(400, 'That device could not be registered.');
-      biz.push = [...(biz.push || []).filter((p) => p.endpoint !== sub.endpoint), { endpoint: sub.endpoint.slice(0, 600), keys: { p256dh: clean(sub.keys.p256dh, 200), auth: clean(sub.keys.auth, 100) } }].slice(-5);
-      await setJSON(`biz/${biz.slug}`, biz);
-      return json({ business: safeBiz() });
-    }
-    if (parts[0] === 'me' && method === 'PUT') {
-      if (body.name) biz.name = clean(body.name, 60);
-      if ('area' in body) biz.area = clean(body.area, 60);
-      if ('phone' in body) biz.phone = clean(body.phone, 30).replace(/[^\d+]/g, '');
-      if ('askPhotos' in body) biz.askPhotos = !!body.askPhotos;
-      if ('askAddress' in body) biz.askAddress = !!body.askAddress;
-      if ('aiOn' in body) biz.aiOn = !!body.aiOn;
-      if ('aiNotes' in body) biz.aiNotes = clean(body.aiNotes, 1500);
-      for (const k of ['openHour', 'closeHour']) {
-        if (k in body) biz[k] = Math.min(24, Math.max(0, Number(body[k]) | 0));
-      }
-      if (biz.closeHour <= biz.openHour) return fail(400, 'Closing time must be after opening time.');
-      if (Array.isArray(body.closedDays)) biz.closedDays = body.closedDays.map(Number).filter((d) => d >= 0 && d <= 6);
-      if (Array.isArray(body.services)) {
-        biz.services = body.services.slice(0, 30).map((s) => ({
-          id: clean(s.id, 12) || id(4), name: clean(s.name, 60),
-          minutes: Math.min(600, Math.max(5, Number(s.minutes) | 0)), price: Math.max(0, Number(s.price) || 0),
-        })).filter((s) => s.name);
-      }
-      await setJSON(`biz/${biz.slug}`, biz);
-      return json({ business: safeBiz() });
-    }
-    if (parts[0] === 'leads' && method === 'POST' && !parts[1]) {
-      const src = ['instagram-dm', 'whatsapp', 'call', 'walk-in', 'referral', 'other'].includes(body.source) ? body.source : 'other';
-      return saveLead(biz, body, src);
-    }
-    if (parts[0] === 'leads' && method === 'GET' && !parts[1]) return json({ leads: await listLeads(biz.slug) });
+    if (parts[0] === 'leads' && !parts[1] && method === 'GET') return json({ leads: await listLeads(biz.slug) });
     if (parts[0] === 'leads' && parts[1] && method === 'PATCH') {
-      const key = `leads/${biz.slug}/${clean(parts[1], 20)}`;
+      const key = `leads/${biz.slug}/${cleanLine(parts[1], 20)}`;
       const lead = await getJSON(key);
-      if (!lead) return fail(404, 'That enquiry was not found.');
+      if (!lead) return fail(404, 'That lead was not found.');
       if (body.status && STATUSES.includes(body.status) && body.status !== lead.status) {
-        lead.history.push({ at: Date.now(), text: `Moved to ${body.status}` });
+        note(lead, `Moved to ${body.status}`);
         lead.status = body.status;
+        lead.lastTouch = Date.now();
+        if (body.status === 'won' && !lead.wonAt) lead.wonAt = Date.now();
       }
+      for (const k of ['name', 'address', 'email', 'service', 'budget', 'assignee']) if (k in body) lead[k] = cleanLine(body[k], k === 'address' ? 300 : 80);
+      if ('phone' in body) lead.phone = cleanLine(body.phone, 30).replace(/[^\d+]/g, '');
       if ('when' in body) {
         const t = body.when ? new Date(body.when) : null;
         if (t && Number.isNaN(t.getTime())) return fail(400, 'That time is not valid.');
-        lead.when = t ? t.toISOString() : null;
-        lead.history.push({ at: Date.now(), text: t ? 'Time set' : 'Time cleared' });
-        if (t && lead.status === 'new') lead.status = 'booked';
+        const iso = t ? t.toISOString() : null;
+        if (iso && iso !== lead.when && !body.force) {
+          const clash = (await listLeads(biz.slug)).find((l) => l.id !== lead.id && l.when === iso && !['lost', 'done'].includes(l.status)
+            && (!lead.assignee || !l.assignee || l.assignee === lead.assignee));
+          if (clash) return fail(409, `${clash.name} is already booked at that time.`, { clash: clash.name });
+        }
+        lead.when = iso;
+        lead.remindedAt = null;
+        note(lead, t ? 'Time set' : 'Time cleared');
+        if (t && ['new', 'talking'].includes(lead.status)) lead.status = 'booked';
       }
-      if ('ownerNote' in body) lead.ownerNote = clean(body.ownerNote, 1000);
+      if ('ownerNote' in body) lead.ownerNote = clean(body.ownerNote, 3000);
+      if ('value' in body) lead.value = Math.max(0, money(body.value));
+      if (Array.isArray(body.milestones)) {
+        const before = new Map((lead.milestones || []).map((m) => [m.id, m]));
+        lead.milestones = body.milestones.slice(0, 12).map((m) => {
+          const old = before.get(m.id);
+          const paid = !!m.paid;
+          if (paid && !old?.paidAt) note(lead, `Received ${cleanLine(m.label, 60) || 'a payment'} (AED ${money(m.amount).toLocaleString('en')})`);
+          return { id: cleanLine(m.id, 12) || id(4), label: cleanLine(m.label, 60) || 'Payment', amount: Math.max(0, money(m.amount)), paidAt: paid ? (old?.paidAt || Date.now()) : null };
+        });
+      }
       await setJSON(key, lead);
       return json({ lead });
     }
+    if (parts[0] === 'leads' && parts[1] && method === 'DELETE') {
+      const leadId = cleanLine(parts[1], 20);
+      if (!await getJSON(`leads/${biz.slug}/${leadId}`)) return fail(404, 'That lead was not found.');
+      for (const q of (await listQuotes(biz.slug)).filter((x) => x.leadId === leadId)) {
+        await store.delete(`quotes/${biz.slug}/${q.id}`);
+        await store.delete(`quotepub/${q.publicKey}`);
+      }
+      for (const { key } of (await store.list({ prefix: `photos/${biz.slug}/${leadId}/` })).blobs) await store.delete(key);
+      await store.delete(`leads/${biz.slug}/${leadId}`);
+      return json({ ok: true });
+    }
     if (parts[0] === 'photo' && parts[1] && parts[2] && method === 'GET') {
-      const key = `photos/${biz.slug}/${clean(parts[1], 20)}/${Number(parts[2]) | 0}`;
+      const key = `photos/${biz.slug}/${cleanLine(parts[1], 20)}/${Number(parts[2]) | 0}`;
       const found = await store.getWithMetadata(key, { type: 'arrayBuffer' });
       if (!found) return fail(404, 'That photo was not found.');
       return new Response(found.data, { headers: { 'content-type': found.metadata?.type || 'image/jpeg', 'cache-control': 'private, max-age=3600' } });
     }
+
+    // --- quotes
+    if (parts[0] === 'quotes' && !parts[1] && method === 'GET') return json({ quotes: (await listQuotes(biz.slug)).map((q) => readQuote(q, biz)) });
+    if (parts[0] === 'quotes' && !parts[1] && method === 'POST') {
+      const lead = await getJSON(`leads/${biz.slug}/${cleanLine(body.leadId, 20)}`);
+      if (!lead) return fail(404, 'That lead was not found.');
+      biz.quoteCounter = (biz.quoteCounter || 0) + 1;
+      await saveBiz();
+      const q = {
+        id: id(), publicKey: id(15), number: `Q-${String(biz.quoteCounter).padStart(4, '0')}`, leadId: lead.id,
+        title: cleanLine(body.title, 120) || lead.service || 'Quote', items: cleanItems(body.items), discount: Math.max(0, money(body.discount)),
+        vat: body.vat === undefined ? !!biz.vatRegistered : !!body.vat, notes: clean(body.notes, 3000), terms: clean(body.terms ?? biz.quoteTerms, 3000),
+        validUntil: Date.now() + Math.min(180, Math.max(1, Number(body.validDays) || biz.quoteValidDays || 14)) * 864e5,
+        status: 'draft', followUps: [], createdAt: Date.now(), updatedAt: Date.now(),
+      };
+      await setJSON(`quotes/${biz.slug}/${q.id}`, q);
+      await setJSON(`quotepub/${q.publicKey}`, { slug: biz.slug, id: q.id });
+      return json({ quote: readQuote(q, biz) });
+    }
+    if (parts[0] === 'quotes' && parts[1] && (method === 'PATCH' || method === 'DELETE')) {
+      const key = `quotes/${biz.slug}/${cleanLine(parts[1], 20)}`;
+      const q = await getJSON(key);
+      if (!q) return fail(404, 'That quote was not found.');
+      if (method === 'DELETE') {
+        if (q.status === 'accepted') return fail(409, 'An accepted quote cannot be deleted.');
+        await store.delete(key);
+        await store.delete(`quotepub/${q.publicKey}`);
+        return json({ ok: true });
+      }
+      const editing = ['title', 'items', 'discount', 'vat', 'notes', 'terms', 'validDays'].some((k) => k in body);
+      if (editing && q.status === 'accepted') return fail(409, 'This quote is already accepted. Make a new quote for changes.');
+      if ('title' in body) q.title = cleanLine(body.title, 120) || q.title;
+      if ('items' in body) q.items = cleanItems(body.items);
+      if ('discount' in body) q.discount = Math.max(0, money(body.discount));
+      if ('vat' in body) q.vat = !!body.vat;
+      if ('notes' in body) q.notes = clean(body.notes, 3000);
+      if ('terms' in body) q.terms = clean(body.terms, 3000);
+      if ('validDays' in body) q.validUntil = Date.now() + Math.min(180, Math.max(1, Number(body.validDays) | 0)) * 864e5;
+      if (body.send && q.status !== 'accepted') {
+        if (!q.items.length) return fail(400, 'Add at least one item before sending.');
+        const fresh = q.status !== 'sent' || editing;
+        if (fresh) { q.status = 'sent'; q.sentAt = Date.now(); q.followUps = []; q.viewedAt = null; q.snoozeUntil = null; }
+        await moveLead(biz.slug, q.leadId, (l) => {
+          if (['new', 'talking', 'booked'].includes(l.status)) l.status = 'quoted';
+          l.lastTouch = Date.now();
+          if (fresh) note(l, `Sent quote ${q.number} (AED ${quoteTotals(q, !!biz.vatRegistered).total.toLocaleString('en')})`);
+        });
+      }
+      q.updatedAt = Date.now();
+      await setJSON(key, q);
+      return json({ quote: readQuote(q, biz) });
+    }
+
+    // --- today: everything that needs a follow-up
+    if (parts[0] === 'today' && !parts[1] && method === 'GET') {
+      const [leads, quotes] = await Promise.all([listLeads(biz.slug), listQuotes(biz.slug)]);
+      return json({ tasks: computeTasks(biz, leads, quotes.map((q) => ({ ...q, totals: quoteTotals(q, !!biz.vatRegistered) }))), siteUrl: env.siteUrl });
+    }
+    if (parts[0] === 'today' && (parts[1] === 'done' || parts[1] === 'snooze') && method === 'POST') {
+      const leadId = cleanLine(body.leadId, 20);
+      const lead = await getJSON(`leads/${biz.slug}/${leadId}`);
+      if (!lead) return fail(404, 'That lead was not found.');
+      const until = Date.now() + Math.min(14, Math.max(1, Number(body.days) || 1)) * 864e5;
+      if (body.type === 'quote') {
+        const key = `quotes/${biz.slug}/${cleanLine(body.quoteId, 20)}`;
+        const q = await getJSON(key);
+        if (!q || q.leadId !== leadId) return fail(404, 'That quote was not found.');
+        if (parts[1] === 'done') q.followUps = [...(q.followUps || []), { at: Date.now() }];
+        else q.snoozeUntil = until;
+        await setJSON(key, q);
+        if (parts[1] === 'done') await moveLead(biz.slug, leadId, (l) => { l.lastTouch = Date.now(); note(l, `Followed up on quote ${q.number}`); });
+        return json({ ok: true });
+      }
+      await moveLead(biz.slug, leadId, (l) => {
+        if (parts[1] === 'snooze') { l.snoozeUntil = until; return; }
+        l.lastTouch = Date.now();
+        if (body.type === 'reply' && l.status === 'new') { l.status = 'talking'; note(l, 'Replied'); }
+        else if (body.type === 'visit') { l.remindedAt = Date.now(); note(l, 'Confirmed the time with the client'); }
+        else if (body.type === 'deposit') note(l, 'Asked for the payment');
+        else note(l, 'Checked in');
+      });
+      return json({ ok: true });
+    }
+
     return fail(404, 'Not found.');
   };
 }
 
-// Sends a phone alert to every device the owner has switched alerts on for.
-async function pushNotify(subscriptions, payload) {
-  const { VAPID_PUBLIC_KEY: pub, VAPID_PRIVATE_KEY: priv } = process.env;
-  if (!pub || !priv || !subscriptions.length) return [];
-  const webpush = (await import('web-push')).default;
-  webpush.setVapidDetails('mailto:support@elheen.com', pub, priv);
-  const dead = [];
-  await Promise.all(subscriptions.map((sub) =>
-    webpush.sendNotification(sub, JSON.stringify(payload)).catch((e) => { if (e.statusCode === 404 || e.statusCode === 410) dead.push(sub.endpoint); })));
-  return dead;
-}
-
-// Calls Meta's Graph API.
-async function graphFetch(path, { method = 'GET', params = {} } = {}) {
-  const u = new URL(`https://graph.facebook.com/${GRAPH_VERSION}/${path}`);
-  for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
-  const res = await fetch(u, { method });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok || data.error) throw new Error(data.error?.message || `Facebook request failed: ${res.status}`);
-  return data;
-}
-
-// Calls Ziina's payment API.
-async function ziinaFetch(token, path, { method = 'GET', body } = {}) {
-  const res = await fetch(`https://api-v2.ziina.com/api/${path}`, {
-    method, headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined,
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.message || data.error || `Ziina said ${res.status}`);
-  return data;
-}
-
-// Asks Claude for the assistant's next reply.
-async function askClaude(system, messages) {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({ model: process.env.ELHEEN_AI_MODEL || 'claude-haiku-5-5', max_tokens: 300, system, messages }),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(`The AI service said ${res.status}: ${data.error?.message || 'no reason given'}`);
-  return (data.content || []).filter((c) => c.type === 'text').map((c) => c.text).join('').trim();
-}
-
-export default (req) => makeHandler(getStore({ name: 'elheen', consistency: 'strong' }), {
-  ELHEEN_INVITE: process.env.ELHEEN_INVITE,
-  ELHEEN_ADMIN_KEY: process.env.ELHEEN_ADMIN_KEY,
-  ziina: ziinaFetch,
-  billing: process.env.ZIINA_TOKEN ? { token: process.env.ZIINA_TOKEN, test: process.env.ZIINA_TEST === 'true' } : null,
-  siteUrl: process.env.ELHEEN_URL || process.env.URL || 'https://elheen.netlify.app',
-  pushKey: process.env.VAPID_PUBLIC_KEY || null,
-  notify: pushNotify,
-  ask: process.env.ANTHROPIC_API_KEY ? askClaude : null,
-  graph: graphFetch,
-  meta: {
-    appId: process.env.META_APP_ID, appSecret: process.env.META_APP_SECRET, verifyToken: process.env.META_VERIFY_TOKEN,
-    redirectUri: `${process.env.ELHEEN_URL || process.env.URL || 'https://elheen.netlify.app'}/api/meta/callback`,
-  },
-})(req);
+export default (req) => makeHandler(getStore({ name: 'elheen', consistency: 'strong' }), envFromProcess())(req);
 export const config = { path: '/api/*' };

@@ -86,18 +86,6 @@ test('an enquiry needs a name and a phone number', async () => {
   assert.equal((await call('POST', 'public/studio-layali/lead', { name: 'A', phone: '12' })).status, 400);
 });
 
-test('the owner can move an enquiry through the pipeline and set a time', async () => {
-  const call = setup();
-  const { data: { token } } = await signup(call);
-  await call('POST', 'public/studio-layali/lead', { name: 'A', phone: '0501234567' });
-  const { data: { leads: [lead] } } = await call('GET', 'leads', null, token);
-  const moved = await call('PATCH', `leads/${lead.id}`, { status: 'talking' }, token);
-  assert.equal(moved.data.lead.status, 'talking');
-  const timed = await call('PATCH', `leads/${lead.id}`, { when: '2030-02-01T09:00:00Z' }, token);
-  assert.equal(timed.data.lead.when, '2030-02-01T09:00:00.000Z');
-  assert.equal((await call('PATCH', `leads/${lead.id}`, { status: 'nonsense' }, token)).data.lead.status, 'talking');
-});
-
 test('one business cannot read another business\'s enquiries', async () => {
   const call = setup();
   await signup(call);
@@ -158,28 +146,6 @@ test('a dead device is forgotten, and a failing alert never loses the enquiry', 
   mode = 'throw';
   assert.equal((await call('POST', 'public/studio-layali/lead', { name: 'B', phone: '0507654321' })).status, 200);
   assert.equal((await call('GET', 'leads', null, token)).data.leads.length, 2);
-});
-
-test('the assistant only answers when a key exists and the owner switched it on', async () => {
-  const seen = [];
-  const call = setup({ ask: async (system, messages) => { seen.push({ system, messages }); return 'We are open until 7.'; } });
-  const { data: { token } } = await signup(call);
-  const say = () => call('POST', 'public/studio-layali/chat', { messages: [{ role: 'user', content: 'When do you close?' }] });
-  assert.equal((await say()).status, 404);
-  assert.equal((await call('GET', 'public/studio-layali')).data.chat, false);
-  await call('PUT', 'me', { aiOn: true, aiNotes: 'Parking is free.' }, token);
-  const ok = await say();
-  assert.equal(ok.data.reply, 'We are open until 7.');
-  assert.match(seen[0].system, /Studio Layali/);
-  assert.match(seen[0].system, /Parking is free/);
-  assert.equal((await setup()('POST', 'public/studio-layali/chat', { messages: [] })).status, 404);
-});
-
-test('the chat is saved with the enquiry so the owner can read it', async () => {
-  const call = setup();
-  const { data: { token } } = await signup(call);
-  await call('POST', 'public/studio-layali/lead', { name: 'A', phone: '0501234567', chat: [{ role: 'user', content: 'Do you do villas?' }, { role: 'assistant', content: 'Yes we do.' }] });
-  assert.equal((await call('GET', 'leads', null, token)).data.leads[0].chat.length, 2);
 });
 
 test('the owner can change the password, and the old one stops working', async () => {
@@ -291,7 +257,11 @@ test('disconnecting removes the page', async () => {
   assert.equal(off.data.business.meta, null);
 });
 
-// --- Elheen's own billing through Ziina, and the admin view
+
+// --- Elheen's own billing through Ziina, the paywall and the admin view
+import { computeTasks, quoteTotals, DAY } from '../netlify/lib/core.mjs';
+import { morningDigest } from '../netlify/functions/daily.mjs';
+
 function fakeZiinaPay() {
   const calls = [], intents = {};
   const ziina = async (token, path, { method = 'GET', body } = {}) => {
@@ -303,29 +273,34 @@ function fakeZiinaPay() {
   };
   return { ziina, calls, intents };
 }
-const billingEnv = (z) => ({ ziina: z.ziina, billing: { token: 'ELHEEN-ZIINA', test: true }, siteUrl: 'https://x.test', ask: async () => 'hi', ELHEEN_ADMIN_KEY: 'admin-key-0123456789' });
+const billingEnv = (z) => ({ ziina: z.ziina, billing: { token: 'ELHEEN-ZIINA', test: true }, siteUrl: 'https://x.test', ELHEEN_ADMIN_KEY: 'admin-key-0123456789' });
+const ageBusiness = async (call, days) => {
+  const biz = await call.store.get('biz/studio-layali', { type: 'json' });
+  biz.paidUntil = Date.now() - days * DAY;
+  await call.store.setJSON('biz/studio-layali', biz);
+};
 
-test('a new business starts on a 14-day Grow trial', async () => {
+test('a new business gets 14 free days at AED 79 a month', async () => {
   const call = setup(billingEnv(fakeZiinaPay()));
   const { data: { token } } = await signup(call);
   const { data: { business } } = await call('GET', 'me', null, token);
   assert.equal(business.billing.state, 'trial');
-  assert.equal(business.billing.plan, 'grow');
-  assert.ok(Math.abs(business.billing.paidUntil - (Date.now() + 14 * 864e5)) < 60e3);
-  assert.equal(business.aiAvailable, true);
+  assert.equal(business.billing.price, 79);
+  assert.equal(business.billing.plans.year.price, 790);
+  assert.ok(Math.abs(business.billing.paidUntil - (Date.now() + 14 * DAY)) < 60e3);
   assert.ok(!JSON.stringify(business).includes('ELHEEN-ZIINA'));
+  assert.ok(!('pass' in business));
 });
 
-test('paying opens Ziina for the plan price and extends the plan once', async () => {
+test('paying a month or a year opens Ziina and extends the plan once', async () => {
   const z = fakeZiinaPay();
   const call = setup(billingEnv(z));
   const { data: { token } } = await signup(call);
   const before = (await call('GET', 'me', null, token)).data.business.billing.paidUntil;
-  const pay = await call('POST', 'billing/pay', { plan: 'start' }, token);
-  assert.match(pay.data.url, /^https:\/\/pay\.ziina\.test\//);
+  const pay = await call('POST', 'billing/pay', { option: 'year' }, token);
   const intent = z.calls.find((c) => c.path === 'payment_intent');
   assert.equal(intent.token, 'ELHEEN-ZIINA');
-  assert.equal(intent.body.amount, 14900);
+  assert.equal(intent.body.amount, 79000);
   assert.equal(intent.body.currency_code, 'AED');
   assert.equal(intent.body.test, true);
   const pid = new URL(intent.body.success_url).searchParams.get('billing');
@@ -333,30 +308,27 @@ test('paying opens Ziina for the plan price and extends the plan once', async ()
   z.intents[new URL(pay.data.url).pathname.slice(1)].status = 'completed';
   const done = await call('POST', 'billing/check', { id: pid }, token);
   assert.equal(done.data.status, 'paid');
-  assert.equal(done.data.billing.plan, 'start');
   assert.equal(done.data.billing.state, 'active');
-  assert.ok(Math.abs(done.data.billing.paidUntil - (before + 30 * 864e5)) < 60e3);
+  assert.ok(Math.abs(done.data.billing.paidUntil - (before + 360 * DAY)) < 60e3);
   assert.equal((await call('POST', 'billing/check', { id: pid }, token)).data.billing.paidUntil, done.data.billing.paidUntil);
-  const me = (await call('GET', 'me', null, token)).data.business;
-  assert.equal(me.payments.length, 1);
-  assert.equal(me.aiAvailable, false);
+  await call('POST', 'billing/pay', { option: 'nonsense' }, token);
+  assert.equal(z.calls.filter((c) => c.path === 'payment_intent').pop().body.amount, 7900);
 });
 
 test('one business cannot check another business\'s payment', async () => {
   const call = setup(billingEnv(fakeZiinaPay()));
   const a = await signup(call);
   const b = await signup(call, { name: 'Other Co' });
-  const pay = await call('POST', 'billing/pay', {}, a.data.token);
-  assert.equal(pay.status, 200);
-  const z = (await call.store.list({ prefix: 'payments/' })).blobs[0].key.split('/')[1];
-  assert.equal((await call('POST', 'billing/check', { id: z }, b.data.token)).status, 404);
+  await call('POST', 'billing/pay', {}, a.data.token);
+  const pid = (await call.store.list({ prefix: 'payments/' })).blobs[0].key.split('/')[1];
+  assert.equal((await call('POST', 'billing/check', { id: pid }, b.data.token)).status, 404);
 });
 
 test('the Ziina webhook confirms a payment only with the right signature', async () => {
   const z = fakeZiinaPay();
   const call = setup(billingEnv(z));
   const { data: { token } } = await signup(call);
-  const pay = await call('POST', 'billing/pay', { plan: 'grow' }, token);
+  const pay = await call('POST', 'billing/pay', {}, token);
   const intentId = new URL(pay.data.url).pathname.slice(1);
   assert.ok(z.calls.some((c) => c.path === 'webhook' && c.body.url === 'https://x.test/api/billing/webhook'));
   const payload = { event: 'payment_intent.status.updated', data: { id: intentId, status: 'completed' } };
@@ -369,24 +341,24 @@ test('the Ziina webhook confirms a payment only with the right signature', async
 });
 
 test('without the Elheen Ziina token, paying says so instead of failing', async () => {
-  const call = setup({ ziina: fakeZiinaPay().ziina, siteUrl: 'https://x.test' });
+  const call = setup({ siteUrl: 'https://x.test' });
   const { data: { token } } = await signup(call);
   assert.equal((await call('POST', 'billing/pay', {}, token)).status, 503);
   assert.equal((await call('GET', 'me', null, token)).data.business.billing.online, false);
 });
 
-test('an overdue business loses the assistant but keeps its booking page', async () => {
+test('an overdue business is asked to pay, but its booking page keeps taking enquiries', async () => {
   const call = setup(billingEnv(fakeZiinaPay()));
   const { data: { token } } = await signup(call);
-  await call('PUT', 'me', { aiOn: true }, token);
-  assert.equal((await call('GET', 'public/studio-layali')).data.chat, true);
-  const biz = await call.store.get('biz/studio-layali', { type: 'json' });
-  biz.paidUntil = Date.now() - 10 * 864e5;
-  await call.store.setJSON('biz/studio-layali', biz);
-  const page = await call('GET', 'public/studio-layali');
-  assert.equal(page.status, 200);
-  assert.equal(page.data.chat, false);
+  await ageBusiness(call, 3);
+  assert.equal((await call('GET', 'leads', null, token)).status, 200);
+  await ageBusiness(call, 10);
+  const locked = await call('GET', 'leads', null, token);
+  assert.equal(locked.status, 402);
+  assert.equal(locked.data.locked, true);
   assert.equal((await call('GET', 'me', null, token)).data.business.billing.state, 'overdue');
+  assert.equal((await call('POST', 'billing/pay', {}, token)).status, 200);
+  assert.equal((await call('POST', 'public/studio-layali/lead', { name: 'A', phone: '0501234567' })).status, 200);
 });
 
 test('the admin view needs its key and can extend, include and reset a business', async () => {
@@ -396,11 +368,213 @@ test('the admin view needs its key and can extend, include and reset a business'
   const h = { 'x-admin-key': 'admin-key-0123456789' };
   const list = await call('GET', 'admin/businesses', null, null, h);
   assert.equal(list.data.businesses[0].slug, 'studio-layali');
-  const more = await call('POST', 'admin/business/studio-layali', { addMonths: 2, plan: 'start' }, null, h);
-  assert.equal(more.data.billing.plan, 'start');
-  assert.equal(more.data.billing.state, 'active');
+  assert.equal(list.data.businesses[0].quotes, 0);
+  assert.equal((await call('POST', 'admin/business/studio-layali', { addMonths: 2 }, null, h)).data.billing.state, 'active');
   assert.equal((await call('POST', 'admin/business/studio-layali', { comp: true }, null, h)).data.billing.state, 'included');
   const reset = await call('POST', 'admin/business/studio-layali', { resetPassword: true }, null, h);
   assert.equal((await call('POST', 'login', { slug: 'studio-layali', password: reset.data.password })).status, 200);
   assert.equal((await setup({})('GET', 'admin/businesses', null, null, h)).status, 401);
+});
+
+// --- leads: stages, team bookings, payments and deleting
+const newLead = async (call, extra = {}) => {
+  await call('POST', 'public/studio-layali/lead', { name: 'Layla Ahmed', phone: '0501234567', ...extra });
+  const signedIn = await call('POST', 'login', { slug: 'studio-layali', password: 'longenough' });
+  const { data: { leads } } = await call('GET', 'leads', null, signedIn.data.token);
+  return leads.find((l) => l.name === (extra.name || 'Layla Ahmed'));
+};
+
+test('the owner moves a lead through the stages and the history records it', async () => {
+  const call = setup();
+  const { data: { token } } = await signup(call);
+  const lead = await newLead(call);
+  assert.equal((await call('PATCH', `leads/${lead.id}`, { status: 'talking' }, token)).data.lead.status, 'talking');
+  const won = await call('PATCH', `leads/${lead.id}`, { status: 'won' }, token);
+  assert.ok(won.data.lead.wonAt);
+  assert.equal((await call('PATCH', `leads/${lead.id}`, { status: 'nonsense' }, token)).data.lead.status, 'won');
+  assert.match(won.data.lead.history.map((h) => h.text).join('|'), /Moved to talking\|Moved to won/);
+});
+
+test('two visits at the same time are only allowed for different team members', async () => {
+  const call = setup();
+  const { data: { token } } = await signup(call);
+  await call('PUT', 'me', { team: ['Omar', 'Sara', 'Omar', ''] }, token);
+  assert.deepEqual((await call('GET', 'me', null, token)).data.business.team, ['Omar', 'Sara']);
+  const a = await newLead(call, { name: 'A' });
+  const b = await newLead(call, { name: 'B' });
+  const when = '2030-05-01T06:00:00.000Z';
+  await call('PATCH', `leads/${a.id}`, { assignee: 'Omar', when }, token);
+  assert.equal((await call('PATCH', `leads/${b.id}`, { assignee: 'Omar', when }, token)).status, 409);
+  const ok = await call('PATCH', `leads/${b.id}`, { assignee: 'Sara', when }, token);
+  assert.equal(ok.status, 200);
+  assert.equal(ok.data.lead.status, 'booked');
+});
+
+test('payments on a job record when each part was received', async () => {
+  const call = setup();
+  const { data: { token } } = await signup(call);
+  const lead = await newLead(call);
+  const set = await call('PATCH', `leads/${lead.id}`, { milestones: [{ label: 'Deposit', amount: 5000, paid: true }, { label: 'Handover', amount: 5000 }] }, token);
+  const [dep, hand] = set.data.lead.milestones;
+  assert.ok(dep.paidAt);
+  assert.equal(hand.paidAt, null);
+  const again = await call('PATCH', `leads/${lead.id}`, { milestones: [{ ...dep, paid: true }, { ...hand, paid: false }] }, token);
+  assert.equal(again.data.lead.milestones[0].paidAt, dep.paidAt);
+  assert.match(again.data.lead.history.map((h) => h.text).join('|'), /Received Deposit \(AED 5,000\)/);
+});
+
+test('deleting a lead removes its quotes and photos too', async () => {
+  const call = setup({ siteUrl: 'https://x.test' });
+  const { data: { token } } = await signup(call);
+  const lead = await newLead(call, { photos: [PNG] });
+  const q = (await call('POST', 'quotes', { leadId: lead.id, items: [{ desc: 'Design', qty: 1, price: 100 }] }, token)).data.quote;
+  assert.equal((await call('DELETE', `leads/${lead.id}`, null, token)).status, 200);
+  assert.equal((await call('GET', 'leads', null, token)).data.leads.length, 0);
+  assert.equal((await call.store.list({ prefix: 'photos/' })).blobs.length, 0);
+  assert.equal((await call('GET', `quote/${q.publicKey}`)).status, 404);
+});
+
+// --- quotes
+const ITEMS = [{ desc: 'Living room design', qty: 1, price: 12000 }, { desc: 'Custom joinery', qty: 3, price: 2500.5 }, { desc: '', qty: 1, price: 9 }];
+
+test('a quote adds up its items, discount and VAT only when the business is VAT registered', async () => {
+  assert.deepEqual(quoteTotals({ items: [{ qty: 2, price: 100 }], discount: 50, vat: true }, true), { subtotal: 200, discount: 50, vat: 7.5, total: 157.5 });
+  assert.deepEqual(quoteTotals({ items: [{ qty: 2, price: 100 }], discount: 50, vat: true }, false), { subtotal: 200, discount: 50, vat: 0, total: 150 });
+  assert.equal(quoteTotals({ items: [{ qty: 1, price: 10 }], discount: 99 }, false).total, 0);
+  const call = setup({ siteUrl: 'https://x.test' });
+  const { data: { token } } = await signup(call);
+  await call('PUT', 'me', { vatRegistered: true, trn: '100123456700003' }, token);
+  const lead = await newLead(call);
+  const res = await call('POST', 'quotes', { leadId: lead.id, title: 'Villa living room', items: ITEMS, discount: 1000 }, token);
+  const q = res.data.quote;
+  assert.equal(q.number, 'Q-0001');
+  assert.equal(q.items.length, 2);
+  assert.deepEqual(q.totals, { subtotal: 19501.5, discount: 1000, vat: 925.08, total: 19426.58 });
+  assert.equal(q.state, 'draft');
+  assert.match(q.link, /^https:\/\/x\.test\/q\//);
+  assert.equal((await call('POST', 'quotes', { leadId: lead.id, items: ITEMS }, token)).data.quote.number, 'Q-0002');
+});
+
+test('a draft quote is private; sending it makes it public and moves the lead to quoted', async () => {
+  const call = setup({ siteUrl: 'https://x.test' });
+  const { data: { token } } = await signup(call);
+  const lead = await newLead(call);
+  const q = (await call('POST', 'quotes', { leadId: lead.id, items: [] }, token)).data.quote;
+  assert.equal((await call('GET', `quote/${q.publicKey}`)).status, 404);
+  assert.equal((await call('PATCH', `quotes/${q.id}`, { send: true }, token)).status, 400);
+  const sent = await call('PATCH', `quotes/${q.id}`, { items: ITEMS, send: true }, token);
+  assert.equal(sent.data.quote.state, 'sent');
+  assert.ok(sent.data.quote.sentAt);
+  const view = await call('GET', `quote/${q.publicKey}`);
+  assert.equal(view.status, 200);
+  assert.equal(view.data.client, 'Layla Ahmed');
+  assert.equal(view.data.quote.totals.total, 19501.5);
+  assert.ok(!JSON.stringify(view.data).includes('0501234567'));
+  const after = (await call('GET', 'leads', null, token)).data.leads[0];
+  assert.equal(after.status, 'quoted');
+});
+
+test('opening and accepting a quote tells the owner and wins the job with a payment plan', async () => {
+  const sent = [];
+  const call = setup({ siteUrl: 'https://x.test', notify: async (subs, payload) => { sent.push(payload.title); return []; } });
+  const { data: { token } } = await signup(call);
+  await call('POST', 'push', { subscription: { endpoint: 'https://push.example/a', keys: { p256dh: 'k', auth: 'a' } } }, token);
+  const lead = await newLead(call);
+  const q = (await call('PATCH', `quotes/${(await call('POST', 'quotes', { leadId: lead.id, items: [{ desc: 'Kitchen', qty: 1, price: 30000 }] }, token)).data.quote.id}`, { send: true }, token)).data.quote;
+  await call('GET', `quote/${q.publicKey}`);
+  await call('GET', `quote/${q.publicKey}`);
+  assert.equal(sent.filter((t) => t.startsWith('Quote opened')).length, 1);
+  assert.equal((await call('POST', `quote/${q.publicKey}/accept`, { name: '' })).status, 400);
+  const ok = await call('POST', `quote/${q.publicKey}/accept`, { name: 'Layla Ahmed' });
+  assert.equal(ok.data.quote.state, 'accepted');
+  assert.ok(sent.includes('Quote accepted: Q-0001'));
+  const won = (await call('GET', 'leads', null, token)).data.leads[0];
+  assert.equal(won.status, 'won');
+  assert.equal(won.value, 30000);
+  assert.deepEqual(won.milestones.map((m) => [m.label, m.amount]), [['Deposit', 15000], ['Progress payment', 12000], ['On handover', 3000]]);
+  assert.equal((await call('PATCH', `quotes/${q.id}`, { items: [] }, token)).status, 409);
+  assert.equal((await call('DELETE', `quotes/${q.id}`, null, token)).status, 409);
+  assert.equal((await call('POST', `quote/${q.publicKey}/decline`, {})).status, 409);
+});
+
+test('a client can decline, and an expired quote cannot be accepted', async () => {
+  const call = setup({ siteUrl: 'https://x.test' });
+  const { data: { token } } = await signup(call);
+  const lead = await newLead(call);
+  const make = async () => (await call('PATCH', `quotes/${(await call('POST', 'quotes', { leadId: lead.id, items: ITEMS }, token)).data.quote.id}`, { send: true }, token)).data.quote;
+  const a = await make();
+  const no = await call('POST', `quote/${a.publicKey}/decline`, { reason: 'Too expensive' });
+  assert.equal(no.data.quote.state, 'declined');
+  assert.match((await call('GET', 'leads', null, token)).data.leads[0].history.map((h) => h.text).join('|'), /Declined quote Q-0001: Too expensive/);
+  const b = await make();
+  const stored = await call.store.get(`quotes/studio-layali/${b.id}`, { type: 'json' });
+  stored.validUntil = Date.now() - 1000;
+  await call.store.setJSON(`quotes/studio-layali/${b.id}`, stored);
+  const late = await call('POST', `quote/${b.publicKey}/accept`, { name: 'Layla' });
+  assert.equal(late.status, 409);
+  assert.match(late.data.error, /expired/);
+});
+
+// --- today's follow-ups
+const T0 = Date.UTC(2030, 0, 10, 6);
+const lead0 = (extra = {}) => ({ id: 'L1', name: 'Layla', status: 'talking', createdAt: T0 - 10 * DAY, lastTouch: T0, history: [], milestones: [], ...extra });
+const quote0 = (extra = {}) => ({ id: 'Q1', leadId: 'L1', number: 'Q-0001', status: 'sent', sentAt: T0, followUps: [], totals: { total: 20000 }, publicKey: 'pk', ...extra });
+
+test('a sent quote is chased after 2, 5 and 10 days, then left alone', () => {
+  const at = (days, followUps = 0) => computeTasks({}, [lead0()], [quote0({ followUps: Array(followUps).fill({ at: T0 }) })], T0 + days * DAY).filter((t) => t.type === 'quote');
+  assert.equal(at(1).length, 0);
+  assert.equal(at(2).length, 1);
+  assert.equal(at(2)[0].step, 1);
+  assert.equal(at(3, 1).length, 0);
+  assert.equal(at(5, 1)[0].step, 2);
+  assert.equal(at(10, 2)[0].step, 3);
+  assert.equal(at(30, 3).length, 0);
+  assert.equal(computeTasks({}, [lead0({ status: 'won' })], [quote0()], T0 + 3 * DAY).filter((t) => t.type === 'quote').length, 0);
+  assert.equal(computeTasks({}, [lead0()], [quote0({ snoozeUntil: T0 + 4 * DAY })], T0 + 3 * DAY).filter((t) => t.type === 'quote').length, 0);
+});
+
+test('new enquiries, quiet leads, tomorrow\'s visits and unpaid deposits all appear', () => {
+  const tasks = computeTasks({}, [
+    lead0({ id: 'A', name: 'New', status: 'new', createdAt: T0 - 3600e3 }),
+    lead0({ id: 'B', name: 'Quiet', status: 'talking', lastTouch: T0 - 4 * DAY }),
+    lead0({ id: 'C', name: 'Visit', status: 'booked', when: new Date(T0 + 20 * 3600e3).toISOString() }),
+    lead0({ id: 'D', name: 'Paid later', status: 'won', wonAt: T0 - 3 * DAY, lastTouch: T0 - 3 * DAY, milestones: [{ label: 'Deposit', amount: 5000, paidAt: null }] }),
+    lead0({ id: 'E', name: 'Lost', status: 'lost' }),
+  ], [], T0);
+  assert.deepEqual(tasks.map((t) => t.type).sort(), ['checkin', 'deposit', 'reply', 'visit']);
+});
+
+test('marking a follow-up done or snoozing it takes it off today\'s list', async () => {
+  const call = setup({ siteUrl: 'https://x.test' });
+  const { data: { token } } = await signup(call);
+  const lead = await newLead(call);
+  let today = (await call('GET', 'today', null, token)).data.tasks;
+  assert.equal(today[0].type, 'reply');
+  await call('POST', 'today/done', { type: 'reply', leadId: lead.id }, token);
+  today = (await call('GET', 'today', null, token)).data.tasks;
+  assert.equal(today.length, 0);
+  assert.equal((await call('GET', 'leads', null, token)).data.leads[0].status, 'talking');
+  const q = (await call('PATCH', `quotes/${(await call('POST', 'quotes', { leadId: lead.id, items: ITEMS }, token)).data.quote.id}`, { send: true }, token)).data.quote;
+  const stored = await call.store.get(`quotes/studio-layali/${q.id}`, { type: 'json' });
+  stored.sentAt = Date.now() - 3 * DAY;
+  await call.store.setJSON(`quotes/studio-layali/${q.id}`, stored);
+  today = (await call('GET', 'today', null, token)).data.tasks;
+  assert.equal(today[0].type, 'quote');
+  await call('POST', 'today/snooze', { type: 'quote', leadId: lead.id, quoteId: q.id, days: 1 }, token);
+  assert.equal((await call('GET', 'today', null, token)).data.tasks.length, 0);
+  await call('POST', 'today/done', { type: 'quote', leadId: lead.id, quoteId: 'not-it' }, token).then((r) => assert.equal(r.status, 404));
+});
+
+test('the morning reminder goes only to businesses with follow-ups and alerts switched on', async () => {
+  const call = setup({ siteUrl: 'https://x.test' });
+  const { data: { token } } = await signup(call);
+  await call('POST', 'push', { subscription: { endpoint: 'https://push.example/a', keys: { p256dh: 'k', auth: 'a' } } }, token);
+  await signup(call, { name: 'Quiet Co' });
+  const sent = [];
+  const notify = async (subs, payload) => { sent.push(payload); return []; };
+  assert.equal(await morningDigest(call.store, notify), 0);
+  await newLead(call);
+  assert.equal(await morningDigest(call.store, notify), 1);
+  assert.equal(sent[0].title, '1 follow-up today');
+  assert.match(sent[0].body, /Reply to Layla Ahmed/);
 });
