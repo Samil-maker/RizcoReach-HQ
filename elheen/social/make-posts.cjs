@@ -1,5 +1,7 @@
-// Draws the Elheen Instagram posts (1080 x 1350) from the list in posts.json.
+// Draws the Elheen Instagram posts (1080 x 1350 JPEG) from the list in posts.json.
 // Run from the elheen folder:  node social/make-posts.cjs
+// Instagram's publishing API takes JPEG only, from a public address. The build copies
+// social/posts/*.jpg to elheen.com/social/, so every post has a public image_url.
 // Needs Playwright (npm i -D playwright, then npx playwright install chromium).
 const { chromium } = require('playwright');
 const fs = require('fs');
@@ -74,14 +76,14 @@ function html(p) {
 (async () => {
   const browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 1080, height: 1350 }, deviceScaleFactor: 1 });
-  const rows = [['day', 'file', 'caption']];
+  const rows = [['day', 'file', 'image_url', 'caption']];
   for (const [i, p] of posts.entries()) {
-    const file = `${String(i + 1).padStart(2, '0')}-${p.slug}.png`;
+    const file = `${String(i + 1).padStart(2, '0')}-${p.slug}.jpg`;
     await page.setContent(html(p));
     await page.evaluate(() => document.fonts.ready);
     await page.waitForTimeout(150);
-    await page.screenshot({ path: path.join(out, file) });
-    rows.push([String(i + 1), `posts/${file}`, p.caption]);
+    await page.screenshot({ path: path.join(out, file), type: 'jpeg', quality: 92 });
+    rows.push([String(i + 1), `posts/${file}`, `https://elheen.com/social/${file}`, p.caption]);
     console.log('drew', file);
   }
   const cell = (v) => `"${String(v).replace(/"/g, '""')}"`;

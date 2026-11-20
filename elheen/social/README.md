@@ -9,9 +9,10 @@ a few ask for anything (Hormozi: give, give, give, then ask).
 
 | Path | What it is |
 |---|---|
-| `posts/` | Finished posts, 1080 × 1350 (Instagram portrait), numbered in posting order |
+| `posts/` | Finished posts, 1080 × 1350 JPEG (Instagram portrait), numbered in posting order. Also live at `https://elheen.com/social/<file>` |
 | `posts.json` | The words for every post and its caption. Edit here, then redraw |
-| `schedule.csv` | Day, image file and caption for each post, for an auto-poster |
+| `schedule.csv` | Day, image file, public image URL and caption for each post, for an auto-poster |
+| `POSTER-PROMPT.md` | The prompt that hands daily posting to the auto-poster chat |
 | `screens/` | Real app screenshots used in posts (example business, made-up names) |
 | `make-posts.cjs` | Redraws every post from `posts.json` |
 

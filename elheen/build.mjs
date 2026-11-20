@@ -49,6 +49,12 @@ rmSync(dist, { recursive: true, force: true });
 mkdirSync(dist, { recursive: true });
 cpSync(join(src, 'assets'), join(dist, 'assets'), { recursive: true });
 cpSync(join(src, 'root'), dist, { recursive: true });
+// Instagram posts get public addresses (elheen.com/social/...) so an auto-poster can publish them.
+const posts = join(root, 'social', 'posts');
+try {
+  mkdirSync(join(dist, 'social'), { recursive: true });
+  for (const f of readdirSync(posts).filter((x) => x.endsWith('.jpg'))) cpSync(join(posts, f), join(dist, 'social', f));
+} catch { /* no posts yet */ }
 
 for (const file of readdirSync(join(src, 'pages')).filter((f) => f.endsWith('.html'))) {
   const raw = read(`pages/${file}`);
