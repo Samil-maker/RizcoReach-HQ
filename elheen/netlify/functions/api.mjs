@@ -5,7 +5,7 @@ import { createHmac, timingSafeEqual, randomBytes } from 'node:crypto';
 import {
   STATUSES, KINDS, PROJECT_KINDS, VISIT_KINDS, PHOTO_KINDS, PLANS, TRIAL_DAYS, MONTH_MS, BUDGETS, STARTS, PROPERTIES, fitOf,
   json, fail, clean, cleanLine, id, slugify, money, aedText, hashPassword, checkPassword, sameSecret,
-  billingOf, defaultServices, cleanItems, cleanPriceBook, cleanTemplates, quoteTotals, quoteState, defaultMilestones, computeTasks,
+  billingOf, defaultServices, cleanItems, cleanPage, paletteFromCss, DEFAULT_PAGE, cleanPriceBook, cleanTemplates, quoteTotals, quoteState, defaultMilestones, computeTasks,
 } from '../lib/core.mjs';
 import { GRAPH_VERSION, envFromProcess } from '../lib/services.mjs';
 
@@ -24,8 +24,20 @@ const OWNER_SOURCES = ['instagram-dm', 'whatsapp', 'call', 'walk-in', 'referral'
 const publicBusiness = (b) => ({
   slug: b.slug, name: b.name, kind: b.kind, area: b.area, services: b.services,
   askPhotos: b.askPhotos, askAddress: b.askAddress, openHour: b.openHour, closeHour: b.closeHour, closedDays: b.closedDays,
-  askBudget: !!b.askBudget, minJob: Number(b.minJob) || 0,
+  askBudget: !!b.askBudget, minJob: Number(b.minJob) || 0, phone: b.phone || '',
+  page: { ...DEFAULT_PAGE, ...(b.page || {}) },
 });
+const MAX_BRAND_BYTES = 1_500_000;
+// A website address that is safe for the server to open: public http(s) only.
+function safeUrl(raw) {
+  try {
+    const u = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
+    if (!/^https?:$/.test(u.protocol)) return null;
+    const h = u.hostname.toLowerCase();
+    if (h === 'localhost' || h.endsWith('.local') || h.endsWith('.internal') || /^[\d.]+$/.test(h) || h.includes(':') || !h.includes('.')) return null;
+    return u;
+  } catch { return null; }
+}
 
 export function makeHandler(store, env = {}) {
   const getJSON = (key) => store.get(key, { type: 'json' });
@@ -378,6 +390,11 @@ export function makeHandler(store, env = {}) {
       const biz = await getJSON(`biz/${slugify(parts[1])}`);
       if (!biz) return fail(404, 'This page does not exist.');
       if (method === 'GET' && !parts[2]) return json({ business: publicBusiness(biz), taken: await takenTimes(biz.slug) });
+      if (method === 'GET' && ['logo', 'cover'].includes(parts[2])) {
+        const found = await store.getWithMetadata(`brand/${biz.slug}/${parts[2]}`, { type: 'arrayBuffer' });
+        if (!found) return fail(404, 'Not found.');
+        return new Response(found.data, { headers: { 'content-type': found.metadata?.type || 'image/jpeg', 'cache-control': 'public, max-age=86400' } });
+      }
       if (method === 'POST' && parts[2] === 'lead') return saveLead(biz, body, body.source || url.searchParams.get('src'));
     }
 
@@ -543,6 +560,7 @@ export function makeHandler(store, env = {}) {
       return {
         ...safe, team: biz.team || [], alerts: (push || []).length, pushKey: env.pushKey || null, metaAvailable: metaReady() && !staff,
         you: user ? { id: user.id, name: user.name, role: user.role } : { name: 'Owner', role: 'owner' },
+        page: { ...DEFAULT_PAGE, ...(biz.page || {}) },
         users: staff ? [] : (users || []).map((u) => ({ id: u.id, name: u.name, role: u.role, createdAt: u.createdAt })),
         messaging: !!(metaReady() && env.meta.messaging), waAvailable: !!(metaReady() && env.meta.waConfigId) && !staff,
         metaAppId: env.meta?.appId || '', waConfigId: staff ? '' : (env.meta?.waConfigId || ''),
@@ -699,6 +717,84 @@ export function makeHandler(store, env = {}) {
       return json({ lead });
     }
 
+    // --- the booking page's look: logo, cover, colours, and importing them from the business's website or Instagram
+    if (parts[0] === 'brand') {
+      if (role === 'visits') return fail(403, 'Ask the account owner to change the booking page.');
+      const saveImage = async (kind, bytes, type) => {
+        await store.set(`brand/${biz.slug}/${kind}`, bytes, { metadata: { type } });
+        biz.page = { ...cleanPage({}, biz.page), [kind]: Date.now() };
+      };
+      if (['logo', 'cover'].includes(parts[1]) && method === 'POST') {
+        const m = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(String(body.image || ''));
+        if (!m) return fail(400, 'That image could not be read. Try a JPG or PNG.');
+        const bytes = Buffer.from(m[2], 'base64');
+        if (bytes.length > MAX_BRAND_BYTES) return fail(400, 'That image is too large. Try a smaller one.');
+        await saveImage(parts[1], bytes, m[1]);
+        await saveBiz();
+        return json({ business: safeBiz() });
+      }
+      if (['logo', 'cover'].includes(parts[1]) && method === 'DELETE') {
+        await store.delete(`brand/${biz.slug}/${parts[1]}`);
+        biz.page = { ...cleanPage({}, biz.page), [parts[1]]: 0 };
+        await saveBiz();
+        return json({ business: safeBiz() });
+      }
+      const grab = async (address, limit) => {
+        const u = safeUrl(address);
+        if (!u) return null;
+        const res = await (env.fetch || fetch)(u.toString(), { redirect: 'follow', signal: AbortSignal.timeout(8000), headers: { 'user-agent': 'Mozilla/5.0 (compatible; ElheenPageImport/1.0; +https://elheen.com)' } });
+        if (!res.ok) return null;
+        const type = (res.headers.get('content-type') || '').split(';')[0].trim();
+        const buf = Buffer.from(await res.arrayBuffer());
+        return buf.length > limit ? null : { buf, type, url: res.url || u.toString() };
+      };
+      const grabImage = async (address, kind) => {
+        try {
+          const img = address && await grab(address, MAX_BRAND_BYTES);
+          if (img && ['image/jpeg', 'image/png', 'image/webp'].includes(img.type)) { await saveImage(kind, img.buf, img.type); return true; }
+        } catch { /* skip that image */ }
+        return false;
+      };
+      if (parts[1] === 'import' && method === 'POST') {
+        const start = safeUrl(cleanLine(body.url, 300));
+        if (!start) return fail(400, 'Type your website address, for example yourcompany.ae');
+        let page;
+        try { page = await grab(start.toString(), 3_000_000); } catch { page = null; }
+        if (!page || !/html/.test(page.type)) return fail(502, 'That website could not be opened. Check the address and try again.');
+        const html = page.buf.toString('utf8');
+        const abs = (href) => { try { return new URL(href, page.url).toString(); } catch { return null; } };
+        const meta = (re) => (html.match(re) || [])[1] || '';
+        const ogImage = meta(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)/i) || meta(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
+        const ogDesc = meta(/<meta[^>]+(?:property=["']og:description["']|name=["']description["'])[^>]+content=["']([^"']+)/i);
+        const themeColor = meta(/<meta[^>]+name=["']theme-color["'][^>]+content=["'](#[0-9a-f]{6})["']/i);
+        const icon = meta(/<link[^>]+rel=["']apple-touch-icon[^"']*["'][^>]+href=["']([^"']+)/i) || meta(/<link[^>]+rel=["'](?:shortcut )?icon["'][^>]+href=["']([^"']+\.(?:png|jpg|jpeg|webp))/i);
+        // colours: the page itself plus its first stylesheets
+        let css = html;
+        const sheets = [...html.matchAll(/<link[^>]+rel=["']stylesheet["'][^>]+href=["']([^"']+)/gi)].map((m) => abs(m[1])).filter(Boolean).slice(0, 3);
+        for (const sheet of sheets) { try { const got = await grab(sheet, 2_000_000); if (got) css += got.buf.toString('utf8'); } catch { /* skip */ } }
+        const palette = [...new Set([themeColor && themeColor.toUpperCase(), ...paletteFromCss(css)].filter(Boolean))].slice(0, 6);
+        const found = { cover: await grabImage(ogImage && abs(ogImage), 'cover'), logo: await grabImage(icon && abs(icon), 'logo'), palette };
+        biz.page = cleanPage({
+          ...(palette[0] ? { accent: palette[0] } : {}),
+          website: page.url,
+          ...(ogDesc && !biz.page?.tagline ? { tagline: ogDesc.replace(/&amp;/g, '&').replace(/&#39;|&apos;/g, "'").slice(0, 90) } : {}),
+        }, biz.page);
+        await saveBiz();
+        return json({ business: safeBiz(), found });
+      }
+      if (parts[1] === 'instagram' && method === 'POST') {
+        const page = (biz.meta?.pages || []).find((p) => p.ig?.id);
+        if (!page || !env.graph) return fail(409, 'Connect Facebook and Instagram in Set-up first.');
+        try {
+          const ig = await env.graph(page.ig.id, { params: { fields: 'username,name,biography,profile_picture_url,website', access_token: page.token } });
+          const logo = await grabImage(ig.profile_picture_url, 'logo');
+          biz.page = cleanPage({ instagram: ig.username, ...(ig.website ? { website: ig.website } : {}), ...(ig.biography && !biz.page?.tagline ? { tagline: ig.biography.split('\n')[0].slice(0, 90) } : {}) }, biz.page);
+          await saveBiz();
+          return json({ business: safeBiz(), found: { logo } });
+        } catch (e) { return fail(502, `Instagram could not be read: ${cleanLine(e.message, 120)}`); }
+      }
+    }
+
     if (parts[0] === 'me' && method === 'PUT' && role === 'visits') return fail(403, 'Ask the account owner to change the set-up.');
     if (parts[0] === 'meta' && ['start', 'disconnect'].includes(parts[1]) && role !== 'owner') return ownerOnly();
     if (parts[0] === 'quotes' && role === 'visits') return method === 'GET' ? json({ quotes: [] }) : ownerOnly();
@@ -710,6 +806,7 @@ export function makeHandler(store, env = {}) {
       if ('phone' in body) biz.phone = cleanLine(body.phone, 30).replace(/[^\d+]/g, '');
       for (const k of ['askPhotos', 'askAddress', 'askBudget', 'vatRegistered', 'linkShared', 'checklistHidden']) if (k in body) biz[k] = !!body[k];
       if ('minJob' in body) biz.minJob = Math.max(0, money(body.minJob));
+      if (body.page && typeof body.page === 'object') biz.page = cleanPage(body.page, biz.page);
       if (Array.isArray(body.priceBook)) biz.priceBook = cleanPriceBook(body.priceBook);
       if (Array.isArray(body.templates)) biz.templates = cleanTemplates(body.templates);
       if ('reviewLink' in body) {

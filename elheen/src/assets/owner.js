@@ -97,6 +97,29 @@
   let biz = null, leads = [], quotes = [], tasks = [], siteUrl = location.origin, locked = false;
   let current = { name: '', arg: '' }, prevHash = '', leadView = 'list', leadFilter = 'all', quoteFilter = 'all', calFilter = 'all';
   let photoUrls = [], qState = null, chosenOption = 'month', asked = new Set();
+  let booting = true, enterTimer = null;
+  const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // a section arrives with a soft slide, deeper pages from the right and back from the left
+  function enterView() {
+    const v = document.querySelector('.view:not([hidden])');
+    if (!v || calm) return;
+    v.classList.remove('enter'); void v.offsetWidth; v.classList.add('enter');
+    clearTimeout(enterTimer); enterTimer = setTimeout(() => v.classList.remove('enter'), 1100);
+    if (v.id === 'view-today') document.querySelectorAll('#stats .kpi b').forEach(countUp);
+  }
+  function countUp(node) {
+    const m = node.textContent.match(/^(\D*)([\d,]+(?:\.\d+)?)(.*)$/);
+    if (!m) return;
+    const target = Number(m[2].replace(/,/g, ''));
+    if (!target) return;
+    const dec = (m[2].split('.')[1] || '').length, t0 = performance.now(), dur = 750;
+    const tick = (now) => {
+      const k = Math.min(1, (now - t0) / dur), e = 1 - (1 - k) ** 3;
+      node.textContent = m[1] + (target * e).toLocaleString('en', { minimumFractionDigits: dec, maximumFractionDigits: dec }) + m[3];
+      if (k < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
   const leadById = (id) => leads.find((l) => l.id === id);
   const role = () => biz?.you?.role || 'owner';
 
@@ -186,9 +209,12 @@
     const leavingEditor = ['quote', 'newquote'].includes(current.name) && !(next.name === current.name && next.arg === current.arg);
     if (leavingEditor && qState?.dirty && !confirm('Leave this quote without saving your changes?')) { history.replaceState(null, '', prevHash); return; }
     if (leavingEditor) qState = null;
+    const depth = (n) => ({ lead: 1, quote: 2, newquote: 2 }[n] || 0);
+    document.querySelector('.main').dataset.dir = depth(next.name) < depth(current.name) ? 'back' : 'fwd';
     current = next; prevHash = location.hash || '#today';
     render();
-    scrollTo(0, 0);
+    scrollTo({ top: 0, behavior: 'instant' });
+    enterView();
     if (biz && ['today', 'leads', 'quotes', 'calendar', 'lead'].includes(next.name)) {
       const at = location.hash;
       loadAll().then(() => { if (location.hash === at && !(next.name === 'lead' && document.activeElement?.closest?.('#view-lead'))) render(); }).catch(() => {});
@@ -203,6 +229,8 @@
     const tab = { lead: 'leads', quote: 'quotes', newquote: 'quotes' }[name] || name;
     document.querySelectorAll('[data-tab]').forEach((a) => (a.dataset.tab === tab ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
     document.querySelectorAll('.view').forEach((v) => { v.hidden = true; });
+    $('bootSkel').hidden = !booting;
+    if (booting) return;
     fill($('headActions'), );
     $('backBtn').hidden = true;
     $('sideBiz').textContent = biz.you && biz.you.role !== 'owner' ? `${biz.name} · ${biz.you.name}` : biz.name;
@@ -567,6 +595,133 @@
     try { biz = (await api('POST', 'whatsapp/disconnect')).business; drawWa(); $('waStatus').textContent = 'Disconnected.'; } catch (err) { $('waStatus').textContent = err.message; }
   });
   document.querySelectorAll('[data-copy]').forEach((b) => b.addEventListener('click', async () => { $('gStatus').textContent = (await copy($(b.dataset.copy).value, $(b.dataset.copy))) ? 'Copied.' : 'Select it and copy.'; }));
+
+  // ---------- the booking page designer ----------
+  const SWATCHES = ['#A31A8A', '#1E5F74', '#0A7CFF', '#1F8F4E', '#C8A24A', '#E4572E', '#6B4EFF', '#B5838D', '#2F4858', '#111111'];
+  let draft = null, picked = [];
+  const sendPreview = () => { try { $('pagePreview').contentWindow?.postMessage({ type: 'elheen-page', page: draft, name: biz.name }, location.origin); } catch { /* not loaded yet */ } };
+  $('pagePreview').addEventListener('load', () => setTimeout(sendPreview, 150));
+  const imgUrl = (kind) => (biz.page?.[kind] ? `/api/public/${biz.slug}/${kind}?v=${biz.page[kind]}` : '');
+  function drawDesign(reload) {
+    draft = { ...biz.page };
+    const src = `/b/${biz.slug}?preview=1`;
+    if (reload || !$('pagePreview').getAttribute('src')) $('pagePreview').setAttribute('src', reload ? `${src}&t=${Date.now()}` : src);
+    $('designOpen').href = `/b/${biz.slug}`;
+    $('pgTagline').value = draft.tagline || ''; $('pgAbout').value = draft.about || '';
+    $('pgInsta').value = draft.instagram ? `@${draft.instagram}` : ''; $('pgWeb').value = draft.website || '';
+    if (!$('importUrl').value && draft.website) $('importUrl').value = draft.website.replace(/^https?:\/\//, '').replace(/\/$/, '');
+    $('igImport').hidden = !(biz.meta?.pages || []).some((p) => p.ig);
+    for (const kind of ['logo', 'cover']) {
+      $(`${kind}Thumb`).style.backgroundImage = imgUrl(kind) ? `url("${imgUrl(kind)}")` : '';
+      $(`${kind}Del`).hidden = !biz.page?.[kind];
+    }
+    drawSwatches(); drawSegs();
+  }
+  function drawSwatches() {
+    const list = [...new Set([...picked, ...SWATCHES])];
+    const custom = el('input', { type: 'color', class: 'swatch-custom', value: draft.accent, title: 'Any colour', 'aria-label': 'Choose any colour', on: { input: (e) => { draft.accent = e.target.value.toUpperCase(); drawSwatches(); sendPreview(); } } });
+    fill($('swatches'), list.map((c) => el('button', {
+      class: `swatch${picked.includes(c) ? ' picked' : ''}`, type: 'button', role: 'radio', 'aria-checked': String(draft.accent?.toUpperCase() === c), 'aria-label': c, style: `background:${c}`,
+      on: { click: () => { draft.accent = c; drawSwatches(); sendPreview(); } },
+    })), custom);
+    $('swatchNote').textContent = picked.length ? 'The colours with a green dot come from your logo or website.' : '';
+  }
+  function drawSegs() {
+    document.querySelectorAll('#designBox .seg').forEach((seg) => seg.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(draft[seg.dataset.key] === b.dataset.v))));
+  }
+  document.querySelectorAll('#designBox .seg').forEach((seg) => seg.addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    draft[seg.dataset.key] = b.dataset.v; drawSegs(); sendPreview();
+  }));
+  for (const [id, key] of [['pgTagline', 'tagline'], ['pgAbout', 'about'], ['pgInsta', 'instagram'], ['pgWeb', 'website']]) {
+    $(id).addEventListener('input', (e) => { draft[key] = key === 'instagram' ? e.target.value.replace(/^@/, '') : e.target.value; sendPreview(); });
+  }
+  // the colours most used in an image, ignoring greys, black and white
+  const paletteOf = (src) => new Promise((resolve) => {
+    if (!src) { resolve([]); return; }
+    const img = new Image();
+    img.onload = () => {
+      const c = el('canvas', { width: 48, height: 48 }), g = c.getContext('2d');
+      g.drawImage(img, 0, 0, 48, 48);
+      let d; try { d = g.getImageData(0, 0, 48, 48).data; } catch { resolve([]); return; }
+      const buckets = new Map();
+      for (let i = 0; i < d.length; i += 4) {
+        const [r, gr, b, a] = [d[i], d[i + 1], d[i + 2], d[i + 3]];
+        const mx = Math.max(r, gr, b), mn = Math.min(r, gr, b);
+        if (a < 200 || mx - mn < 40 || mx < 40 || mn > 225) continue;
+        const key = ((r >> 5) << 6) | ((gr >> 5) << 3) | (b >> 5);
+        const v = buckets.get(key) || [0, 0, 0, 0]; v[0] += r; v[1] += gr; v[2] += b; v[3]++; buckets.set(key, v);
+      }
+      resolve([...buckets.values()].sort((x, y) => y[3] - x[3]).slice(0, 4).map(([r, gr, b, n]) => `#${[r, gr, b].map((x) => Math.round(x / n).toString(16).padStart(2, '0')).join('').toUpperCase()}`));
+    };
+    img.onerror = () => resolve([]);
+    img.src = src;
+  });
+  const DEFAULT_ACCENT = '#A31A8A';
+  async function afterImages(fromWebsite = []) {
+    const fromLogo = await paletteOf(imgUrl('logo'));
+    picked = [...new Set([...fromWebsite, ...fromLogo])].slice(0, 5);
+    drawDesign(true);
+    if (picked.length && (draft.accent || DEFAULT_ACCENT).toUpperCase() === DEFAULT_ACCENT) { draft.accent = picked[0]; drawSwatches(); }
+  }
+  const shrinkImage = (file, max, type) => new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, max / Math.max(img.width, img.height));
+      const c = el('canvas', { width: Math.round(img.width * k), height: Math.round(img.height * k) }), g = c.getContext('2d');
+      if (type === 'image/jpeg') { g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); }
+      g.drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(img.src);
+      resolve(c.toDataURL(type, 0.86));
+    };
+    img.onerror = reject;
+    img.src = URL.createObjectURL(file);
+  });
+  for (const kind of ['logo', 'cover']) {
+    $(`${kind}Up`).addEventListener('click', () => $(`${kind}File`).click());
+    $(`${kind}File`).addEventListener('change', async (e) => {
+      const file = e.target.files[0]; e.target.value = '';
+      if (!file) return;
+      $('importStatus').textContent = `Uploading your ${kind}…`;
+      try {
+        const image = await shrinkImage(file, kind === 'logo' ? 512 : 1600, kind === 'logo' ? 'image/png' : 'image/jpeg');
+        biz = (await api('POST', `brand/${kind}`, { image })).business;
+        await afterImages();
+        $('importStatus').textContent = kind === 'logo' ? 'Logo added. We picked your colours from it.' : 'Cover photo added.';
+      } catch (err) { $('importStatus').textContent = err.message || 'That image could not be read.'; }
+    });
+    $(`${kind}Del`).addEventListener('click', async () => {
+      try { biz = (await api('DELETE', `brand/${kind}`)).business; drawDesign(true); } catch (err) { oops(err); }
+    });
+  }
+  $('importBtn').addEventListener('click', async () => {
+    const url = $('importUrl').value.trim();
+    if (!url) { $('importUrl').focus(); return; }
+    $('importBtn').disabled = true; $('importStatus').textContent = 'Reading your website…';
+    try {
+      const r = await api('POST', 'brand/import', { url });
+      biz = r.business;
+      await afterImages(r.found.palette || []);
+      const got = [r.found.palette?.length ? 'colours' : '', r.found.logo ? 'logo' : '', r.found.cover ? 'cover photo' : ''].filter(Boolean);
+      $('importStatus').textContent = got.length ? `Imported your ${got.join(', ').replace(/, ([^,]*)$/, ' and $1')}. Check the preview, then save.` : 'We could not find much on that site. Upload your logo instead.';
+    } catch (err) { $('importStatus').textContent = err.message; }
+    $('importBtn').disabled = false;
+  });
+  $('igImport').addEventListener('click', async () => {
+    $('importStatus').textContent = 'Reading your Instagram…';
+    try { const r = await api('POST', 'brand/instagram'); biz = r.business; await afterImages(); $('importStatus').textContent = 'Imported your Instagram picture, name and bio.'; }
+    catch (err) { $('importStatus').textContent = err.message; }
+  });
+  $('pageSave').addEventListener('click', async () => {
+    $('pageSave').disabled = true;
+    try {
+      biz = (await api('PUT', 'me', { page: draft })).business;
+      draft = { ...biz.page };
+      $('pageStatus').textContent = 'Saved. Your booking page has the new look.';
+      toast('Booking page saved.');
+    } catch (err) { $('pageStatus').textContent = err.message; }
+    $('pageSave').disabled = false;
+  });
 
   // one link per channel, a QR code for print, and a form for any website
   function drawChannels() {
@@ -1134,7 +1289,7 @@
       on: { click: (e) => e.currentTarget.setAttribute('aria-pressed', String(e.currentTarget.getAttribute('aria-pressed') !== 'true')) },
     }, d)));
     $('sReview').value = biz.reviewLink || '';
-    drawChannels(); drawPriceBook(); drawTeam(); drawWa();
+    drawChannels(); drawPriceBook(); drawTeam(); drawWa(); if (role() !== 'visits') drawDesign();
     $('gUrl').value = `${location.origin}/api/google/${biz.slug}`; $('gKey').value = biz.googleKey || '';
     drawAlerts(); drawMeta();
     const target = { details: 'detailsForm', services: 'servicesForm', alerts: 'alertBox', link: 'linkBox', prices: 'bookForm' }[current.arg];
@@ -1313,9 +1468,10 @@
     biz = (await api('GET', 'me')).business;
     fillLists();
     $('authView').hidden = true; $('appView').hidden = false;
-    await loadAll();
     current = parse(); prevHash = location.hash || '#today';
-    render();
+    booting = true; render();
+    await loadAll();
+    booting = false; render(); enterView();
     if (params.get('billing') || params.get('meta')) history.replaceState(null, '', `/app${location.hash}`);
     if (params.get('billing')) await returnFromPayment(params.get('billing'));
     const result = params.get('meta');

@@ -68,12 +68,14 @@
 
     <div class="banner owner-only" id="planBanner" hidden><span id="planBannerText"></span><a class="btn btn-primary btn-sm" href="/app#setup">See plan</a></div>
 
+    <div class="boot" id="bootSkel" hidden aria-label="Loading"><div class="skel short"></div><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>
+
     <section class="view" id="view-today" hidden>
       <p class="greet" id="greet"></p>
       <div id="setupSlot" hidden></div>
-      <div id="tasks"></div>
+      <div id="tasks" class="stagger"></div>
       <h2 class="section-title">This month</h2>
-      <div class="stats" id="stats"></div>
+      <div class="stats stagger" id="stats"></div>
     </section>
 
     <section class="view" id="view-leads" hidden>
@@ -102,12 +104,12 @@
         </div>
       </div>
       <div class="chips" id="leadFilters" role="group" aria-label="Filter by stage"></div>
-      <div id="leadList"></div>
+      <div id="leadList" class="stagger"></div>
       <div class="board" id="leadBoard" hidden></div>
       <div id="leadSources" hidden></div>
     </section>
 
-    <section class="view" id="view-lead" hidden></section>
+    <section class="view stagger" id="view-lead" hidden></section>
 
     <section class="view" id="view-quotes" hidden>
       <form class="box add-lead" id="oldQuoteForm" hidden>
@@ -127,17 +129,17 @@
       </form>
       <div class="stats" id="quoteStats"></div>
       <div class="chips" id="quoteFilters" role="group" aria-label="Filter quotes"></div>
-      <div id="quoteList"></div>
+      <div id="quoteList" class="stagger"></div>
     </section>
 
-    <section class="view" id="view-quote" hidden></section>
+    <section class="view stagger" id="view-quote" hidden></section>
 
     <section class="view" id="view-calendar" hidden>
       <div class="chips" id="calFilters" role="group" aria-label="Filter by team member"></div>
-      <div id="agenda"></div>
+      <div id="agenda" class="stagger"></div>
     </section>
 
-    <section class="view" id="view-setup" hidden>
+    <section class="view stagger" id="view-setup" hidden>
       <div class="box owner-only" id="planPanel">
         <div class="box-head"><h2>Your plan</h2><span class="badge" id="planBadge"></span></div>
         <p id="planText"></p>
@@ -145,6 +147,47 @@
         <button class="btn btn-primary btn-block" type="button" id="planPay"></button>
         <p class="muted small" id="planStatus" role="status"></p>
         <div id="planHistory"></div>
+      </div>
+
+      <div class="box unlocked no-visits" id="designBox">
+        <div class="box-head"><h2>Your booking page</h2><a class="link" id="designOpen" target="_blank" rel="noopener">Open it</a></div>
+        <p class="muted small">Make it look like your business. Every change shows in the preview straight away.</p>
+        <div class="design">
+          <div class="design-preview" aria-label="Preview of your booking page"><div class="phone"><iframe id="pagePreview" title="Preview of your booking page" loading="lazy"></iframe></div></div>
+          <div class="design-controls">
+            <h3>Start from your website</h3>
+            <div class="copy-row"><input id="importUrl" placeholder="yourcompany.ae" inputmode="url" aria-label="Your website address"><button class="btn btn-primary btn-sm" id="importBtn" type="button">Import</button></div>
+            <p class="muted small">Elheen picks up your colours, logo, cover photo and description.</p>
+            <button class="btn btn-ghost btn-sm" id="igImport" type="button" hidden>Import from Instagram</button>
+            <p class="muted small" id="importStatus" role="status"></p>
+
+            <h3>Logo and cover photo</h3>
+            <div class="img-picks">
+              <div class="img-pick"><div class="thumb round" id="logoThumb"></div><div><b>Logo</b><span class="muted small">Square works best. Your Instagram picture is perfect.</span><div class="row-actions"><button class="btn btn-ghost btn-sm" type="button" id="logoUp">Upload</button><button class="link" type="button" id="logoDel" hidden>Remove</button></div></div></div>
+              <div class="img-pick"><div class="thumb" id="coverThumb"></div><div><b>Cover photo</b><span class="muted small">Your best project or your shop.</span><div class="row-actions"><button class="btn btn-ghost btn-sm" type="button" id="coverUp">Upload</button><button class="link" type="button" id="coverDel" hidden>Remove</button></div></div></div>
+            </div>
+            <input id="logoFile" type="file" accept="image/*" hidden><input id="coverFile" type="file" accept="image/*" hidden>
+
+            <h3>Colour</h3>
+            <div class="swatches" id="swatches" role="radiogroup" aria-label="Main colour"></div>
+            <p class="muted small" id="swatchNote"></p>
+
+            <h3>Style</h3>
+            <div class="seg-row"><span>Background</span><div class="seg" data-key="bg"><button type="button" data-v="light">Light</button><button type="button" data-v="tint">Tinted</button><button type="button" data-v="dark">Dark</button></div></div>
+            <div class="seg-row"><span>Corners</span><div class="seg" data-key="radius"><button type="button" data-v="round">Round</button><button type="button" data-v="soft">Soft</button><button type="button" data-v="square">Sharp</button></div></div>
+            <div class="seg-row"><span>Headings</span><div class="seg" data-key="font"><button type="button" data-v="modern">Modern</button><button type="button" data-v="elegant">Elegant</button><button type="button" data-v="rounded">Friendly</button></div></div>
+
+            <h3>Words</h3>
+            <label>Headline<input id="pgTagline" maxlength="90" placeholder="Luxury villa interiors in Dubai"></label>
+            <label><span>About you <span class="optional">a few lines</span></span><textarea id="pgAbout" rows="3" maxlength="400" placeholder="Twelve years designing homes across the UAE. Every project led by our own team."></textarea></label>
+            <div class="grid-2">
+              <label>Instagram<input id="pgInsta" placeholder="@yourname"></label>
+              <label>Website<input id="pgWeb" placeholder="yourcompany.ae" inputmode="url"></label>
+            </div>
+            <button class="btn btn-primary btn-block" id="pageSave" type="button">Save booking page</button>
+            <p class="muted small" id="pageStatus" role="status"></p>
+          </div>
+        </div>
       </div>
 
       <div class="box unlocked no-visits" id="linkBox">

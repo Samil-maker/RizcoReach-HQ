@@ -854,6 +854,56 @@ test('Instagram, Facebook and WhatsApp messages become leads, and a reply goes b
   assert.equal((await call('POST', `leads/${wa.id}/reply`, { text: 'Late' }, token)).status, 409);
 });
 
+test('the booking page takes the business\'s own look, and only safe values', async () => {
+  const call = setup();
+  const { data: { token } } = await signup(call);
+  const page = (await call('PUT', 'me', { page: { accent: '#0a7cff', bg: 'dark', radius: 'square', font: 'elegant', tagline: 'Villas, done properly', instagram: '@noor.studio', website: 'noorstudio.ae', logo: 999 } }, token)).data.business.page;
+  assert.deepEqual([page.accent, page.bg, page.radius, page.font, page.instagram, page.website, page.logo], ['#0A7CFF', 'dark', 'square', 'elegant', 'noor.studio', 'https://noorstudio.ae', 0]);
+  const bad = (await call('PUT', 'me', { page: { accent: 'red; background:url(x)', bg: 'neon', font: '<script>' } }, token)).data.business.page;
+  assert.deepEqual([bad.accent, bad.bg, bad.font], ['#0A7CFF', 'dark', 'elegant']);
+  // a logo is stored and served on the public page
+  assert.equal((await call('POST', 'brand/logo', { image: 'data:text/html;base64,PHA+' }, token)).status, 400);
+  const withLogo = (await call('POST', 'brand/logo', { image: PNG }, token)).data.business.page;
+  assert.ok(withLogo.logo > 0);
+  const pub = (await call('GET', 'public/studio-layali')).data.business;
+  assert.equal(pub.page.accent, '#0A7CFF');
+  assert.ok(pub.page.logo > 0);
+  const img = await call('GET', 'public/studio-layali/logo');
+  assert.equal(img.status, 200);
+  assert.equal(img.type, 'image/png');
+  await call('DELETE', 'brand/logo', null, token);
+  assert.equal((await call('GET', 'public/studio-layali/logo')).status, 404);
+});
+
+test('a website\'s colours, cover image and icon become the booking page', async () => {
+  const opened = [];
+  const site = {
+    'https://noorstudio.ae/': ['text/html', `<html><head><meta name="theme-color" content="#1e5f74"><meta property="og:image" content="/cover.png">
+      <meta name="description" content="Luxury villa interiors in Dubai"><link rel="apple-touch-icon" href="/icon.png"><link rel="stylesheet" href="/site.css"></head>
+      <body style="color:#333333"><a style="background:#c8a24a">Book</a></body></html>`],
+    'https://noorstudio.ae/site.css': ['text/css', '.btn{background:#1E5F74}.x{color:#1e5f74}.y{color:#ffffff}.z{border-color:#c8a24a}'],
+    'https://noorstudio.ae/cover.png': ['image/png', Buffer.from(PNG.split(',')[1], 'base64')],
+    'https://noorstudio.ae/icon.png': ['image/png', Buffer.from(PNG.split(',')[1], 'base64')],
+  };
+  const fakeFetch = async (u) => {
+    opened.push(u);
+    const hit = site[u];
+    if (!hit) return new Response('no', { status: 404 });
+    return new Response(hit[1], { status: 200, headers: { 'content-type': hit[0] } });
+  };
+  const call = setup({ fetch: fakeFetch });
+  const { data: { token } } = await signup(call);
+  assert.equal((await call('POST', 'brand/import', { url: 'http://127.0.0.1/admin' }, token)).status, 400);   // never the server's own network
+  assert.equal((await call('POST', 'brand/import', { url: 'localhost:8080' }, token)).status, 400);
+  const r = (await call('POST', 'brand/import', { url: 'noorstudio.ae' }, token)).data;
+  assert.equal(r.found.palette[0], '#1E5F74');
+  assert.ok(r.found.palette.includes('#C8A24A'));
+  assert.ok(r.found.cover && r.found.logo);
+  assert.equal(r.business.page.accent, '#1E5F74');
+  assert.equal(r.business.page.tagline, 'Luxury villa interiors in Dubai');
+  assert.equal((await call('GET', 'public/studio-layali/cover')).status, 200);
+});
+
 test('marking a follow-up done or snoozing it takes it off today\'s list', async () => {
   const call = setup({ siteUrl: 'https://x.test' });
   const { data: { token } } = await signup(call);

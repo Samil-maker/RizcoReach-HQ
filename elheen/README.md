@@ -91,6 +91,15 @@ Netlify settings: `META_APP_ID`, `META_APP_SECRET`, `META_VERIFY_TOKEN`,
 (the WhatsApp Embedded Signup configuration). Google Ads lead forms post to
 `/api/google/<business>` with the business's key, shown in Set-up.
 
+## The booking page
+
+Each business designs its page in Set-up › Your booking page, with a live phone
+preview: logo, cover photo, colour (suggested from the logo or the website),
+light, tinted or dark, corner style, heading style, headline, about text,
+Instagram and website. "Import" reads the business's website for its colours,
+icon, cover image and description. Instagram import works once Facebook and
+Instagram are connected.
+
 ## Team logins
 
 The owner creates a login per person in Set-up. "Full access" sees everything

@@ -1,57 +1,86 @@
-<!--{"title":"Book with us | Elheen","description":"Send your details and pick a time.","nav":"","noindex":true,"bare":true,"scripts":["book.js"]}-->
-<div class="shell" id="book">
-  <div class="panel" id="loading"><p class="hint">Loading…</p></div>
-
-  <form class="panel" id="form" hidden novalidate>
-    <div class="biz-head"><i id="initial" aria-hidden="true"></i><div><h1 id="bizName"></h1><span id="bizArea"></span></div></div>
-
-    <p class="step-title" id="svcTitle">What do you need?</p>
-    <div class="choices" id="services" role="group" aria-labelledby="svcTitle"></div>
-
-    <div id="qualifyBlock" hidden>
-      <p class="step-title" id="budgetTitle">Your budget</p>
-      <p class="hint" id="minNote" hidden></p>
-      <div class="pills" id="budgets" role="group" aria-labelledby="budgetTitle"></div>
-      <p class="step-title" id="startTitle">When do you want to start?</p>
-      <div class="pills" id="starts" role="group" aria-labelledby="startTitle"></div>
-      <p class="step-title" id="propTitle">The property</p>
-      <div class="pills" id="properties" role="group" aria-labelledby="propTitle"></div>
-    </div>
-
-    <p class="step-title">Your details</p>
-    <label>Your name<input id="name" autocomplete="name" required></label>
-    <label class="field">WhatsApp number<input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+971 5X XXX XXXX" required></label>
-    <label class="field"><span>Tell us more <span class="hint">(optional)</span></span><textarea id="note" maxlength="1000"></textarea></label>
-
-    <div id="addressBlock" hidden>
-      <label class="field">Address or area<input id="address" autocomplete="street-address"></label>
-      <button class="btn btn-ghost btn-sm" type="button" id="locate" style="margin-top:10px">Share my location</button>
-      <p class="hint" id="locStatus" role="status"></p>
-    </div>
-
-    <div id="photoBlock" hidden>
-      <p class="step-title">Photos of the space <span class="hint">(up to 6)</span></p>
-      <p class="hint">Photos help us price the job before we visit.</p>
-      <div class="photos" id="photos"><button class="add-photo" type="button" id="addPhoto">Add photos</button></div>
-      <input id="photoInput" type="file" accept="image/*" multiple hidden>
-    </div>
-
-    <p class="step-title" id="timeTitle">Pick a time</p>
-    <div class="days" id="days" role="group" aria-labelledby="timeTitle"></div>
-    <div class="slots" id="slots"></div>
-    <p class="hint" style="margin-top:10px">No time that suits? Send it without one and we will message you.</p>
-
-    <p class="error" id="error" role="alert" hidden></p>
-    <button class="btn btn-primary wide-btn" type="submit" id="send">Send enquiry</button>
-  </form>
-
-  <div class="panel done" id="done" hidden>
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12.500l3 3 5-6"/></svg>
-    <h1 id="doneTitle">Sent.</h1>
-    <p id="doneText"></p>
+<!--{"title":"Book with us","description":"Send your details and pick a time.","nav":"","noindex":true,"bare":true,"scripts":["book.js"]}-->
+<div class="bk" id="bk">
+  <div class="bk-loading" id="loading" aria-label="Loading"><span></span><span></span><span></span></div>
+  <div class="bk-wrap bk-missing" id="missing" hidden>
+    <h1>This page does not exist.</h1>
+    <p>Check the link and try again.</p>
   </div>
 
-  <div class="panel" id="missing" hidden><h1 style="font-size:1.6rem">This page does not exist.</h1><p class="hint" style="margin-top:8px">Check the link and try again.</p></div>
+  <div class="bk-wrap" id="page" hidden>
+    <header class="bk-hero">
+      <div class="bk-cover" id="cover"></div>
+      <div class="bk-id">
+        <div class="bk-logo" id="logo"><span id="initial"></span></div>
+        <h1 id="bizName"></h1>
+        <p class="bk-tag" id="tagline" hidden></p>
+        <p class="bk-area" id="bizArea" hidden></p>
+        <div class="bk-links" id="links"></div>
+      </div>
+    </header>
+    <p class="bk-about" id="about" hidden></p>
 
-  <a class="powered" href="/"><span>Booked with</span><img src="assets/logo.svg" alt="elheen"></a>
+    <form class="bk-card" id="form" novalidate>
+      <div class="bk-progress" aria-hidden="true"><i id="progress"></i></div>
+      <p class="bk-step-of" id="stepOf"></p>
+      <div class="bk-steps" id="steps">
+        <section class="bk-step" data-step="service" aria-labelledby="svcTitle">
+          <h2 id="svcTitle">What do you need?</h2>
+          <div class="bk-choices" id="services" role="radiogroup" aria-labelledby="svcTitle"></div>
+        </section>
+
+        <section class="bk-step" data-step="about" aria-labelledby="aboutTitle">
+          <h2 id="aboutTitle">Tell us about it</h2>
+          <div id="qualifyBlock" hidden>
+            <p class="bk-label" id="budgetTitle">Your budget</p>
+            <p class="bk-hint" id="minNote" hidden></p>
+            <div class="bk-pills" id="budgets" role="group" aria-labelledby="budgetTitle"></div>
+            <p class="bk-label" id="startTitle">When do you want to start?</p>
+            <div class="bk-pills" id="starts" role="group" aria-labelledby="startTitle"></div>
+            <p class="bk-label" id="propTitle">The property</p>
+            <div class="bk-pills" id="properties" role="group" aria-labelledby="propTitle"></div>
+          </div>
+          <label class="bk-field"><span>Anything we should know? <em>optional</em></span><textarea id="note" maxlength="1000" rows="3" placeholder="Sizes, what you have in mind, anything that helps"></textarea></label>
+          <div id="addressBlock" hidden>
+            <label class="bk-field"><span>Address or area</span><input id="address" autocomplete="street-address" placeholder="Villa 12, Arabian Ranches"></label>
+            <button class="bk-btn ghost small" type="button" id="locate">Share my location</button>
+            <p class="bk-hint" id="locStatus" role="status"></p>
+          </div>
+          <div id="photoBlock" hidden>
+            <p class="bk-label">Photos of the space <em>up to 6</em></p>
+            <p class="bk-hint">Photos help us price the job before we visit.</p>
+            <div class="bk-photos" id="photos"><button class="bk-add-photo" type="button" id="addPhoto"><b>+</b>Add photos</button></div>
+            <input id="photoInput" type="file" accept="image/*" multiple hidden>
+          </div>
+        </section>
+
+        <section class="bk-step" data-step="time" aria-labelledby="timeTitle">
+          <h2 id="timeTitle">Pick a time</h2>
+          <div class="bk-days" id="days" role="group" aria-labelledby="timeTitle"></div>
+          <div class="bk-slots" id="slots"></div>
+          <p class="bk-hint">No time that suits? Continue without one and we will message you.</p>
+        </section>
+
+        <section class="bk-step" data-step="details" aria-labelledby="detailsTitle">
+          <h2 id="detailsTitle">Your details</h2>
+          <div class="bk-summary" id="summary"></div>
+          <label class="bk-field"><span>Your name</span><input id="name" autocomplete="name" required></label>
+          <label class="bk-field"><span>WhatsApp number</span><input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+971 5X XXX XXXX" required></label>
+        </section>
+      </div>
+      <p class="bk-error" id="error" role="alert" hidden></p>
+      <div class="bk-nav">
+        <button class="bk-btn ghost" type="button" id="back">Back</button>
+        <button class="bk-btn" type="submit" id="next">Continue</button>
+      </div>
+    </form>
+
+    <div class="bk-card bk-done" id="done" hidden>
+      <svg viewBox="0 0 52 52" aria-hidden="true"><circle cx="26" cy="26" r="24"/><path d="M15 27l7 7 15-16"/></svg>
+      <h2 id="doneTitle">Sent.</h2>
+      <p id="doneText"></p>
+      <a class="bk-btn" id="doneWa" target="_blank" rel="noopener" hidden>Message us on WhatsApp</a>
+    </div>
+
+    <a class="bk-powered" href="/" target="_top"><span>Booked with</span><img src="assets/logo.svg" alt="elheen" width="64" height="17"></a>
+  </div>
 </div>

@@ -30,6 +30,38 @@ export function fitOf(biz, l) {
   return null;
 }
 
+// How a business's booking page looks. Every value is checked, so a page can never break.
+export const PAGE_BG = ['light', 'dark', 'tint'];
+export const PAGE_RADIUS = ['round', 'soft', 'square'];
+export const PAGE_FONT = ['modern', 'elegant', 'rounded'];
+export const DEFAULT_PAGE = { accent: '#A31A8A', bg: 'light', radius: 'round', font: 'modern', tagline: '', about: '', instagram: '', website: '', logo: 0, cover: 0 };
+const hex = (v) => (/^#[0-9a-f]{6}$/i.test(String(v || '')) ? String(v).toUpperCase() : null);
+export function cleanPage(input = {}, before = DEFAULT_PAGE) {
+  const p = { ...DEFAULT_PAGE, ...before };
+  if ('accent' in input) p.accent = hex(input.accent) || p.accent;
+  if (PAGE_BG.includes(input.bg)) p.bg = input.bg;
+  if (PAGE_RADIUS.includes(input.radius)) p.radius = input.radius;
+  if (PAGE_FONT.includes(input.font)) p.font = input.font;
+  if ('tagline' in input) p.tagline = cleanLine(input.tagline, 90);
+  if ('about' in input) p.about = clean(input.about, 400);
+  if ('instagram' in input) p.instagram = cleanLine(input.instagram, 40).replace(/^@/, '').replace(/[^A-Za-z0-9._]/g, '');
+  if ('website' in input) { const w = cleanLine(input.website, 200); p.website = /^https?:\/\/[^\s]+$/i.test(w) ? w : (w && /^[\w.-]+\.[a-z]{2,}(\/\S*)?$/i.test(w) ? `https://${w}` : ''); }
+  return p;
+}
+// The colours a website uses most, ignoring greys, black and white.
+export function paletteFromCss(text) {
+  const counts = new Map();
+  for (const m of String(text).matchAll(/#([0-9a-f]{6}|[0-9a-f]{3})\b/gi)) {
+    let h = m[1].toLowerCase();
+    if (h.length === 3) h = h.split('').map((c) => c + c).join('');
+    const [r, g, b] = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    if (max - min < 40 || max < 40 || min > 225) continue;   // grey, near black or near white
+    counts.set(`#${h.toUpperCase()}`, (counts.get(`#${h.toUpperCase()}`) || 0) + 1);
+  }
+  return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([c]) => c);
+}
+
 // Elheen's own price, paid into the Elheen Ziina account. One plan, everything included.
 export const PLANS = {
   month: { name: 'Monthly', price: 79, months: 1 },
