@@ -30,6 +30,25 @@ Value = (dream outcome × likelihood it works) ÷ (time until it works × effort
 - **Time:** ready in five minutes; the first follow-up is due the same day.
 - **Effort:** every message is written; one tap sends it from their own WhatsApp. No calls, no training.
 
+## One business, not two
+
+RizcoReach is the business. Elheen is RizcoReach's product, and grows inside it
+first (Hormozi: two businesses are two wives; don't marry twice).
+
+- **Ads clients (AED 850 a month):** their Meta and Google ad leads land in
+  Elheen, they answer faster, and Leads › Sources shows which ads brought paid
+  work. That proof is what keeps an ads client paying. Elheen is included.
+- **Website clients (AED 749, plus AED 250 a month):** every site ships with the
+  Elheen booking form built in (one line of code). The AED 250 monthly plan
+  includes Elheen with the SEO, which makes the upsell easier. Mark these
+  businesses "Included" in Elheen's admin.
+- **Time:** about 90% on RizcoReach outreach (cold email, Instagram and WhatsApp
+  messages) until it pays reliably; Elheen gets only what RizcoReach clients
+  need. Instagram posts for @getelheen run on their own.
+- **Gate to sell Elheen on its own:** 10 RizcoReach clients using it every
+  week, Meta approval done, and at least 3 of them saying they would pay for it
+  alone.
+
 ## Stage 1: First sales (now to January 2027)
 
 - **Do:** 100 outreach messages a day to renovation, fit-out and interior design businesses, sending them to start 14 days free. Elheen sets itself up; no calls.
