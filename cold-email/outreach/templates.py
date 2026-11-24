@@ -163,7 +163,56 @@ def ads_offer(lead) -> str:
     return "standard" if HOME_IMPROVEMENT.search(text) else "pay_after"
 
 
-CAMPAIGN_OF_SEGMENT = {"A": "website", "B": "website", "C": "website", "N": "ads", "G": "ads"}
+# Elheen campaign: the booking system, for service businesses. Sent from its own inbox and signed Elheen, never
+# mixed into a RizcoReach email. One segment (K). Version A names the problem (bookings coming in from everywhere),
+# version B asks how they handle bookings today. No price and no features we haven't confirmed: those go in your reply.
+BOOKING_SUBJECT = "{subject_business} bookings"
+FIRST_EMAIL[("K", "A")] = """Hi {greeting_name}
+
+Quick question about how {business}[[ in {area}]] takes bookings. For most service businesses here they come in on WhatsApp, calls and Instagram all at once and some slip through
+
+{brand} puts all your bookings and enquiries in one place so nothing gets missed and everything is easy to manage
+
+Want me to show you how it works?"""
+FIRST_EMAIL[("K", "B")] = """Hi {greeting_name}
+
+We came across {business}[[ in {area}]] and wanted to ask how you keep track of bookings today
+
+{brand} brings every booking and enquiry into one simple place whether it comes from WhatsApp, a call or Instagram. It's built for service businesses in the UAE
+
+Would a quick walkthrough be helpful?"""
+BOOKING_FOLLOW_UP = {
+    1: "Hi {greeting_name} just bringing this back up in case it got buried. Happy to send a quick walkthrough of how "
+       "{brand} works. Just reply yes",
+    2: "Hi {greeting_name} one more thought. When bookings come in from WhatsApp, calls and Instagram at the same time "
+       "it's easy for a few to slip through. {brand} keeps them all in one place. Want me to show you?",
+    3: "Hi {greeting_name} just checking in. If managing bookings and enquiries for {business} takes more time than it "
+       "should we'd love to show you how {brand} makes it simpler. Is this worth a quick look?",
+    4: "Hi {greeting_name} we know things get busy so we'll keep this one short. Is making bookings easier to manage "
+       "something {business} is looking at in the next few months? A quick yes or not yet is perfect",
+    5: "Hi {greeting_name} checking in from {brand}. Happy to walk you through it for {business} whenever suits you. "
+       "Want me to send the details?",
+    6: "Hi {greeting_name} we haven't heard back so this is our last email for now. If managing bookings for {business} "
+       "ever becomes a headache just reply here and we'll pick it up from there. Wishing you all the best",
+}
+BOOKING_DRAFT_INTERESTED = (
+    "Thanks[[ {first_name}]]. Here's how it works in short. [What {brand} does for them: where their bookings and "
+    "enquiries show up and what they can do with them]\n\n[Price, or how to start a free trial]\n\n"
+    "Easiest to chat on WhatsApp. Our number is {whatsapp}"
+)
+BOOKING_QUESTION_ANSWERS = [
+    (r"how much|price|cost|charge|fee|rate|\baed\b|pay|expensive|cheap|trial|free",
+     "[What it costs, and whether there's a free trial]"),
+    (r"whatsapp|instagram|call|phone|integrat|connect|calendar|google",
+     "[How it connects to WhatsApp, Instagram, calls and their calendar]"),
+    (r"how long|setup|set up|start|onboard|learn|easy|difficult|staff|team",
+     "[How setup works and how long it takes]"),
+    (r"who are you|company|based|where|legit|clients|examples|demo|walkthrough|video",
+     "[A line about you and {brand}, or a time for a quick walkthrough]"),
+]
+BOOKING_DRAFT_QUESTION_CLOSE = "Happy to show you a quick walkthrough for {business}. Easiest to chat on WhatsApp. Our number is {whatsapp}"
+
+CAMPAIGN_OF_SEGMENT = {"A": "website", "B": "website", "C": "website", "N": "ads", "G": "ads", "K": "booking"}
 
 # Follow ups: same thread, each one short and from a different angle, so a lead hears from us regularly
 # without reading the same email twice. Days are in schedule.FOLLOW_UP_DAYS (3, 7, 14, 30, 60, 90).
@@ -192,7 +241,7 @@ FOLLOW_UP = {
 }
 
 SIGNATURE = """{sender_name}
-RizcoReach
+{company}
 WhatsApp {whatsapp}"""
 
 OPT_OUT = "Not relevant? Just reply no and we won't email again"
@@ -218,6 +267,8 @@ CHECK_IN = {
                "Just checking in to see if now is any better. Happy to put together a free preview whenever you're ready",
     "ads": "Hi[[ {first_name}]]. A while back you mentioned it wasn't the right time for Facebook and Instagram ads for "
            "{business}. Just checking in to see if now is any better. Happy to walk you through how it works whenever you're ready",
+    "booking": "Hi[[ {first_name}]]. A while back you mentioned it wasn't the right time to look at bookings for "
+               "{business}. Just checking in to see if now is any better. Happy to show you how {brand} works whenever you're ready",
 }
 
 # Short answers for common questions. Anything in [brackets] is for you to fill in before sending.
@@ -246,6 +297,11 @@ DRAFT_QUESTION_CLOSE = (
 
 # Ideas for the next version once a test has 100 sends per version (shown in the report).
 NEXT_VARIANT_IDEAS = {
+    "K": [
+        "Name their niche: 'most salons we talk to take bookings on WhatsApp'",
+        "Ask 'Do bookings ever get missed when it's busy?' as the whole question",
+        "Shorter: the question about bookings and one line about {brand}",
+    ],
     "N": [
         "Name their niche: 'most salons near you are running ads right now' (only if you checked)",
         "Offer to show them 3 ads a competitor is running, as the question",
@@ -326,11 +382,22 @@ def lead_vars(lead, settings: Settings) -> Dict[str, str]:
         "care_price": "{:,}".format(settings.care_price),
         "ads_offer": ADS_OFFER[ads_offer(lead)],
         "ads_offer_sentence": ADS_OFFER[ads_offer(lead)] + ".",
+        "brand": settings.booking_brand,
+        # The name under the sender's: the booking system's for its emails, RizcoReach for the rest.
+        "company": settings.booking_brand if campaign_of_values(lead) == "booking" else settings.company,
     }
 
 
 def signature(values: Dict[str, str]) -> str:
     return render(SIGNATURE, values)
+
+
+def campaign_of_values(lead) -> str:
+    """campaign_of for a lead row or a plain dict (lead_vars takes both)."""
+    try:
+        return campaign_of(lead)
+    except (KeyError, IndexError, TypeError):
+        return "website"
 
 
 def campaign_of(lead) -> str:
@@ -349,7 +416,7 @@ def first_email(lead, variant: str, settings: Settings) -> Tuple[str, str, str]:
         body = render(template, dict(values, area=area, plan=render(plan, values)))
         if word_count(body) < 80:
             break
-    subject = render(ADS_SUBJECT if segment in ADS_OPEN else SUBJECT, values)
+    subject = render(ADS_SUBJECT if segment in ADS_OPEN else BOOKING_SUBJECT if segment == "K" else SUBJECT, values)
     full = "%s\n\n%s\n\n%s" % (body, signature(values), OPT_OUT)
     return subject, body, full
 
@@ -357,7 +424,8 @@ def first_email(lead, variant: str, settings: Settings) -> Tuple[str, str, str]:
 def follow_up(lead, step: int, settings: Settings) -> Tuple[str, str]:
     """(body, full text) for follow up 1 or 2, before the quoted original."""
     values = lead_vars(lead, settings)
-    body = render((ADS_FOLLOW_UP if campaign_of(lead) == "ads" else FOLLOW_UP)[step], values)
+    campaign = campaign_of(lead)
+    body = render((ADS_FOLLOW_UP if campaign == "ads" else BOOKING_FOLLOW_UP if campaign == "booking" else FOLLOW_UP)[step], values)
     return body, "%s\n\n%s\n\n%s" % (body, signature(values), OPT_OUT)
 
 
@@ -374,7 +442,8 @@ def reply_subject(subject: str) -> str:
 
 def check_in(lead, settings: Settings) -> str:
     """The check in for someone who said not now, signed with your name."""
-    return render(CHECK_IN["ads" if campaign_of(lead) == "ads" else "website"], lead_vars(lead, settings)) + "\n\n" + settings.from_name
+    campaign = campaign_of(lead)
+    return render(CHECK_IN[campaign if campaign in CHECK_IN else "website"], lead_vars(lead, settings)) + "\n\n" + settings.from_name
 
 
 def draft_reply(classification: str, lead, their_text: str, settings: Settings, pictures: bool = False) -> Optional[str]:
@@ -384,19 +453,23 @@ def draft_reply(classification: str, lead, their_text: str, settings: Settings, 
     values = lead_vars(lead, settings)
     sign = values["sender_name"]
     ads = campaign_of(lead) == "ads"
+    booking = campaign_of(lead) == "booking"
     if classification == "interested" and "?" not in (their_text or ""):
+        if booking:
+            return render(BOOKING_DRAFT_INTERESTED, values) + "\n\n" + sign
         if ads:
             return render(ADS_DRAFT_INTERESTED[ads_offer(lead)], values) + "\n\n" + sign
         return render(DRAFT_INTERESTED_PICTURES if pictures else DRAFT_INTERESTED, values) + "\n\n" + sign
     if classification in ("interested", "question"):
         text = (their_text or "").lower()
         answers: List[str] = []
-        for pattern, answer in (ADS_QUESTION_ANSWERS if ads else QUESTION_ANSWERS):
+        for pattern, answer in (BOOKING_QUESTION_ANSWERS if booking else ADS_QUESTION_ANSWERS if ads else QUESTION_ANSWERS):
             if re.search(pattern, text) and answer not in answers:
                 answers.append(EXAMPLES_PICTURES if pictures and "{examples_link}" in answer else answer)
         if not answers:
             answers = [DRAFT_QUESTION_FALLBACK]
-        parts = [render(DRAFT_QUESTION_OPEN, values)] + [render(a, values) for a in answers[:3]] + [render(DRAFT_QUESTION_CLOSE, values)]
+        close = BOOKING_DRAFT_QUESTION_CLOSE if booking else DRAFT_QUESTION_CLOSE
+        parts = [render(DRAFT_QUESTION_OPEN, values)] + [render(a, values) for a in answers[:3]] + [render(close, values)]
         return "\n\n".join(parts) + "\n\n" + sign
     return None
 

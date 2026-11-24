@@ -57,7 +57,20 @@ FREE_DOMAINS = {
 FREE_INBOX_CAP = 20          # kept for reference in messages; the limit you set wins
 DEFAULT_DAILY_LIMIT = 50     # emails a day per inbox, follow ups included (DAILY_LIMIT in .env, or the dashboard)
 MAX_DAILY_LIMIT = 100
-CAMPAIGNS = {"website": "Website", "ads": "Meta ads"}
+CAMPAIGNS = {"website": "Website", "ads": "Meta ads", "booking": "Elheen"}
+# "both" (from before Elheen) means the two RizcoReach campaigns. Any other mix is a list: "website,booking".
+BOTH = ("website", "ads")
+
+
+def campaigns_from(value: str) -> tuple:
+    """The campaigns an inbox sends, from its _CAMPAIGN setting."""
+    v = (value or "").strip().lower()
+    if v == "both":
+        return BOTH
+    if v in ("elheen", "ilheen", "bookings"):
+        v = "booking"
+    picked = tuple(c for c in CAMPAIGNS if c in [x.strip() for x in v.split(",")])
+    return picked or ("website",)
 DEFAULT_WEBSITE_PRICE = 749   # AED, the website build (WEBSITE_PRICE in .env, or the dashboard)
 DEFAULT_CARE_PRICE = 480      # AED a month, the SEO and management plan, only in reply drafts (CARE_PLAN_PRICE)
 
@@ -145,6 +158,7 @@ class Inbox:
 class Settings:
     from_name: str = "Samil"
     company: str = "RizcoReach"
+    booking_brand: str = "Elheen"  # the booking system's name, as it reads in its emails
     whatsapp: str = ""
     examples_link: str = DEFAULT_EXAMPLES_LINK
     test_email_to: str = ""
@@ -203,6 +217,7 @@ def load_settings(env: Optional[Dict[str, str]] = None) -> Settings:
         daily_limit=min(_int(env.get("DAILY_LIMIT")) or DEFAULT_DAILY_LIMIT, MAX_DAILY_LIMIT),
         website_price=_int((env.get("WEBSITE_PRICE") or "").replace(",", "")) or DEFAULT_WEBSITE_PRICE,
         care_price=_int((env.get("CARE_PLAN_PRICE") or "").replace(",", "")) or DEFAULT_CARE_PRICE,
+        booking_brand=get("BOOKING_BRAND", "Elheen"),
     )
     if not path(".env").exists() and "INBOX1_EMAIL" not in env:
         s.problems.append("There is no .env file yet. Copy .env.example to .env and fill it in (README step 3).")
@@ -241,8 +256,7 @@ def load_settings(env: Optional[Dict[str, str]] = None) -> Settings:
             save_to_sent=_yes(env.get(p + "SAVE_TO_SENT"), False),
         )
         inbox.daily_limit = min(inbox.cap_override or s.daily_limit, s.daily_limit)
-        wanted = get(p + "CAMPAIGN").lower() or "website"
-        inbox.campaigns = tuple(CAMPAIGNS) if wanted == "both" else ((wanted,) if wanted in CAMPAIGNS else ("website",))
+        inbox.campaigns = campaigns_from(get(p + "CAMPAIGN") or "website")
         if not password:
             s.problems.append("%sAPP_PASSWORD is empty for %s (README step 3 shows how to get one)." % (p, email))
         if not inbox.smtp_host or not inbox.imap_host:

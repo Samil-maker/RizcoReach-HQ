@@ -13,8 +13,8 @@ from .classify import LABELS
 from .config import Settings
 
 SEGMENT_NAMES = {"A": "A new business", "B": "B no website", "C": "C outdated website",
-                 "N": "Meta ads: none running", "G": "Meta ads: general", "SKIP": "Skip"}
-SEGMENTS = ("A", "B", "C", "N", "G")
+                 "N": "Meta ads: none running", "G": "Meta ads: general", "K": "Elheen: bookings", "SKIP": "Skip"}
+SEGMENTS = ("A", "B", "C", "N", "G", "K")
 HUMAN = ("interested", "question", "not_now", "opt_out", "other")
 
 

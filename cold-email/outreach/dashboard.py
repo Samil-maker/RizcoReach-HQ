@@ -230,10 +230,10 @@ def preview(con, s: config.Settings, campaign: str = "") -> List[Dict]:
             subject, body, full = templates.first_email(lead, "AB"[n % 2], s)
             out.append({"segment": report.SEGMENT_NAMES[seg], "to": lead["email"], "subject": subject, "text": full,
                         "version": "AB"[n % 2]})
-    if campaign == "ads" and not out:  # nothing imported yet: show what the emails look like for a made up business
-        for seg in ("N", "G"):
+    if campaign in ("ads", "booking") and not out:  # nothing imported yet: show what the emails look like for a made up business
+        for seg in (("N", "G") if campaign == "ads" else ("K",)):
             for v in "AB":
-                sample = {"segment": seg, "campaign": "ads", "business": "Glossy PPF", "first_name": "", "area": "Al Quoz",
+                sample = {"segment": seg, "campaign": campaign, "business": "Glossy PPF", "first_name": "", "area": "Al Quoz",
                           "observation": "", "source": "", "instagram": "", "address": ""}
                 subject, body, full = templates.first_email(sample, v, s)
                 out.append({"segment": report.SEGMENT_NAMES[seg], "to": "example (a made up business)", "subject": subject,
@@ -271,7 +271,7 @@ def _import_job(log, campaign="auto"):
         for _, why in r["rejected"]:
             reasons[why] = reasons.get(why, 0) + 1
         out.append({"file": r["file"], "imported": st["imported"], "rows": st["rows"], "A": st["seg_A"], "B": st["seg_B"],
-                    "C": st["seg_C"], "N": st["seg_N"], "G": st["seg_G"], "skip": st["seg_SKIP"],
+                    "C": st["seg_C"], "N": st["seg_N"], "G": st["seg_G"], "K": st["seg_K"], "skip": st["seg_SKIP"],
                     "campaign": config.CAMPAIGNS[r.get("campaign", "website")], "duplicate": st["duplicate"], "invalid": st["invalid"],
                     "suppressed": st["suppressed"], "handled": st["handled"], "fixed": st["fixed"], "fixes": r.get("fixes", [])[:3],
                     "reasons": sorted(reasons.items(), key=lambda kv: -kv[1])[:6]})
@@ -326,13 +326,15 @@ def post(path: str, body: Dict, raw: bytes, headers) -> Dict:
         ok, message = portfolio.remove(body.get("name", ""))
         return {"ok": ok, "message": message}
     if path == "/api/approve-campaign":
-        if body.get("campaign") != "ads":
+        which = body.get("campaign")
+        if which not in ("ads", "booking"):
             return {"ok": False, "message": "The website emails were approved with your test email in setup."}
-        db.set_state(con, "approved:ads", {"at": clock.iso()})
-        db.log_event(con, "approved", "Meta ads emails approved on the dashboard")
-        has_inbox = any("ads" in i.campaigns for i in settings().inboxes)
-        return {"ok": True, "message": "Meta ads emails approved." + ("" if has_inbox else
-                " They start once an inbox sends Meta ads: add one and choose Meta ads (or Both).")}
+        name = config.CAMPAIGNS[which]
+        db.set_state(con, "approved:" + which, {"at": clock.iso()})
+        db.log_event(con, "approved", "%s emails approved on the dashboard" % name)
+        has_inbox = any(which in i.campaigns for i in settings().inboxes)
+        return {"ok": True, "message": "%s emails approved." % name + ("" if has_inbox else
+                " They start once an inbox sends %s emails: add one and choose %s." % (name, name))}
     if path == "/api/mark":
         ok, message = actions.mark(con, body.get("email", ""), body.get("what", ""), body.get("note") or None)
         return {"ok": ok, "message": message}
@@ -396,7 +398,7 @@ def post(path: str, body: Dict, raw: bytes, headers) -> Dict:
             write_env(updates)
         return {"ok": True, "message": "Saved."}
     if path == "/api/add-inbox":
-        campaign = body.get("campaign") if body.get("campaign") in ("website", "ads", "both") else "website"
+        campaign = body.get("campaign") if body.get("campaign") in ("website", "ads", "both", "booking") else "website"
         return {"job": _job(_add_inbox_job, body.get("email", ""), body.get("password", ""), bool(body.get("brand_new")), campaign)}
     raise KeyError(path)
 

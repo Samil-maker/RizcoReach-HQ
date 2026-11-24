@@ -196,9 +196,12 @@ def _existing_keys(con) -> Tuple[set, set]:
 
 
 def file_campaign(path: Path, mapping: Dict[str, str], chosen: str = "auto") -> str:
-    """website or ads. "auto": Lead Hunter's Meta ads export (a meta_ads column or a meta-ads file name) is ads."""
+    """website, ads or booking. "auto": Lead Hunter's Meta ads export (a meta_ads column or a meta-ads file name) is
+    ads, a file named with elheen, ilheen or booking is booking (Elheen), everything else is website."""
     if chosen in config.CAMPAIGNS:
         return chosen
+    if re.search(r"elheen|ilheen|booking", path.name, re.I):
+        return "booking"
     if "meta_ads" in mapping or re.search(r"meta.?ads", path.name, re.I):
         return "ads"
     return "website"
@@ -210,6 +213,8 @@ def row_campaign(value: str, default: str) -> str:
         return "ads"
     if v in ("website", "web", "site"):
         return "website"
+    if v in ("booking", "bookings", "elheen", "ilheen"):
+        return "booking"
     return default
 
 
@@ -297,6 +302,8 @@ def import_file(con, path: Path, overrides: Optional[Dict[str, str]] = None, che
         site = sites.get(lead["email"])
         if lead["campaign"] == "ads":
             decision = segment.decide_ads(lead)
+        elif lead["campaign"] == "booking":
+            decision = segment.decide_booking(lead)
         else:
             decision = segment.decide(lead, site if site else ({"state": "unchecked"} if lead["website"] else None))
         lead.update(decision)
@@ -341,6 +348,7 @@ def summary_lines(result: Dict) -> List[str]:
         "  Imported: %d   Skipped: %d duplicates, %d on the suppression list, %d invalid%s"
         % (s["imported"], s["duplicate"], s["suppressed"], s["invalid"],
            ", %d already handled in Lead Hunter" % s["handled"] if s["handled"] else ""),
+        ("  Elheen: %d to email | skipped %d" % (s["seg_K"], s["seg_SKIP"])) if result.get("campaign") == "booking" else
         ("  Segments: A new business %d | B no website %d | C outdated website %d | Skip %d"
          % (s["seg_A"], s["seg_B"], s["seg_C"], s["seg_SKIP"])) if result.get("campaign") != "ads" else
         ("  Meta ads: no ads running %d | not checked %d | already running ads, skipped %d" % (s["seg_N"], s["seg_G"], s["seg_SKIP"])),
