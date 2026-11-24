@@ -146,3 +146,34 @@ def test_two_imports_at_once_take_turns(project, con, fake_web):
     assert errors == []
     assert sorted(len(r) for r in results) == [0, 1]   # one imported the file, the other found nothing left
     assert con.execute("SELECT COUNT(*) FROM leads").fetchone()[0] == 2
+
+
+def test_gmail_hanging_up_mid_sign_in_is_retried_then_explained(project, monkeypatch):
+    """A brand new Gmail account often gets "Connection unexpectedly closed" until Google trusts it."""
+    import smtplib
+
+    from outreach import config, mailer
+
+    tries = []
+
+    class HangsUp:
+        def __init__(self, *a, **k):
+            pass
+
+        def login(self, *a):
+            tries.append(1)
+            raise smtplib.SMTPServerDisconnected("Connection unexpectedly closed")
+
+        def quit(self):
+            pass
+
+    monkeypatch.setattr(mailer.smtplib, "SMTP_SSL", HangsUp)
+    monkeypatch.setattr(mailer.time, "sleep", lambda s: None)
+    inbox = config.Inbox(key="inbox2", email="elheen.com@gmail.com", password="abcdefghijklmnop", provider="gmail", username="elheen.com@gmail.com",
+                         smtp_host="smtp.gmail.com", smtp_port=465, imap_host="imap.gmail.com", imap_port=993)
+    try:
+        mailer.login_test(inbox)
+        raise AssertionError("should have failed")
+    except mailer.SendError as e:
+        assert e.kind == "network" and "Was this you?" in str(e) and "2-Step Verification" in str(e)
+    assert len(tries) == 2  # one second try before giving up

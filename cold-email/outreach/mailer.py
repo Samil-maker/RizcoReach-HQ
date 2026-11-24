@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 import smtplib
 import socket
+import time
 import ssl
 from email.message import EmailMessage
 from email.utils import format_datetime, formataddr, make_msgid
@@ -119,10 +120,28 @@ def send(inbox: Inbox, msg: EmailMessage) -> None:
             pass
 
 
-def login_test(inbox: Inbox) -> str:
-    """Connects and logs in, then logs out. Sends nothing."""
+HUNG_UP = ("the mail server closed the connection while signing in. With a brand new Gmail account this usually means "
+           "Google is holding the sign in until it trusts the account: sign in to it in your browser, accept any "
+           "\"Was this you?\" prompt under Security, check 2-Step Verification is on, then try again in a few minutes")
+
+
+def login_test(inbox: Inbox, tries: int = 2) -> str:
+    """Connects and logs in, then logs out. Sends nothing. A server that hangs up mid sign in gets a second try."""
+    for attempt in range(tries):
+        try:
+            return _login_once(inbox)
+        except smtplib.SMTPServerDisconnected:
+            if attempt + 1 == tries:
+                raise SendError("network", HUNG_UP)
+            time.sleep(3)
+    return ""
+
+
+def _login_once(inbox: Inbox) -> str:
     try:
         server = _connect(inbox, timeout=20)
+    except smtplib.SMTPServerDisconnected:
+        raise
     except (socket.gaierror, socket.timeout, ConnectionError, OSError) as e:
         raise SendError("network", "could not reach %s:%s (%s)" % (inbox.smtp_host, inbox.smtp_port, e))
     try:
