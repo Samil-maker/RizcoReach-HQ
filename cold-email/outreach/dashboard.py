@@ -73,7 +73,7 @@ def overview(con, s: config.Settings) -> Dict:
         w = warmup.summary(con, i.key)
         inboxes.append({"email": i.email, "status": lim["why"], "warming": bool(lim.get("warming")), "sent": lim["sent"],
                         "cap": lim["cap"], "warm_sent": w["sent"], "warm_spam": w["spam"], "warm_checked": w["checked"],
-                        "sends": " and ".join(config.CAMPAIGNS[c] for c in i.campaigns)})
+                        "sends": " and ".join(config.CAMPAIGNS[c] for c in i.campaigns), "campaigns": ",".join(i.campaigns)})
     campaigns = []
     for key, name in config.CAMPAIGNS.items():
         row = con.execute(
@@ -369,6 +369,24 @@ def post(path: str, body: Dict, raw: bytes, headers) -> Dict:
         if not ov["can_start"]:
             return {"ok": False, "message": "Can't start now: %s" % ov["next"]}
         return {"ok": launchd.start_now(), "message": "Started. Today's emails go out slowly in the background."}
+    if path == "/api/inbox-campaign":
+        # What one inbox sends. One inbox can send for more than one campaign (Elheen from the RizcoReach inbox,
+        # until Elheen has its own): each email still reads as its own brand.
+        from .setup_wizard import write_env
+
+        inbox = next((i for i in settings().inboxes if i.email == (body.get("email") or "").strip().lower()), None)
+        if not inbox:
+            return {"ok": False, "message": "That inbox isn't one of yours."}
+        parts = [x.strip() for x in str(body.get("campaign") or "").lower().split(",") if x.strip()]
+        if not parts or any(x not in config.CAMPAIGNS for x in parts):
+            return {"ok": False, "message": "Pick what it sends from the list."}
+        wanted = config.campaigns_from(",".join(parts))
+        write_env({inbox.key.upper() + "_CAMPAIGN": ",".join(wanted)})
+        db.log_event(con, "inbox_campaign", "%s now sends %s" % (inbox.email, ",".join(wanted)))
+        names_ = " and ".join(config.CAMPAIGNS[c] for c in wanted)
+        waiting = [config.CAMPAIGNS[c] for c in wanted if not schedule.campaign_approved(con, c)]
+        return {"ok": True, "message": "%s now sends %s emails." % (inbox.email, names_) +
+                (" %s emails start once you approve them under Campaigns." % " and ".join(waiting) if waiting else "")}
     if path == "/api/settings":
         from .setup_wizard import write_env
 

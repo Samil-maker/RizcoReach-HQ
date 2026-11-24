@@ -147,3 +147,17 @@ def test_send_the_rest_now_button(server, con, fake_clock):
     assert r["ok"] and "1 email now, about one a minute" in r["message"] and schedule.fast_today(con)
     fake_clock.set(datetime(2026, 11, 9, 23, 0, tzinfo=clock.TZ))
     assert "9:00 to 22:00" in server("/api/send-fast", body={})[1]["message"]  # outside sending hours
+
+
+def test_one_inbox_can_send_elheen_too(server, project):
+    from outreach import config, setup_wizard
+
+    email = ENV["INBOX1_EMAIL"]
+    status, r = server("/api/inbox-campaign", body={"email": email, "campaign": "website,booking"})
+    assert status == 200 and r["ok"] and "Website and Elheen" in r["message"] and "approve" in r["message"]
+    assert setup_wizard.read_env()["INBOX1_CAMPAIGN"] == "website,booking"
+    assert config.load_settings(setup_wizard.read_env()).inbox("inbox1").campaigns == ("website", "booking")
+    over = server("/api/overview")[1]
+    assert over["inboxes"][0]["campaigns"] == "website,booking"
+    assert not server("/api/inbox-campaign", body={"email": "someone@else.com", "campaign": "booking"})[1]["ok"]
+    assert not server("/api/inbox-campaign", body={"email": email, "campaign": "website,nonsense"})[1]["ok"]

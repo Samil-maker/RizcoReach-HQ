@@ -254,3 +254,13 @@ test('their Facebook page: from the website or Maps link, or the advertiser page
   assert.equal(LH.facebookPageUrl(advertiser({ pageId: '123456789' })), 'https://www.facebook.com/123456789');
   assert.equal(LH.facebookPageUrl(lead()), '');
 });
+
+test('Elheen file: any business with a checked email, good website or not; not ones already in the website emails', () => {
+  const good = lead({ website: 'https://good.example/', site: WORKING });
+  const r = LH.elheenExport([good, fresh(), lead({ coldEmailExportedAt: NOW }), lead({ emails: [] }), lead({ status: 'won' }), lead({ elheenExportedAt: NOW })], S);
+  assert.equal(r.rows.length, 2, 'a good website is still an Elheen lead');
+  assert.deepEqual(r.head.slice(-2), ['status', 'campaign']);
+  assert.ok(r.rows.every((row) => row.at(-1) === 'booking' && row[9] === ''));
+  assert.deepEqual(r.skipped, { closed: 1, exported: 1, inWebsite: 1, noEmail: 1, badEmail: 0, waiting: 0, risky: 0 });
+  assert.match(LH.elheenFilename(new Date(2026, 10, 24)), /^rizcoreach-elheen-2026-11-24\.csv$/);
+});

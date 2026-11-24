@@ -416,6 +416,52 @@
       )
       .join('\r\n') + '\r\n';
 
+  /* ------------------------------------------------------------------ Elheen */
+  /**
+   * Leads for Elheen, the booking system, in the cold email system's own campaign. Any service business with an
+   * email that passed its checks: their website does not matter (a good website still takes bookings on WhatsApp).
+   * The campaign column and the file name both say Elheen, so the cold email system files them there. A business
+   * already exported for the website emails stays out: it would be the same address in two campaigns.
+   */
+  LH.elheenExport = (leads, settings = {}, { includeExported = false } = {}) => {
+    const skipped = { closed: 0, exported: 0, inWebsite: 0, noEmail: 0, badEmail: 0, waiting: 0, risky: 0 };
+    const rows = [];
+    const ids = [];
+    for (const l of (leads || []).filter(Boolean)) {
+      const mail = LH.sendableEmail(l, settings);
+      const why = !LH.coldEmailOpen(l)
+        ? 'closed'
+        : l.coldEmailExportedAt
+          ? 'inWebsite'
+          : l.elheenExportedAt && !includeExported
+            ? 'exported'
+            : mail.email
+              ? ''
+              : { none: 'noEmail', bad: 'badEmail', waiting: 'waiting', risky: 'risky' }[mail.why];
+      if (why) {
+        skipped[why]++;
+        continue;
+      }
+      ids.push(l.id);
+      rows.push([
+        oneLine(LH.shortName(l.pageName) || LH.igHandle(l) || LH.domainOf(l.website || '')),
+        '',
+        mail.email,
+        LH.ownWebsite(l),
+        LH.igHandle(l),
+        LH.whatsappTarget(l) || (LH.bestPhone(l) || {}).number || '',
+        LH.nicheOf(l, settings) || '',
+        oneLine(l.area),
+        LH.coldEmailSource(l),
+        '',
+        (LH.STATUSES.find((x) => x.id === l.status) || {}).label || l.status || '',
+        'booking',
+      ]);
+    }
+    return { head: [...LH.COLD_EMAIL_HEAD, 'campaign'], rows, ids, skipped };
+  };
+  LH.elheenFilename = (date = new Date()) => `rizcoreach-elheen-${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}.csv`;
+
   /** "rizcoreach-cold-email-2026-11-08.csv" */
   LH.coldEmailFilename = (date = new Date()) => `rizcoreach-cold-email-${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}.csv`;
 })(typeof globalThis !== 'undefined' ? globalThis : self);

@@ -844,6 +844,12 @@ const handlers = {
     return { ok: true };
   },
   /** Saved by Export for cold email: they stay out of the next file unless Include already exported is ticked. */
+  /** Saved by Export for Elheen: out of the next Elheen file unless Include already exported is ticked. */
+  'elheen:exported': async (msg) => {
+    const t = now();
+    for (const id of msg.ids || []) await updateLead(id, (x) => (x.elheenExportedAt = t));
+    return { ok: true };
+  },
   'cold:exported': async (msg) => {
     const t = now();
     for (const id of msg.ids || []) {

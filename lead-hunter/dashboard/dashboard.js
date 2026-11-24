@@ -154,8 +154,8 @@ function facts(l, now = Date.now()) {
 }
 
 /** The leads the filters show. withExported: also the ones exported before (Include already exported). */
-function filtered({ withExported = false } = {}) {
-  const f = S.filters;
+function filtered({ withExported = false, show = null } = {}) {
+  const f = show ? { ...S.filters, show } : S.filters;
   const q = f.q.trim().toLowerCase();
   const now = Date.now();
   const rows = [];
@@ -792,6 +792,40 @@ function exportContacts(list, format = 'csv') {
 /* Export for cold email: the leads for the cold email system, saved with Chrome's Save As so the file can go
    straight into the RizcoReach Leads folder (Chrome remembers the folder). Leads are marked exported once the file
    is saved; cancel the dialog and nothing is marked. */
+/** The leads for Elheen (the booking system): saved with Save As, like the cold email file. */
+async function exportElheen(list) {
+  const r = LH.elheenExport(list, S.settings, { includeExported: S.coldInclude });
+  const k = r.skipped;
+  const out = [
+    k.inWebsite && `${k.inWebsite} already in the website emails`,
+    k.waiting && `${k.waiting} whose email is still being checked`,
+    k.noEmail && `${k.noEmail} without an email`,
+    k.badEmail && `${k.badEmail} whose email failed its check`,
+    k.risky && `${k.risky} whose email could not be confirmed`,
+    k.exported && `${k.exported} exported for Elheen before`,
+    k.closed && `${k.closed} replied, closed or skipped`,
+  ].filter(Boolean);
+  if (!r.rows.length) return toast(`No leads for Elheen${out.length ? `: ${out.join(', ')}` : ''}.`);
+  const url = URL.createObjectURL(new Blob([`\ufeff${LH.toCsv([r.head, ...r.rows])}\r\n`], { type: 'text/csv;charset=utf-8' }));
+  let id;
+  try {
+    id = await chrome.downloads.download({ url, filename: LH.elheenFilename(), saveAs: true, conflictAction: 'uniquify' });
+  } catch (e) {
+    URL.revokeObjectURL(url);
+    return toast(`Could not save the file: ${e.message || e}`);
+  }
+  const done = async (d) => {
+    if (d.id !== id || !d.state || !['complete', 'interrupted'].includes(d.state.current)) return;
+    chrome.downloads.onChanged.removeListener(done);
+    URL.revokeObjectURL(url);
+    if (d.state.current !== 'complete') return toast('The file was not saved, so nothing was marked as exported.');
+    await send({ type: 'elheen:exported', ids: r.ids });
+    toast(`${plural(r.rows.length, 'lead')} saved for Elheen${out.length ? ` · left out: ${out.join(', ')}` : ''}`);
+  };
+  chrome.downloads.onChanged.addListener(done);
+  toast(`${plural(r.rows.length, 'lead')} ready for Elheen. Save the file in your RizcoReach Leads folder.`);
+}
+
 async function exportColdEmail(list) {
   const r = LH.coldEmailExport(list, S.settings, { includeExported: S.coldInclude });
   const k = r.skipped;
@@ -1199,6 +1233,9 @@ function bind() {
         return renderTable();
       case 'export-cold':
         return exportColdEmail(filtered({ withExported: S.coldInclude }).map((r) => r.l));
+      case 'export-elheen':
+        // Every business that matches the search, kind and source filters, good website or not.
+        return exportElheen(filtered({ withExported: true, show: 'all' }).map((r) => r.l));
       case 'export-contacts':
         return exportContacts(filtered().map((r) => r.l));
       case 'export-vcard':
