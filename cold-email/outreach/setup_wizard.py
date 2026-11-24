@@ -171,7 +171,7 @@ def add_inbox_from_form(email: str, password: str, brand_new: bool, provider: st
     except mailer.SendError as e:
         if e.kind == "auth":
             return False, "Gmail didn't accept that App Password. Make sure you created it while signed in as %s." % email
-        return False, "Couldn't reach the mail server: %s" % e
+        return False, ("Couldn't add it: %s." % e) if "closed the connection" in str(e) else "Couldn't reach the mail server: %s" % e
     try:
         from .mailbox import login_test
 
