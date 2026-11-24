@@ -92,7 +92,8 @@ def test_ads_follow_ups(project):
         assert templates.lint("Re: Glow Dental enquiries", body, full, step)[0] == []
         bodies.append(body)
     assert len(set(bodies)) == len(bodies)
-    assert "Nothing upfront. You only pay once you've had your first genuine lead." in bodies[4]   # the offer again
+    assert "It's a one time setup fee and then 850 AED a month." in bodies[4]   # the offer again
+    assert "appointment setters call or WhatsApp" in bodies[1]
 
 
 # ----------------------------------------------------------------------------- Elheen (the booking system)

@@ -72,6 +72,7 @@ def campaigns_from(value: str) -> tuple:
     picked = tuple(c for c in CAMPAIGNS if c in [x.strip() for x in v.split(",")])
     return picked or ("website",)
 DEFAULT_WEBSITE_PRICE = 749   # AED, the website build (WEBSITE_PRICE in .env, or the dashboard)
+DEFAULT_ADS_PRICE = 850       # AED, the Meta ads setup fee and the monthly fee (ADS_SETUP_PRICE, ADS_MONTHLY_PRICE)
 DEFAULT_CARE_PRICE = 480      # AED a month, the SEO and management plan, only in reply drafts (CARE_PLAN_PRICE)
 
 PROVIDERS: Dict[str, dict] = {
@@ -166,6 +167,8 @@ class Settings:
     daily_limit: int = DEFAULT_DAILY_LIMIT
     website_price: int = DEFAULT_WEBSITE_PRICE
     care_price: int = DEFAULT_CARE_PRICE
+    ads_setup_price: int = DEFAULT_ADS_PRICE
+    ads_monthly_price: int = DEFAULT_ADS_PRICE
     inboxes: List[Inbox] = field(default_factory=list)
     problems: List[str] = field(default_factory=list)   # must be fixed before sending
     warnings: List[str] = field(default_factory=list)   # worth knowing
@@ -217,6 +220,8 @@ def load_settings(env: Optional[Dict[str, str]] = None) -> Settings:
         daily_limit=min(_int(env.get("DAILY_LIMIT")) or DEFAULT_DAILY_LIMIT, MAX_DAILY_LIMIT),
         website_price=_int((env.get("WEBSITE_PRICE") or "").replace(",", "")) or DEFAULT_WEBSITE_PRICE,
         care_price=_int((env.get("CARE_PLAN_PRICE") or "").replace(",", "")) or DEFAULT_CARE_PRICE,
+        ads_setup_price=_int((env.get("ADS_SETUP_PRICE") or "").replace(",", "")) or DEFAULT_ADS_PRICE,
+        ads_monthly_price=_int((env.get("ADS_MONTHLY_PRICE") or "").replace(",", "")) or DEFAULT_ADS_PRICE,
         booking_brand=get("BOOKING_BRAND", "Elheen"),
     )
     if not path(".env").exists() and "INBOX1_EMAIL" not in env:

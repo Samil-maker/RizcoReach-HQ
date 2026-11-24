@@ -90,19 +90,14 @@ We redesign websites for {city} businesses at a fixed price with nothing upfront
 Want me to send you a few examples?""",
 }
 
-# Meta ads campaign. Sells the system, not just the ads: most agencies forward every form fill (job seekers,
-# suppliers and all), RizcoReach's own team messages each enquiry on SMS or WhatsApp first and only passes on
-# the genuine ones. Two offers:
-#   pay_after   nothing upfront, they pay once they've had their first genuine lead (most businesses)
-#   standard    one flat monthly rate, no big setup fee (home improvement businesses, see HOME_IMPROVEMENT)
-# Version A has the offer line, version B does not. N only goes to businesses Lead Hunter found no Meta ads for.
+# Meta ads campaign. Sells what makes RizcoReach different: most agencies forward every form fill (job seekers,
+# suppliers, people who were never serious), our appointment setters call or WhatsApp every enquiry first to check it
+# is genuine and interested, and only qualified people reach the business. The price is one time setup fee, then a
+# monthly fee (ADS_SETUP_PRICE and ADS_MONTHLY_PRICE, 850 AED each by default). Nothing is free and there is no
+# pay later offer. Version A states the price, version B does not.
 ADS_SUBJECT = "{subject_business} enquiries"
-ADS_PITCH = ("Most agencies just forward every form fill and a lot of those are job seekers or suppliers. Our team "
-             "messages each enquiry on WhatsApp first so you only get the genuine ones")
-ADS_OFFER = {
-    "pay_after": "Nothing upfront. You only pay once you've had your first genuine lead",
-    "standard": "One flat monthly rate and no big setup fee",
-}
+ADS_PITCH = ("Most agencies just pass on every form fill and a lot of those aren't serious. Our appointment setters "
+             "call or WhatsApp each one first to check they're genuine and interested. You only speak to real customers")
 ADS_ASK = "Want me to send you a quick explanation of how it works?"
 ADS_OPEN = {
     "N": "We were looking at {business}[[ in {area}]] and couldn't see any Facebook or Instagram ads running",
@@ -112,55 +107,38 @@ for _seg, _open in ADS_OPEN.items():
     FIRST_EMAIL[(_seg, "A")] = "Hi {greeting_name}\n\n%s\n\n%s\n\n{ads_offer}\n\n%s" % (_open, ADS_PITCH, ADS_ASK)
     FIRST_EMAIL[(_seg, "B")] = "Hi {greeting_name}\n\n%s\n\n%s\n\n%s" % (_open, ADS_PITCH, ADS_ASK)
 
-# Home improvement businesses get the standard offer (no pay after first lead). Matched in the niche and business name.
-HOME_IMPROVEMENT = re.compile(
-    r"interior|fit ?out|renovat|refurbish|remodel|home improvement|contracting|contractor|construction|joinery|"
-    r"carpent|kitchen|bathroom|flooring|parquet|painting|painter|landscap|garden|swimming pool|pool (build|construct)|"
-    r"gypsum|partition|curtain|blind|wallpaper|marble|tiles|waterproof|alumin|smart home|decor",
-    re.I,
-)
-
 ADS_FOLLOW_UP = {
     1: "Hi {greeting_name} just bringing this back up in case it got buried. Happy to send a quick explanation of how it works if you're interested",
-    2: "Hi {greeting_name} one more thought. Enquiries from ads go cold fast if nobody gets back to them. Our team "
-       "messages each one on WhatsApp straight away so you only talk to people who are ready. Want me to send the details?",
+    2: "Hi {greeting_name} one more thought. Enquiries from ads go cold fast and a lot of them aren't serious. Our "
+       "appointment setters call or WhatsApp every one straight away so you only speak to people who are genuinely "
+       "interested. Want me to send the details?",
     3: "Hi {greeting_name} just checking in. If getting more customers from Facebook and Instagram is on your mind we'd be "
        "happy to show you how we'd set it up for {business}. Want me to send it over?",
     4: "Hi {greeting_name} we know things get busy so we'll keep this one short. Are more enquiries for {business} something "
        "you're focused on in the next few months? A quick yes or not yet is perfect",
-    5: "Hi {greeting_name} checking in from RizcoReach. Our offer for {business} is still open. {ads_offer_sentence} "
-       "Want me to send over how it would work?",
+    5: "Hi {greeting_name} checking in from RizcoReach. We'd still love to run Facebook and Instagram ads for {business} "
+       "with our appointment setters qualifying every enquiry. {ads_offer_sentence} Want me to send over how it would work?",
     6: "Hi {greeting_name} we haven't heard back so this is our last email for now. If more genuine enquiries for "
        "{business} ever become a priority just reply here and we'll pick it up from there. Wishing you all the best",
 }
-ADS_HOW = ("We set up and run Facebook and Instagram ads for {business}. Our team contacts every enquiry by SMS or WhatsApp "
-           "to confirm what they need, and only the genuine ones get passed to you on WhatsApp or email, whichever you prefer.")
-ADS_DRAFT_INTERESTED = {
-    "pay_after": "Thanks[[ {first_name}]]. Here's how it works in short. " + ADS_HOW + " You don't pay anything upfront. "
-                 "You only pay once you've had your first genuine lead.\n\n[What it costs after that]\n\n"
-                 "Easiest to chat on WhatsApp. Our number is {whatsapp}",
-    "standard": "Thanks[[ {first_name}]]. Here's how it works in short. " + ADS_HOW + " It's one flat monthly rate with no "
-                "big setup fee.\n\n[Your monthly rate and what's included]\n\nEasiest to chat on WhatsApp. Our number is {whatsapp}",
-}
+ADS_HOW = ("We set up and run Facebook and Instagram ads for {business}. Our appointment setters call or WhatsApp every "
+           "enquiry to check they're genuine and interested, and only the qualified ones get passed to you on WhatsApp "
+           "or email, whichever you prefer.")
+ADS_DRAFT_INTERESTED = ("Thanks[[ {first_name}]]. Here's how it works in short. " + ADS_HOW + " It's a one time setup "
+                        "fee of {ads_setup} AED and then {ads_monthly} AED a month.\n\n[What's included and how soon the "
+                        "first leads come in]\n\nEasiest to chat on WhatsApp. Our number is {whatsapp}")
 ADS_QUESTION_ANSWERS = [
     (r"how much|price|cost|charge|fee|rate|budget|\baed\b|pay|expensive|cheap",
-     "{ads_offer_sentence} [What it costs, and the ad budget they'd spend on Meta]"),
+     "It's a one time setup fee of {ads_setup} AED and then {ads_monthly} AED a month. [Plus the ad budget they'd spend on Meta]"),
     (r"result|how many|guarantee|leads|enquir|inquir|customers|bookings|work for",
      "[What results to expect and how soon, without promising numbers you can't back up]"),
     (r"how long|when|start|timeline|setup|set up",
      "[How long setup takes before the first enquiries come in]"),
     (r"screen|qualif|genuine|fake|spam|quality|job seeker|supplier",
-     "Our team contacts every enquiry by SMS or WhatsApp first to confirm what they need, so only genuine people reach you."),
+     "Our appointment setters call or WhatsApp every enquiry first to check they're genuine and interested, so only qualified people reach you."),
     (r"who are you|company|based|where|legit|examples|clients|portfolio",
      "[A line about you and RizcoReach]"),
 ]
-
-
-def ads_offer(lead) -> str:
-    """pay_after for most businesses, standard for home improvement ones."""
-    get = (lambda k: (lead[k] if k in lead.keys() else "") or "") if hasattr(lead, "keys") else (lambda k: lead.get(k) or "")
-    text = " ".join([get("niche"), get("business"), get("business_name")])
-    return "standard" if HOME_IMPROVEMENT.search(text) else "pay_after"
 
 
 # Elheen campaign: the booking system, for service businesses. Sent from its own inbox and signed Elheen, never
@@ -380,8 +358,10 @@ def lead_vars(lead, settings: Settings) -> Dict[str, str]:
         "examples_link": settings.examples_link,
         "price": "{:,}".format(settings.website_price),
         "care_price": "{:,}".format(settings.care_price),
-        "ads_offer": ADS_OFFER[ads_offer(lead)],
-        "ads_offer_sentence": ADS_OFFER[ads_offer(lead)] + ".",
+        "ads_setup": "{:,}".format(settings.ads_setup_price),
+        "ads_monthly": "{:,}".format(settings.ads_monthly_price),
+        "ads_offer": "It's a one time setup fee and then {:,} AED a month".format(settings.ads_monthly_price),
+        "ads_offer_sentence": "It's a one time setup fee and then {:,} AED a month.".format(settings.ads_monthly_price),
         "brand": settings.booking_brand,
         # The name under the sender's: the booking system's for its emails, RizcoReach for the rest.
         "company": settings.booking_brand if campaign_of_values(lead) == "booking" else settings.company,
@@ -458,7 +438,7 @@ def draft_reply(classification: str, lead, their_text: str, settings: Settings, 
         if booking:
             return render(BOOKING_DRAFT_INTERESTED, values) + "\n\n" + sign
         if ads:
-            return render(ADS_DRAFT_INTERESTED[ads_offer(lead)], values) + "\n\n" + sign
+            return render(ADS_DRAFT_INTERESTED, values) + "\n\n" + sign
         return render(DRAFT_INTERESTED_PICTURES if pictures else DRAFT_INTERESTED, values) + "\n\n" + sign
     if classification in ("interested", "question"):
         text = (their_text or "").lower()

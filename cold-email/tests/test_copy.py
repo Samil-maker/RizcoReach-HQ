@@ -155,20 +155,26 @@ def test_prices_come_from_settings():
     assert env_s.website_price == 2000 and env_s.care_price == 450
 
 
-def test_meta_ads_offer_by_niche():
+def test_meta_ads_emails_sell_the_appointment_setters_and_state_the_real_price():
     s = config.Settings(whatsapp="0501234567")
+
     def ads(niche, business="Glow"):
         return {"segment": "N", "campaign": "ads", "business": business, "niche": niche, "first_name": "", "area": "",
                 "observation": "", "source": "", "instagram": "", "address": ""}
-    clinic = templates.first_email(ads("Dental clinics"), "A", s)[1]
-    assert "Nothing upfront. You only pay once you've had your first genuine lead" in clinic
-    assert "job seekers or suppliers" in clinic and "WhatsApp first" in clinic   # selling the screening system
-    for home in (ads("Interior designers"), ads("", "Luxe Interiors"), ads("Renovation companies"), ads("Landscaping")):
-        body = templates.first_email(home, "A", s)[1]
-        assert "One flat monthly rate" in body and "Nothing upfront" not in body
-    assert "Nothing upfront" not in templates.first_email(ads("Dental clinics"), "B", s)[1]  # B has no offer line
-    assert "first genuine lead" in templates.draft_reply("interested", ads("Gyms"), "yes", s)
-    assert "[Your monthly rate" in templates.draft_reply("interested", ads("Interior designers"), "yes", s)
+    for niche in ("Dental clinics", "Interior designers", "Gyms"):
+        subject, body, full = templates.first_email(ads(niche), "A", s)
+        assert "appointment setters call or WhatsApp" in body and "genuine and interested" in body
+        assert "It's a one time setup fee and then 850 AED a month" in body
+        assert "Nothing upfront" not in full and "first genuine lead" not in full and "free" not in full.lower()
+        assert templates.lint(subject, body, full, 0)[0] == [] and templates.word_count(body) < 80
+    b = templates.first_email(ads("Dental clinics"), "B", s)[1]
+    assert "AED" not in b and "appointment setters" in b            # B has no price
+    d = templates.draft_reply("interested", ads("Gyms"), "yes", s)
+    assert "one time setup fee of 850 AED and then 850 AED a month" in d and "call or WhatsApp every enquiry" in d
+    q = templates.draft_reply("question", ads("Gyms"), "how much is it?", s)
+    assert "one time setup fee of 850 AED and then 850 AED a month" in q
+    env_s = config.load_settings({"WHATSAPP_NUMBER": "1", "ADS_SETUP_PRICE": "1,200", "ADS_MONTHLY_PRICE": "900"})
+    assert (env_s.ads_setup_price, env_s.ads_monthly_price) == (1200, 900)
 
 
 def test_the_plan_line_shortens_before_dropping_the_area():
