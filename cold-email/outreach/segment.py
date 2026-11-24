@@ -6,6 +6,10 @@ B  no website        no website, or the "website" is only Instagram, a link page
 C  outdated website  we confirmed a real problem on their homepage (or clear signs of an old site)
 SKIP                 a good modern website, or a site we could not check (we never guess)
 
+Elheen campaign (the booking system, files you mark as Elheen or name with "elheen" or "booking"):
+K  bookings          every service business: the email asks how they handle bookings today
+SKIP                 set in the file
+
 Meta ads campaign (from Lead Hunter's Meta ads export, or files you mark as Meta ads):
 N  no Meta ads       Lead Hunter checked the Ad Library and found none, so the email can say so
 G  general           not checked: the email makes no claim about their ads
@@ -95,6 +99,13 @@ def decide(lead: Dict, site: Optional[Dict] = None) -> Dict:
     if not kind:
         return {"segment": "SKIP", "segment_reason": reason}
     return {"segment": "C", "segment_reason": reason, "observation": line, "observation_kind": kind}
+
+
+def decide_booking(lead: Dict) -> Dict:
+    """Segment for an Elheen lead: one email for every service business, unless the file says skip."""
+    if (lead.get("segment") or "").strip().upper() == "SKIP":
+        return {"segment": "SKIP", "segment_reason": "set in the file"}
+    return {"segment": "K", "segment_reason": "service business, for the booking system"}
 
 
 ADS_NONE = re.compile(r"not running ads|no ads found|no meta ads|^\s*(none|no|false|0)\s*$", re.I)

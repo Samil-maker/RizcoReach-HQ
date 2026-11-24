@@ -179,9 +179,9 @@ def add_inbox_from_form(email: str, password: str, brand_new: bool, provider: st
     except Exception as e:  # noqa: BLE001
         return False, "Sending works but reading replies didn't: %s" % e
     rep = dnscheck.check_inbox(inbox)
-    campaign = campaign if campaign in ("website", "ads", "both") else "website"
+    campaign = campaign if campaign in ("website", "ads", "both", "booking") else "website"
     write_env({key + "_EMAIL": email, key + "_PROVIDER": provider, key + "_APP_PASSWORD": password, key + "_CAMPAIGN": campaign})
-    note = "" if campaign == "website" else (" It sends %s emails." % ("Meta ads" if campaign == "ads" else "both website and Meta ads"))
+    note = "" if campaign == "website" else (" It sends %s emails." % {"ads": "Meta ads", "booking": "Elheen", "both": "both website and Meta ads"}[campaign])
     if not rep.can_send:
         note = " Its domain doesn't pass SPF and DKIM yet, so it won't send until it does (run rizco check for the records)."
     if brand_new:
@@ -216,8 +216,8 @@ def add_inbox() -> int:
                 break
     key = "INBOX%d" % slot
     while True:
-        campaign = ask("Which emails should it send? website, ads (Meta ads) or both", "website").lower()
-        if campaign in ("website", "ads", "both"):
+        campaign = ask("Which emails should it send? website, ads (Meta ads), both, or booking (Elheen)", "website").lower()
+        if campaign in ("website", "ads", "both", "booking"):
             break
     write_env({key + "_EMAIL": email, key + "_PROVIDER": provider, key + "_CAMPAIGN": campaign})
     inbox = settings_from(read_env()).inbox("inbox%d" % slot)

@@ -172,7 +172,7 @@ def new_leads(con, limit: int) -> List:
     if limit <= 0:
         return []
     return con.execute(
-        "SELECT * FROM leads WHERE status='queued' AND segment IN ('A', 'B', 'C', 'N', 'G') AND COALESCE(mx_status, '')!='none' "
+        "SELECT * FROM leads WHERE status='queued' AND segment IN ('A', 'B', 'C', 'N', 'G', 'K') AND COALESCE(mx_status, '')!='none' "
         "ORDER BY CASE segment WHEN 'A' THEN 0 WHEN 'N' THEN 1 WHEN 'B' THEN 2 WHEN 'G' THEN 3 ELSE 4 END, imported_at, id LIMIT ?",
         (limit,),
     ).fetchall()
@@ -235,11 +235,11 @@ def set_fast(con) -> None:
 def lead_campaign(lead) -> str:
     keys = lead.keys() if hasattr(lead, "keys") else []
     value = lead["campaign"] if "campaign" in keys else None
-    return value or ("ads" if lead["segment"] in ("N", "G") else "website")
+    return value or ("ads" if lead["segment"] in ("N", "G") else "booking" if lead["segment"] == "K" else "website")
 
 
 def campaign_approved(con, campaign: str) -> bool:
-    """Website: the test email you approved in setup. Meta ads: the Approve button on the dashboard."""
+    """Website: the test email you approved in setup. Meta ads and Elheen: the Approve button on the dashboard."""
     return bool(db.get_state(con, "approved" if campaign == "website" else "approved:" + campaign))
 
 

@@ -44,9 +44,16 @@ on your Desktop (or type `rizco dashboard` in Terminal). It runs on your Mac onl
 - **Replies:** everyone waiting for you is at the top with what they wrote and your drafted answer. Press
   **Open Gmail Drafts** to send it (or **Copy reply**, or **WhatsApp**), then **Done, I replied** or **Became a client**.
   Tip: add samilatrizcoreach@gmail.com to the Gmail app on your phone so you see replies the moment they arrive.
-- **Two campaigns: Website and Meta ads.** When you drop a file in, pick who it's for (Auto sends Lead Hunter's Meta
+- **Campaigns: Website and Meta ads.** When you drop a file in, pick who it's for (Auto sends Lead Hunter's Meta
   ads export to Meta ads and everything else to Website). Meta ads emails stay off until you read them and press
   **Approve Meta ads emails** under Campaigns, and they only go out from an inbox set to send Meta ads.
+- **Elheen, the booking system: a third campaign.** It has its own emails (asking how they handle bookings today,
+  signed Elheen, never mentioning RizcoReach or websites), its own six follow ups and its own reply drafts. It only
+  goes out from an inbox set to send Elheen emails: **Add an inbox** with elheen.com@gmail.com and choose
+  **Elheen emails**. Drop a lead file and pick **Elheen** (a file named with "elheen" or "booking" picks it by itself).
+  Elheen emails stay off until you read them and press **Approve Elheen emails** under Campaigns. Each business gets
+  one campaign only, so nobody hears from RizcoReach and Elheen about the same thing. The name in the emails is
+  `BOOKING_BRAND` in `.env` (Elheen unless you change it).
 - **More emails a day:** make a new Gmail account, then **Add an inbox** on the dashboard and choose what it sends
   (Website, Meta ads or Both). Each inbox sends 50 a day (change it under Controls); a brand new account warms up
   for 14 days first. The dashboard shows the date you'll reach 50 and 100 a day.

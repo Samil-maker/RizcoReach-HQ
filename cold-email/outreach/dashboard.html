@@ -138,6 +138,7 @@ pre.text { white-space: pre-wrap; font: .9rem/1.55 var(--mono); margin: 0; color
       <button type="button" class="chip on" data-c="auto" role="radio" aria-checked="true" title="Lead Hunter's Meta ads export goes to Meta ads, everything else to Website">Auto</button>
       <button type="button" class="chip" data-c="website" role="radio" aria-checked="false">Website</button>
       <button type="button" class="chip" data-c="ads" role="radio" aria-checked="false">Meta ads</button>
+      <button type="button" class="chip" data-c="booking" role="radio" aria-checked="false" title="Elheen, the booking system: sent from the inbox you set to Elheen">Elheen</button>
     </div>
     <input type="file" id="file" accept=".csv,.xlsx,.xlsm,.tsv,.txt" hidden>
     <div id="dropResult" class="result" aria-live="polite"></div>
@@ -152,7 +153,7 @@ pre.text { white-space: pre-wrap; font: .9rem/1.55 var(--mono); margin: 0; color
 
   <section>
     <div class="sec-head"><h2>Campaigns</h2></div>
-    <div class="stats" id="campaigns" style="grid-template-columns:1fr 1fr;margin-top:0"></div>
+    <div class="stats" id="campaigns" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr));margin-top:0"></div>
   </section>
 
   <section>
@@ -170,7 +171,7 @@ pre.text { white-space: pre-wrap; font: .9rem/1.55 var(--mono); margin: 0; color
       <label>App Password (16 letters)<input type="password" id="aiPass" required autocomplete="off"></label>
       <label>It sends
         <select id="aiCampaign" style="padding:10px 12px;border-radius:var(--r-sm);border:1px solid var(--line-2);background:var(--surface-2)">
-          <option value="website">Website emails</option><option value="ads">Meta ads emails</option><option value="both">Both</option>
+          <option value="website">Website emails</option><option value="ads">Meta ads emails</option><option value="both">Website and Meta ads</option><option value="booking">Elheen emails (booking system)</option>
         </select></label>
       <label class="check"><input type="checkbox" id="aiNew" checked> It's a brand new account (it warms up for 14 days first)</label>
       <div class="btns"><button class="btn primary" type="submit" id="aiGo">Check and add</button><button class="btn ghost" type="button" id="aiCancel">Cancel</button></div>
@@ -298,7 +299,7 @@ async function loadOverview() {
       el("div", { class: "small muted" }, noInbox ? "Add an inbox below and choose " + c.name + " (or Both)." : "Sent from " + c.inboxes.join(", ")),
       el("div", { class: "btns" },
         el("button", { class: "btn", onclick: () => showPreview(c.key, c.name) }, "Read the " + c.name + " emails"),
-        !c.approved && c.key === "ads" ? el("button", { class: "btn primary", onclick: () => approveCampaign(c) }, "Approve Meta ads emails") : null));
+        !c.approved && c.key !== "website" ? el("button", { class: "btn primary", onclick: () => approveCampaign(c) }, "Approve " + c.name + " emails") : null));
   }));
   $("inboxes").replaceChildren(...o.inboxes.map((i) => el("tr", {},
     el("td", {}, i.email),
@@ -498,7 +499,9 @@ async function upload(file) {
     if (!j.result.length) { out.replaceChildren(el("p", {}, "That file couldn't be read. It needs a column with business names and one with email addresses. " + j.lines.join(" "))); return; }
     out.replaceChildren(...j.result.map((x) => el("div", { class: "card", style: "margin-top:8px" },
       el("h3", {}, x.imported + " new " + x.campaign + " leads from " + x.file),
-      el("p", { class: "small" }, x.campaign === "Meta ads"
+      el("p", { class: "small" }, x.campaign === "Elheen"
+        ? "To email " + x.K + " · Skipped " + x.skip
+        : x.campaign === "Meta ads"
         ? "No Meta ads running " + x.N + " · Not checked " + x.G + " · Skipped (already running ads) " + x.skip
         : "New business " + x.A + " · No website " + x.B + " · Outdated website " + x.C + " · Skipped (good website) " + x.skip),
       x.fixed ? el("p", { class: "small" }, "Fixed " + x.fixed + " email typo" + (x.fixed === 1 ? "" : "s") + ", for example " + x.fixes.join(", ")) : null,

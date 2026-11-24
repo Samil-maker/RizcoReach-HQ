@@ -56,14 +56,18 @@ def mark(con, email: str, what: str, note: Optional[str] = None) -> Tuple[bool, 
             fields.update(segment="C" if lead["website"] else lead["segment"],
                           observation=names.no_dashes(note.strip().rstrip(".")), observation_kind="yours",
                           segment_reason="requeued by you with your own observation")
-        elif lead["segment"] not in ("A", "B", "C", "N", "G") and (lead["campaign"] or "website") == "ads":
+        elif lead["segment"] not in ("A", "B", "C", "N", "G", "K") and (lead["campaign"] or "website") == "ads":
             fields.update(segment="G", segment_reason="requeued by you (general Meta ads email)")
-        elif lead["segment"] not in ("A", "B", "C", "N", "G"):
+        elif lead["segment"] not in ("A", "B", "C", "N", "G", "K") and (lead["campaign"] or "website") == "booking":
+            fields.update(segment="K", segment_reason="requeued by you")
+        elif lead["segment"] not in ("A", "B", "C", "N", "G", "K"):
             if not lead["website"]:
                 fields.update(segment="B", segment_reason="requeued by you")
             else:
                 fields.update(segment="C", observation=segment.OBSERVATIONS["generic"], observation_kind="generic",
                               segment_reason="requeued by you (general line, no specific claim)")
+        if note and (lead["campaign"] or "website") == "booking":
+            fields.update(segment="K", observation=None, observation_kind=None, segment_reason="requeued by you")
         if note and (lead["campaign"] or "website") == "ads":
             fields.update(segment=lead["segment"] if lead["segment"] in ("N", "G") else "G", observation=None,
                           observation_kind=None, segment_reason="requeued by you")

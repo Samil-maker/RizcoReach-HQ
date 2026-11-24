@@ -82,7 +82,8 @@ OUR_LINES = re.compile(
     r"We redesign websites for|We also offer SEO and management|We also handle SEO|One last note.{0,40}If (it helps|more genuine)|"
     r"We were looking at .* (ads|Instagram)|"
     r"Hi \S+( \S+)? (just bringing this back|had another thought|one more thought|just checking in\. (Most|If)|"
-    r"we know things get busy|checking in from RizcoReach|we haven't heard back so this is our last))",
+    r"we know things get busy|checking in from (RizcoReach|Elheen)|we haven't heard back so this is our last)|"
+    r"puts all your bookings and enquiries in one place|brings every booking and enquiry into one)",
     re.I | re.M,
 )
 

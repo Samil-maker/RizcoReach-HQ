@@ -93,3 +93,86 @@ def test_ads_follow_ups(project):
         bodies.append(body)
     assert len(set(bodies)) == len(bodies)
     assert "Nothing upfront. You only pay once you've had your first genuine lead." in bodies[4]   # the offer again
+
+
+# ----------------------------------------------------------------------------- Elheen (the booking system)
+
+def booking_settings(project):
+    (project / ".env").write_text("# test\n")
+    return config.load_settings(dict(ENV, INBOX2_EMAIL="elheen.com@gmail.com", INBOX2_APP_PASSWORD="abcdefghijklmnop",
+                                     INBOX2_CAMPAIGN="booking"))
+
+
+def test_inbox_campaign_settings():
+    assert config.campaigns_from("both") == ("website", "ads")          # "both" stays the two RizcoReach campaigns
+    assert config.campaigns_from("booking") == ("booking",)
+    assert config.campaigns_from("Elheen") == ("booking",)
+    assert config.campaigns_from("website,booking") == ("website", "booking")
+    assert config.campaigns_from("nonsense") == ("website",)
+
+
+def test_elheen_file_becomes_the_booking_campaign(project, con, fake_web):
+    (project / "leads" / "inbox" / "elheen-salons.csv").write_text(
+        "business,email,area,website\nRose Salon,book@rosesalon.ae,JLT,https://rosesalon.ae\nQuiet Spa,hi@quietspa.ae,Jumeirah,\n")
+    r = importer.import_pending(con, log=lambda *a: None)[0]
+    assert r["campaign"] == "booking" and r["stats"]["imported"] == 2 and r["stats"]["seg_K"] == 2
+    lead = db.lead_by_email(con, "book@rosesalon.ae")
+    assert lead["campaign"] == "booking" and lead["segment"] == "K" and lead["site_json"] is None  # no website check
+
+
+def test_elheen_emails_wait_for_approval_and_go_from_the_elheen_inbox(project, con, smtp, dns_pass, fake_clock, fake_web):
+    s = booking_settings(project)
+    assert s.inbox("inbox2").campaigns == ("booking",)
+    db.set_state(con, "approved", {"at": clock.iso()})  # website approved, Elheen not yet
+    (project / "leads" / "inbox" / "list.csv").write_text("business,email,area\nRose Salon,book@rosesalon.ae,JLT\n")
+    importer.import_pending(con, log=lambda *a: None, campaign="booking")
+    (project / "leads" / "inbox" / "web.csv").write_text("business,email\nBlue Bakery,hi@bluebakery.ae\n")
+    importer.import_pending(con, log=lambda *a: None)
+
+    fake_clock.set(datetime(2026, 11, 9, 9, 0, tzinfo=clock.TZ))
+    sender.SendRun(con, s).run()
+    assert [m["To"] for m in smtp.outbox] == ["hi@bluebakery.ae"]
+    assert "RizcoReach" in smtp.outbox[0].get_content() and "Elheen" not in smtp.outbox[0].get_content()
+
+    db.set_state(con, "approved:booking", {"at": clock.iso()})
+    smtp.outbox.clear()
+    fake_clock.set(datetime(2026, 11, 10, 9, 0, tzinfo=clock.TZ))
+    sender.SendRun(con, s).run()
+    [rose] = smtp.outbox
+    assert rose["From"] == "Samil <elheen.com@gmail.com>" and rose["Subject"] == "Rose Salon bookings"
+    text = rose.get_content()
+    assert "Elheen" in text and "RizcoReach" not in text and "website" not in text.lower()
+
+
+def test_elheen_reply_gets_an_elheen_draft(project, con, smtp, dns_pass, fake_clock, fake_web):
+    s = booking_settings(project)
+    db.set_state(con, "approved", {"at": clock.iso()})
+    db.set_state(con, "approved:booking", {"at": clock.iso()})
+    (project / "leads" / "inbox" / "elheen.csv").write_text("business,email\nRose Salon,book@rosesalon.ae\n")
+    importer.import_pending(con, log=lambda *a: None)
+    fake_clock.set(datetime(2026, 11, 9, 9, 0, tzinfo=clock.TZ))
+    sender.SendRun(con, s).run()
+    mid = con.execute("SELECT message_id FROM messages WHERE to_email='book@rosesalon.ae'").fetchone()[0]
+    raw = ("From: Rose <book@rosesalon.ae>\nTo: elheen.com@gmail.com\nSubject: Re: Rose Salon bookings\n"
+           "Message-ID: <r9@rose>\nIn-Reply-To: %s\nDate: Tue, 10 Nov 2026 10:00:00 +0400\n\nHow much is it?\n" % mid)
+    fake_clock.set(datetime(2026, 11, 10, 11, 0, tzinfo=clock.TZ))
+    info = replies.process(con, s, s.inbox("inbox2"), raw.encode())
+    assert info["label"] in ("interested", "question")
+    assert "free trial" in info["draft"] and "walkthrough for Rose Salon" in info["draft"] and "website" not in info["draft"].lower()
+
+
+def test_elheen_follow_ups(project):
+    s = config.Settings(whatsapp="0501234567")
+    lead = {"segment": "K", "campaign": "booking", "business": "Rose Salon", "first_name": "", "area": "", "observation": "",
+            "source": "", "instagram": "", "address": ""}
+    bodies = []
+    for step in sorted(schedule.FOLLOW_UP_DAYS):
+        body, full = templates.follow_up(lead, step, s)
+        assert "website" not in body.lower() and "RizcoReach" not in full    # never the website pitch, never RizcoReach
+        assert full.splitlines()[-4] == "Elheen" or "Elheen" in full
+        assert templates.lint("Re: Rose Salon bookings", body, full, step)[0] == []
+        bodies.append(body)
+    assert len(set(bodies)) == len(bodies)
+    for v in "AB":
+        subject, body, full = templates.first_email(dict(lead, area="Jumeirah Lake Towers"), v, s)
+        assert templates.lint(subject, body, full, 0)[0] == [] and templates.word_count(body) < 80

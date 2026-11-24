@@ -604,10 +604,10 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("import", help="import the lead files in leads/inbox/")
     sp.add_argument("--map", action="append", metavar='FIELD="Column"', help='say which column is which, e.g. --map email="Contact Email"')
     sp.add_argument("--no-site-check", action="store_true", help="skip the website checks (leads with a website become Skip)")
-    sp.add_argument("--campaign", choices=["auto", "website", "ads"], default="auto",
+    sp.add_argument("--campaign", choices=["auto", "website", "ads", "booking"], default="auto",
                     help="website or ads (Meta ads). auto: Lead Hunter's Meta ads export is ads, the rest website")
     sp = sub.add_parser("preview", help="show the segments and sample emails")
-    sp.add_argument("--segment", choices=["A", "B", "C", "N", "G", "a", "b", "c", "n", "g"])
+    sp.add_argument("--segment", choices=["A", "B", "C", "N", "G", "K", "a", "b", "c", "n", "g", "k"])
     sp.add_argument("--count", type=int, default=3)
     sp = sub.add_parser("test-email", help="send ONE real test email to yourself (asks first)")
     sp.add_argument("--to")
