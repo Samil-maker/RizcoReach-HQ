@@ -507,9 +507,28 @@ def make_server(port: int = PORT) -> ThreadingHTTPServer:
     return server
 
 
+WATCH_EVERY = 600  # seconds between checks that the background jobs are still switched on
+
+
+def _watch_jobs(stop: threading.Event, every: int = WATCH_EVERY) -> None:
+    """Every few minutes: switch the hourly and the 9:00 job back on if they have stopped (the dashboard is the one
+    job that always runs, so it looks after the other two)."""
+    while not stop.wait(every):
+        try:
+            launchd.heal(log=lambda m: print("[%s] %s" % (clock.now().strftime("%H:%M:%S"), m), flush=True))
+        except Exception as e:  # noqa: BLE001 - the dashboard keeps running whatever happens here
+            print("[%s] Could not check the background jobs: %s" % (clock.now().strftime("%H:%M:%S"), e), flush=True)
+
+
 def serve(port: int = PORT) -> None:
     server = make_server(port)
     print("[%s] Dashboard running at http://localhost:%d/" % (clock.now().strftime("%H:%M:%S"), port), flush=True)
+    if launchd.IS_MAC:
+        try:
+            launchd.heal(log=lambda m: print("[%s] %s" % (clock.now().strftime("%H:%M:%S"), m), flush=True))
+        except Exception:  # noqa: BLE001
+            pass
+        threading.Thread(target=_watch_jobs, args=(threading.Event(),), daemon=True).start()
     server.serve_forever()
 
 

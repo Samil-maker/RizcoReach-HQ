@@ -134,16 +134,53 @@ def _launchctl(*args: str) -> subprocess.CompletedProcess:
     return subprocess.run(["launchctl", *args], capture_output=True, text=True)
 
 
+def running_as() -> str:
+    """The launchd job this process is, or "" when you run it yourself. launchd sets XPC_SERVICE_NAME for its jobs."""
+    return os.environ.get("XPC_SERVICE_NAME", "")
+
+
+def loaded(label: str) -> bool:
+    return _launchctl("print", "gui/%s/%s" % (os.getuid(), label)).returncode == 0
+
+
 def _load(label: str, text: str) -> str:
     path = plist_path(label)
     path.parent.mkdir(parents=True, exist_ok=True)
     uid = str(os.getuid())
+    if label == running_as() and loaded(label):
+        # Never stop the job we are running in: launchd would kill this process before it could start the job
+        # again, and the job would stay off. (The hourly job runs the daily update, which reloads the jobs.)
+        # Its new file is used from its next start, and each start is a fresh process with the new code anyway.
+        path.write_text(text, encoding="utf-8")
+        return ""
     _launchctl("bootout", "gui/%s/%s" % (uid, label))  # remove an older copy first, if any
     path.write_text(text, encoding="utf-8")
     r = _launchctl("bootstrap", "gui/%s" % uid, str(path))
     if r.returncode != 0:
         r = _launchctl("load", "-w", str(path))
     return "" if r.returncode == 0 else (r.stderr or r.stdout).strip()
+
+
+LABELS = (LABEL, HOURLY_LABEL, DASHBOARD_LABEL)
+
+
+def heal(log=print) -> List[str]:
+    """Starts any job whose file is there but which launchd is not running (for example after an update was cut
+    short, or a crash). Returns the labels it started. The dashboard calls this every few minutes."""
+    if not IS_MAC:
+        return []
+    started = []
+    for label in LABELS:
+        path = plist_path(label)
+        if label == running_as() or not path.exists() or loaded(label):
+            continue
+        r = _launchctl("bootstrap", "gui/%s" % os.getuid(), str(path))
+        if r.returncode != 0:
+            r = _launchctl("load", "-w", str(path))
+        if r.returncode == 0:
+            started.append(label)
+            log("Started %s again: it had stopped running." % label)
+    return started
 
 
 def install() -> str:
