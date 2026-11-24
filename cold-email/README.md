@@ -170,11 +170,10 @@ There is an empty template in `leads/sample/lead-template.csv`.
   at the end from you ("Want me to send you a few examples?"). Meta ads: N (Lead Hunter
   found no Meta ads, and the email says so), G (not checked, so the email makes no claim), and businesses already
   running ads are skipped. Each inbox sends Website, Meta ads or both.
-- **Meta ads emails sell the system:** most agencies forward every form fill (job seekers, suppliers and all), your
-  team messages each enquiry on WhatsApp first and only passes on the genuine ones. The offer depends on the
-  business: home improvement (interior design, fit out, renovation, landscaping and similar, see `HOME_IMPROVEMENT`
-  in `outreach/templates.py`) get "one flat monthly rate and no big setup fee", everyone else gets "nothing upfront,
-  you only pay once you've had your first genuine lead".
+- **Meta ads emails sell the appointment setters:** most agencies pass on every form fill, your appointment setters
+  call or WhatsApp every enquiry first to check they're genuine and interested, and only qualified people reach the
+  business. The price is a one time setup fee, then a monthly fee: `ADS_SETUP_PRICE` and `ADS_MONTHLY_PRICE` in
+  `.env` (850 AED each unless you change them). Version A of the first email states it, version B doesn't.
 - **Monday to Friday only, Dubai time:** spread from 9:00 to 21:45, never two emails from one inbox within 3
   minutes or two from any inbox within a minute. Follow ups first, then new leads (new businesses first, since
   "just opened" goes stale).
