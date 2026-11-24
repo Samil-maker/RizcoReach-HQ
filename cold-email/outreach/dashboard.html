@@ -303,7 +303,7 @@ async function loadOverview() {
   }));
   $("inboxes").replaceChildren(...o.inboxes.map((i) => el("tr", {},
     el("td", {}, i.email),
-    el("td", { class: "note" }, i.sends),
+    el("td", {}, sendsPicker(i)),
     el("td", {}, i.sent + " / " + i.cap),
     el("td", { class: "note" }, i.status),
     el("td", { class: "note" }, i.warm_sent ? i.warm_sent + " sent, " + i.warm_spam + " of " + i.warm_checked + " landed in Spam" : (o.inboxes.length < 2 ? "starts with 2 inboxes" : "none yet")))));
@@ -402,6 +402,15 @@ $("repliesBtn").onclick = async () => {
   } finally { btn.disabled = false; btn.textContent = "Check replies now"; refresh(); }
 };
 $("reportBtn").onclick = async () => { const r = await api("/api/report"); openModal("Today's report", el("pre", { class: "text" }, r.text)); };
+const SENDS = [["website", "Website"], ["ads", "Meta ads"], ["website,ads", "Website and Meta ads"], ["booking", "Elheen"],
+  ["website,booking", "Website and Elheen"], ["website,ads,booking", "All three"]];
+function sendsPicker(i) {
+  const known = SENDS.some(([v]) => v === i.campaigns);
+  return el("select", { "aria-label": "What " + i.email + " sends", style: "padding:6px 8px;border-radius:var(--r-sm);border:1px solid var(--line-2);background:var(--surface-2)",
+    onchange: async (ev) => { toast((await post("/api/inbox-campaign", { email: i.email, campaign: ev.target.value })).message); refresh(); } },
+    ...(known ? [] : [el("option", { value: i.campaigns, selected: true }, i.sends)]),
+    ...SENDS.map(([v, label]) => el("option", { value: v, selected: v === i.campaigns }, label)));
+}
 async function approveCampaign(c) {
   if (!confirm("Approve the Meta ads emails? Read them first with 'Read the Meta ads emails'. They start going out on the next sending day.")) return;
   toast((await post("/api/approve-campaign", { campaign: c.key })).message); refresh();
