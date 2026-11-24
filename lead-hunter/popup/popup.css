@@ -11,3 +11,4 @@ body { width: 340px; padding: 14px; }
 .p-form { display: grid; gap: 8px; }
 .p-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .hint { margin: 0; }
+.p-row + .hint { margin-top: 10px; }

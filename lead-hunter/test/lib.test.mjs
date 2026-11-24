@@ -4,8 +4,11 @@ import assert from 'node:assert/strict';
 import { SAMPLE_ADS, searchResponse, makeAd } from './fixtures.mjs';
 
 await import('../lib/common.js');
+await import('../lib/emails.js');
+await import('../lib/fit.js');
 await import('../lib/extract-ads.js');
 await import('../lib/site-audit.js');
+await import('../lib/prospects.js');
 const LH = globalThis.LH;
 
 test('extracts ads from a GraphQL response with for(;;) prefix and multiple JSON lines', () => {
@@ -86,6 +89,21 @@ test('audit: parked pages are flagged', () => {
   const r = LH.auditHtml('<html><body><h1>This domain is for sale!</h1><p>Buy this domain today.</p></body></html>', { finalUrl: 'https://x.example/', ttfbMs: 100, totalMs: 200, bytes: 300, headers: {} });
   assert.equal(r.parked, true);
   assert.equal(r.issues[0].id, 'parked');
+  const meta = { finalUrl: 'https://x.example/', ttfbMs: 100, totalMs: 200, bytes: 300, headers: {} };
+  const parked = (body) => LH.auditHtml(`<html><head><title>x</title></head><body>${body}</body></html>`, meta).parked === true;
+  for (const body of [
+    '<h1>Launching Soon</h1><p>Stay in the loop.</p>',
+    '<h1>Velvet Hair</h1><p>Coming soon! hello@velvet.example</p>',
+    "<p>Looks like this domain isn't connected to a website yet</p>",
+    '<p>This site has not been published yet.</p>',
+    '<h1>Future home of something quite cool</h1>',
+    '<p>Our new website is coming. Stay tuned.</p>',
+    '<h1>Hello world!</h1><p>Welcome to WordPress. This is your first post. Edit or delete it.</p>',
+    '<p>Opening soon</p><form><input type="password"></form>',
+  ])
+    assert.ok(parked(body), body);
+  // A real site that mentions a branch opening soon is not a placeholder.
+  assert.ok(!parked(`<h1>Glow Salon</h1>${'<p>Hair, nails and lashes in JLT, with twelve stylists and a decade of regulars. </p>'.repeat(12)}<p>Our Marina branch is opening soon.</p>`));
 });
 
 test('audit: client-rendered shells are not accused of missing content', () => {
@@ -94,111 +112,10 @@ test('audit: client-rendered shells are not accused of missing content', () => {
   assert.ok(!ids.includes('contactLinks') && !ids.includes('thin') && !ids.includes('h1'));
 });
 
-test('priority favours steady advertisers without a website, with a phone, that are not big brands', () => {
-  const base = { activeAdCount: 6, earliestStart: Date.now() - 70 * 86400000, phones: [], emails: [], pageLikes: 2000, website: null };
-  const phone = { ...base, phones: [{ number: '+971501234567', source: 'whatsapp-ad' }] };
-  const brand = { ...phone, pageLikes: 900000 };
-  assert.ok(LH.priority(phone) > LH.priority(base));
-  assert.ok(LH.priority(phone) > LH.priority(brand));
-  assert.equal(LH.heat(LH.priority(phone)), 'hot');
-});
-
-/* ------------------------------------------------------------- scripts */
-const S = { ...LH.DEFAULT_SETTINGS, myName: 'Samil', adsCity: 'Dubai' };
+/* -------------------------------------------------------------- offers */
+const S = { ...LH.DEFAULT_SETTINGS, adsCity: 'Dubai' };
 const advertiser = (o = {}) => ({ pageName: 'Gloss Garage Dubai', keywords: ['car detailing'], phones: [], emails: [], socials: {}, website: null, ...o });
 const prospect = (o = {}) => ({ kind: 'prospect', pageName: 'Glossy PPF', niche: 'Car detailing studios', phones: [], emails: [], socials: {}, sources: { maps: { placeId: 'x', rating: 4.9, reviews: 312 } }, website: 'https://glossyppf.example/', adCheck: { state: 'none' }, ...o });
-
-test('scriptFor: website script without a website, ads script without Meta ads, skipped when running ads', () => {
-  const pick = (l) => [LH.scriptFor(l).script, LH.scriptFor(l).tag];
-  // Website leads (Ad Library): they advertise by definition.
-  assert.deepEqual(pick(advertiser()), ['website', 'No website']);
-  assert.deepEqual(pick(advertiser({ website: 'https://gloss.example/' })), [null, 'Running ads']);
-  // Meta ads prospects without a website get the website script whatever the ad check says.
-  for (const state of ['none', 'likely', 'running', 'pending', 'unclear']) assert.deepEqual(pick(prospect({ website: null, adCheck: { state } })), ['website', 'No website'], state);
-  // With a website: the ad check decides.
-  assert.deepEqual(pick(prospect({ adCheck: { state: 'none' } })), ['ads', 'No Meta ads']);
-  assert.deepEqual(pick(prospect({ adCheck: { state: 'likely' } })), ['ads', 'No Meta ads']);
-  for (const adCheck of [{ state: 'pending' }, { state: 'queued' }, { state: 'checking' }, { state: 'unclear' }, undefined]) assert.deepEqual(pick(prospect({ adCheck })), ['ads', 'Ad check not done'], JSON.stringify(adCheck));
-  assert.deepEqual(pick(prospect({ adCheck: { state: 'running' } })), [null, 'Running ads']);
-  assert.deepEqual(pick(prospect({ adCheck: { state: 'running', manual: true } })), [null, 'Running ads'], '"They do run ads" skips them too');
-  // A website that is down or parked counts as no working website, in both tabs.
-  for (const site of [{ state: 'error' }, { state: 'ok', parked: true }]) {
-    assert.deepEqual(pick(advertiser({ website: 'https://gone.example/', site })), ['website', 'Site down'], JSON.stringify(site));
-    assert.deepEqual(pick(prospect({ adCheck: { state: 'running' }, site })), ['website', 'Site down'], JSON.stringify(site));
-    assert.deepEqual(pick(prospect({ adCheck: { state: 'none' }, site })), ['website', 'Site down'], JSON.stringify(site));
-  }
-  assert.deepEqual(pick(advertiser({ website: 'https://gloss.example/', site: { state: 'blocked' } })), [null, 'Running ads'], 'a site that blocks the check is still a website');
-  assert.equal(LH.sentScriptFor(prospect({ adCheck: { state: 'running' } })), 'website', 'pitching a skipped lead anyway uses the website script');
-});
-
-test('the default ads script for a car detailing studio in Dubai, in 3 bubbles', () => {
-  const p = LH.pitchFor(prospect(), S);
-  assert.equal(p.script, 'ads');
-  assert.equal(p.tag, 'No Meta ads');
-  assert.equal(p.bubbles.length, 3);
-  assert.equal(p.bubbles[0], 'Hello Glossy PPF');
-  assert.equal(p.bubbles[2], 'Let me know');
-  assert.ok(p.bubbles[1].includes('We help car detailing studios in Dubai get consistent inquiries through Facebook and Instagram ads.'), p.bubbles[1]);
-  assert.match(p.bubbles[1], /^Are you dependent on word of mouth for appointments in Dubai\?/);
-  assert.equal(p.text, p.bubbles.join('\n\n'));
-  assert.equal(p.subject, 'Quick question for Glossy PPF');
-  assert.equal(p.email, `${p.text}\n\n${S.emailSignature}\n\n${S.emailOptOut}`, 'the email is the whole script, signed');
-});
-
-test('bubbles: 2 joins greeting and body, empty parts are dropped, skipped leads get none', () => {
-  const two = LH.pitchFor(prospect(), { ...S, bubbles: 2 });
-  assert.equal(two.bubbles.length, 2);
-  assert.match(two.bubbles[0], /^Hello Glossy PPF\n\nAre you dependent/);
-  assert.equal(two.bubbles[1], 'Let me know');
-  const three = LH.pitchFor(prospect(), S);
-  assert.equal(two.text, three.text, 'same words either way');
-
-  const noGreeting = LH.pitchFor(prospect(), { ...S, scripts: { ads: { greeting: '' } } });
-  assert.equal(noGreeting.bubbles.length, 2);
-  assert.match(noGreeting.bubbles[0], /^Are you dependent/);
-  assert.equal(LH.pitchFor(prospect(), { ...S, bubbles: 2, scripts: { ads: { greeting: '', closing: '  ' } } }).bubbles.length, 1);
-
-  const custom = LH.pitchFor(prospect(), { ...S, scripts: { ads: { closing: 'Talk soon {{my_name}}' } } });
-  assert.equal(custom.bubbles[2], 'Talk soon Samil', 'edited parts replace the default, the rest stays');
-  assert.match(custom.bubbles[1], /We help car detailing studios/);
-
-  const skipped = LH.pitchFor(prospect({ adCheck: { state: 'running' } }), S);
-  assert.equal(skipped.script, null);
-  assert.deepEqual(skipped.bubbles, []);
-  assert.equal(skipped.text, '');
-  const anyway = LH.pitchFor(prospect({ adCheck: { state: 'running' } }), S, 'website');
-  assert.equal(anyway.script, 'website');
-  assert.equal(anyway.bubbles.length, 3);
-});
-
-test('website script: found on, niche and subject', () => {
-  const ad = LH.pitchFor(advertiser({ niche: '' }), S);
-  assert.equal(ad.script, 'website');
-  assert.equal(ad.bubbles[0], 'Hello Gloss Garage', 'the city at the end of the page name is left out');
-  assert.match(ad.bubbles[1], /^I came across Gloss Garage on Facebook and Instagram and couldn't find a website for you\./);
-  assert.match(ad.bubbles[1], /We build simple websites for car detailing studios in Dubai that turn visitors into WhatsApp inquiries\./, 'niche from the hunt keyword');
-  assert.equal(ad.subject, 'Website for Gloss Garage');
-  assert.match(LH.pitchFor(prospect({ website: null }), S).bubbles[1], /on Google Maps and/);
-  assert.match(LH.pitchFor(prospect({ website: null, sources: { instagram: { username: 'glossyppf' } } }), S).bubbles[1], /on Instagram and/);
-  assert.match(LH.pitchFor(advertiser({ keywords: ['pest control'] }), S).bubbles[1], /websites for businesses in Dubai/, 'no matching niche');
-  assert.match(LH.pitchFor(advertiser(), { ...S, adsCity: 'Abu Dhabi' }).bubbles[1], /studios in Abu Dhabi/);
-});
-
-test('website script for a site that is down: "your website wasn\'t loading when I checked"', () => {
-  assert.equal(
-    LH.DEFAULT_SCRIPTS.website.body,
-    "I came across {{business}} on {{found_on}} and {{website_line}}.\n\nWe build simple websites for {{niche}} in {{city}} that turn visitors into WhatsApp inquiries.\n\nIf this sounds interesting I'd be happy to send you a free mockup of how yours could look.",
-  );
-  for (const site of [{ state: 'error', status: 500 }, { state: 'ok', parked: true }]) {
-    const down = LH.pitchFor(advertiser({ website: 'https://gloss.example/', site }), S);
-    assert.equal(down.script, 'website');
-    assert.equal(down.tag, 'Site down');
-    assert.match(down.bubbles[1], /^I came across Gloss Garage on Facebook and Instagram and your website wasn't loading when I checked\.\n\nWe build simple websites/);
-  }
-  assert.equal(LH.scriptVars(advertiser(), S).website_line, "couldn't find a website for you");
-  // Pitched anyway with a working website: the line still says no website (the drawer warns about it).
-  assert.match(LH.pitchFor(advertiser({ website: 'https://gloss.example/', site: { state: 'ok', score: 70 } }), S, 'website').bubbles[1], /and couldn't find a website for you\./);
-});
 
 test('business names read like typed by hand: no keyword tails, legal suffixes or capitals', () => {
   const cases = {
@@ -224,223 +141,63 @@ test('business names read like typed by hand: no keyword tails, legal suffixes o
     '': '',
   };
   for (const [raw, short] of Object.entries(cases)) assert.equal(LH.shortName(raw), short, raw);
-  const p = LH.pitchFor(prospect({ pageName: 'Dr. Smile Dental Clinic - Best Dentist in Dubai', niche: 'Dental clinics', website: null }), S);
-  assert.equal(p.bubbles[0], 'Hello Dr. Smile Dental Clinic');
-  assert.match(p.bubbles[1], /^I came across Dr\. Smile Dental Clinic on Google Maps and/);
-  assert.equal(p.subject, 'Website for Dr. Smile Dental Clinic');
-});
-
-test('a lead with no name: their Instagram handle or domain, else "Hello there" and "your business"', () => {
-  const p = LH.pitchFor(advertiser({ pageName: '' }), S);
-  assert.equal(p.bubbles[0], 'Hello there');
-  assert.match(p.bubbles[1], /^I came across your business on Facebook and Instagram and couldn't find a website for you\./);
-  assert.equal(p.subject, 'Your website');
-  assert.equal(LH.pitchFor(prospect({ pageName: '', website: null }), S).subject, 'Your website');
-  assert.equal(LH.pitchFor(prospect({ pageName: '' }), S).subject, 'Quick question for glossyppf.example', 'their domain stands in for the name');
-  const ig = LH.pitchFor(prospect({ pageName: '', website: null, sources: { instagram: { username: 'glossyppf' } } }), S);
-  assert.equal(ig.bubbles[0], 'Hello glossyppf');
-  assert.match(ig.bubbles[1], /^I came across glossyppf on Instagram and/);
-  const site = LH.pitchFor(prospect({ pageName: '  ', website: 'https://www.glossyppf.ae/home', site: { state: 'error' } }), S);
-  assert.equal(site.bubbles[0], 'Hello glossyppf.ae');
-  assert.match(site.bubbles[1], /^I came across glossyppf\.ae on Google Maps and your website wasn't loading/);
-  assert.equal(LH.pitchFor(advertiser({ pageName: '' }), { ...S, scripts: { website: { closing: 'Thanks {{business}}' } } }).bubbles[2], 'Thanks', 'no "there" outside the greeting');
-});
-
-test('style: default scripts read like Samil typed them, with nothing invented', () => {
-  const empty = [{}, { kind: 'prospect', website: 'https://x.example/', adCheck: { state: 'none' } }, { kind: 'prospect' }];
-  for (const [key, t] of Object.entries(LH.DEFAULT_SCRIPTS)) {
-    const raw = LH.SCRIPT_PARTS.map((p) => t[p]).join('\n');
-    assert.doesNotMatch(raw, /[\u2013\u2014]/, `${key}: no en or em dash`);
-    assert.doesNotMatch(raw, / - /, `${key}: no hyphen used as a dash`);
-    assert.doesNotMatch(raw, /;/, `${key}: no semicolons`);
-    assert.doesNotMatch(raw, /google ads/i, `${key}: no Google Ads`);
-    assert.doesNotMatch(raw, /\d/, `${key}: no invented numbers`);
-    assert.doesNotMatch(raw, /\b(our clients|clients like|we've helped|we have helped|case stud|guarantee|results in)\b/i, `${key}: no invented clients or results`);
-  }
-  assert.ok((LH.DEFAULT_SCRIPTS.ads.body.match(/,/g) || []).length <= 6, 'at most 6 commas in the ads body');
-  for (const [key, t] of Object.entries(LH.DEFAULT_EMAILS)) {
-    const raw = [...LH.EMAIL_PARTS.map((p) => t[p]), LH.DEFAULT_SETTINGS.emailOptOut].join('\n');
-    assert.doesNotMatch(raw, /[–—;]| - |\d/, `${key} emails: no dashes, semicolons or numbers`);
-    assert.ok((raw.match(/,/g) || []).length === 0, `${key} emails: no commas`);
-  }
-  // Rendered with missing data, in 3 and 2 bubbles, for both scripts.
-  for (const lead of empty)
-    for (const bubbles of [3, 2])
-      for (const force of [undefined, 'website', 'ads']) {
-        const p = LH.pitchFor(lead, { ...LH.DEFAULT_SETTINGS, bubbles, adsCity: '' }, force);
-        assert.equal(p.bubbles.length, bubbles);
-        for (const b of [...p.bubbles, p.subject, p.email]) {
-          assert.doesNotMatch(b, /\{\{|\}\}|undefined|null|NaN/, b);
-          assert.doesNotMatch(b, /[\u2013\u2014;]/, b);
-          assert.doesNotMatch(b, / {2}| ,| \./, `no gaps left by missing data: ${JSON.stringify(b)}`);
-        }
-      }
-});
-
-/* -------------------------------------------------------------- emails */
-const END = `${S.emailSignature}\n\n${S.emailOptOut}`;
-const mailLead = (o = {}) => prospect({ emails: ['hello@glossyppf.example'], ...o });
-
-test('emailFor: the script in one email, then two follow ups, each signed with the opt out line', () => {
-  const e = LH.emailFor(mailLead(), S);
-  const p = LH.pitchFor(mailLead(), S);
-  assert.equal(e.script, 'ads');
-  assert.equal(e.tag, 'No Meta ads');
-  assert.equal(e.to, 'hello@glossyppf.example');
-  assert.equal(e.subject, 'Quick question for Glossy PPF');
-  assert.equal(e.steps.length, 3);
-  assert.equal(e.steps[0], `${p.bubbles.join('\n\n')}\n\n${END}`, 'greeting, body and closing, then the signature');
-  assert.equal(e.steps[1], `Hello Glossy PPF\n\nJust bringing this back to the top of your inbox. Would a quick explanation of how it works be useful?\n\nLet me know\n\n${END}`);
-  assert.match(e.steps[2], /^Hello Glossy PPF\n\nI'll leave it here so I don't fill up your inbox\./);
-  assert.ok(e.steps[2].endsWith(END));
-  assert.match(e.steps[0], /\n\nSamil\nCreative Marketing Director\nRizcoReach · rizcoreach\.ae\n\+971 56 846 1835\n\nIf you'd rather not hear from me just reply no thanks and I won't email again\.$/);
-  // The manual email tab sends the same first email.
-  assert.equal(p.email, e.steps[0]);
-  assert.equal(p.subject, e.subject);
-  assert.equal(LH.emailFor(mailLead(), { ...S, bubbles: 2 }).steps[0], e.steps[0], 'bubbles only change WhatsApp');
-});
-
-test('emailFor: follow up count, edits from Settings and an empty signature', () => {
-  for (const n of [0, 1, 2]) assert.equal(LH.emailFor(mailLead(), { ...S, emailFollowups: n }).steps.length, n + 1, `${n} follow ups`);
-  assert.equal(LH.emailFor(mailLead(), { ...S, emailFollowups: '1' }).steps.length, 2, 'a select gives a string');
-  assert.equal(LH.emailFor(mailLead(), {}).steps.length, 3, 'defaults when settings are missing');
-  const edited = LH.emailFor(mailLead(), { ...S, emails: { ads: { subject: 'Hi {{business}} from {{my_name}}', followup2: '  ' } } });
-  assert.equal(edited.subject, 'Hi Glossy PPF from Samil');
-  assert.equal(edited.steps.length, 2, 'an empty follow up is left out');
-  assert.match(edited.steps[1], /^Hello Glossy PPF\n\nJust bringing this back/, 'parts not edited keep the default');
-  assert.equal(LH.emailsFor({ emails: { website: { subject: 'Hey' } } }).website.followup1, LH.DEFAULT_EMAILS.website.followup1);
-  assert.equal(LH.emailsFor({ emails: { website: { subject: 'Hey' } } }).website.subject, 'Hey');
-  const bare = LH.emailFor(mailLead(), { ...S, emailSignature: '', emailOptOut: '' });
-  assert.equal(bare.steps[0], LH.pitchFor(mailLead(), S).text, 'no signature or opt out line when both are empty');
-  const signed = LH.emailFor(mailLead(), { ...S, emailSignature: '{{my_name}}\n{{agency}}', emailOptOut: '' });
-  assert.ok(signed.steps[0].endsWith('\n\nSamil\nRizcoReach'), 'the signature takes variables too');
-});
-
-test('emailFor: who it goes to', () => {
-  assert.equal(LH.emailFor(mailLead({ emails: ['old@x.example', 'new@x.example'], badEmails: ['old@x.example'] }), S).to, 'new@x.example', 'a bounced address is skipped');
-  assert.equal(LH.emailFor(mailLead({ badEmails: ['hello@glossyppf.example'] }), S).to, '');
-  assert.equal(LH.emailFor(mailLead({ doNotEmail: true }), S).to, '', 'never email');
-  const none = LH.emailFor(mailLead({ emails: [] }), S);
-  assert.equal(none.to, '');
-  assert.equal(none.steps.length, 3, 'still written out so it can be copied');
-});
-
-test('emailFor: website script, and a lead with no name', () => {
-  const w = LH.emailFor(advertiser({ emails: ['a@gloss.example'] }), S);
-  assert.equal(w.script, 'website');
-  assert.equal(w.subject, 'Website for Gloss Garage');
-  assert.match(w.steps[0], /^Hello Gloss Garage\n\nI came across Gloss Garage on Facebook and Instagram and couldn't find a website for you\./);
-  assert.match(w.steps[0], /\n\nLet me know\n\nSamil\n/);
-  assert.match(w.steps[1], /^Hello Gloss Garage\n\nJust bringing this back to the top of your inbox\. Would you like me to send the free mockup\?/);
-  assert.match(w.steps[2], /simple website that brings in WhatsApp inquiries/);
-  const nameless = LH.emailFor(advertiser({ pageName: '' }), S);
-  assert.equal(nameless.subject, 'Your website');
-  assert.match(nameless.steps[0], /^Hello there\n\nI came across your business on/);
-  assert.match(nameless.steps[1], /^Hello there\n\nJust bringing/);
-  assert.equal(LH.emailFor({}, S, 'ads').subject, 'Quick question');
-  assert.equal(LH.emailFor(prospect({ pageName: '' }), S).subject, 'Quick question for glossyppf.example', 'their domain stands in for the name');
-});
-
-test('emailFor: running ads gives no emails, pitching anyway gives the website emails', () => {
-  const running = mailLead({ adCheck: { state: 'running' } });
-  assert.deepEqual(LH.emailFor(running, S), { script: null, tag: 'Running ads', to: 'hello@glossyppf.example', subject: '', steps: [] });
-  assert.equal(LH.pitchFor(running, S).email, '');
-  const anyway = LH.emailFor(running, S, 'website');
-  assert.equal(anyway.script, 'website');
-  assert.equal(anyway.subject, 'Website for Glossy PPF');
-  assert.equal(anyway.steps.length, 3);
 });
 
 /* -------------------------------------------------------------- niches */
-test('niche names read naturally mid-sentence', () => {
-  assert.equal(LH.nicheText('Car detailing studios'), 'car detailing studios');
-  assert.equal(LH.nicheText('Aesthetic clinics'), 'aesthetic clinics');
-  assert.equal(LH.nicheText('pet groomers'), 'pet groomers');
-  assert.equal(LH.nicheText('AC service companies'), 'AC service companies', 'acronyms stay');
-  assert.equal(LH.nicheText('PPF STUDIOS'), 'PPF STUDIOS', 'all caps stays');
-  assert.equal(LH.nicheText(''), '');
-});
-
-test('legacy niche names map to how they read in a message', () => {
-  const text = (niche) => LH.scriptVars({ kind: 'prospect', niche }, S).niche;
-  assert.equal(text('Car detailing & PPF'), 'car detailing studios');
-  assert.equal(text('Aesthetic clinics'), 'aesthetic clinics');
-  assert.equal(text('Boutique fitness (Oct–Jan)'), 'fitness studios');
-  assert.equal(text('AC servicing (from late Jan)'), 'AC service companies');
-  assert.equal(text(''), 'businesses');
-});
-
-test('nichesFor: four defaults, or the list from Settings; website leads get their niche from keywords', () => {
-  assert.deepEqual(LH.nichesFor({}).map((n) => n.name), ['Car detailing studios', 'Aesthetic clinics', 'Dental clinics', 'Beauty salons']);
-  assert.deepEqual(LH.nichesFor({ niches: null }), LH.DEFAULT_NICHES);
-  assert.deepEqual(LH.nichesFor({ niches: [] }), LH.DEFAULT_NICHES, 'an empty list means the defaults');
-  const custom = { niches: [{ name: ' Pet groomers ', keywords: 'Dog Grooming, pet salon\ncat grooming' }, { name: '', keywords: ['x'] }] };
-  assert.deepEqual(LH.nichesFor(custom), [{ name: 'Pet groomers', keywords: ['dog grooming', 'pet salon', 'cat grooming'] }]);
-  assert.equal(LH.nicheOf({ keywords: ['dog grooming'] }, custom), 'Pet groomers');
-  assert.equal(LH.scriptVars({ keywords: ['dog grooming'] }, custom).niche, 'pet groomers');
-  assert.equal(LH.nicheOf({ keywords: ['invisalign'] }, {}), 'Dental clinics');
-  assert.equal(LH.nicheOf({ keywords: ['ceramic coating dubai'] }, {}), 'Car detailing studios', 'a longer search term still matches');
-  assert.equal(LH.nicheOf({ keywords: ['pest control'] }, {}), '');
+test('presets: every kind of business is built in; yours are added, your edits win, the ones you removed stay away', () => {
+  const D = LH.DEFAULT_PRESETS.map(LH.cleanPreset);
+  assert.ok(D.length >= 40, 'a preset for every common kind of business');
+  assert.deepEqual(D.slice(0, 6).map((n) => n.name), ['Car', 'Fitness', 'Pets', 'Accountants', 'Used Cars', 'New openings']);
+  assert.equal(new Set(D.map((n) => n.name.toLowerCase())).size, D.length, 'no name twice');
+  for (const p of D) {
+    assert.ok(p.keywords.length >= 3, `${p.name} has search terms`);
+    assert.equal(p.minReviews, 0, `${p.name}: a business that just opened has no reviews yet`);
+  }
+  assert.deepEqual(LH.nichesFor({}), D);
+  assert.deepEqual(LH.nichesFor({ niches: null }), D);
+  assert.deepEqual(LH.nichesFor({ niches: [] }), D, 'an empty list means the built in ones');
+  assert.deepEqual(LH.nichesFor({ niches: [{ name: 'Car detailing studios', keywords: ['ppf'] }] }), D, 'niches saved before presets had areas are dropped');
+  const custom = { niches: [{ name: ' Pet groomers ', label: 'pet groomers', keywords: 'Dog Grooming, pet salon\ncat grooming', exclude: 'vet\n\nvet', minReviews: '3', maxReviews: '', areas: 'JLT, Dubai\nAl Barsha, Dubai' }, { name: '', keywords: ['x'], areas: [] }] };
+  const mine = { name: 'Pet groomers', label: 'pet groomers', minReviews: 3, maxReviews: 100000, keywords: ['dog grooming', 'pet salon', 'cat grooming'], exclude: ['vet'], areas: ['JLT, Dubai', 'Al Barsha, Dubai'] };
+  assert.deepEqual(LH.nichesFor(custom), [...D, mine], 'yours come after the built in ones');
+  // Your copy of a built in kind takes its place; one you removed stays away.
+  const edited = LH.nichesFor({ niches: [{ name: 'salons', keywords: ['henna salon'], areas: [] }], hiddenPresets: ['Car', 'used cars'] });
+  assert.equal(edited.length, D.length - 2);
+  assert.ok(!edited.some((p) => ['Car', 'Used Cars'].includes(p.name)));
+  assert.deepEqual(edited.find((p) => p.name.toLowerCase() === 'salons').keywords, ['henna salon']);
+  // Areas: a kind's own list, else your shared list, else the built in one.
+  assert.ok(LH.DEFAULT_AREAS.length >= 120 && new Set(LH.DEFAULT_AREAS.map((a) => a.toLowerCase())).size === LH.DEFAULT_AREAS.length, 'many areas, none twice');
+  assert.deepEqual(LH.presetAreas(mine, {}), ['JLT, Dubai', 'Al Barsha, Dubai']);
+  assert.deepEqual(LH.presetAreas(D.find((p) => p.name === 'Salons'), { areas: 'Mirdif, Dubai\n\nJVC, Dubai' }), ['Mirdif, Dubai', 'JVC, Dubai']);
+  assert.deepEqual(LH.presetAreas(null, {}), LH.DEFAULT_AREAS);
+  assert.ok(LH.OPENING_AD_KEYWORDS.includes('grand opening'));
+  assert.equal(LH.nicheOf({ keywords: ['dog grooming'] }, custom), 'Pets', 'a built in kind with that search term comes first');
+  assert.equal(LH.nicheOf({ keywords: ['cat grooming at home'] }, { niches: [{ name: 'Cat people', keywords: ['cat grooming at home'], areas: [] }] }), 'Cat people');
+  assert.equal(LH.nicheOf({ keywords: ['vat consultant'] }, {}), 'Accountants');
+  assert.equal(LH.nicheOf({ keywords: ['ceramic coating dubai'] }, {}), 'Car', 'a longer search term still matches');
+  assert.equal(LH.nicheOf({ keywords: ['zeppelin rides'] }, {}), '');
   assert.equal(LH.nicheOf({ niche: 'Yacht charters' }, {}), 'Yacht charters', 'a niche stored on a prospect is kept');
   assert.deepEqual(LH.parseKeywords('a, B\n\nc,a'), ['a', 'b', 'c']);
 });
 
 test('old settings keys are dropped', () => {
-  const s = LH.withDefaults({ templates: { x: 1 }, adTemplates: {}, adsOffer: 'AED 600', myName: 'Samil' });
-  assert.equal(s.myName, 'Samil');
-  assert.equal(s.bubbles, 3);
-  for (const k of ['templates', 'adTemplates', 'adsOffer']) assert.ok(!(k in s), k);
+  const s = LH.withDefaults({ templates: { x: 1 }, adTemplates: {}, adsOffer: 'AED 600', myName: 'Samil', bubbles: 3, scripts: null, intentOpeners: {}, country: 'SA' });
+  assert.equal(s.country, 'SA', 'settings that still work are kept');
+  for (const k of ['templates', 'adTemplates', 'adsOffer', 'bubbles', 'scripts', 'intentOpeners', 'myName']) assert.ok(!(k in s), k);
+  // 2.3: Lead Hunter's own email sender, its texts and your signature are gone.
+  const old = LH.withDefaults({ emails: { ads: { body: 'x' } }, emailFromName: 'Samil', emailMaxPerDay: 30, emailFollowups: 2, emailSignature: 's', emailOptOut: 'o', queueSite: 'https://x.example', queueKey: 'k', queueKeyAt: 1, agency: 'A', myPhone: '1', myWebsite: 'w' });
+  for (const k of ['emails', 'emailFromName', 'emailMaxPerDay', 'emailFollowups', 'emailSignature', 'emailOptOut', 'queueSite', 'queueKey', 'queueKeyAt', 'agency', 'myPhone', 'myWebsite']) assert.ok(!(k in old), k);
+  assert.ok(LH.hasOldSettings({ queueKey: 'k' }));
+  assert.ok(LH.hasOldSettings({ bubbles: 3 }));
   assert.ok(LH.hasOldSettings({ adsOffer: '' }));
   assert.ok(!LH.hasOldSettings(s));
+  // 3.0: the Meta ads client finder, the heat score, the quality signals and PageSpeed are gone.
+  const v2 = LH.withDefaults({ heatWeights: { ads: {} }, heatHot: 70, weakChecks: [], pagespeedKey: 'k', adCheckAll: true, followerMin: 1, targetNiches: ['Car'], igToken: 't', verifyKey: 'q' });
+  for (const k of ['heatWeights', 'heatHot', 'weakChecks', 'pagespeedKey', 'adCheckAll', 'followerMin', 'targetNiches']) assert.ok(!(k in v2), k);
+  assert.deepEqual([v2.igToken, v2.verifyKey, v2.newDays, v2.verifyDailyCap, v2.emailRisky], ['t', 'q', 120, 100, false], 'what still works is kept, new settings get their defaults');
 });
 
 /* ---------------------------------------------------------- tags, results */
-test('tags and priority: running-ads leads sink to the bottom', () => {
-  assert.deepEqual(LH.leadTags(prospect()), ['Good reviews']);
-  assert.deepEqual(LH.leadTags(prospect({ sources: { maps: { placeId: 'x', rating: 4.8, reviews: 12 } } })), ['Growing']);
-  assert.deepEqual(LH.leadTags(prospect({ sources: { maps: { placeId: 'x', rating: 3.6, reviews: 90 } } })), [], 'many reviews, low rating: not growing');
-  assert.deepEqual(LH.leadTags(prospect({ sources: { maps: { placeId: 'x', rating: 3.5, reviews: 300 } } })), []);
-  assert.equal(LH.tagLine(prospect({ sources: { maps: { placeId: 'x', rating: 3.5, reviews: 300 } } })), 'No Meta ads');
-  assert.deepEqual(LH.leadTags(prospect({ sources: { maps: { placeId: 'x', rating: 3.2, reviews: 7 } } })), ['Growing'], 'few reviews');
-  assert.deepEqual(LH.leadTags(advertiser({ website: 'https://gone.example/', site: { state: 'error' } })), ['Site down'], 'a site that is down');
-  assert.deepEqual(LH.leadTags(prospect({ site: { state: 'ok', parked: true } })), ['Site down', 'Good reviews'], 'a parked domain');
-  assert.equal(LH.tagLine(advertiser({ website: 'https://gone.example/', site: { state: 'error' } })), 'Site down');
-  assert.deepEqual(LH.leadTags(prospect({ website: null })), ['No website', 'Good reviews']);
-  assert.deepEqual(LH.leadTags(prospect({ adCheck: { state: 'running' } })), ['Running ads', 'Good reviews']);
-  assert.deepEqual(LH.leadTags(advertiser({ website: 'https://gloss.example/' })), ['Running ads']);
-  assert.deepEqual(LH.leadTags(advertiser({ places: { match: true, rating: 4.5, reviews: 80 } })), ['No website', 'Good reviews']);
-  assert.equal(LH.tagLine(prospect()), 'No Meta ads · Good reviews');
-  assert.equal(LH.tagLine(advertiser()), 'No website');
-  assert.equal(LH.tagLine(prospect({ adCheck: { state: 'pending' } })), 'Ad check not done · Good reviews');
-
-  const base = { activeAdCount: 4, earliestStart: Date.now() - 70 * 86400000, phones: [{ number: '+971501234567', source: 'website' }], emails: [], pageLikes: 2000 };
-  const noSite = LH.priority({ ...base, website: null });
-  const withSite = LH.priority({ ...base, website: 'https://a.example/', site: { state: 'ok', score: 20 } });
-  assert.ok(noSite > withSite && withSite <= 10, `${noSite} ${withSite}`);
-  assert.ok(LH.priority(prospect({ adCheck: { state: 'running' } })) < LH.priority(prospect({ adCheck: { state: 'pending' }, sources: {} })));
-});
-
-test('results: sent, replied and reply rate by niche and by script, across both tabs', () => {
-  const day = 86400000;
-  const leads = [
-    prospect({ contactedAt: 1, sentScript: 'ads', status: 'replied', repliedAt: 2 }),
-    prospect({ contactedAt: 1, sentScript: 'ads', status: 'contacted' }),
-    prospect({ contactedAt: 1, sentScript: 'website', status: 'meeting', website: null, niche: 'Aesthetic clinics' }),
-    prospect({ contactedAt: 1, sentScript: 'ads', status: 'followup', repliedAt: 3, niche: 'Car detailing & PPF' }),
-    advertiser({ contactedAt: day, sentScript: 'website', status: 'won' }),
-    advertiser({ contactedAt: day, status: 'contacted', keywords: ['pest control'] }),
-    advertiser({ status: 'new' }),
-    prospect({ status: 'lost' }),
-  ];
-  const r = LH.results(leads, S);
-  assert.deepEqual(r.total, { sent: 6, replied: 4, rate: '67%' });
-  const niche = Object.fromEntries(r.byNiche.map((x) => [x.label, [x.sent, x.replied, x.rate]]));
-  assert.deepEqual(niche, { 'Car detailing studios': [4, 3, '75%'], 'Aesthetic clinics': [1, 1, '100%'], 'No niche': [1, 0, '0%'] });
-  const script = Object.fromEntries(r.byScript.map((x) => [x.label, [x.sent, x.replied, x.rate]]));
-  assert.deepEqual(script, { 'Ads script': [3, 2, '67%'], 'Website script': [2, 2, '100%'], 'Not recorded': [1, 0, '0%'] });
-  assert.deepEqual(LH.results([advertiser()], S).total, { sent: 0, replied: 0, rate: '–' }, 'a dash when nothing was sent');
-});
-
 test('Instagram handles from where the lead was found or their profile link', () => {
   assert.equal(LH.igHandle({ sources: { instagram: { username: 'glossyppf' } } }), 'glossyppf');
   assert.equal(LH.igHandle({ socials: { instagram: 'https://www.instagram.com/shine.auto_spa/?hl=en' } }), 'shine.auto_spa');
@@ -456,46 +213,109 @@ test('csv escapes formulas but keeps phone numbers', () => {
   assert.equal(csv, `a,"'=HYPERLINK(""x"")",+971 50 123 4567,"b,c","say ""hi"""`);
 });
 
-test('Google Contacts file: the business name as the contact, WhatsApp number first, one label, no phone and no email left out', () => {
-  const rows = LH.googleContactsRows(
-    [
-      prospect({ pageName: 'GLOSSY PPF | Ceramic Coating Dubai', phones: [{ number: '+97142345678', source: 'google' }, { number: '+971501234567', source: 'whatsapp-site' }], emails: ['bad@glossy.example', 'hi@glossy.example'], badEmails: ['bad@glossy.example'], area: 'Al Quoz' }),
-      prospect({ pageName: 'No Contact Spa', phones: [], emails: [] }),
-      prospect({ pageName: 'Mail Only', phones: [], emails: ['team@mailonly.example'], website: null }),
-    ],
-    S,
-  );
-  assert.equal(LH.GOOGLE_CONTACTS_HEAD.length, rows[0].length);
-  const col = (r, name) => r[LH.GOOGLE_CONTACTS_HEAD.indexOf(name)];
-  assert.equal(rows.length, 2, 'a lead with no phone and no email is left out');
-  assert.equal(col(rows[0], 'Name'), 'Glossy PPF');
-  assert.equal(col(rows[0], 'Organization 1 - Name'), 'Glossy PPF');
-  assert.deepEqual([col(rows[0], 'Phone 1 - Type'), col(rows[0], 'Phone 1 - Value')], ['Mobile', '+971501234567'], 'the WhatsApp number comes first');
-  assert.deepEqual([col(rows[0], 'Phone 2 - Type'), col(rows[0], 'Phone 2 - Value')], ['Work', '+97142345678']);
-  assert.equal(col(rows[0], 'E-mail 1 - Value'), 'hi@glossy.example', 'a bounced email is skipped');
-  assert.equal(col(rows[0], 'Website 1 - Value'), 'https://glossyppf.example/');
-  assert.match(col(rows[0], 'Notes'), /^RizcoReach lead · Car detailing studios · Al Quoz/);
-  assert.equal(col(rows[0], 'Group Membership'), '* myContacts ::: RizcoReach leads');
-  assert.deepEqual([col(rows[1], 'Name'), col(rows[1], 'Phone 1 - Value'), col(rows[1], 'E-mail 1 - Value')], ['Mail Only', '', 'team@mailonly.example']);
-  // Phone numbers stay numbers in the file (no formula guard quote).
-  assert.match(LH.toCsv([rows[0]]), /,Mobile,\+971501234567,/);
-});
-
-test('areas: Dubai and Abu Dhabi cover the whole city, no area twice', () => {
-  for (const [city, list] of Object.entries(LH.AREAS)) assert.equal(new Set(list).size, list.length, `${city} has no repeats`);
-  assert.ok(LH.AREAS.Dubai.length >= 70 && LH.AREAS['Abu Dhabi'].length >= 25);
-  assert.deepEqual(LH.AREAS.Dubai.slice(0, 3), ['Downtown Dubai', 'Business Bay', 'DIFC'], 'central areas first');
-});
-
 test('template placeholder emails are never used: GoDaddy filler and the like', () => {
   for (const e of ['filler@godaddy.com', 'info@example.com', 'email@domain.com', 'you@yourdomain.ae', 'name@company.ae', 'abc123@sentry.io', 'x@sentry-next.wixpress.com', 'noreply@clinic.ae', 'logo@2x.png'])
     assert.equal(LH.isJunkEmail(e), true, e);
   for (const e of ['info@glossy.ae', 'hello@shineautospa.example', 'bookings@eyelashsecret.com', 'salon123@gmail.com']) assert.equal(LH.isJunkEmail(e), false, e);
   const html = '<a href="mailto:filler@godaddy.com">Email us</a><p>Write to filler@godaddy.com or book@eyelashsecret.com</p>';
   assert.deepEqual(LH.extractContacts(html, 'https://eyelashsecret.com/', 'AE').emails, ['book@eyelashsecret.com']);
-  // Leads saved before this: the placeholder is skipped when emailing and in the Google Contacts file.
-  const old = mailLead({ emails: ['filler@godaddy.com', 'book@eyelashsecret.com'] });
-  assert.equal(LH.emailFor(old, S).to, 'book@eyelashsecret.com');
-  assert.equal(LH.emailFor(mailLead({ emails: ['filler@godaddy.com'] }), S).to, '', 'only a placeholder: nothing to email');
+  // Leads saved before this: the placeholder is skipped in the exports.
+  const old = prospect({ emails: ['filler@godaddy.com', 'book@eyelashsecret.com'] });
   assert.deepEqual(LH.goodEmails(old), ['book@eyelashsecret.com']);
+  assert.deepEqual(LH.goodEmails(prospect({ emails: ['filler@godaddy.com'] })), [], 'only a placeholder: nothing to email');
 });
+
+test('presets: exclude words match whole words, "category:" only checks the category', () => {
+  const [car, fit, , acc] = LH.presetsFor({});
+  assert.equal(LH.excludeHit(car, 'Gloss Garage', 'Car detailing service'), '', 'a studio called Garage stays');
+  assert.equal(LH.excludeHit(car, 'Joe Garage', 'Garage'), 'category: garage');
+  assert.equal(LH.excludeHit(car, 'Speedy Car Wash & PPF', 'Car detailing service'), 'car wash');
+  assert.equal(LH.excludeHit(car, 'Prime Tyres', 'Tire shop'), 'tire');
+  assert.equal(LH.excludeHit(acc, 'Key Accounting', 'Accountant'), '', '"EY" is not part of "Key"');
+  assert.equal(LH.excludeHit(acc, 'EY Middle East', 'Accountant'), 'EY');
+  assert.equal(LH.excludeHit(fit, 'Spartan Gym', 'Gym'), '', '"spa" is not part of "Spartan"');
+  assert.equal(LH.excludeHit(fit, 'Barry’s JLT', 'Gym'), "Barry's", 'curly and straight apostrophes match');
+  assert.equal(LH.excludeHit(fit, 'GOLD\'S GYM Al Barsha', 'Gym'), "Gold's Gym", 'capitals do not matter');
+  assert.equal(LH.looksLikeHours('Opens 10 AM'), true);
+  assert.equal(LH.looksLikeHours('Al Wasl Rd'), false);
+});
+
+test('the city comes from the lead area', () => {
+  assert.equal(LH.cityOf('Al Nahda, Sharjah'), 'Sharjah');
+  assert.equal(LH.cityOf('Ras Al Khaimah'), 'Ras Al Khaimah');
+  assert.equal(LH.cityOf('Al Quoz', 'Dubai'), 'Dubai', 'older leads keep the setting');
+});
+
+test('presets JSON: export and import round trip, bad files explain themselves', () => {
+  const list = LH.presetsFor({});
+  const back = LH.presetsFromJson(LH.presetsToJson(list));
+  assert.deepEqual(back.presets, list);
+  assert.equal(back.skipped, 0);
+  const mixed = LH.presetsFromJson(JSON.stringify([{ name: 'Yachts', keywords: ['yacht charter'], areas: 'Dubai Marina, Dubai' }, { name: 'No keywords' }]));
+  assert.deepEqual([mixed.presets.map((p) => p.name), mixed.presets[0].areas, mixed.skipped], [['Yachts'], ['Dubai Marina, Dubai'], 1]);
+  assert.throws(() => LH.presetsFromJson('{oops'), /not valid JSON/);
+  assert.throws(() => LH.presetsFromJson('{"a":1}'), /No presets/);
+});
+
+test('business names are cleaned before they are compared', () => {
+  assert.deepEqual(
+    ['Gloss Garage L.L.C - Dubai', 'AL NOOR TRADING EST.', 'Prime FZ-LLC Services', 'Spartan & Co.', 'Spartan and Co', 'Fit Hub FZCO', 'Fit Hub FZE UAE', 'مطعم الريم'].map(LH.normName),
+    ['gloss garage', 'al noor', 'prime', 'spartan', 'spartan', 'fit hub', 'fit hub', 'مطعم الريم'],
+  );
+});
+
+test('Jaro-Winkler: near spellings match at 0.92, different businesses do not', () => {
+  assert.equal(LH.jaroWinkler('martha', 'marhta').toFixed(4), '0.9611'); // the textbook value
+  assert.equal(LH.jaroWinkler('abc', 'abc'), 1);
+  assert.equal(LH.jaroWinkler('', 'abc'), 0);
+  assert.ok(LH.jaroWinkler('gloss garage', 'glos garage') >= 0.92);
+  assert.ok(LH.jaroWinkler('iron fist boxing', 'iron box') < 0.92);
+  assert.ok(LH.jaroWinkler('paws and claws', 'pure pets') < 0.92);
+});
+
+test('root domains: subdomains fold, free builders and two part endings stay', () => {
+  assert.deepEqual(
+    ['https://shop.gloss.ae/x', 'https://www.gloss.co.ae', 'https://book.gloss.co.ae/', 'https://gloss.wixsite.com/home', 'https://other.wixsite.com/', 'http://www.example.com', 'https://my-shop.myshopify.com'].map(LH.rootDomain),
+    ['gloss.ae', 'gloss.co.ae', 'gloss.co.ae', 'gloss.wixsite.com', 'other.wixsite.com', 'example.com', 'my-shop.myshopify.com'],
+  );
+  assert.equal(LH.prospectKeys({ website: 'https://booking.gloss.ae/' }).join(), LH.prospectKeys({ website: 'https://gloss.ae/' }).join());
+});
+
+test('fuzzy names only match inside the same area', () => {
+  const index = {};
+  LH.addName(index, { id: 'a', pageName: 'Gloss Garage LLC', area: 'Al Quoz' });
+  LH.addName(index, { id: 'b', pageName: 'Iron Fist Boxing', area: 'JLT' });
+  LH.addName(index, { id: 'a', pageName: 'Gloss Garage LLC', area: 'Al Quoz' }); // once
+  assert.equal(index['al quoz'].length, 1);
+  assert.equal(LH.findByName(index, 'Glos Garage', 'Al Quoz'), 'a');
+  assert.equal(LH.findByName(index, 'Gloss Garage', 'JLT'), null);
+  assert.equal(LH.findByName(index, 'Iron Box', 'JLT'), null);
+  assert.equal(LH.findByName(index, 'Glos Garage', 'Al Quoz', 1), null); // threshold 1: exact names only
+  assert.equal(LH.findByName(index, 'Gloss Garage', ''), null);
+});
+
+test('contacted memory: keys, hits, and a lead never hides itself', () => {
+  const lead = { id: 'p:m:1', pageName: 'Gloss Garage', area: 'JLT', phones: [{ number: '+971501234567' }], website: 'https://www.gloss.ae/', socials: { instagram: 'https://www.instagram.com/Gloss.Dxb/' } };
+  assert.deepEqual(LH.historyKeys(lead), ['p:+971501234567', 'd:gloss.ae', 'i:gloss.dxb', 'n:gloss garage@jlt']);
+  assert.deepEqual(LH.historyKeys({ website: 'https://linktr.ee/gloss', phones: [] }), []); // a link page is not their website
+  assert.deepEqual(LH.historyKeys({ phones: [{ number: '+97147000000', source: 'website' }, { number: '+971557000001', source: 'whatsapp-site' }] }), ['p:+971557000001']);
+  const history = { 'p:+971501234567': [1000, 'whatsapp', 'p:m:1', 'Gloss Garage'] };
+  assert.equal(LH.historyHit(lead, history), null);
+  assert.deepEqual(LH.historyHit({ ...lead, id: 'p:m:2' }, history), { key: 'p:+971501234567', at: 1000, via: 'whatsapp' });
+  assert.deepEqual(LH.historyHit({ pageName: 'Gloss Garage LLC', area: 'jlt', phones: ['+97143334444'] }, { 'n:gloss garage@jlt': [5, 'export', 'x', ''] }).via, 'export');
+  assert.equal(LH.historyHit(lead, null), null);
+  // Tagged only while the lead is still new: a lead you are working stays in view.
+  const other = { ...lead, id: 'p:m:2', status: 'new', kind: 'prospect' };
+  assert.ok(LH.fitTags(other, { history }).includes('Contacted before'));
+  assert.ok(!LH.fitTags({ ...other, status: 'contacted' }, { history }).includes('Contacted before'));
+});
+
+test('phone numbers from a contacted sheet or a Google Contacts export', () => {
+  const sheet = 'Name,Phone,Notes\nA,050 123 4567,"called, no answer"\nB,"+971 4 333 4444 ::: 055-765-4321",\nC,(04) 222 1111,\nD,not a number,\n';
+  assert.deepEqual(LH.phonesInCsv(sheet), ['+971501234567', '+97143334444', '+971557654321', '+97142221111']);
+  const google = '﻿Name,Given Name,Group Membership,Phone 1 - Type,Phone 1 - Value\r\nGloss Garage,Gloss Garage,* myContacts ::: LF-2026-10-20,Mobile,+971 56 846 1835\r\n';
+  assert.deepEqual(LH.phonesInCsv(google), ['+971568461835']);
+  assert.deepEqual(LH.parseCsv('a,"b ""q"" c",d\n\n"multi\nline",x'), [['a', 'b "q" c', 'd'], ['multi\nline', 'x']]);
+  assert.deepEqual(LH.phonesInCsv('2026-10-20,LF-2026-10-20'), []); // dates are not phones
+});
+

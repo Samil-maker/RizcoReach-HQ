@@ -68,7 +68,19 @@
     /it works!/i,
     /default web site page/i,
     /there is no website configured at this address/i,
+    // Website builders and hosts, before the owner ever built or published anything.
+    /(domain|site|website) (is not|isn['’]?t) connected to a website/i,
+    /(site|website|store|page) (is not|isn['’]?t|has not been|hasn['’]?t been) (yet )?published/i,
+    /future home of/i,
+    /(domain|website|hosting) (has |is )?expired/i,
+    /this domain is (available|not configured)/i,
+    /new (website|site) (is )?(coming|launching)/i,
+    /(website|site) (is )?(launching|opening) soon/i,
+    /(we are|we['’]re) (launching|coming) soon/i,
+    /welcome to wordpress\. this is your first post/i,
   ];
+  // On a page with next to nothing on it, these words alone say it is a placeholder.
+  const TINY_PARKED = /\b(coming|launching|opening) soon\b|\bunder construction\b|\bstay tuned\b/i;
 
   /** Contacts found in a page: phone numbers, WhatsApp numbers, emails, social profiles. */
   LH.extractContacts = (html, baseUrl, countryCode = 'AE') => {
@@ -87,8 +99,8 @@
         continue;
       }
       if (/^mailto:/i.test(raw)) {
-        const e = raw.replace(/^mailto:/i, '').split('?')[0].trim().toLowerCase();
-        if (/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(e) && !LH.isJunkEmail(e)) emails.add(e);
+        // "mailto:%20info@x.com?subject=Hi" and "mailto:a@x.com,b@x.com" both happen.
+        LH.emailsInText(raw.replace(/^mailto:/i, '').split('?')[0].replace(/[,;]/g, ' ')).forEach((e) => emails.add(e));
         continue;
       }
       const u = LH.unwrapLink(raw.startsWith('whatsapp:') ? raw : LH.safeUrl(raw, base) && LH.safeUrl(raw, base).toString());
@@ -108,11 +120,7 @@
     }
     const text = visibleText(html);
     LH.phonesInText(text, countryCode).forEach((n) => phones.add(n));
-    for (const m of text.matchAll(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi)) {
-      const e = m[0].toLowerCase();
-      if (LH.isJunkEmail(e)) continue;
-      emails.add(e);
-    }
+    LH.emailsInText(text, 8).forEach((e) => emails.add(e));
     wa.forEach((n) => phones.delete(n));
     out.phones = [...phones].slice(0, 6);
     out.whatsapp = [...wa].slice(0, 4);
@@ -173,7 +181,7 @@
     const builder = (BUILDERS.find(([, re]) => re.test(html)) || [null])[0];
 
     // Parked / placeholder pages are a headline issue on their own.
-    const parkedHit = PARKED.find((re) => re.test(words < 400 ? text : text.slice(0, 600)));
+    const parkedHit = PARKED.find((re) => re.test(words < 400 ? text : text.slice(0, 600))) || (words < 80 && TINY_PARKED.test(text) ? TINY_PARKED : null);
     if (parkedHit && words < 400) {
       const phrase = (text.match(parkedHit) || [''])[0].trim().slice(0, 60);
       return {
@@ -272,6 +280,8 @@
       spa,
       copyrightYear,
       https: !!finalUrl && finalUrl.protocol === 'https:',
+      whatsappButton: waLink,
+      contactForm: forms > 0 || bookingWidget,
       mobile: /width\s*=\s*device-width/i.test(viewport),
       ttfb,
       load,
