@@ -90,7 +90,7 @@ def overview(con, s: config.Settings) -> Dict:
     cap_today = sum(i["cap"] for i in inboxes) if schedule.is_send_day(today) else 0
     human = "is_auto=0 AND classification!='bounce'"
     queue = {r["segment"]: r["n"] for r in con.execute("SELECT segment, COUNT(*) AS n FROM leads WHERE status='queued' GROUP BY segment")}
-    send_day = today if schedule.is_send_day(today) else clock.next_weekday(today)
+    send_day = today if schedule.is_send_day(today) else schedule.next_send_day(today)
     following = one("SELECT COUNT(*) FROM leads WHERE status='active'")
     due_next = one("SELECT COUNT(*) FROM leads WHERE status='active' AND next_due<=?", send_day.isoformat())
     full = f.get("full", 0)
@@ -102,13 +102,13 @@ def overview(con, s: config.Settings) -> Dict:
     elif running and schedule.fast_today(con):
         nxt = "Sending now, about one a minute"
     elif running:
-        nxt = "Sending now, spread until about 21:45"
-    elif schedule.is_send_day(today) and now < clock.at(today, 9):
-        nxt = "Today at 9:00"
+        nxt = "Sending now, spread until about 22:45"
+    elif schedule.is_send_day(today) and now < clock.at(today, *schedule.START):
+        nxt = "Today at 8:00"
     elif schedule.is_send_day(today) and schedule.current_window_end(now) and sent_today < cap_today and sum(queue.values()):
         nxt = "Not running right now. Press Start sending to send the rest of today's emails"
     else:
-        nxt = "%s at 9:00" % clock.nice(clock.next_weekday(today + timedelta(days=1)))
+        nxt = "%s at 8:00" % clock.nice(schedule.next_send_day(today + timedelta(days=1)))
     return {
         "today": "%s %d %s" % (today.strftime("%A"), today.day, today.strftime("%B")),
         "paused": paused, "approved": approved, "running": running, "next": nxt,
@@ -354,7 +354,7 @@ def post(path: str, body: Dict, raw: bytes, headers) -> Dict:
         if not db.get_state(con, "approved"):
             return {"ok": False, "message": "Sending isn't approved yet (run the setup line once more)."}
         if not schedule.is_send_day(now.date()) or not schedule.current_window_end(now):
-            return {"ok": False, "message": "Emails only go out 9:00 to 22:00, Monday to Friday. Try again then."}
+            return {"ok": False, "message": "Emails only go out %s, Dubai time. Try again then." % schedule.hours_text()}
         left = sum(len(v["items"]) for v in schedule.plan(con, s, now.date(), [i for i in s.inboxes if i.password]).values())
         if not left:
             return {"ok": False, "message": "Nothing left to send today: no new leads waiting, or today's limit is used up."}
@@ -531,7 +531,7 @@ WATCH_EVERY = 600  # seconds between checks that the background jobs are still s
 
 
 def _watch_jobs(stop: threading.Event, every: int = WATCH_EVERY) -> None:
-    """Every few minutes: switch the hourly and the 9:00 job back on if they have stopped (the dashboard is the one
+    """Every few minutes: switch the hourly and the 8:00 job back on if they have stopped (the dashboard is the one
     job that always runs, so it looks after the other two)."""
     while not stop.wait(every):
         try:

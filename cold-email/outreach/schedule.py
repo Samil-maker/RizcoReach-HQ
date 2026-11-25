@@ -4,11 +4,12 @@ Each inbox sends up to its daily limit (500 by default, Gmail's own limit; DAILY
 included. A brand new inbox (added as brand new) sends no cold email in its first 14 days: it only warms
 up (see warmup.py). Each lead goes out from an inbox that sends its campaign (website or Meta ads), and
 only once that campaign's emails are approved.
-Emails go out Monday to Friday, spread from 9:00 to 21:45 Dubai time.
+Emails go out every day (SEND_WEEKENDS=no in .env for Monday to Friday only), spread from 8:00 to 22:45 Dubai time.
 """
 from __future__ import annotations
 
 import bisect
+import os
 import random
 from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional, Tuple
@@ -16,12 +17,13 @@ from typing import Dict, List, Optional, Tuple
 from . import clock, config, db, suppression
 from .config import Inbox, Settings
 
-WINDOWS = [((9, 0), (22, 0))]   # Dubai time, Monday to Friday
-LAST_PLANNED = (21, 45)         # the day's emails are planned to be out by then
+START = (8, 0)                  # Dubai time: the first emails of the day
+WINDOWS = [(START, (23, 0))]    # sending hours, every day unless SEND_WEEKENDS=no
+LAST_PLANNED = (22, 45)         # the day's emails are planned to be out by then
 # How the day's emails are spread: most during the working day (busiest 10 to 12 and 1 to 3, when owners read
-# email), fewer in the evening. About three quarters are out by 18:00.
-HOUR_WEIGHTS = {9: 1.0, 10: 1.5, 11: 1.5, 12: 1.0, 13: 1.5, 14: 1.5, 15: 1.1, 16: 1.1, 17: 1.0,
-                18: 0.7, 19: 0.6, 20: 0.6, 21: 0.5}
+# email), fewer early in the morning and late in the evening.
+HOUR_WEIGHTS = {8: 0.8, 9: 1.0, 10: 1.5, 11: 1.5, 12: 1.0, 13: 1.5, 14: 1.5, 15: 1.1, 16: 1.1, 17: 1.0,
+                18: 0.8, 19: 0.7, 20: 0.7, 21: 0.6, 22: 0.5}
 FAST_GAP_SECONDS = 60                                 # "Send the rest now": about one email a minute
 MIN_GAP_SECONDS = 60                                  # never two emails from one inbox within a minute
 GAP_SECONDS = (60, 180)                               # catching up after the Mac slept: 1 to 3 minutes apart
@@ -78,7 +80,7 @@ def limits(con, inbox: Inbox, day: date) -> Dict:
     if ends and day < ends:
         days_in = (day - warmup_start(con, inbox.key)).days + 1
         return {"week": 0, "cap": 0, "sent": sent, "remaining": 0, "warming": True,
-                "why": "warming up, day %d of %d: no cold emails until %s" % (days_in, WARMUP_DAYS, clock.nice(clock.next_weekday(ends)))}
+                "why": "warming up, day %d of %d: no cold emails until %s" % (days_in, WARMUP_DAYS, clock.nice(next_send_day(ends)))}
     cap = inbox.daily_limit
     return {"week": week_number(con, inbox.key, day), "cap": cap, "sent": sent, "remaining": max(0, cap - sent),
             "why": "%d a day" % cap, "warming": False}
@@ -89,14 +91,14 @@ def cap_on(con, inbox: Inbox, day: date) -> int:
     if not is_send_day(day):
         return 0
     ends = warmup_ends(con, inbox.key)
-    if ends and day < clock.next_weekday(ends):
+    if ends and day < next_send_day(ends):
         return 0
     return inbox.daily_limit
 
 
 def forecast(con, inboxes: List[Inbox], targets=(50, 100)) -> Dict:
     """Emails a day possible on the next sending day and when each target is reached with these inboxes."""
-    today = clock.next_weekday(clock.today())
+    today = next_send_day(clock.today())
     full = sum(i.daily_limit for i in inboxes)
     out: Dict = {"today": sum(cap_on(con, i, today) for i in inboxes), "reach": {}, "full": full}
     per = max([i.daily_limit for i in inboxes] or [config.DEFAULT_DAILY_LIMIT])
@@ -134,8 +136,25 @@ def spread_times(n: int, start: datetime, end: datetime, rng=random) -> List[dat
     return times
 
 
+def send_weekends() -> bool:
+    return config._yes(os.environ.get("SEND_WEEKENDS"), True)
+
+
 def is_send_day(day: date) -> bool:
-    return day.weekday() < 5
+    return day.weekday() < 5 or send_weekends()
+
+
+def next_send_day(day: date) -> date:
+    """The same day if emails go out on it, else the next day they do."""
+    while not is_send_day(day):
+        day += timedelta(days=1)
+    return day
+
+
+def hours_text() -> str:
+    """8:00 to 23:00 every day"""
+    days = "every day" if send_weekends() else "Monday to Friday"
+    return "%d:%02d to %d:%02d %s" % (WINDOWS[0][0] + WINDOWS[0][1] + (days,))
 
 
 def windows(day: date) -> List[Tuple[datetime, datetime]]:

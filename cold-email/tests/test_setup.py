@@ -101,7 +101,8 @@ def test_bad_file_is_moved_aside(project, con, monkeypatch):
 
 def test_wake_and_schedule_commands():
     cmd = launchd.wake_command()
-    assert cmd[:4] == ["sudo", "pmset", "repeat", "wakeorpoweron"] and len(cmd[4]) == 5
+    assert cmd[:4] == ["sudo", "pmset", "repeat", "wakeorpoweron"] and cmd[4] == "MTWRFSU"   # every day
+    assert "Weekday" not in launchd.plist() and "StartCalendarInterval" in launchd.plist()
     assert "<string>auto</string>" in launchd.hourly_plist() and "StartInterval" in launchd.hourly_plist()
     assert "<string>send</string>" in launchd.plist() and "caffeinate" in launchd.plist()
 

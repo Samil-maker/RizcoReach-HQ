@@ -1,6 +1,6 @@
 """The Mac side: three background jobs, notifications, and waking the Mac up.
 
-Job 1  ae.rizcoreach.coldemail            rizco send        Monday to Friday at 9:00 Dubai time
+Job 1  ae.rizcoreach.coldemail            rizco send        every day at 8:00 Dubai time
 Job 2  ae.rizcoreach.coldemail.hourly     rizco auto        every hour: new lead files, replies, warm up, report
 Job 3  ae.rizcoreach.coldemail.dashboard  rizco dashboard   the dashboard at http://localhost:8321, always on
 """
@@ -15,7 +15,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Tuple
 
-from . import clock, config
+from . import clock, config, schedule
 
 LABEL = "ae.rizcoreach.coldemail"
 HOURLY_LABEL = "ae.rizcoreach.coldemail.hourly"
@@ -35,14 +35,9 @@ def _dubai_time_here(hour: int, minute: int) -> Tuple[int, int, int, bool]:
 
 
 def local_start_time():
-    """9:00 Dubai time in this Mac's own time zone (launchd uses the Mac's clock)."""
-    h, m, _, other = _dubai_time_here(9, 0)
+    """8:00 Dubai time in this Mac's own time zone (launchd uses the Mac's clock)."""
+    h, m, _, other = _dubai_time_here(*schedule.START)
     return h, m, other
-
-
-def day_shift() -> int:
-    """-1 when 9:00 Monday in Dubai is still Sunday on this Mac (far west time zones), +1 the other way."""
-    return _dubai_time_here(9, 0)[2]
 
 
 def _program(python: str, root: Path, command: str, keep_awake: bool) -> str:
@@ -79,19 +74,15 @@ def _plist(label: str, program: str, root: Path, schedule: str, log: str) -> str
 
 
 def plist(python: str = "", root: Path = None, hour: int = None, minute: int = None) -> str:
-    """The 9:00 send job. caffeinate keeps the Mac awake while it sends."""
+    """The 8:00 send job, every day. caffeinate keeps the Mac awake while it sends."""
     if hour is None or minute is None:
         hour, minute, _ = local_start_time()
     python = python or sys.executable
     root = Path(root or config.ROOT)
-    days = "\n".join(
-        "        <dict><key>Weekday</key><integer>%d</integer><key>Hour</key><integer>%d</integer>"
-        "<key>Minute</key><integer>%d</integer></dict>" % (d, hour, minute)
-        for d in sorted(((d + day_shift()) % 7) for d in range(1, 6))
-    )
-    schedule = ("    <!-- 9:00 Dubai time on Monday to Friday, written in your Mac's own clock: %02d:%02d -->\n"
-                "    <key>StartCalendarInterval</key>\n    <array>\n%s\n    </array>" % (hour, minute, days))
-    return _plist(LABEL, _program(python, root, "send", True), root, schedule, "send.log")
+    when = ("    <!-- 8:00 Dubai time every day, written in your Mac's own clock: %02d:%02d -->\n"
+            "    <key>StartCalendarInterval</key>\n    <dict><key>Hour</key><integer>%d</integer>"
+            "<key>Minute</key><integer>%d</integer></dict>" % (hour, minute, hour, minute))
+    return _plist(LABEL, _program(python, root, "send", True), root, when, "send.log")
 
 
 def hourly_plist(python: str = "", root: Path = None) -> str:
@@ -193,9 +184,9 @@ def install() -> str:
     hour, minute, other_zone = local_start_time()
     note = ""
     if other_zone:
-        note = ("\nYour Mac is not on Dubai time, so the job is set to %02d:%02d your time, which is 9:00 in Dubai. "
+        note = ("\nYour Mac is not on Dubai time, so the job is set to %02d:%02d your time, which is 8:00 in Dubai. "
                 "If you change time zone, run the setup again." % (hour, minute))
-    return ("Installed. Monday to Friday at 9:00 Dubai time your Mac sends the day's emails, and every hour it picks up "
+    return ("Installed. Every day at 8:00 Dubai time your Mac sends the day's emails, and every hour it picks up "
             "new lead files and checks replies. Your dashboard is at http://localhost:8321%s\nLogs: %s" % (note, config.logs_dir()))
 
 
@@ -228,11 +219,9 @@ def start_now() -> bool:
 
 
 def wake_command() -> List[str]:
-    """pmset command that wakes the Mac at 8:55 Dubai time on weekdays."""
-    hour, minute, shift, _ = _dubai_time_here(8, 55)
-    letters = "MTWRFSU"  # Monday ... Sunday
-    days = "".join(letters[(d + shift) % 7] for d in range(5))
-    days = "".join(l for l in letters if l in days)
+    """pmset command that wakes the Mac at 7:55 Dubai time every day."""
+    hour, minute, _, _ = _dubai_time_here(7, 55)
+    days = "MTWRFSU"  # Monday ... Sunday
     return ["sudo", "pmset", "repeat", "wakeorpoweron", days, "%02d:%02d:00" % (hour, minute)]
 
 

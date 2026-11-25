@@ -144,7 +144,7 @@ def build(con, settings: Settings, weekly: Optional[bool] = None) -> str:
         L.append("| %s | %d | %d (%s) | %d | %s |" % (inbox.email, lim["sent"], lim["cap"], status, week, warm))
     f = schedule.forecast(con, settings.inboxes)
     goals = ", ".join("%d a day: %s" % (t, clock.nice(d) if hasattr(d, "day") else d) for t, d in f["reach"].items())
-    L += ["", "Together: up to %d a day on the next weekday. %s. Add an inbox with `rizco add-inbox`." % (f["today"], goals)]
+    L += ["", "Together: up to %d a day on the next sending day. %s. Add an inbox with `rizco add-inbox`." % (f["today"], goals)]
     spammy = [i.email for i in settings.inboxes if warmup.summary(con, i.key)["checked"] >= 10
               and warmup.summary(con, i.key)["spam"] / warmup.summary(con, i.key)["checked"] > 0.2]
     if spammy:
@@ -218,7 +218,7 @@ def build(con, settings: Settings, weekly: Optional[bool] = None) -> str:
     # 6. Queue
     q = {r["segment"]: r["n"] for r in _rows(con, "SELECT segment, COUNT(*) AS n FROM leads WHERE status='queued' GROUP BY segment")}
     active = con.execute("SELECT COUNT(*) FROM leads WHERE status='active'").fetchone()[0]
-    nxt = clock.next_weekday(today + timedelta(days=1))
+    nxt = schedule.next_send_day(today + timedelta(days=1))
     due = con.execute("SELECT COUNT(*) FROM leads WHERE status='active' AND next_due<=?", (nxt.isoformat(),)).fetchone()[0]
     L += ["## Queue", "",
           "- New leads waiting: %d (A %d, B %d, C %d)" % (sum(q.values()), q.get("A", 0), q.get("B", 0), q.get("C", 0)),
