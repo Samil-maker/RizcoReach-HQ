@@ -194,7 +194,10 @@ test('old settings keys are dropped', () => {
   // 3.0: the Meta ads client finder, the heat score, the quality signals and PageSpeed are gone.
   const v2 = LH.withDefaults({ heatWeights: { ads: {} }, heatHot: 70, weakChecks: [], pagespeedKey: 'k', adCheckAll: true, followerMin: 1, targetNiches: ['Car'], igToken: 't', verifyKey: 'q' });
   for (const k of ['heatWeights', 'heatHot', 'weakChecks', 'pagespeedKey', 'adCheckAll', 'followerMin', 'targetNiches']) assert.ok(!(k in v2), k);
-  assert.deepEqual([v2.igToken, v2.verifyKey, v2.newDays, v2.verifyDailyCap, v2.emailRisky], ['t', 'q', 120, 100, false], 'what still works is kept, new settings get their defaults');
+  assert.deepEqual([v2.igToken, v2.newDays, v2.bingDailyCap], ['t', 120, 150], 'what still works is kept, new settings get their defaults');
+  // 4.0: Intent Radar and the email check are gone.
+  const v3 = LH.withDefaults({ verifyKey: 'q', emailRisky: true, subreddits: 'dubai', geminiKey: 'g', aiAuto: true });
+  for (const k of ['verifyKey', 'emailRisky', 'subreddits', 'geminiKey', 'aiAuto']) assert.ok(!(k in v3), k);
 });
 
 /* ---------------------------------------------------------- tags, results */

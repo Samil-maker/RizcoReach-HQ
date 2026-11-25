@@ -9,6 +9,7 @@
     if (item.instagram && item.instagram.username) keys.push(`i:${item.instagram.username.toLowerCase()}`);
     if (item.website && LH.linkKind(item.website) === 'website') keys.push(`d:${LH.rootDomain(item.website)}`);
     for (const n of [...(item.phones || []), ...(item.whatsapp || [])]) if (n) keys.push(`p:${n}`);
+    for (const e of item.emails || []) if (e) keys.push(`e:${String(e).toLowerCase()}`);
     return keys;
   };
 
@@ -30,10 +31,20 @@
     const name = t.split(/\s+[|–—-]\s+|\s*\|\s*|:\s+/)[0].trim();
     return name.length >= 3 && name.length <= 80 && !/^(home|homepage|welcome|contact us|about us)$/i.test(name) ? name : '';
   };
+  /** "Bloom Salon - Home | Facebook" -> "Bloom Salon"; "Bloom Salon | Dubai - Yellow Pages UAE" -> "Bloom Salon". */
+  LH.listingName = (title) => {
+    const t = String(title || '')
+      .replace(/\s*[|·–—-]\s*(facebook|home|about|yellow ?pages[^|]*|connect\.ae|dubai ?local|cylex[^|]*|hotfrog[^|]*|2gis[^|]*|yelp[^|]*|foursquare[^|]*|linkedin)\b.*$/i, '')
+      .replace(/\s+on facebook.*$/i, '')
+      .trim();
+    return LH.webNameFromTitle(t);
+  };
   /**
-   * What a Google results page says, as businesses to add: Instagram profiles (with the email and phone in the bio
+   * What a search results page says, as businesses to add (Google or Bing, the same shape): Instagram profiles (with the email and phone in the bio
    * Google shows) and, for a business search, websites of businesses (never directories, news or social sites).
-   * results: [{ url, title, text }] from content/google.js. kind: 'web' or 'ig'.
+   * results: [{ url, title, text }] from content/google.js or content/bing.js. kind: 'web', 'ig' or 'mail'.
+   * 'mail' is a search for businesses that show an email: any result whose snippet has one, on their own site, their
+   * Facebook page or a directory listing. A page listing many emails is a list of businesses, not one, and is skipped.
    */
   LH.googleItems = (results, kind = 'web', country = 'AE') => {
     const out = [];
@@ -49,6 +60,25 @@
         const emails = LH.emailsInText(text, 3);
         const name = LH.igNameFromTitle(r.title, handle);
         out.push({ name, source: 'google', instagram: { username: handle, fullName: name, bio: text.slice(0, 600) }, emails, emailFrom: Object.fromEntries(emails.map((e) => [e, 'instagram'])), phones: LH.phonesInText(text, country).slice(0, 2), google: { url: u.toString(), title: String(r.title || '').slice(0, 200) } });
+        continue;
+      }
+      if (kind === 'mail') {
+        const host = u.hostname.toLowerCase().replace(/^www\./, '');
+        const own = LH.linkKind(u) === 'website' && !LH.notABusinessSite(host) ? LH.rootDomain(u.toString()) : '';
+        const fb = LH.linkKind(u) === 'facebook';
+        // Never the directory's or the social network's own address.
+        const emails = LH.emailsInText(text, 4).filter((e) => {
+          const d = String(e.split('@').pop()).toLowerCase();
+          const root = LH.rootDomain(`https://${d}/`);
+          return !LH.notABusinessSite(d) && !LH.notABusinessSite(root) && (!own || LH.isFreeMail(e) || root === own);
+        });
+        if (!emails.length || emails.length > 2) continue;
+        const name = own ? LH.webNameFromTitle(r.title) : LH.listingName(r.title);
+        const key = own ? `d:${own}` : `e:${emails[0]}`;
+        if (!name || seen.has(key)) continue;
+        seen.add(key);
+        const website = own ? `${u.protocol}//${u.hostname}/` : fb ? u.toString() : null;
+        out.push({ name, source: 'google', website, emails, emailFrom: Object.fromEntries(emails.map((e) => [e, fb ? 'facebook' : 'google'])), phones: LH.phonesInText(text, country).slice(0, 2), google: { url: u.toString(), title: String(r.title || '').slice(0, 200) } });
         continue;
       }
       if (kind !== 'web' || LH.linkKind(u) !== 'website' || LH.notABusinessSite(u.hostname)) continue;

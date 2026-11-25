@@ -219,9 +219,7 @@
     else if (f.site === 'none') add('none', 'No website', 22);
     else if (f.site === 'weak') add('weak', 'Weak website', 12 + Math.round(Math.max(0, 80 - (((lead || {}).site || {}).score || 0)) / 8));
     const mail = LH.sendableEmail(lead, settings);
-    if (mail.state === 'ok') add('email', 'Email confirmed', 30);
-    else if (mail.state === 'unverified') add('email', 'Email found', 25);
-    else if (mail.state === 'risky' || mail.why === 'waiting' || mail.why === 'risky') add('email', mail.why === 'waiting' ? 'Email found, check not finished' : 'Email could not be confirmed', 8);
+    if (mail.email) add('email', 'Has an email', 30);
     if (LH.whatsappTarget && LH.whatsappTarget(lead)) add('whatsapp', 'Has a WhatsApp number', 8);
     if (LH.igHandle && LH.igHandle(lead)) add('instagram', 'Has an Instagram', 5);
     let score = Math.max(0, Math.min(100, parts.reduce((n, p) => n + p.points, 0)));

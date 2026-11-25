@@ -124,7 +124,8 @@ async function ingestProspects(items, ctx = {}) {
         }
       }
       if (isNew) {
-        id = item.maps && item.maps.placeId ? `p:m:${item.maps.placeId}` : item.instagram ? `p:i:${item.instagram.username.toLowerCase()}` : `p:w:${LH.rootDomain(item.website)}`;
+        const site = item.website && LH.linkKind(LH.safeUrl(item.website)) === 'website' ? LH.rootDomain(item.website) : '';
+        id = item.maps && item.maps.placeId ? `p:m:${item.maps.placeId}` : item.instagram ? `p:i:${item.instagram.username.toLowerCase()}` : site ? `p:w:${site}` : (item.emails || [])[0] ? `p:e:${String(item.emails[0]).toLowerCase()}` : `p:x:${LH.normName(item.name).replace(/[^a-z0-9]/g, '')}`;
         lead = touched.get(id) || (await getLead(id)) || newProspect(id);
       }
       mergeProspect(lead, item, ctx);
@@ -154,7 +155,6 @@ async function ingestProspects(items, ctx = {}) {
   });
   igAuto(result.leads, settings);
   igFindAuto(result.leads.filter((l) => !LH.ownWebsite(l)), settings); // with a website: after its check, which may find it
-  queueEmailChecks(result.ids);
   // No website: nothing else will find an email, so their Facebook page is next. With a website, after its check.
   fbEmailAuto(result.leads.filter((l) => !LH.ownWebsite(l)), settings);
   if (result.websites.length) enqueue(result.websites);
@@ -187,6 +187,14 @@ async function checkTab() {
 /* ----------------------------------------------------- per source problems */
 /* Every problem a source hits, newest first (Settings > Your data), and a pause with an alert when a site shows a
    login wall, checkpoint, captcha or block. Nothing tries to get past it. */
+/** The toolbar badge: a red ! while any source is paused. */
+async function refreshBadge() {
+  const { alerts = {} } = await store.get('alerts');
+  try {
+    chrome.action.setBadgeBackgroundColor({ color: '#d93025' });
+    chrome.action.setBadgeText({ text: Object.keys(alerts).length ? '!' : '' });
+  } catch {}
+}
 async function logProblem(source, text) {
   await locked(async () => {
     const { problems = {} } = await store.get('problems');
@@ -194,7 +202,7 @@ async function logProblem(source, text) {
     await store.set({ problems });
   });
 }
-const SOURCE_NAMES = { adlib: 'Meta Ad Library', google: 'Google search', maps: 'Google Maps', instagram: 'Instagram API', fbpage: 'Facebook pages', verify: 'Email check' };
+const SOURCE_NAMES = { adlib: 'Meta Ad Library', google: 'Google search', maps: 'Google Maps', instagram: 'Instagram API', fbpage: 'Facebook pages', bing: 'Bing search' };
 async function alertSource(source, text, url, hint = 'Open the tab, sort it out, then press Resume in Lead Hunter.') {
   await logProblem(source, text);
   await locked(async () => {
@@ -220,7 +228,7 @@ async function clearAlert(source) {
    in the bio and their latest posts, which say whether they just opened. A personal account, or a handle that does
    not exist, is saved as not found. A bad token, a missing permission or a rate limit pauses the lookups. */
 async function igApi(settings, path, fields) {
-  const u = new URL(`https://graph.facebook.com/${settings.igApiVersion || 'v23.0'}/${encodeURIComponent(path)}`);
+  const u = new URL(`https://graph.facebook.com/${settings.igApiVersion || 'v23.0'}/${String(path).split('/').map(encodeURIComponent).join('/')}`);
   u.searchParams.set('fields', fields);
   u.searchParams.set('access_token', settings.igToken);
   const res = await fetch(u, { signal: AbortSignal.timeout(20000) });
@@ -459,28 +467,44 @@ async function markSearchDone(preset, q) {
     await store.set({ searchDone });
   });
 }
-/* Where a run searches. maps: Google Maps. web: Google, for business websites. ig: Google, for Instagram profiles
-   whose bio shows an email (one search per search term and city, two result pages). */
-const SOURCES = ['maps', 'web', 'ig'];
+/* Where a run searches. Email leads: Google Maps, Google (business websites, and results that show an email),
+   Bing (the same two), and Instagram profiles whose bio shows an email. WhatsApp leads: Google Maps, and Instagram
+   profiles whose bio shows a WhatsApp number. Either can also search the Meta Ad Library for opening ads (adlib),
+   which runs in its own tab at the start of a run. Each entry: { src, engine, kind, q, start, keyword, area }. */
+const SOURCES = ['maps', 'web', 'mail', 'bing', 'ig', 'igwa', 'adlib'];
+const MODE_SOURCES = { email: ['maps', 'web', 'mail', 'bing', 'ig', 'adlib'], contact: ['maps', 'igwa', 'adlib'] };
 const doneKey = (x) => (x.src === 'maps' ? comboKey(x.keyword, x.area) : comboKey(`${x.src}:${x.keyword}`, x.area));
+const FREE_MAIL_Q = '("@gmail.com" OR "@hotmail.com" OR "@yahoo.com" OR "@outlook.com")';
 const IG_MAIL = '("@gmail.com" OR "@hotmail.com" OR "@outlook.com" OR "@yahoo.com" OR "email")';
+const IG_WA = '("whatsapp" OR "wa.me" OR "+971" OR "call us")';
 /** The searches for these keyword and area pairs, in order, for the chosen sources. */
 function buildQueue(pairs, sources) {
   const want = SOURCES.filter((x) => (sources || ['maps']).includes(x));
   const out = [];
-  const ig = new Set();
+  const once = new Set();
+  // City-wide searches run once per search term and city (two result pages), not once per area.
+  const perCity = (src, engine, kind, q, keyword, area, niche) => {
+    const city = LH.cityOf(area, 'Dubai');
+    for (const start of [0, 10]) {
+      const key = `${src}|${keyword}|${city}|${start}`;
+      if (once.has(key)) continue;
+      once.add(key);
+      out.push({ src, engine, kind, q: q(city), start, keyword, area: `${city}#${start}`, city, niche });
+    }
+  };
   for (const { keyword, area, niche } of pairs) {
     if (want.includes('maps')) out.push({ src: 'maps', q: `${keyword} ${area}`, keyword, area, niche });
-    if (want.includes('web')) out.push({ src: 'web', q: `${keyword} ${area}`, keyword, area, niche });
-    if (want.includes('ig')) {
-      const city = LH.cityOf(area, 'Dubai');
-      for (const start of [0, 10]) {
-        const key = `${keyword}|${city}|${start}`;
-        if (ig.has(key)) continue;
-        ig.add(key);
-        out.push({ src: 'ig', q: `site:instagram.com "${keyword}" "${city}" ${IG_MAIL}`, start, keyword, area: `${city}#${start}`, city, niche });
-      }
+    if (want.includes('web')) out.push({ src: 'web', engine: 'google', kind: 'web', q: `${keyword} ${area}`, keyword, area, niche });
+    if (want.includes('mail')) {
+      out.push({ src: 'mail', engine: 'google', kind: 'mail', q: `"${keyword}" "${area}" ${FREE_MAIL_Q}`, keyword, area, niche });
+      perCity('mailfb', 'google', 'mail', (city) => `site:facebook.com "${keyword}" "${city}" ${FREE_MAIL_Q}`, keyword, area, niche);
     }
+    if (want.includes('bing')) {
+      out.push({ src: 'bing', engine: 'bing', kind: 'web', q: `${keyword} ${area}`, keyword, area, niche });
+      out.push({ src: 'bingmail', engine: 'bing', kind: 'mail', q: `"${keyword}" "${area}" ${FREE_MAIL_Q}`, keyword, area, niche });
+    }
+    if (want.includes('ig')) perCity('ig', 'google', 'ig', (city) => `site:instagram.com "${keyword}" "${city}" ${IG_MAIL}`, keyword, area, niche);
+    if (want.includes('igwa')) perCity('igwa', 'google', 'ig', (city) => `site:instagram.com "${keyword}" "${city}" ${IG_WA}`, keyword, area, niche);
   }
   return out;
 }
@@ -503,10 +527,31 @@ async function mixQueue(presets, settings, sources) {
   const all = buildQueue(pairs, sources);
   return { all: all.length, left: all.filter((x) => !(searchDone[x.niche] || {})[doneKey(x)]) };
 }
+const modeOf = (cfg) => (cfg && cfg.mode === 'contact' ? 'contact' : 'email');
 const sourcesOf = (cfg) => {
-  const list = (Array.isArray(cfg && cfg.sources) ? cfg.sources : ['maps']).filter((x) => SOURCES.includes(x));
+  const allowed = MODE_SOURCES[modeOf(cfg)];
+  const list = (Array.isArray(cfg && cfg.sources) ? cfg.sources : allowed).filter((x) => SOURCES.includes(x) && allowed.includes(x));
   return list.length ? list : ['maps'];
 };
+
+/* The Ad Library part of a run: businesses whose ad says "grand opening" or "now open". It opens in its own tab (the
+   Ad Library only loads ads while its tab is on screen) and runs alongside the searches, at most every
+   adlibEveryHours (Settings), so pressing Find twice does not search the same ads twice. */
+async function autoAdlib(settings, country) {
+  const { hunt } = await store.get('hunt');
+  if (hunt && hunt.status === 'running') return false;
+  const every = Math.max(0, Number(settings.adlibEveryHours) || 0) * 3600000;
+  if (hunt && hunt.startedAt && now() - hunt.startedAt < every) return false;
+  const { alerts = {} } = await store.get('alerts');
+  if (alerts.adlib) return false;
+  try {
+    await startHunt({ name: 'Opening ads', keywords: LH.OPENING_AD_KEYWORDS, country: country || settings.country, target: 150, maxLikes: 60000, maxDays: settings.newDays });
+    return true;
+  } catch (e) {
+    await logProblem('adlib', String(e.message || e));
+    return false;
+  }
+}
 
 async function startFinder(cfg) {
   const settings = await getSettings();
@@ -522,15 +567,24 @@ async function startFinder(cfg) {
     queue = await presetQueue(preset, keywords, cfg.areas && cfg.areas.length ? LH.parseLines(cfg.areas).slice(0, 300) : LH.presetAreas(preset, settings), sources);
   }
   const { all, left } = queue;
-  if (!all) throw new Error('No areas to search. Add some in Settings.');
-  if (!left.length) throw new Error(`Every search of ${mix ? ALL_TYPES : preset.name} has been run. Press Start over to run them again.`);
-  const cap = Math.max(1, Math.min(1000, Math.round(Number(cfg.cap)) || 100));
+  const adlib = sources.includes('adlib');
+  const searching = sources.some((x) => x !== 'adlib');
+  if (searching && !all) throw new Error('No areas to search. Add some in Settings.');
+  if (searching && !left.length && !adlib) throw new Error(`Every search of ${mix ? ALL_TYPES : preset.name} has been run. Press Start over to run them again.`);
+  const adlibStarted = adlib ? await autoAdlib(settings, settings.country) : false;
+  if (!searching || !left.length) {
+    if (adlibStarted) return { mapsQ: [], adlib: true, mode: modeOf(cfg) };
+    throw new Error(searching ? `Every search of ${mix ? ALL_TYPES : preset.name} has been run. Press Start over to run them again.` : `The Ad Library was searched less than ${settings.adlibEveryHours} hours ago. Tick another place to search.`);
+  }
+  const cap = Math.max(1, Math.min(2000, Math.round(Number(cfg.cap)) || 200));
   const finder = {
     id: `f${now().toString(36)}`,
     status: 'running',
     niche: mix ? ALL_TYPES : preset.name,
+    mode: modeOf(cfg),
     sources,
-    city: LH.cityOf(left[0].area, settings.adsCity || 'Dubai'),
+    adlib: adlibStarted,
+    city: LH.cityOf(left[0].city || left[0].area, settings.adsCity || 'Dubai'),
     country: 'AE',
     cap,
     mapsQ: left.slice(0, cap),
@@ -596,25 +650,27 @@ async function runFinder() {
   }
 }
 
+let settingsNow = {};
 async function runMaps(fid) {
   for (;;) {
+    settingsNow = await getSettings();
     const f = await currentFinder();
     if (!f || f.id !== fid || f.mapsDone || (f.target && f.added >= f.target)) return;
     const q = f.mapsQ[f.mapsI];
     if (!q) return patchFinder(fid, { mapsDone: true });
     const niche = q.niche || f.niche;
-    const ctx = { finderId: fid, niche, keyword: q.keyword, area: q.src === 'ig' ? q.city : q.area, country: f.country };
+    const engine = q.engine || (q.src === 'maps' ? '' : 'google'); // 3.x runs had no engine: theirs were all Google
+    const ctx = { finderId: fid, niche, keyword: q.keyword, area: q.city || (q.src === 'ig' ? LH.cityOf(q.area, 'Dubai') : q.area), country: f.country };
     try {
       let items;
-      if (q.src === 'web' || q.src === 'ig') {
-        const left = await googleLeft();
-        if (left <= 0) {
-          // Paused, not stopped: Resume tomorrow carries on from this search.
-          await patchFinder(fid, { status: 'paused', mapsNote: `Google's daily search limit (${(await getSettings()).googleDailyCap}) is reached. Press Resume tomorrow, or raise it in Settings` });
-          return;
+      if (engine) {
+        if ((await engineLeft(engine)) <= 0) {
+          // This engine is done for today: its searches wait for the next run (not marked done), the rest carry on.
+          await patchFinder(fid, (x) => ({ mapsI: x.mapsI + 1, mapsNote: `${ENGINES[engine].name}'s daily search limit (${ENGINES[engine].cap(settingsNow)}) is reached, so its searches wait for the next run. Raise it in Settings if you like` }));
+          continue;
         }
-        const results = await googleSearch(q.q, q.start || 0);
-        items = LH.googleItems(results, q.src, f.country);
+        const results = await engineSearch(engine, q.q, q.start || 0);
+        items = LH.googleItems(results, q.kind || q.src, f.country);
       } else items = await mapsBrowserSearch(q.q);
       await ingestProspects(items, ctx);
       await markSearchDone(niche, q);
@@ -622,10 +678,15 @@ async function runMaps(fid) {
       await sleep(jitter(2500, 5000)); // one search at a time, a human pace between them
     } catch (e) {
       const text = String(e.message || e);
-      if (e.blocked) {
+      if (e.blocked && e.engine) {
+        // Google or Bing showed a captcha: that engine pauses with an alert, the other sources carry on.
+        if (!e.paused) await alertSource(e.engine, text, e.url || '', `Open the ${ENGINES[e.engine].name} tab, sort it out (or wait an hour), then press Resume.`);
+        await patchFinder(fid, (x) => ({ mapsI: x.mapsI + 1, mapsNote: text }));
+        continue;
+      } else if (e.blocked) {
         // Paused, not stopped: Resume carries on from this search once the page is sorted out.
         await patchFinder(fid, { status: 'paused', mapsNote: text });
-        await alertSource(e.google ? 'google' : 'maps', text, e.url || '', e.google ? 'Open the Google tab, sort it out (or wait an hour), then press Resume.' : undefined);
+        await alertSource('maps', text, e.url || '');
       } else if (e.skip) {
         // This one search failed: it is not marked done, so a later run tries it again. The run carries on.
         await logProblem('maps', `${q.q}: ${text}`);
@@ -673,63 +734,85 @@ async function mapsBrowserSearch(query) {
   return (res.items || []).map((x) => ({ ...x, source: 'maps' }));
 }
 
-/* ------------------------------------------------------------- Google search */
-/* Searches run in one Google tab, one at a time, 6 to 12 seconds apart, at most googleDailyCap a day (Settings).
-   Google shows a captcha to browsers that search too much: when it does, Google searches pause with an alert. */
-let pendingGoogle = null;
-let googleChain = Promise.resolve();
+/* ------------------------------------------------------------- Google and Bing */
+/* Each engine runs in its own background tab, one search at a time, a few seconds apart, at most its daily limit
+   (Settings). A search engine shows a captcha to browsers that search too much: when one does, that engine pauses
+   with an alert and Lead Hunter never tries to get past it. */
+const ENGINES = {
+  google: {
+    name: 'Google',
+    cap: (s) => Number(s.googleDailyCap) || 0,
+    pace: [6000, 12000],
+    url: (q, start) => `https://www.google.com/search?q=${encodeURIComponent(q)}&hl=en&gl=ae${start ? `&start=${start}` : ''}`,
+  },
+  bing: {
+    name: 'Bing',
+    cap: (s) => Number(s.bingDailyCap) || 0,
+    pace: [5000, 10000],
+    url: (q, start) => `https://www.bing.com/search?q=${encodeURIComponent(q)}&setlang=en&cc=AE${start ? `&first=${start + 1}` : ''}`,
+  },
+};
+const pendingSearch = {};
+const engineChain = {};
+const lastSearchAt = {};
 const googleDay = () => new Date().toISOString().slice(0, 10);
-async function googleLeft() {
+const usageKey = (engine) => `${engine}Usage`;
+async function engineLeft(engine) {
   const settings = await getSettings();
-  const { googleUsage } = await store.get('googleUsage');
-  const used = googleUsage && googleUsage.day === googleDay() ? googleUsage.count : 0;
-  return Math.max(0, (Number(settings.googleDailyCap) || 0) - used);
+  const got = await store.get(usageKey(engine));
+  const u = got[usageKey(engine)];
+  const used = u && u.day === googleDay() ? u.count : 0;
+  return Math.max(0, ENGINES[engine].cap(settings) - used);
 }
-async function googleTab() {
-  const { googleTabId } = await store.get('googleTabId');
-  if (googleTabId) {
+const googleLeft = () => engineLeft('google');
+async function engineTab(engine) {
+  const key = `${engine}TabId`;
+  const got = await store.get(key);
+  if (got[key]) {
     try {
-      return (await chrome.tabs.get(googleTabId)).id;
+      return (await chrome.tabs.get(got[key])).id;
     } catch {}
   }
   const t = await chrome.tabs.create({ url: 'about:blank', active: false });
-  await store.set({ googleTabId: t.id });
+  await store.set({ [key]: t.id });
   return t.id;
 }
-let lastGoogleAt = 0;
-/** One Google search in the Google tab: [{ url, title, text }]. Throws { blocked, google } on a captcha. */
-function googleSearch(query, start = 0) {
-  const run = googleChain.then(async () => {
+/** One search in the engine's tab: [{ url, title, text }]. Throws { blocked, engine } on a captcha. */
+function engineSearch(engine, query, start = 0) {
+  const E = ENGINES[engine];
+  const run = (engineChain[engine] || Promise.resolve()).then(async () => {
     const { alerts = {} } = await store.get('alerts');
-    if (alerts.google) throw Object.assign(new Error('Google searches are paused'), { blocked: true, google: true });
+    if (alerts[engine]) throw Object.assign(new Error(`${E.name} searches are paused`), { blocked: true, engine, google: engine === 'google', paused: true });
     const { googlePace } = await store.get('googlePace'); // tests only: [min, max] ms between searches
-    const wait = lastGoogleAt + jitter(...(Array.isArray(googlePace) ? googlePace : [6000, 12000])) - now();
+    const wait = (lastSearchAt[engine] || 0) + jitter(...(Array.isArray(googlePace) ? googlePace : E.pace)) - now();
     if (wait > 0) await sleep(wait);
     await locked(async () => {
-      const { googleUsage } = await store.get('googleUsage');
+      const got = await store.get(usageKey(engine));
+      const u = got[usageKey(engine)];
       const day = googleDay();
-      await store.set({ googleUsage: { day, count: (googleUsage && googleUsage.day === day ? googleUsage.count : 0) + 1 } });
+      await store.set({ [usageKey(engine)]: { day, count: (u && u.day === day ? u.count : 0) + 1 } });
     });
-    const url = `https://www.google.com/search?q=${encodeURIComponent(query)}&hl=en&gl=ae${start ? `&start=${start}` : ''}`;
+    const url = E.url(query, start);
     let res;
     for (let attempt = 0; attempt < 2; attempt++) {
-      const tabId = await googleTab();
+      const tabId = await engineTab(engine);
       res = await new Promise((resolve) => {
         const timer = setTimeout(() => resolve({ timeout: true, results: [] }), 40000);
-        pendingGoogle = { tabId, resolve: (r) => (clearTimeout(timer), resolve(r)) };
+        pendingSearch[engine] = { tabId, resolve: (r) => (clearTimeout(timer), resolve(r)) };
         chrome.tabs.update(tabId, { url: attempt ? `${url}&lh=1` : url }).catch(() => resolve({ timeout: true, results: [] }));
       });
-      pendingGoogle = null;
+      pendingSearch[engine] = null;
       if (!res.timeout) break;
     }
-    lastGoogleAt = now();
-    if (res.blocked) throw Object.assign(new Error(res.blocked), { blocked: true, google: true, url });
-    if (res.timeout) throw Object.assign(new Error('The Google tab did not answer'), { skip: true });
+    lastSearchAt[engine] = now();
+    if (res.blocked) throw Object.assign(new Error(res.blocked), { blocked: true, engine, google: engine === 'google', url });
+    if (res.timeout) throw Object.assign(new Error(`The ${E.name} tab did not answer`), { skip: true });
     return res.results || [];
   });
-  googleChain = run.catch(() => {});
+  engineChain[engine] = run.catch(() => {});
   return run;
 }
+const googleSearch = (query, start = 0) => engineSearch('google', query, start);
 
 /* Instagram usernames found on Google: "Bloom Beauty Lounge" -> instagram.com/bloombeautydxb. Only a result whose
    name matches the business (or whose handle spells it) is taken. One search per business, for the ones that fit
@@ -852,6 +935,7 @@ Object.assign(handlers, {
       await patchFinder(f.id, { status: 'running', mapsNote: null });
       await clearAlert('maps');
       await clearAlert('google');
+      await clearAlert('bing');
       runFinder();
     }
     return { ok: true };
@@ -863,9 +947,20 @@ Object.assign(handlers, {
     if (f && f.status === 'paused') await handlers['finder:resume']();
     return { ok: true };
   },
-  'google:hello': async (msg, sender) => ({ search: !!(pendingGoogle && sender.tab && sender.tab.id === pendingGoogle.tabId) }),
+  'google:hello': async (msg, sender) => ({ search: !!(pendingSearch.google && sender.tab && sender.tab.id === pendingSearch.google.tabId) }),
   'google:results': async (msg, sender) => {
-    if (pendingGoogle && sender.tab && sender.tab.id === pendingGoogle.tabId) pendingGoogle.resolve(msg);
+    if (pendingSearch.google && sender.tab && sender.tab.id === pendingSearch.google.tabId) pendingSearch.google.resolve(msg);
+    return { ok: true };
+  },
+  'bing:hello': async (msg, sender) => ({ search: !!(pendingSearch.bing && sender.tab && sender.tab.id === pendingSearch.bing.tabId) }),
+  'bing:results': async (msg, sender) => {
+    if (pendingSearch.bing && sender.tab && sender.tab.id === pendingSearch.bing.tabId) pendingSearch.bing.resolve(msg);
+    return { ok: true };
+  },
+  'bing:resume': async () => {
+    await clearAlert('bing');
+    const { finder: f } = await store.get('finder');
+    if (f && f.status === 'paused') await handlers['finder:resume']();
     return { ok: true };
   },
   /** Find these leads' Instagram on Google now (the bulk action and the lead panel button). */
@@ -907,15 +1002,47 @@ Object.assign(handlers, {
     await queueIg(ids);
     return { queued: ids.length, noHandle: (msg.ids || []).length - ids.length };
   },
+  /* Connect: from the token alone, find your Instagram business account (the one linked to your Facebook page) and,
+     with your app id and secret, swap a short token for a long lived one. Then a real lookup to prove it works. */
   'ig:test': async () => {
-    const settings = await getSettings();
-    if (!igReady(settings)) return { error: 'Add your Instagram account id and token first, then Save.' };
+    let settings = await getSettings();
+    const token = String(settings.igToken || '').trim();
+    if (!token) return { error: 'Paste your access token first.' };
+    if (/^IG/.test(token)) return { error: 'That is an Instagram Login token. Looking up other businesses needs a Facebook one (it starts with EAA): make it in the Graph API Explorer, see the steps above.' };
+    const save = async (patch) => {
+      await locked(async () => {
+        const { settings: s = {} } = await store.get('settings');
+        await store.set({ settings: { ...s, ...patch } });
+      });
+      settings = await getSettings();
+    };
+    let longLived = false;
+    if (settings.igAppId && settings.igAppSecret) {
+      const u = new URL(`https://graph.facebook.com/${settings.igApiVersion || 'v23.0'}/oauth/access_token`);
+      u.searchParams.set('grant_type', 'fb_exchange_token');
+      u.searchParams.set('client_id', String(settings.igAppId).trim());
+      u.searchParams.set('client_secret', String(settings.igAppSecret).trim());
+      u.searchParams.set('fb_exchange_token', token);
+      const x = await fetch(u, { signal: AbortSignal.timeout(20000) }).then((r) => r.json()).catch(() => ({}));
+      if (x && x.access_token) {
+        await save({ igToken: x.access_token });
+        longLived = true;
+      }
+    }
+    if (!settings.igAccountId) {
+      const pages = await igApi(settings, 'me/accounts', 'name,instagram_business_account{id,username}').catch((e) => ({ error: String(e.message || e) }));
+      if (pages.error) return { error: igStop(pages) ? `${pages.error}. ${igHint(pages)}` : pages.error };
+      const page = (pages.data || []).find((pg) => pg.instagram_business_account && pg.instagram_business_account.id);
+      if (!page) return { error: 'None of your Facebook pages has an Instagram business account linked. In Instagram switch to a business or creator account, link it to your Facebook page, then press Connect again (and give the token access to that page).' };
+      await save({ igAccountId: page.instagram_business_account.id });
+    }
     const r = await igApi(settings, settings.igAccountId, 'username,followers_count').catch((e) => ({ error: String(e.message || e) }));
     if (r.error) return { error: igStop(r) ? `${r.error}. ${igHint(r)}` : r.error };
     // A real lookup, as on any business (your own account works too): it needs more permissions than the read above.
     const d = await igLookup(String(r.username || '').toLowerCase(), settings).catch((e) => ({ error: String(e.message || e) }));
     if (d.error) return { error: `Your account reads fine, but looking up other businesses failed: ${d.error}. ${igStop(d) ? igHint(d) : ''}`.trim() };
-    return { username: r.username, followers: r.followers_count };
+    await clearAlert('instagram');
+    return { username: r.username, followers: r.followers_count, accountId: settings.igAccountId, longLived };
   },
   /** The check tab loaded a Facebook page: is it one Lead Hunter asked for? */
   'fbpage:hello': async (msg, sender) => ({ read: !!(pendingFb && sender.tab && sender.tab.id === pendingFb.tabId), id: pendingFb && pendingFb.id }),

@@ -5,8 +5,8 @@ import { makeAd, searchResponse } from './fixtures.mjs';
 
 export const VERIFY_KEY = 'qev-test-key';
 export const IG = { token: 'ig-test-token', account: '17841400000000001' };
-export const calls = { dns: [], verify: [], sandbox: [], ig: [], maps: [], fbPages: [], google: [] };
-export const world = { mapsWall: false, adWall: false, verifyOut: false, googleWall: false };
+export const calls = { dns: [], verify: [], sandbox: [], ig: [], maps: [], fbPages: [], google: [], bing: [] };
+export const world = { mapsWall: false, adWall: false, verifyOut: false, googleWall: false, bingWall: false };
 
 /* ------------------------------------------------------------ Google Maps */
 // label: Google's own line on a new listing. hours: opening hours, which must never be read as that label.
@@ -93,10 +93,32 @@ function googlePage(q, start) {
       gResult('https://www.instagram.com/nailsbyrana/', 'Nails by Rana (@nailsbyrana) • Instagram photos and videos', '1,204 Followers, 300 Following, 88 Posts - Home nail salon in Al Barsha 💅 Book: ranas.nails@gmail.com · WhatsApp 052 333 9911'),
       gResult('https://www.instagram.com/p/C9xyz/', 'Instagram post', 'random@gmail.com'),
     ];
+  else if (q.startsWith('"ladies salon" "JLT, Dubai" ('))
+    list = [
+      // A Facebook page and a directory listing that show an email: two businesses with no website of their own.
+      gResult('https://www.facebook.com/pearlladiessalon/', 'Pearl Ladies Salon - Home | Facebook', 'Pearl Ladies Salon, JLT Cluster D. Bookings pearl.salon.jlt@gmail.com or 058 444 1209'),
+      gResult('https://www.yellowpages-uae.com/uae/lotus-beauty', 'Lotus Beauty Centre | JLT, Dubai - Yellow Pages UAE', 'Lotus Beauty Centre. Email lotusbeauty@hotmail.com. List your business: info@yellowpages-uae.com'),
+      // A list of many businesses is not one business.
+      gResult('https://www.dubaibizdirectory.example/salons', 'Salons in JLT', 'a.salon@gmail.com b.salon@gmail.com c.salon@gmail.com'),
+    ];
   else if (q === 'site:instagram.com "Old Town Salon" Dubai')
     list = [gResult('https://www.instagram.com/oldtownsalon.dxb/', 'Old Town Salon (@oldtownsalon.dxb) • Instagram photos and videos', '880 Followers - Since 2009 in JLT. oldtownsalon@gmail.com')];
   const body = list.length ? list.join('') : '<p>Your search did not match any documents.</p>';
   return `<!doctype html><html><head><meta charset="utf-8"><title>${q} - Google Search</title></head><body><div id="main"><div id="search"><div id="rso">${body}</div></div></div></body></html>`;
+}
+
+/* ------------------------------------------------------------ Bing search */
+// Bing wraps every link in its own redirect: bing.com/ck/a?...&u=a1<base64 of the real address>.
+const bingLink = (url) => `https://www.bing.com/ck/a?!&&p=abc&u=a1${Buffer.from(url).toString('base64').replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_')}&ntb=1`;
+const bResult = (url, title, text) => `<li class="b_algo"><h2><a href="${bingLink(url)}">${title}</a></h2><div class="b_caption"><p>${text}</p></div></li>`;
+function bingPage(q) {
+  let list = [];
+  if (q === 'ladies salon JLT, Dubai')
+    list = [bResult('https://glowsalon.example/', 'Glow Salon - Hair and Nails JLT', 'Glow Salon in JLT. Email info@glowsalon.example'), bResult('https://www.yelp.com/x', 'The best salons near JLT', '')];
+  else if (q.startsWith('"ladies salon" "JLT, Dubai" ('))
+    list = [bResult('https://www.facebook.com/coralnailsjlt/', 'Coral Nails & Beauty | Facebook', 'Coral Nails & Beauty, JLT. coralnails@yahoo.com, WhatsApp 056 777 1203')];
+  const body = list.length ? list.join('') : '<li class="b_no">There are no results for this question.</li>';
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${q} - Search</title></head><body><ol id="b_results">${body}</ol></body></html>`;
 }
 
 /* ---------------------------------------------------------------- websites */
@@ -230,6 +252,12 @@ export function worldHandler(req, res, url, host) {
       return html(200, googlePage(q, Number(url.searchParams.get('start')) || 0));
     }
   }
+  if (host === 'www.bing.com' && url.pathname === '/search') {
+    const q = url.searchParams.get('q') || '';
+    calls.bing.push(q);
+    if (world.bingWall) return html(200, '<!doctype html><html><body><h1>One last step</h1><p>Please solve the challenge below to continue. Verify you are human.</p></body></html>');
+    return html(200, bingPage(q));
+  }
   if (host === 'dns.google' && url.pathname === '/resolve') {
     const name = String(url.searchParams.get('name') || '').toLowerCase();
     calls.dns.push(name);
@@ -248,6 +276,8 @@ export function worldHandler(req, res, url, host) {
     const fields = url.searchParams.get('fields') || '';
     calls.ig.push(fields);
     if (url.searchParams.get('access_token') !== IG.token) return json(400, { error: { message: 'Error validating access token: Session has expired', type: 'OAuthException', code: 190 } });
+    // Connect: your Facebook pages, one with its Instagram business account linked.
+    if (url.pathname.endsWith('/me/accounts')) return json(200, { data: [{ id: '1', name: 'Other page' }, { id: '2', name: 'RizcoReach', instagram_business_account: { id: IG.account, username: 'rizcoreach' } }] });
     const m = fields.match(/^business_discovery\.username\(([^)]+)\)\{(.*)\}$/);
     if (!m) return json(200, { id: IG.account, username: 'rizcoreach', followers_count: 1200 });
     const acc = IG_ACCOUNTS[m[1]];
