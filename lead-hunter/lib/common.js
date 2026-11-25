@@ -341,11 +341,9 @@ Mussafah, Abu Dhabi`),
     ['Restaurants', 'restaurants', 'restaurant|cafeteria|shawarma|burger|pizza|grill restaurant|biryani|indian restaurant|arabic restaurant|asian restaurant', 'mcdonald\'s|kfc|pizza hut|subway|hardee\'s|burger king|domino\'s'],
     ['Cafes', 'cafes', 'cafe|coffee shop|specialty coffee|karak|tea house|juice bar|dessert cafe', 'starbucks|costa|tim hortons|dunkin|caribou'],
     ['Bakeries and sweets', 'bakeries and sweet shops', 'bakery|cake shop|sweets shop|pastry shop|chocolate shop|dessert shop|kunafa', ''],
-    ['Catering and cloud kitchens', 'catering companies', 'catering|cloud kitchen|meal prep|healthy meals|home bakery', ''],
     ['Salons', 'beauty salons', 'ladies salon|beauty salon|hair salon|beauty center|makeup studio|bridal salon', ''],
     ['Barbers', 'barber shops', 'barber shop|gents salon|barbershop|mens grooming', ''],
     ['Nails and lashes', 'nail and lash studios', 'nail salon|nail studio|lash studio|brow bar|lash extensions', ''],
-    ['Spas and massage', 'spas', 'spa|massage center|moroccan bath|wellness center|hammam', 'hotel|resort'],
     ['Aesthetic and skin clinics', 'aesthetic clinics', 'aesthetic clinic|skin clinic|laser clinic|dermatology clinic|slimming center|hair transplant clinic', 'hospital'],
     ['Dental clinics', 'dental clinics', 'dental clinic|dentist|orthodontist|dental center', 'hospital'],
     ['Medical and physio', 'medical centers', 'medical center|polyclinic|physiotherapy|chiropractor|optical shop|home healthcare|diagnostic center', 'hospital|pharmacy'],
@@ -375,6 +373,14 @@ Mussafah, Abu Dhabi`),
     ['Printing and signage', 'printing companies', 'printing press|signage company|advertising gifts|digital printing|sticker shop', ''],
     ['Legal and consultancy', 'consultancies', 'law firm|legal consultant|hr consultancy|recruitment agency|management consultancy|insurance broker', ''],
     ['Building and contracting', 'contractors', 'building contractor|contracting company|building materials|steel fabrication|aluminium and glass|scaffolding', ''],
+    ['Trading companies', 'trading companies', 'general trading company|foodstuff trading|building materials trading|electrical trading|textile trading|import export company|wholesale supplier', ''],
+    ['Auto spare parts', 'spare parts shops', 'auto spare parts|used spare parts|car parts shop|truck spare parts|car batteries|lubricants shop', ''],
+    ['MEP and AC contractors', 'MEP and AC companies', 'mep contractor|hvac company|ac installation company|fire fighting company|electromechanical company|chiller maintenance', ''],
+    ['Logistics and cargo', 'logistics companies', 'cargo company|freight forwarder|courier service|shipping company|door to door cargo|transport company', 'dhl|aramex|fedex|ups'],
+    ['Workshops and fabrication', 'workshops', 'carpentry workshop|metal fabrication|cnc cutting|powder coating|welding workshop|signage workshop', ''],
+    ['Manpower and facility services', 'service companies', 'manpower supply|labour supply|facility management company|security services company|cleaning services company', ''],
+    ['Uniforms and embroidery', 'uniform suppliers', 'uniform supplier|embroidery shop|garment factory|t-shirt printing|corporate gifts', ''],
+    ['Marine and boats', 'marine businesses', 'boat repair|marine services|fishing trip|boat rental|jet ski rental|marine equipment', ''],
   ];
   LH.DEFAULT_PRESETS.push(...MORE_PRESETS.map(([name, label, kw, ex]) => ({ name, label, minReviews: 0, maxReviews: 100000, keywords: kw.split('|'), exclude: ex ? ex.split('|') : [], areas: [] })));
   // Where every preset without its own areas searches, in this order.
@@ -577,10 +583,12 @@ Mussafah, Abu Dhabi`),
     exclude: LH.parseLines(n && n.exclude).slice(0, 200),
     areas: LH.parseLines(n && n.areas).slice(0, 300),
   });
+  // Built in kinds taken out in 4.0: an edited copy saved in Settings goes too.
+  const REMOVED_PRESETS = new Set(['spas and massage', 'catering and cloud kitchens']);
   /** The presets in use: the ones edited in Settings, or the defaults. Lists saved before presets had areas are replaced by the defaults. */
   LH.nichesFor = (settings) => {
     const s = settings || {};
-    const saved = (Array.isArray(s.niches) ? s.niches : []).filter((n) => n && n.areas != null).map(LH.cleanPreset).filter((n) => n.name);
+    const saved = (Array.isArray(s.niches) ? s.niches : []).filter((n) => n && n.areas != null).map(LH.cleanPreset).filter((n) => n.name && !REMOVED_PRESETS.has(n.name.toLowerCase()));
     const hidden = new Set((Array.isArray(s.hiddenPresets) ? s.hiddenPresets : []).map((x) => String(x).toLowerCase()));
     const mine = new Map(saved.map((p) => [p.name.toLowerCase(), p]));
     const builtIn = LH.DEFAULT_PRESETS.map(LH.cleanPreset);
@@ -688,6 +696,8 @@ Mussafah, Abu Dhabi`),
     igAccountId: '',
     igToken: '',
     igApiVersion: 'v23.0',
+    igAppId: '', // optional: with the app secret, Connect swaps a short token for a long lived one (about 60 days)
+    igAppSecret: '',
     igAuto: true, // read the Instagram of new businesses that have one
     areas: null, // the shared area list as text, null = LH.DEFAULT_AREAS
     hiddenPresets: null, // built in presets you removed
@@ -696,36 +706,20 @@ Mussafah, Abu Dhabi`),
     goodSiteScore: 80, // a website scoring this or more, secure and made for phones, is a good website (does not fit)
     googleDailyCap: 120, // Google searches a day, all kinds together (Google shows a captcha when it sees too many)
     googleIgAuto: true, // look up the Instagram of businesses that fit and have none, on Google
-    // Email check: the domain is always looked up. With a QuickEmailVerification key the mailbox itself is too.
-    verifyKey: '',
-    verifyDailyCap: 100, // mailbox checks a day (their free plan gives 100)
-    emailRisky: false, // also export addresses the mailbox check could not confirm
     fbEmailAuto: true, // read the email on the Facebook page of leads that fit and have none, in the check tab
-    // Intent Radar (Phase 5)
-    radarEveryHours: 3, // scan Reddit every this many hours, 0 = only when you press Scan now
-    intentMaxDays: 14, // only posts this new
-    intentCap: 100, // posts read per subreddit per scan (Reddit's maximum is 100)
-    subreddits: 'dubai\nUAE\nabudhabi\nsharjah',
-    uaeOnlySubs: 'smallbusiness', // these count only when the post mentions the UAE
-    redditClientId: '', // optional: an app from reddit.com/prefs/apps (installed app: the id is enough)
-    redditSecret: '',
-    intentKeywords: null, // { website, marketing, pain, hiring, arabic } as text, null = defaults (LH.INTENT_KEYWORDS)
-    sellerWords: null, // null = LH.SELLER_WORDS
-    // Intent AI check (Phase 6): an AI reads each new post and says whether it is a real buyer.
-    // Gemini when geminiKey is filled in, else Claude when anthropicKey is.
-    geminiKey: '', // a Google AI Studio key (free tier), kept in this browser only
-    geminiModel: 'gemini-flash-lite-latest',
-    anthropicKey: '', // your Claude API key, kept in this browser only
-    aiModel: 'claude-haiku-5-5',
-    aiAuto: true, // check new posts as they come in
+    bingDailyCap: 150, // Bing searches a day (a second search engine with its own results)
+    adlibEveryHours: 12, // a Find run also searches the Ad Library for opening ads when the last search is this old
     nameMatch: 0.92, // how close two names in the same area must be to count as one business (Jaro-Winkler, 0.8 to 1)
     niches: null, // the kinds of business you changed or added (the built in ones are LH.DEFAULT_PRESETS)
   };
   // Settings from earlier versions that no longer do anything.
   // (1.12: pitching from the dashboard and the phone queue were removed. 2.3: Lead Hunter no longer writes or sends
   // emails; the cold email system in cold-email/ does, so the email sender, its texts and your signature went.
-  // 3.0: the Meta ads client finder, the heat score, the quality signals and PageSpeed went.)
-  const OLD_SETTINGS = ['templates', 'adTemplates', 'adsOffer', 'scripts', 'bubbles', 'intentOpeners', 'emails', 'emailFromName', 'emailMaxPerDay', 'emailFollowups', 'emailSignature', 'emailOptOut', 'queueSite', 'queueKey', 'queueKeyAt', 'myName', 'agency', 'myPhone', 'myWebsite', 'auditLinkBase', 'pagespeedKey', 'pagespeedAuto', 'followerMin', 'followerMax', 'newBusinessReviews', 'weakSiteMin', 'psiMin', 'copyrightYears', 'weakChecks', 'heatWeights', 'heatHot', 'heatWarm', 'targetNiches', 'igActiveDays', 'adCheckAll'];
+  // 3.0: the Meta ads client finder, the heat score, the quality signals and PageSpeed went. 4.0: Intent Radar and the
+  // email check went: the cold email system checks every domain itself when it imports the file.)
+  const OLD_SETTINGS = ['templates', 'adTemplates', 'adsOffer', 'scripts', 'bubbles', 'intentOpeners', 'emails', 'emailFromName', 'emailMaxPerDay', 'emailFollowups', 'emailSignature', 'emailOptOut', 'queueSite', 'queueKey', 'queueKeyAt', 'myName', 'agency', 'myPhone', 'myWebsite', 'auditLinkBase', 'pagespeedKey', 'pagespeedAuto', 'followerMin', 'followerMax', 'newBusinessReviews', 'weakSiteMin', 'psiMin', 'copyrightYears', 'weakChecks', 'heatWeights', 'heatHot', 'heatWarm', 'targetNiches', 'igActiveDays', 'adCheckAll',
+    // 4.0: Intent Radar and the email check went.
+    'verifyKey', 'verifyDailyCap', 'emailRisky', 'radarEveryHours', 'intentMaxDays', 'intentCap', 'subreddits', 'uaeOnlySubs', 'redditClientId', 'redditSecret', 'intentKeywords', 'sellerWords', 'geminiKey', 'geminiModel', 'anthropicKey', 'aiModel', 'aiAuto'];
   /** Stored settings over the defaults, without the old keys. */
   LH.withDefaults = (stored) => {
     const s = { ...LH.DEFAULT_SETTINGS, ...(stored || {}) };

@@ -51,9 +51,26 @@ test('Google results: Instagram profiles with the email in their bio, business w
   assert.deepEqual([items[0].instagram.username, items[0].emails, items[0].phones], ['bloombeautydxb', ['bloom.beauty.dxb@gmail.com'], ['+971501112201']]);
   assert.deepEqual([items[1].website, items[1].emails], ['https://glowsalon.ae/', ['info@glowsalon.ae']], 'only an email at their own domain');
   assert.deepEqual(LH.googleItems(r, 'ig').map((x) => x.name), ['Bloom Beauty Lounge'], 'an Instagram search keeps only profiles');
-  assert.equal(LH.prospectKeys(items[1]).join(), 'd:glowsalon.ae');
+  assert.equal(LH.prospectKeys(items[1]).join(), 'd:glowsalon.ae,e:info@glowsalon.ae', 'the same email elsewhere is the same business');
   // Finding a business's own Instagram: the name has to match, or the handle has to spell it.
   assert.equal(LH.pickInstagram(r, 'Bloom Beauty Lounge').handle, 'bloombeautydxb');
   assert.equal(LH.pickInstagram([{ url: 'https://www.instagram.com/velvethair.dxb/', title: 'VH (@velvethair.dxb) • Instagram', text: '' }], 'Velvet Hair').handle, 'velvethair.dxb');
   assert.equal(LH.pickInstagram(r, 'Rose Petal Spa'), null, 'another business is not theirs');
+});
+
+test('email searches: Facebook pages and directory listings that show an email, never the directory\'s own or a list', () => {
+  const r = [
+    { url: 'https://www.facebook.com/glowladiessalon/', title: 'Glow Ladies Salon - Home | Facebook', text: 'Glow Ladies Salon, Al Barsha. Email glowsalon.dxb@gmail.com · Call 055 123 4567' },
+    { url: 'https://www.yellowpages-uae.com/uae/fixit-ac', title: 'FixIt AC Services | Al Quoz, Dubai - Yellow Pages UAE', text: 'FixIt AC Services. fixit.ac@hotmail.com. Contact info@yellowpages-uae.com' },
+    { url: 'https://www.dubaibizdirectory.com/salons', title: 'Salons in Dubai', text: 'a@gmail.com b@gmail.com c@gmail.com' },
+    { url: 'https://bloomnails.ae/', title: 'Bloom Nails | Nail studio in JLT', text: 'Book on bloomnails@gmail.com or info@bloomnails.ae, not partner@other.com' },
+    { url: 'https://www.facebook.com/somepage/', title: 'Best salons in Dubai | Facebook', text: 'x.salon@gmail.com' },
+    { url: 'https://www.timeoutdubai.com/x', title: 'Salon news', text: 'no email here' },
+  ];
+  const items = LH.googleItems(r, 'mail');
+  assert.deepEqual(items.map((x) => x.name), ['Glow Ladies Salon', 'FixIt AC Services', 'Bloom Nails']);
+  assert.deepEqual([items[0].website, items[0].emails, items[0].phones], ['https://www.facebook.com/glowladiessalon/', ['glowsalon.dxb@gmail.com'], ['+971551234567']], 'the Facebook page is kept, as their Facebook');
+  assert.deepEqual([items[1].website, items[1].emails], [null, ['fixit.ac@hotmail.com']], "the directory's own address is never theirs");
+  assert.deepEqual([items[2].website, items[2].emails], ['https://bloomnails.ae/', ['bloomnails@gmail.com', 'info@bloomnails.ae']]);
+  assert.equal(LH.prospectKeys(items[1]).join(), 'e:fixit.ac@hotmail.com');
 });

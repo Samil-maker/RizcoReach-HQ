@@ -126,54 +126,12 @@ test('which address goes first: their own domain while the site works, a free ma
   assert.deepEqual(LH.goodEmails(lead({ emails })), ['glow.salon@gmail.com', 'info@glow.ae', 'x@agency.example'], 'no website known');
 });
 
-test('sendableEmail: with a mailbox check key only confirmed mailboxes go out', () => {
-  const key = { verifyKey: 'k' };
-  const l = (emailCheck, emails = ['info@glow.ae']) => lead({ emails, emailCheck });
-  // No key: the domain must at least receive email.
-  assert.deepEqual(LH.sendableEmail(l({ 'info@glow.ae': { s: 'dns' } })), { email: 'info@glow.ae', state: 'unverified' });
-  assert.deepEqual(LH.sendableEmail(l({})), { email: '', why: 'waiting' }, 'not looked up yet');
-  assert.deepEqual(LH.sendableEmail(l({ 'info@glow.ae': { s: 'bad' } })), { email: '', why: 'bad' });
+test('sendableEmail: the best address that is not broken or bounced', () => {
+  const l = (emails = ['info@glow.ae'], extra = {}) => lead({ emails, website: 'https://glow.ae/', ...extra });
+  assert.deepEqual(LH.sendableEmail(l()), { email: 'info@glow.ae', state: 'unchecked' });
+  assert.deepEqual(LH.sendableEmail(l(['glow.dxb@gmail.com', 'info@glow.ae'])).email, 'info@glow.ae', 'their own domain first');
+  assert.deepEqual(LH.sendableEmail(l(['info@glow.ae'], { badEmails: ['info@glow.ae'] })), { email: '', why: 'bad' }, 'bounced before');
+  assert.deepEqual(LH.sendableEmail(l(['info@glow.ae', 'glow.dxb@gmail.com'], { badEmails: ['info@glow.ae'] })).email, 'glow.dxb@gmail.com');
   assert.deepEqual(LH.sendableEmail(lead()), { email: '', why: 'none' });
-  // With a key: confirmed only, the rest wait for the check.
-  assert.deepEqual(LH.sendableEmail(l({ 'info@glow.ae': { s: 'dns' } }), key), { email: '', why: 'waiting' });
-  assert.deepEqual(LH.sendableEmail(l({ 'info@glow.ae': { s: 'ok' } }), key), { email: 'info@glow.ae', state: 'ok' });
-  assert.deepEqual(LH.sendableEmail(l({ 'info@glow.ae': { s: 'risky' } }), key), { email: '', why: 'risky' });
-  assert.deepEqual(LH.sendableEmail(l({ 'info@glow.ae': { s: 'risky' } }), { ...key, emailRisky: true }), { email: 'info@glow.ae', state: 'risky' });
-  // The confirmed one wins over an earlier address that could not be confirmed.
-  assert.deepEqual(LH.sendableEmail(l({ 'a@glow.ae': { s: 'risky' }, 'b@glow.ae': { s: 'ok' } }, ['a@glow.ae', 'b@glow.ae']), key), { email: 'b@glow.ae', state: 'ok' });
 });
 
-test('emailsToCheck: nothing once one is confirmed, at most three, the mailbox check only with a key', () => {
-  const l = lead({ emails: ['a@glow.ae', 'b@glow.ae', 'c@glow.ae', 'd@glow.ae', '%20x@glow.ae'], emailCheck: { 'a@glow.ae': { s: 'dns' } } });
-  assert.deepEqual(LH.emailsToCheck(l).map((x) => x.email), ['b@glow.ae', 'c@glow.ae', 'd@glow.ae'], 'no key: only the ones not looked up');
-  assert.deepEqual(LH.emailsToCheck(l, { verifyKey: 'k' }).map((x) => x.email), ['a@glow.ae', 'b@glow.ae', 'c@glow.ae']);
-  assert.deepEqual(LH.emailsToCheck({ ...l, emailCheck: { 'b@glow.ae': { s: 'ok' } } }, { verifyKey: 'k' }), []);
-});
-
-test('does the domain receive email: reading a DNS answer', () => {
-  const mx = (...data) => ({ Status: 0, Answer: data.map((d) => ({ name: 'x.', type: 15, data: d })) });
-  assert.deepEqual(LH.dnsVerdict(mx('10 aspmx.l.google.com.', '20 alt1.aspmx.l.google.com.')), { s: 'dns', why: '' });
-  assert.match(LH.dnsVerdict({ Status: 3 }).why, /does not exist/);
-  assert.match(LH.dnsVerdict({ Status: 0 }).why, /cannot receive email/);
-  assert.match(LH.dnsVerdict(mx('0 .')).why, /cannot receive email/, 'a null MX');
-  assert.match(LH.dnsVerdict(mx('10 park-mx.above.com.')).why, /parked/);
-  assert.match(LH.dnsVerdict({ Status: 0, Answer: [{ type: 5, data: 'x.example.' }] }).why, /cannot receive email/, 'only a CNAME');
-  assert.equal(LH.dnsVerdict({ Status: 2 }), null, 'the lookup failed: try again later');
-  assert.equal(LH.dnsVerdict(null), null);
-});
-
-test('the mailbox check (QuickEmailVerification): its answers in our words', () => {
-  const p = (data, status = 200) => LH.verifyParse(status, data);
-  assert.deepEqual(p({ result: 'valid', reason: 'accepted_email', disposable: 'false', accept_all: 'false', role: 'true', safe_to_send: 'false' }), { s: 'ok', why: '' }, 'info@ style addresses are fine');
-  assert.deepEqual(p({ result: 'invalid', reason: 'rejected_email', safe_to_send: 'false', did_you_mean: '' }), { s: 'bad', why: 'The mailbox does not exist' });
-  assert.match(p({ result: 'invalid', reason: 'invalid_domain', did_you_mean: 'x@gmail.com' }).why, /domain does not exist \(did they mean x@gmail\.com\?\)/);
-  assert.equal(p({ result: 'valid', accept_all: 'true' }).s, 'risky');
-  assert.equal(p({ result: 'valid', disposable: 'true' }).s, 'bad');
-  assert.deepEqual(p({ result: 'unknown', reason: 'timeout' }), { s: 'risky', why: 'Their mail server did not answer' });
-  assert.equal(p({ success: 'false', message: 'Invalid API key' }, 401).stop, true);
-  assert.equal(p({}, 402).out, true);
-  assert.deepEqual([p({}, 429).retry, p({}, 429).wait], [true, 60000]);
-  assert.equal(p(null, 503).retry, true);
-  assert.equal(LH.verifyUrl('a+b@glow.ae', 'k y'), 'https://api.quickemailverification.com/v1/verify?email=a%2Bb%40glow.ae&apikey=k%20y');
-  assert.match(LH.verifyUrl('valid@example.com', 'k', true), /\/v1\/verify\/sandbox\?/);
-});

@@ -25,7 +25,7 @@ function renderRunning(s) {
 (async () => {
   $('[data-dash]').onclick = () => open('#leads');
   $('[data-leads]').onclick = () => open('#leads');
-  $('[data-find]').onclick = () => open('#find');
+  $('[data-find]').onclick = () => open('#email');
   const refresh = async () => {
     const s = (await chrome.runtime.sendMessage({ type: 'stats' })) || {};
     renderStats(s);

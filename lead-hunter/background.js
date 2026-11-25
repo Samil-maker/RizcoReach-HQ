@@ -3,8 +3,8 @@
    - Runs hunts: walks a list of keywords through the Ad Library in one tab
    - Checks each lead's website (down, parked, working) and finds phones, emails and socials on it
    - Marks leads saved by Export for cold email (the cold email system on the Mac sends the emails)
-   finder.js finds businesses on Google Maps, checks.js checks every email address, intent.js is Intent Radar. */
-importScripts('lib/common.js', 'lib/emails.js', 'lib/fit.js', 'lib/site-audit.js', 'lib/prospects.js', 'lib/intent.js', 'lib/intent-db.js');
+   finder.js finds businesses on Google Maps, Google and Bing, bounces.js remembers addresses that bounced. */
+importScripts('lib/common.js', 'lib/emails.js', 'lib/fit.js', 'lib/site-audit.js', 'lib/prospects.js');
 const LH = self.LH;
 
 const DASHBOARD = chrome.runtime.getURL('dashboard/dashboard.html');
@@ -166,12 +166,11 @@ function siteFromEmail(lead) {
   lead.site = { state: 'queued' };
   return true;
 }
-/** New addresses on a lead: maybe a website to check, and the addresses themselves to check. */
+/** New addresses on a lead: maybe a website to check (the domain of their email). */
 async function afterEmails(id, front = false) {
   let site = false;
   await updateLead(id, (l) => (site = siteFromEmail(l)));
   if (site) enqueue([id], front);
-  queueEmailChecks([id], front);
 }
 
 function addPhone(lead, number, source) {
@@ -353,7 +352,6 @@ async function ingest(ads, ctx = {}, tabId) {
     }
     await store.set(writes);
     if (enrich.length) enqueue(enrich);
-    queueEmailChecks(Object.keys(writes).filter((k) => k.startsWith('lead:')).map((k) => k.slice(5)));
     return { added, stop, hunt: huntTab ? huntInfo(hunt) : null };
   });
 }
@@ -671,7 +669,6 @@ async function enrichOne(id, opts = {}) {
   igAuto([done], settings); // the website may have linked their Instagram
   igFindAuto([done], settings); // it did not: look for it on Google
   fbEmailAuto([done], settings); // it fits and still has no email: their Facebook page next
-  queueEmailChecks([id]); // the website's state is known now, so is whether a mailbox check is worth it
 }
 
 /* ---------------------------------------------------------------- cold email */
@@ -758,7 +755,6 @@ const handlers = {
     });
     if (msg.patch && 'website' in msg.patch) enqueue([msg.id], true);
     if (msg.patch && msg.patch.addEmail) await afterEmails(msg.id, true);
-    else if (msg.patch && 'justOpened' in msg.patch) queueEmailChecks([msg.id], true);
     return { lead };
   },
   /* Contacted memory. Reset: the business is new again and future searches can find it. */
@@ -862,7 +858,7 @@ const handlers = {
   stats: async () => {
     const leads = await allLeads();
     const settings = await getSettings();
-    const { hunt, finder, enrichQueue = [], emailCheckQueue = [], mailboxQueue = [] } = await store.get(['hunt', 'finder', 'enrichQueue', 'emailCheckQueue', 'mailboxQueue']);
+    const { hunt, finder, enrichQueue = [] } = await store.get(['hunt', 'finder', 'enrichQueue']);
     const open = leads.filter((l) => LH.coldEmailOpen(l) && !l.coldEmailExportedAt);
     const fits = open.filter((l) => LH.fit(l, settings).fit);
     return {
@@ -870,7 +866,6 @@ const handlers = {
       fits: fits.length,
       ready: fits.filter((l) => LH.sendableEmail(l, settings).email).length, // would go into the cold email file now
       queued: enrichQueue.length,
-      checking: emailCheckQueue.length + mailboxQueue.length,
       hunt,
       finder,
     };
@@ -918,7 +913,5 @@ pump();
 
 // Businesses from Google Maps and Instagram.
 importScripts('finder.js');
-// Email checks: the domain of every address, the mailbox of the ones that matter.
-importScripts('checks.js');
-// Intent Radar: people asking for help on Reddit, Facebook groups and LinkedIn.
-importScripts('intent.js');
+// Addresses that bounced: never used again.
+importScripts('bounces.js');

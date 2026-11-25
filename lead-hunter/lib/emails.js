@@ -229,82 +229,14 @@
   LH.goodEmails = (lead) => LH.emailInfo(lead).filter((x) => x.state !== 'bad').map((x) => x.email);
 
   /**
-   * The address the cold email file may use: { email, state }, or { email: '', why }:
-   *   none     no address at all            bad     every address is broken or failed its check
-   *   waiting  the check has not run yet    risky   the check could not confirm any of them
-   * With a mailbox check key in Settings only confirmed mailboxes go out. Without one, the domain must at least
-   * receive email. "Also send the ones the check could not confirm" (Settings) lets risky ones through.
+   * The address the cold email file uses: { email, state }, or { email: '', why } with why 'none' (no address at
+   * all) or 'bad' (every address is broken, a placeholder or bounced before). The best one goes: their own domain
+   * while the site works, then a free mailbox. (The cold email system checks each domain itself when it imports.)
    */
-  LH.sendableEmail = (lead, settings = {}) => {
+  LH.sendableEmail = (lead) => {
     const info = LH.emailInfo(lead);
-    const strict = !!settings.verifyKey;
-    const by = (s) => info.find((x) => x.state === s);
-    const pick = by('ok') || (!strict && by('unverified')) || (settings.emailRisky && by('risky')) || null;
+    const pick = info.find((x) => x.state !== 'bad');
     if (pick) return { email: pick.email, state: pick.state };
-    if (!info.length) return { email: '', why: 'none' };
-    if (info.every((x) => x.state === 'bad')) return { email: '', why: 'bad' };
-    if (by('unchecked') || (strict && by('unverified'))) return { email: '', why: 'waiting' };
-    return { email: '', why: 'risky' };
-  };
-  /** The addresses a check should still look at, best first. Nothing once one is confirmed. */
-  LH.emailsToCheck = (lead, settings = {}) => {
-    const info = LH.emailInfo(lead);
-    if (info.some((x) => x.state === 'ok')) return [];
-    return info.filter((x) => x.state === 'unchecked' || (settings.verifyKey && x.state === 'unverified')).slice(0, 3);
-  };
-
-  /* --------------------------------------------- reading the checks' answers */
-  // Mail servers of domain parking services: the domain "receives email" and nobody ever reads it.
-  const PARKED_MX = /(^|\.)(above\.com|sedoparking\.com|parkingcrew\.net|bodis\.com|parklogic\.com|dan\.com|afternic\.com|hugedomains\.com|undeveloped\.com|uniregistry\.com)$|parking|parked/;
-  /**
-   * Does the domain receive email? From a DNS over HTTPS answer for its MX records (dns.google, cloudflare-dns.com):
-   * { s: 'dns' } yes · { s: 'bad', why } no · null when the lookup itself failed (try again later).
-   */
-  LH.dnsVerdict = (json) => {
-    if (!json || typeof json.Status !== 'number') return null;
-    if (json.Status === 3) return { s: 'bad', why: 'Its domain does not exist' };
-    if (json.Status !== 0) return null;
-    const hosts = (json.Answer || []).filter((a) => a && a.type === 15).map((a) => String(a.data || '').trim().split(/\s+/).pop().replace(/\.$/, '').toLowerCase());
-    if (!hosts.length || hosts.every((h) => !h)) return { s: 'bad', why: 'Its domain cannot receive email' };
-    if (hosts.every((h) => PARKED_MX.test(h))) return { s: 'bad', why: 'Its domain is parked, so nobody reads the email' };
-    return { s: 'dns', why: '' };
-  };
-
-  // QuickEmailVerification: 100 free mailbox checks a day. Their reasons, in plain words.
-  const VERIFY_REASONS = {
-    rejected_email: 'The mailbox does not exist',
-    invalid_email: 'Not a valid address',
-    invalid_domain: 'Its domain does not exist',
-    no_mx_record: 'Its domain cannot receive email',
-    exceeded_storage: 'The mailbox is full',
-    timeout: 'Their mail server did not answer',
-    no_connect: 'Their mail server could not be reached',
-    unavailable_smtp: 'Their mail server was not available',
-    unexpected_error: 'Their mail server gave an odd answer',
-    temporarily_blocked: 'Their mail server asked to try later',
-  };
-  LH.verifyUrl = (email, key, sandbox = false) => `https://api.quickemailverification.com/v1/verify${sandbox ? '/sandbox' : ''}?email=${encodeURIComponent(email)}&apikey=${encodeURIComponent(key || '')}`;
-  /**
-   * The mailbox check's answer: { s: 'ok' | 'bad' | 'risky', why } for the address, or what stopped the check:
-   * { stop, error } the key is wrong · { out, error } today's checks are used up · { retry, wait, error } try later.
-   */
-  LH.verifyParse = (status, data) => {
-    const d = data || {};
-    const yes = (v) => v === true || v === 'true';
-    const said = d.message ? `: ${String(d.message).slice(0, 120)}` : '';
-    if (status === 401 || status === 403) return { stop: true, error: `The email check did not accept your key (${status})${said}` };
-    if (status === 402) return { out: true, error: "Today's email checks are used up" };
-    if (status === 429) return { retry: true, wait: 60000, error: 'The email check asked to slow down' };
-    if (status !== 200 || !d.result) return { retry: true, wait: 5 * 60000, error: `The email check answered ${status}${said}` };
-    const result = String(d.result).toLowerCase();
-    const reason = VERIFY_REASONS[String(d.reason || '').toLowerCase()] || '';
-    const hint = d.did_you_mean ? ` (did they mean ${String(d.did_you_mean).slice(0, 80)}?)` : '';
-    if (result === 'invalid') return { s: 'bad', why: `${reason || 'The mailbox does not exist'}${hint}` };
-    if (result === 'valid') {
-      if (yes(d.disposable)) return { s: 'bad', why: 'A throwaway address' };
-      if (yes(d.accept_all)) return { s: 'risky', why: 'Their domain accepts any address, so the mailbox could not be confirmed' };
-      return { s: 'ok', why: '' };
-    }
-    return { s: 'risky', why: `${reason || 'The mailbox could not be confirmed'}${hint}` };
+    return { email: '', why: info.length ? 'bad' : 'none' };
   };
 })(typeof globalThis !== 'undefined' ? globalThis : self);

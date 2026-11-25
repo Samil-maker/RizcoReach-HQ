@@ -125,13 +125,12 @@ test('fit: no website, or a website that is down, parked or weak; a good website
 
 test('fit score: new and dead websites first, an email makes it hot, a good website sinks', () => {
   const score = (l, settings = S) => LH.fitScore(l, settings, NOW).score;
-  const confirmed = fresh({ emailCheck: { 'hi@glossy.example': { s: 'ok' } } });
-  assert.equal(LH.fitClass(score(confirmed)), 'hot');
-  assert.equal(LH.fitClass(score(fresh())), 'hot', 'no check key: a domain that receives email is enough');
-  assert.equal(LH.fitClass(score(lead())), 'warm', 'no website, with an email');
-  assert.ok(score(confirmed) > score(fresh()) && score(fresh()) > score(lead()) && score(lead()) > score(lead({ emails: [] })));
-  assert.equal(LH.fitClass(score(lead({ website: 'https://x.example/', site: WORKING, emailCheck: { 'hi@glossy.example': { s: 'ok' } } }))), 'cold');
-  assert.deepEqual(LH.fitScore(confirmed, S, NOW).parts.map((p) => p.label), ['Just opened', 'No website', 'Email confirmed', 'Has a WhatsApp number']);
+  assert.equal(LH.fitClass(score(fresh())), 'hot');
+  assert.equal(LH.fitClass(score(lead())), 'hot', 'no website, with an email and WhatsApp');
+  assert.equal(LH.fitClass(score(lead({ phones: [] }))), 'warm', 'no website, with an email');
+  assert.ok(score(fresh()) > score(lead()) && score(lead()) > score(lead({ emails: [] })));
+  assert.equal(LH.fitClass(score(lead({ website: 'https://x.example/', site: WORKING }))), 'cold');
+  assert.deepEqual(LH.fitScore(fresh(), S, NOW).parts.map((p) => p.label), ['Just opened', 'No website', 'Has an email', 'Has a WhatsApp number']);
 });
 
 test('tags say why at a glance', () => {
@@ -189,26 +188,18 @@ test('who goes in: no website, or one that is down, parked or weak, with an emai
   assert.deepEqual(exp(['new', 'contacted', 'followup'].map((status) => fresh({ status }))).rows.map((row) => col(row, 'status')), ['New', 'Contacted', 'Follow up']);
 });
 
-test('only addresses that passed their checks go in the file', () => {
-  const at = (emails, emailCheck) => fresh({ emails, emailCheck });
+test('only addresses that are not broken or bounced go in the file', () => {
+  const at = (emails, extra = {}) => fresh({ emails, ...extra });
   const r = exp([
-    at([], {}),
-    at(['%20info@glow.ae'], {}), // broken
-    at(['glow_salon@gmail.com'], {}), // cannot exist
-    at(['info@dead.example'], { 'info@dead.example': { s: 'bad', why: 'Its domain cannot receive email' } }),
-    at(['new@glow.example'], {}), // not looked up yet
-    at(['glowsalon@gmial.com'], { 'glowsalon@gmail.com': { s: 'dns' } }), // fixed
-    at(['old@x.example', 'new@x.example'], { 'new@x.example': { s: 'dns' } }),
+    at([]),
+    at(['%20info@glow.ae']), // broken
+    at(['glow_salon@gmail.com']), // cannot exist
+    at(['info@old.example'], { badEmails: ['info@old.example'] }), // bounced before
+    at(['glowsalon@gmial.com']), // fixed
+    at(['old@x.example', 'new@x.example'], { badEmails: ['old@x.example'] }),
   ]);
   assert.deepEqual(r.rows.map((row) => col(row, 'email')), ['glowsalon@gmail.com', 'new@x.example']);
-  assert.deepEqual([r.skipped.noEmail, r.skipped.badEmail, r.skipped.waiting], [1, 3, 1]);
-  assert.equal(r.waiting.length, 1, 'the ones to check next');
-  // With a mailbox check key: only confirmed mailboxes.
-  const key = { ...S, verifyKey: 'k' };
-  const strict = exp([at(['a@x.example'], { 'a@x.example': { s: 'dns' } }), at(['b@x.example'], { 'b@x.example': { s: 'ok' } }), at(['c@x.example'], { 'c@x.example': { s: 'risky' } })], {}, key);
-  assert.deepEqual(strict.rows.map((row) => col(row, 'email')), ['b@x.example']);
-  assert.deepEqual([strict.skipped.waiting, strict.skipped.risky], [1, 1]);
-  assert.equal(exp([at(['c@x.example'], { 'c@x.example': { s: 'risky' } })], {}, { ...key, emailRisky: true }).rows.length, 1);
+  assert.deepEqual([r.skipped.noEmail, r.skipped.badEmail], [1, 3]);
 });
 
 test('source: where we actually saw them', () => {

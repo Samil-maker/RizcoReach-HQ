@@ -14,36 +14,66 @@
         <span>Lead Hunter</span>
       </div>
       <nav class="tabs" role="tablist">
-        <button role="tab" data-view="leads" aria-selected="true">Leads</button>
-        <button role="tab" data-view="find">Find</button>
-        <button role="tab" data-view="intent">Intent <span class="count" data-intent-count hidden></span></button>
+        <button role="tab" data-view="leads" data-sec="email" aria-selected="true">Email leads <span class="count" data-sec-count="email"></span></button>
+        <button role="tab" data-view="leads" data-sec="contact">WhatsApp leads <span class="count" data-sec-count="contact"></span></button>
         <button role="tab" data-view="settings">Settings</button>
       </nav>
       <div class="kpis" data-kpis></div>
     </header>
 
-    <!-- What is running, and anything that paused: shown on Leads and Find -->
+    <!-- What is running, and anything that paused -->
     <div class="strip" data-strip hidden></div>
 
     <!-- LEADS -->
     <main class="view" data-view-panel="leads">
       <section class="welcome" data-welcome hidden>
         <h1>Businesses with no website, or a weak one.</h1>
-        <p>Lead Hunter finds UAE businesses on Google Maps and Google, works out whether their website is missing, dead or weak, and finds their email, phone and Instagram.</p>
-        <ol>
-          <li><b>Find.</b> On the Find tab pick a kind of business (or All types) and press Find businesses. Google Maps and Google open in background tabs and are read like you would read them.</li>
-          <li><b>Email leads</b> are the ones with an email that passed its checks: Export for cold email and save the file in your RizcoReach Leads folder.</li>
-          <li><b>WhatsApp &amp; Instagram leads</b> are the ones with a phone or an Instagram: export them to Google Contacts, then message them on WhatsApp, or open their Instagram from the list.</li>
-        </ol>
-        <div class="row">
-          <button class="btn pri" data-goto="find">Find businesses</button>
-        </div>
+        <p>Two jobs, kept apart. <b>Email leads</b> finds businesses with a missing, dead or weak website and gets their email, for the cold email system. <b>WhatsApp leads</b> finds the same kind of business with a WhatsApp number, and checks their Instagram, for you to message yourself.</p>
+        <p>Pick a kind of business below (or All types) and press Find. Google Maps, Google and Bing open in background tabs and are read like you would read them.</p>
       </section>
 
-      <div class="sections" role="tablist" data-sections>
-        <button type="button" role="tab" data-section="email" aria-selected="true">Email leads <span class="count" data-sec-count="email"></span></button>
-        <button type="button" role="tab" data-section="contact" aria-selected="false">WhatsApp &amp; Instagram leads <span class="count" data-sec-count="contact"></span></button>
-      </div>
+      <details class="card findbox" data-finder open>
+        <summary><b data-only="email">Find email leads</b><b data-only="contact">Find WhatsApp leads</b> <span class="muted" data-find-sum></span></summary>
+        <p class="hint" data-only="email">Only one job: businesses whose website is missing, down, parked or weak, with an email. A business with a good website is left out, and one whose email can't be found never shows here. Every place below is searched for each search term and area, one at a time, at a human pace.</p>
+        <p class="hint" data-only="contact">Businesses whose website is missing, down, parked or weak, with a WhatsApp or mobile number. Their Instagram is looked up and read so you can see if they are real and active before you message them.</p>
+        <form class="form" data-finder-form>
+          <div class="field">
+            <span class="lbl">Kind of business <small>edit them in Settings</small></span>
+            <div class="chips" data-find-presets></div>
+            <p class="hint" data-preset-progress style="margin:6px 0 0"></p>
+          </div>
+          <label class="field" data-keywords-field>
+            <span class="lbl">Search terms <small>one per line, each searched in every area</small></span>
+            <textarea class="inp" name="keywords" rows="4"></textarea>
+          </label>
+          <div class="field">
+            <span class="lbl">Search on</span>
+            <div class="srcs" data-only="email">
+              <label class="chk"><input type="checkbox" name="src" value="maps" checked /> <b>Google Maps</b> <small class="muted">every business in the area, then their website is read for an email</small></label>
+              <label class="chk"><input type="checkbox" name="src" value="web" checked /> <b>Google: business websites</b> <small class="muted">their own site, where the email usually is</small></label>
+              <label class="chk"><input type="checkbox" name="src" value="mail" checked /> <b>Google: emails in search results</b> <small class="muted">listings, Facebook pages and directories that show a Gmail, Hotmail or Yahoo address</small></label>
+              <label class="chk"><input type="checkbox" name="src" value="bing" checked /> <b>Bing</b> <small class="muted">a second search engine with different results: websites and emails</small></label>
+              <label class="chk"><input type="checkbox" name="src" value="ig" checked /> <b>Google: Instagram profiles with an email</b></label>
+              <label class="chk"><input type="checkbox" name="src" value="adlib" checked /> <b>Meta Ad Library: businesses advertising their opening</b> <small class="muted">runs by itself at the start of a run, at most every 12 hours</small></label>
+            </div>
+            <div class="srcs" data-only="contact">
+              <label class="chk"><input type="checkbox" name="src" value="maps" checked /> <b>Google Maps</b> <small class="muted">phone numbers of every business in the area</small></label>
+              <label class="chk"><input type="checkbox" name="src" value="igwa" checked /> <b>Google: Instagram profiles with a WhatsApp number</b></label>
+              <label class="chk"><input type="checkbox" name="src" value="adlib" checked /> <b>Meta Ad Library: businesses advertising their opening</b> <small class="muted">runs by itself at the start of a run, at most every 12 hours</small></label>
+            </div>
+            <p class="hint" data-google-left style="margin:4px 0 0"></p>
+          </div>
+          <div class="grid3">
+            <label class="field"><span class="lbl">Searches this run <small>one search term and area each</small></span><input class="inp" type="number" name="cap" min="1" max="2000" value="200" /></label>
+            <div class="field"><span class="lbl">Areas</span><span class="hint" data-find-areas style="margin:0"></span></div>
+          </div>
+          <div class="row">
+            <button class="btn pri" type="submit">Find</button>
+            <span class="err" data-finder-err hidden></span>
+          </div>
+        </form>
+      </details>
+
       <p class="hint section-hint" data-section-hint></p>
 
       <div class="toolbar" data-toolbar>
@@ -81,7 +111,6 @@
         <button class="btn pri" data-only="contact" data-act="bulk-contacts">Google Contacts</button>
         <button class="btn" data-act="bulk-igfind">Find their Instagram</button>
         <button class="btn" data-act="bulk-recheck">Check websites again</button>
-        <button class="btn" data-act="bulk-emails">Check emails now</button>
         <button class="btn" data-act="bulk-ig">Read their Instagram</button>
         <button class="btn" data-act="bulk-export">CSV</button>
         <button class="btn danger" data-act="bulk-delete">Delete</button>
@@ -110,125 +139,10 @@
       <p class="count" data-count></p>
     </main>
 
-    <!-- FIND -->
-    <main class="view narrow" data-view-panel="find" hidden>
-      <h1 class="h">Find businesses</h1>
-      <p class="sub">Three places to look. Everything found lands on the Leads tab, where only the ones that fit are shown.</p>
-
-      <section class="card" data-finder>
-        <h2>Google Maps and Google</h2>
-        <p class="hint">Pick a kind of business and where to search. <b>Google Maps</b> gives the most businesses, with phone numbers, and Google's <b>Recently opened</b> label on new ones. <b>Google: business websites</b> finds businesses through their own website, where the email usually is. <b>Google: Instagram profiles</b> finds Instagram accounts whose bio shows an email. Each search runs in a background tab at a human pace; keep the tabs open while it runs.</p>
-        <form class="form" data-finder-form>
-          <div class="field">
-            <span class="lbl">Kind of business <small>edit them in Settings</small></span>
-            <div class="chips" data-find-presets></div>
-            <p class="hint" data-preset-progress style="margin:6px 0 0"></p>
-          </div>
-          <label class="field" data-keywords-field>
-            <span class="lbl">Search terms <small>one per line, each searched in every area</small></span>
-            <textarea class="inp" name="keywords" rows="4"></textarea>
-          </label>
-          <div class="field">
-            <span class="lbl">Search on</span>
-            <div class="row" style="margin-top:4px">
-              <label class="chk inline"><input type="checkbox" name="src" value="maps" checked /> Google Maps</label>
-              <label class="chk inline"><input type="checkbox" name="src" value="web" checked /> Google: business websites</label>
-              <label class="chk inline"><input type="checkbox" name="src" value="ig" checked /> Google: Instagram profiles with an email</label>
-            </div>
-            <p class="hint" data-google-left style="margin:4px 0 0"></p>
-          </div>
-          <div class="grid3">
-            <label class="field"><span class="lbl">Searches this run <small>one search term and area each</small></span><input class="inp" type="number" name="cap" min="1" max="1000" value="100" /></label>
-            <div class="field"><span class="lbl">Areas</span><span class="hint" data-find-areas style="margin:0"></span></div>
-          </div>
-          <div class="row">
-            <button class="btn pri" type="submit">Find businesses</button>
-            <span class="err" data-finder-err hidden></span>
-          </div>
-        </form>
-      </section>
-
-      <section class="card">
-        <h2>Businesses advertising their opening</h2>
-        <p class="hint">A business that pays for an ad saying "grand opening" or "now open" just opened. Lead Hunter opens the Meta Ad Library in a tab, searches these words, and keeps the advertisers whose ad says so and who have no working website. Keep the tab on screen while it runs.</p>
-        <form class="form" data-hunt-form>
-          <label class="field">
-            <span class="lbl">Search words <small>one per line, searched in order</small></span>
-            <textarea class="inp" name="keywords" rows="5" required></textarea>
-          </label>
-          <div class="grid3">
-            <label class="field"><span class="lbl">Country</span><select class="inp" name="country" data-countries></select></label>
-            <label class="field"><span class="lbl">Advertisers to collect</span><input class="inp" type="number" name="target" min="1" max="2000" value="150" /></label>
-            <label class="field"><span class="lbl">Skip pages with more than <small>likes, 0 = no limit</small></span><input class="inp" type="number" name="maxLikes" min="0" step="1000" value="60000" /></label>
-          </div>
-          <div class="row">
-            <button class="btn pri" type="submit">Search the Ad Library</button>
-            <button class="btn ghost" type="button" data-act="hunt-words">Use the opening words</button>
-            <span class="err" data-hunt-err hidden></span>
-          </div>
-        </form>
-        <div data-last-hunt hidden></div>
-      </section>
-
-      <section class="card">
-        <h2>Instagram</h2>
-        <p class="hint">New businesses often open an Instagram before anything else. Lead Hunter never searches or browses Instagram for you. When you come across a new business there, open its profile and press <b>+ Add to Lead Hunter</b> (bottom right of the page). With the Instagram API set up in Settings, Lead Hunter then asks Meta for that account's bio, link and latest posts: an opening announcement, or an account that only started posting in the last few weeks, counts as proof that they just opened.</p>
-      </section>
-    </main>
-
-    <!-- INTENT -->
-    <main class="view" data-view-panel="intent" hidden>
-      <section class="card intent-head">
-        <h2>Intent Radar</h2>
-        <p class="hint">People asking for a website or marketing help, owners announcing a business they are opening, owners saying business is slow, and companies hiring for marketing, from the last 14 days. <b>Scan Reddit now</b> opens Reddit in a tab (be logged in there) and reads your subreddits. For Facebook groups and LinkedIn (posts or jobs), open the page yourself and press <b>Scan for leads</b> at the bottom right. Sellers are filtered out. Until the AI check is set up every post is marked unverified: read it before you reach out.</p>
-        <div class="row"><button class="btn pri" data-act="intent-run">Scan Reddit now</button></div>
-        <div class="finder-status" data-intent-status></div>
-      </section>
-      <div class="toolbar">
-        <select class="inp" data-intent-f="status" aria-label="Status">
-          <option value="new">New</option>
-          <option value="contacted">Contacted</option>
-          <option value="dismissed">Dismissed</option>
-          <option value="all">All</option>
-        </select>
-        <select class="inp" data-intent-f="kind" aria-label="Kind">
-          <option value="">Any kind</option>
-          <option value="website">Website buyers</option>
-          <option value="opening">Opening a business</option>
-          <option value="marketing">Marketing buyers</option>
-          <option value="pain">Owner pain</option>
-          <option value="hiring">Hiring for marketing</option>
-        </select>
-        <select class="inp" data-intent-f="source" aria-label="Source">
-          <option value="">Any source</option>
-          <option value="reddit">Reddit</option>
-          <option value="facebook">Facebook groups</option>
-          <option value="linkedin">LinkedIn</option>
-        </select>
-        <label class="chk"><input type="checkbox" data-intent-f="notBuyers" /> Show not buyers</label>
-      </div>
-      <p class="muted" data-intent-count-line></p>
-      <div class="intent-rows" data-intent-rows></div>
-      <p class="empty" data-intent-empty hidden></p>
-    </main>
-
     <!-- SETTINGS -->
     <main class="view narrow" data-view-panel="settings" hidden>
       <h1 class="h">Settings</h1>
       <form class="card form" data-settings-form>
-        <h2 id="verify">Email check</h2>
-        <p class="hint">Every address Lead Hunter finds is cleaned (typos like gmial.com or .con are fixed; broken, glued and placeholder addresses like @info@… are dropped), then its domain is checked: does it exist and receive email? That is free and always on, and nothing that fails it is ever exported.</p>
-        <p class="hint"><b>Optional:</b> a QuickEmailVerification key also checks that the exact mailbox exists (100 free a day). Without one, everything else still works.</p>
-        <div class="grid2">
-          <label class="field"><span class="lbl">QuickEmailVerification API key <small>kept in this browser only</small></span><input class="inp" name="verifyKey" type="password" autocomplete="off" /></label>
-          <label class="field"><span class="lbl">Mailbox checks a day <small>their free plan gives 100</small></span><input class="inp" name="verifyDailyCap" type="number" min="0" max="100000" /></label>
-        </div>
-        <label class="chk"><input type="checkbox" name="emailRisky" /> Also export addresses the mailbox check could not confirm <small class="muted">(some mail servers accept anything or refuse to say. More leads, more bounces. Leave it off for the lowest bounce rate.)</small></label>
-        <div class="row"><button type="button" class="btn" data-act="verify-test">Save and test</button><button type="button" class="btn ghost" data-act="verify-resume">Check waiting emails now</button><span class="hint" data-verify-test></span></div>
-        <p class="hint" data-verify-status></p>
-        <label class="field"><span class="lbl">Addresses that bounced <small>paste them (or the bounce report from your cold email system), any format. They are never used again.</small></span><textarea class="inp" rows="3" data-bounces placeholder="info@oldsalon.ae, hello@closedcafe.com"></textarea></label>
-        <div class="row" style="margin-top:0"><button type="button" class="btn" data-act="bounces-add">Remember as bounced</button><span class="hint" data-bounces-out></span></div>
-
         <h2 id="fit">Who fits</h2>
         <p class="hint">A business fits when it has no website, or its website is down, parked ("coming soon") or weak: not secure, not made for phones, or scoring under the bar below. A business with a good website does not fit. Businesses with proof they just opened (Google's own label, their own ad or Instagram post, a brand new Instagram, or your own say) come first, and the cold email file says "new business".</p>
         <div class="grid2">
@@ -257,6 +171,7 @@
         <label class="chk"><input type="checkbox" name="googleIgAuto" /> Find the Instagram of businesses that fit and have none, on Google <small class="muted">(one Google search each, in the Google tab)</small></label>
         <div class="grid2">
           <label class="field"><span class="lbl">Google searches a day <small>all of them together. Too many in a day and Google shows a captcha</small></span><input class="inp" name="googleDailyCap" type="number" min="0" max="1000" /></label>
+          <label class="field"><span class="lbl">Bing searches a day <small>Bing has its own limit. Too many and Bing asks you to prove you are human</small></span><input class="inp" name="bingDailyCap" type="number" min="0" max="1000" /></label>
         </div>
         <label class="chk"><input type="checkbox" name="fbEmailAuto" /> Look for an email on their Facebook page <small class="muted">(only for businesses that fit and have no email yet: the page opens in a background tab, one every few seconds)</small></label>
         <div class="grid2">
@@ -281,42 +196,26 @@
         </div>
 
         <h2 id="instagram">Instagram</h2>
-        <p class="hint">Lead Hunter never opens Instagram for this. It asks Meta's Instagram Graph API (Business Discovery) with your own token, and it can only see business and creator accounts. It reads their bio (often with their email), the link in it, and their latest posts, which say whether they just opened. You need an Instagram business or creator account linked to a Facebook page, and a Meta app. In the Graph API Explorer pick your app, add the permissions <b>instagram_basic</b>, <b>instagram_manage_insights</b>, <b>pages_show_list</b>, <b>pages_read_engagement</b> and <b>business_management</b>, press Generate Access Token, then run <code>me/accounts?fields=instagram_business_account</code>: the id it shows is your account id. Tokens from the Explorer stop working after about an hour; swap it for a long lived one (about 60 days) with the Access Token Debugger's Extend button. If the token stops working, lookups pause and you get an alert.</p>
+        <p class="hint">Lead Hunter never opens Instagram for this. It asks Meta's Instagram Graph API (Business Discovery) for a business's bio (often with their email or WhatsApp), the link in it and their latest posts, which say whether the account is real, active, or just opened. It needs an access token from your own Meta app, once.</p>
+        <ol class="hint steps">
+          <li>Open the <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noopener">Graph API Explorer</a> and pick your app.</li>
+          <li>Under Permissions add <b>instagram_basic</b>, <b>instagram_manage_insights</b>, <b>pages_show_list</b>, <b>pages_read_engagement</b> and <b>business_management</b>, then press <b>Generate Access Token</b> and allow it.</li>
+          <li>Copy the token, paste it below and press <b>Connect</b>. Lead Hunter finds your Instagram business account id itself, and swaps a short token for a long lived one when you add your app id and secret.</li>
+        </ol>
         <div class="grid2">
-          <label class="field"><span class="lbl">Your Instagram business account id</span><input class="inp" name="igAccountId" placeholder="17841400000000000" autocomplete="off" /></label>
           <label class="field"><span class="lbl">Access token <small>kept in this browser only</small></span><input class="inp" name="igToken" type="password" autocomplete="off" /></label>
+          <label class="field"><span class="lbl">Your Instagram business account id <small>filled in by Connect</small></span><input class="inp" name="igAccountId" placeholder="found for you" autocomplete="off" /></label>
+          <label class="field"><span class="lbl">Meta app id <small>optional: makes the token last about 60 days</small></span><input class="inp" name="igAppId" autocomplete="off" /></label>
+          <label class="field"><span class="lbl">Meta app secret <small>optional, kept in this browser only</small></span><input class="inp" name="igAppSecret" type="password" autocomplete="off" /></label>
           <label class="field"><span class="lbl">Graph API version</span><input class="inp" name="igApiVersion" placeholder="v23.0" /></label>
         </div>
         <label class="chk"><input type="checkbox" name="igAuto" /> Read the Instagram of every new business that has one</label>
-        <div class="row"><button type="button" class="btn" data-act="ig-test">Save and test</button><span class="hint" data-ig-test></span></div>
-
-        <h2 id="intent">Intent Radar</h2>
-        <p class="hint">Reddit refuses to show posts to anyone not logged in, and new Reddit API apps now need Reddit's approval. So Reddit is read in your own Reddit tab: press <b>Scan Reddit now</b> on the Intent tab (or <b>Scan my subreddits</b> at the bottom right of any Reddit page) while logged in to Reddit in this Chrome profile. It reads the newest posts of each subreddit below, 4 to 12 seconds apart. If you have an approved Reddit app, paste its id here and Reddit is scanned by itself every few hours instead. A block or "too many requests" pauses Reddit and alerts you.</p>
-        <div class="grid2">
-          <label class="field"><span class="lbl">Scan Reddit every <small>hours, only with an approved app id; 0 = only when you press Scan now</small></span><input class="inp" name="radarEveryHours" type="number" min="0" max="48" /></label>
-          <label class="field"><span class="lbl">Only posts from the last <small>days</small></span><input class="inp" name="intentMaxDays" type="number" min="1" max="60" /></label>
-          <label class="field"><span class="lbl">Subreddits <small>one per line</small></span><textarea class="inp" name="subreddits" rows="4"></textarea></label>
-          <label class="field"><span class="lbl">UAE only subreddits <small>a post counts only if it mentions the UAE</small></span><textarea class="inp" name="uaeOnlySubs" rows="4"></textarea></label>
-          <label class="field"><span class="lbl">Posts per subreddit per scan <small>at most 100</small></span><input class="inp" name="intentCap" type="number" min="10" max="100" /></label>
-          <label class="field"><span class="lbl">Reddit app id <small>optional, an app Reddit approved</small></span><input class="inp" name="redditClientId" autocomplete="off" /></label>
-          <label class="field"><span class="lbl">Reddit app secret <small>only for script or web apps</small></span><input class="inp" name="redditSecret" type="password" autocomplete="off" /></label>
-        </div>
-        <p class="hint">Keywords: a post with any of these phrases is saved under that kind. Arabic phrases about websites or marketing count as those too.</p>
-        <div class="grid2" data-intent-lists></div>
-        <label class="field"><span class="lbl">Seller words <small>a post with any of these is someone selling, and is skipped</small></span><textarea class="inp" rows="5" data-seller-words></textarea></label>
-        <h3 class="sub">AI check</h3>
-        <p class="hint">An AI reads every post the keywords catch and says whether the person is really a buyer, what they need, what business they are and where, and how urgent it is. Posts it rules out are hidden (tick Show not buyers to see them). Use a free Google AI Studio key: aistudio.google.com &gt; Get API key &gt; Create API key. On Google's free tier there is a daily limit (the check waits and carries on when it is reached), and Google may use what is sent to improve its products; these are public posts. Or use a Claude key (console.anthropic.com &gt; API keys). If both are filled in, Gemini is used. Keys stay in this browser and are only sent to Google or Anthropic.</p>
-        <div class="grid2">
-          <label class="field"><span class="lbl">Google AI Studio key <small>free</small></span><input class="inp" name="geminiKey" type="password" autocomplete="off" placeholder="AIza…" /></label>
-          <label class="field"><span class="lbl">Gemini model</span><input class="inp" name="geminiModel" placeholder="gemini-flash-lite-latest" /></label>
-          <label class="field"><span class="lbl">Claude API key <small>optional, instead of Gemini</small></span><input class="inp" name="anthropicKey" type="password" autocomplete="off" placeholder="sk-ant-…" /></label>
-          <label class="field"><span class="lbl">Claude model</span><input class="inp" name="aiModel" placeholder="claude-haiku-5-5" /></label>
-        </div>
-        <label class="chk"><input type="checkbox" name="aiAuto" /> Check new posts as they come in</label>
-        <div class="row"><button type="button" class="btn" data-act="ai-test">Save and test</button><span class="hint" data-ai-test></span></div>
+        <div class="row"><button type="button" class="btn pri" data-act="ig-test">Connect</button><span class="hint" data-ig-test></span></div>
 
         <h2 id="email">Cold email</h2>
-        <p class="hint">Lead Hunter finds the businesses and checks their emails. The cold email system on your Mac (cold-email/ in the repo) writes the emails, sends them, follows up and reads the replies. Press <b>Export for cold email</b> on the Leads tab and save the file in your <b>RizcoReach Leads</b> folder: it goes in within the hour. A business with proof that it just opened is marked "new business" in the file.</p>
+        <p class="hint">Lead Hunter finds the businesses and their emails. The cold email system on your Mac (cold-email/ in the repo) writes the emails, sends them, follows up and reads the replies. Press <b>Export for cold email</b> on the Email leads tab and save the file in your <b>RizcoReach Leads</b> folder: it goes in within the hour. A business with proof that it just opened is marked "new business" in the file.</p>
+        <label class="field"><span class="lbl">Addresses that bounced <small>paste them (or the bounce report from your cold email system), any format. They are never used again.</small></span><textarea class="inp" rows="3" data-bounces placeholder="info@oldsalon.ae, hello@closedcafe.com"></textarea></label>
+        <div class="row" style="margin-top:0"><button type="button" class="btn" data-act="bounces-add">Remember as bounced</button><span class="hint" data-bounces-out></span></div>
         <div class="row">
           <button class="btn pri" type="submit">Save settings</button>
           <span class="saved" data-saved hidden>Saved</span>
@@ -333,7 +232,7 @@
           <button class="btn danger" data-act="wipe">Delete all leads</button>
         </div>
         <h2 id="problems">Problems by source</h2>
-        <p class="hint">What went wrong lately on each site. A login wall, checkpoint or block pauses that source and shows an alert at the top of the Leads and Find tabs. Nothing tries to get past it.</p>
+        <p class="hint">What went wrong lately on each site. A login wall, checkpoint or block pauses that source and shows an alert at the top of the lead tabs. Nothing tries to get past it.</p>
         <div data-problems></div>
         <h2 id="memory">Contacted memory</h2>
         <p class="hint">Everyone you mark contacted or export for cold email is remembered here, even after you delete the lead. Searches skip them and matching leads are hidden (tick Show contacted before to see them). Import your own list too: any CSV with phone numbers.</p>
@@ -354,9 +253,6 @@
     <script src="../lib/common.js"></script>
     <script src="../lib/emails.js"></script>
     <script src="../lib/fit.js"></script>
-    <script src="../lib/intent.js"></script>
-    <script src="../lib/intent-db.js"></script>
     <script src="dashboard.js"></script>
-    <script src="intent.js"></script>
   </body>
 </html>

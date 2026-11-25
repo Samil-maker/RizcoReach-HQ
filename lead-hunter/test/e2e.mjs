@@ -1,7 +1,6 @@
 // End-to-end test: real Chromium + the unpacked extension against a mock world (test/world.mjs): Google Maps with
-// Google's "Recently opened" label, the businesses' websites, public DNS, the mailbox checker, the Instagram API, a
-// Facebook page, Instagram profiles and the Meta Ad Library; Reddit, LinkedIn and the AI check come from
-// test/meta-fixtures.mjs. No real traffic leaves the machine.
+// Google's "Recently opened" label, Google and Bing results, the businesses' websites, the Instagram API, a
+// Facebook page, Instagram profiles and the Meta Ad Library. No real traffic leaves the machine.
 //   node lead-hunter/test/e2e.mjs [--shots <dir>]
 // Needs Playwright (global or local) and openssl.
 import { createRequire } from 'node:module';
@@ -14,8 +13,8 @@ import os from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
-import { worldHandler, world, calls, VERIFY_KEY, IG } from './world.mjs';
-import { metaHandler, CLAUDE, GEMINI, redditCalls, redditMode } from './meta-fixtures.mjs';
+import { worldHandler, world, calls, IG } from './world.mjs';
+import { metaHandler } from './meta-fixtures.mjs';
 
 const require = createRequire(import.meta.url);
 let pw;
@@ -74,7 +73,7 @@ const mux = net.createServer((sock) =>
 );
 await new Promise((r) => mux.listen(0, '127.0.0.1', r));
 const PORT = mux.address().port;
-const HOSTS = ['www.facebook.com', '*.example', 'wa.me', 'www.google.com', 'www.instagram.com', 'graph.facebook.com', 'www.reddit.com', 'www.linkedin.com', 'api.anthropic.com', 'generativelanguage.googleapis.com', 'dns.google', 'cloudflare-dns.com', 'api.quickemailverification.com'];
+const HOSTS = ['www.facebook.com', '*.example', 'wa.me', 'www.google.com', 'www.instagram.com', 'graph.facebook.com', 'www.reddit.com', 'www.linkedin.com', 'api.anthropic.com', 'generativelanguage.googleapis.com', 'dns.google', 'cloudflare-dns.com', 'api.quickemailverification.com', 'www.bing.com'];
 
 /* ----------------------------------------------------------------- browser */
 const ctx = await pw.chromium.launchPersistentContext(path.join(tmp, 'profile'), {
@@ -137,7 +136,8 @@ try {
   // First run opens the dashboard with the welcome panel.
   const dash = await waitFor(async () => ctx.pages().find((p) => p.url().startsWith(dashUrl)), 10000, 'welcome tab');
   await dash.waitForSelector('[data-welcome]:not([hidden])');
-  assert.deepEqual(await dash.$$eval('.tabs [data-view]', (b) => b.map((x) => x.dataset.view)), ['leads', 'find', 'intent', 'settings'], 'four tabs');
+  assert.deepEqual(await dash.$$eval('.tabs [data-view]', (b) => b.map((x) => `${x.dataset.view}${x.dataset.sec ? `:${x.dataset.sec}` : ''}`)), ['leads:email', 'leads:contact', 'settings'], 'Email leads, WhatsApp leads, Settings');
+  assert.equal(await dash.$$eval('[data-view="intent"], [data-view="find"], [name="verifyKey"], [data-act="bulk-emails"], [name="subreddits"]', (n) => n.length), 0, 'Intent Radar and the email check are gone');
 
   /* ---------------------------------------------------------------- Settings */
   await dash.click('[data-view="settings"]');
@@ -146,30 +146,29 @@ try {
   const builtIn = await dash.$$eval('[data-niche-row]', (r) => r.length);
   assert.ok(builtIn >= 40, `built in kinds of business (${builtIn})`);
   await dash.fill('[name="scrollDelayMs"]', '900');
-  await dash.fill('[name="radarEveryHours"]', '0');
-  await dash.fill('[name="igAccountId"]', IG.account);
   await dash.fill('[name="igToken"]', IG.token);
   await dash.fill('[data-areas]', 'JLT, Dubai\nAl Quoz, Dubai');
   // Remove one built in kind: it stays away, and nothing else is stored.
   await dash.$$eval('[data-niche-row]', (rows) => rows.find((r) => r.querySelector('[data-niche-name]').value === 'Used Cars').querySelector('[data-act="del-niche"]').click());
-  // The mailbox check: a wrong key is reported, the right one is tested on the free sandbox.
-  await dash.fill('[name="verifyKey"]', 'wrong-key');
-  await dash.click('[data-act="verify-test"]');
-  await dash.waitForFunction(() => /^Not working: The email check did not accept your key \(401\)/.test(document.querySelector('[data-verify-test]').textContent));
-  await dash.fill('[name="verifyKey"]', VERIFY_KEY);
-  await dash.click('[data-act="verify-test"]');
-  await dash.waitForFunction(() => /^Working\. Mailbox checks are on/.test(document.querySelector('[data-verify-test]').textContent));
-  assert.deepEqual([calls.sandbox.length, calls.verify.length], [1, 0], 'the test used the sandbox, none of the day’s checks');
   if (SHOTS) await dash.screenshot({ path: `${SHOTS}/4-settings.png` });
   await dash.click('[data-settings-form] button[type="submit"]');
   await waitFor(async () => (await storage('settings')).settings.scrollDelayMs === 900, 5000, 'settings saved');
   const saved = (await storage('settings')).settings;
-  assert.deepEqual([saved.areas, saved.niches, saved.hiddenPresets, saved.verifyKey, saved.verifyDailyCap, saved.emailRisky], ['JLT, Dubai\nAl Quoz, Dubai', null, ['Used Cars'], VERIFY_KEY, 100, false]);
+  assert.deepEqual([saved.areas, saved.niches, saved.hiddenPresets], ['JLT, Dubai\nAl Quoz, Dubai', null, ['Used Cars']]);
+  assert.ok(!(await dash.$$eval('[data-niche-name]', (n) => n.map((x) => x.value))).some((n) => /\bspas?\b|massage|catering/i.test(n)), 'no spas, massage or catering');
+  // Instagram: the token alone. Connect finds the business account linked to your Facebook page.
+  await dash.click('[data-act="ig-test"]');
+  await dash.waitForFunction(() => /^Connected|^Not working/.test(document.querySelector('[data-ig-test]').textContent), null, { timeout: 15000 });
+  assert.match(await dash.textContent('[data-ig-test]'), /^Connected: @rizcoreach, 1200 followers/);
+  assert.equal((await storage('settings')).settings.igAccountId, IG.account);
+  assert.equal(await dash.inputValue('[name="igAccountId"]'), IG.account, 'shown in Settings');
   for (const k of ['heatWeights', 'weakChecks', 'pagespeedKey', 'adCheckAll', 'auditLinkBase']) assert.ok(!(k in saved), `${k} is gone`);
 
   await sw.evaluate(() => chrome.storage.local.set({ googlePace: [200, 400] })); // Google searches without the human pause
   /* ------------------------------------------------------- Find: Google Maps */
-  await dash.click('[data-view="find"]');
+  await dash.click('[data-view="leads"][data-sec="email"]');
+  assert.ok(await dash.isVisible('[data-finder] [data-only="email"] [value="mail"]') && (await dash.isHidden('[data-finder] [data-only="contact"] [value="igwa"]')), 'the email Find');
+  await dash.uncheck('[data-finder] [data-only="email"] [value="adlib"]'); // the Ad Library has its own test below
   const chips = await dash.$$eval('[data-find-preset]', (c) => c.map((x) => x.textContent));
   assert.equal(chips[0], 'All types');
   assert.ok(chips.includes('Salons') && !chips.includes('Used Cars'), 'the one you removed is gone');
@@ -179,7 +178,7 @@ try {
   assert.match(await dash.textContent('[data-find-areas]'), /^2 areas \(Settings > Areas\), from JLT, Dubai/);
   if (SHOTS) await dash.screenshot({ path: `${SHOTS}/3-find.png`, fullPage: true });
   await dash.fill('[data-finder-form] [name="keywords"]', 'ladies salon');
-  await dash.fill('[data-finder-form] [name="cap"]', '10');
+  await dash.fill('[data-finder-form] [name="cap"]', '20');
   await dash.click('[data-finder-form] button[type="submit"]');
   await waitFor(async () => ((await storage('finder')).finder || {}).status === 'done', 90000, 'Google Maps run').catch(async (e) => {
     for (const pg of ctx.pages()) console.log('page', pg.url(), await pg.evaluate(() => [document.readyState, !!document.querySelector('[role=feed]'), document.visibilityState]).catch((x) => String(x)));
@@ -188,11 +187,15 @@ try {
   });
   assert.deepEqual(calls.maps, ['ladies salon JLT, Dubai', 'ladies salon Al Quoz, Dubai']);
   const run1 = (await storage('finder')).finder;
-  console.log('Maps run:', JSON.stringify(run1.stats));
-  assert.deepEqual([run1.stats.found, run1.stats.kept, run1.stats.duplicate, run1.stats.opened], [13, 11, 2, 4], '10 on Maps, 3 on Google; Bloom and Velvet twice; four say they just opened or open soon');
+  console.log('Maps run:', JSON.stringify(run1.stats), 'bing:', JSON.stringify(calls.bing));
+  assert.equal(run1.mode, 'email');
+  assert.deepEqual(run1.sources, ['maps', 'web', 'mail', 'bing', 'ig']);
+  assert.deepEqual([run1.stats.found, run1.stats.kept, run1.stats.duplicate, run1.stats.opened], [17, 14, 3, 4], '10 on Maps, 5 on Google, 2 on Bing; Bloom, Velvet and Glow twice; four say they just opened or open soon');
+  for (const q of ['ladies salon JLT, Dubai', '"ladies salon" "JLT, Dubai" ("@gmail.com" OR "@hotmail.com" OR "@yahoo.com" OR "@outlook.com")']) assert.ok(calls.bing.includes(q), `Bing: ${q}`);
+  assert.ok(calls.google.includes('site:facebook.com "ladies salon" "Dubai" ("@gmail.com" OR "@hotmail.com" OR "@yahoo.com" OR "@outlook.com")'), 'Facebook pages that show an email');
   for (const q of ['ladies salon JLT, Dubai', 'ladies salon Al Quoz, Dubai', 'site:instagram.com "ladies salon" "Dubai" ("@gmail.com" OR "@hotmail.com" OR "@outlook.com" OR "@yahoo.com" OR "email")', 'site:instagram.com "ladies salon" "Dubai" ("@gmail.com" OR "@hotmail.com" OR "@outlook.com" OR "@yahoo.com" OR "email") #10']) assert.ok(calls.google.includes(q), q);
   // A kind with its own filters: too many reviews is dropped, a new listing with two is kept.
-  await sw.evaluate(() => handlers['finder:start']({ config: { niche: 'Car', keywords: ['ppf'], areas: ['JLT, Dubai'], cap: 5 } }));
+  await sw.evaluate(() => handlers['finder:start']({ config: { niche: 'Car', keywords: ['ppf'], areas: ['JLT, Dubai'], cap: 5, sources: ['maps', 'web', 'ig'] } }));
   await waitFor(async () => {
     const f = (await storage('finder')).finder;
     return f.niche === 'Car' && f.status === 'done';
@@ -212,21 +215,21 @@ try {
   const bloom = await byName('Bloom Beauty Lounge');
   assert.deepEqual([...new Set(bloom.openSignals.map((s) => s.kind))].sort(), ['caption', 'google', 'newig']);
   assert.match(bloom.openSignals.find((s) => s.kind === 'caption').text, /GRAND OPENING this Friday in JLT/);
-  assert.deepEqual([v['Bloom Beauty Lounge'].fit, v['Bloom Beauty Lounge'].kind, v['Bloom Beauty Lounge'].mail], [true, 'new', { email: 'bloom.beauty.dxb@gmail.com', state: 'ok' }]);
+  assert.deepEqual([v['Bloom Beauty Lounge'].fit, v['Bloom Beauty Lounge'].kind, v['Bloom Beauty Lounge'].mail], [true, 'new', { email: 'bloom.beauty.dxb@gmail.com', state: 'unchecked' }]);
   assert.deepEqual(bloom.emailFrom, { 'bloom.beauty.dxb@gmail.com': 'instagram' });
-  // "Opened 3 weeks ago", and a "coming soon" page: fits. The mailbox check could not confirm the address.
+  // "Opened 3 weeks ago", and a "coming soon" page: fits, with the address on that page.
   const velvet = await byName('Velvet Hair Studio');
   const opened = velvet.openSignals.find((s) => s.kind === 'google');
   assert.equal(opened.text, 'Opened 3 weeks ago');
   assert.ok(Math.abs(opened.openedAt - (Date.now() - 21 * 864e5)) < 864e5);
-  assert.deepEqual([v['Velvet Hair Studio'].fit, v['Velvet Hair Studio'].site, v['Velvet Hair Studio'].mail.why], [true, 'parked', 'risky']);
+  assert.deepEqual([v['Velvet Hair Studio'].fit, v['Velvet Hair Studio'].site, v['Velvet Hair Studio'].mail.email], [true, 'parked', 'hello@velvethair.example']);
   // A good website does not fit. No website fits, new or not; opening HOURS are not an opening.
   assert.deepEqual([v['Glam Corner Salon'].fit, v['Glam Corner Salon'].why, v['Glam Corner Salon'].site], [false, 'They have a good website', 'good']);
   assert.deepEqual([v['Old Town Salon'].fit, v['Old Town Salon'].why], [true, 'No website']);
   assert.deepEqual([v['Night Owl Salon'].fit, v['Night Owl Salon'].kind, (await byName('Night Owl Salon')).openSignals], [true, 'none', undefined], '"Opens soon ⋅ 10 AM" is opening hours, not an opening');
   // Old Town's Instagram, found on Google by its name, with the email in its bio. Night Owl has none to find.
   const oldTown = await byName('Old Town Salon');
-  assert.deepEqual([LH_ig(oldTown), oldTown.igFind.state, v['Old Town Salon'].mail], ['oldtownsalon.dxb', 'found', { email: 'oldtownsalon@gmail.com', state: 'ok' }]);
+  assert.deepEqual([LH_ig(oldTown), oldTown.igFind.state, v['Old Town Salon'].mail], ['oldtownsalon.dxb', 'found', { email: 'oldtownsalon@gmail.com', state: 'unchecked' }]);
   assert.equal((await byName('Night Owl Salon')).igFind.state, 'none');
   assert.ok(!calls.google.includes('site:instagram.com "Glam Corner Salon" Dubai'), 'no Instagram search for a business that does not fit');
   // Google: a weak website with an email, and an Instagram profile whose bio shows one.
@@ -237,34 +240,40 @@ try {
   assert.ok(!(await byName('Ladies Salons in JLT')) && !(await byName('The 10 best salons in Dubai')), 'no directories or lists');
   // A website that is down fits without proof; there is no email to send to.
   assert.deepEqual([v['Rose Petal Spa'].fit, v['Rose Petal Spa'].kind, v['Rose Petal Spa'].mail.why], [true, 'down', 'none']);
-  // Henna House: its Facebook page Intro gave an email (not the CV address in a post), and the mailbox does not exist.
+  // Henna House: its Facebook page Intro gave an email (not the CV address in a post).
   const henna = await byName('Henna House');
-  assert.deepEqual([henna.fbEmail.state, henna.emails], ['found', ['hennahouse.dxb@gmail.com']]);
-  assert.deepEqual(v['Henna House'].emails, [['hennahouse.dxb@gmail.com', 'bad', 'The mailbox does not exist']]);
-  // Gloss Garage: a parked page full of broken addresses. Only the one that passes every check is used.
-  assert.deepEqual([v['Gloss Garage'].fit, v['Gloss Garage'].kind, v['Gloss Garage'].mail], [true, 'parked', { email: 'gloss.garage.dxb@gmail.com', state: 'ok' }]);
+  assert.deepEqual([henna.fbEmail.state, henna.emails, v['Henna House'].mail.email], ['found', ['hennahouse.dxb@gmail.com'], 'hennahouse.dxb@gmail.com']);
+  // Gloss Garage: a parked page full of broken addresses. The parked domain's own addresses go last.
+  assert.deepEqual([v['Gloss Garage'].fit, v['Gloss Garage'].kind, v['Gloss Garage'].mail.email], [true, 'parked', 'gloss.garage.dxb@gmail.com']);
   const gstates = Object.fromEntries(v['Gloss Garage'].emails.map(([e, s]) => [e, s]));
-  assert.equal(gstates['bookings@glossgarage.example'], 'bad', 'its domain does not exist');
-  assert.equal(gstates['sales@glossgarage.com'], 'bad', '.con fixed to .com, which receives no email');
+  assert.ok('sales@glossgarage.com' in gstates, '.con fixed to .com');
   assert.ok(!Object.keys(gstates).some((e) => /yourdomain|%|^\d/.test(e)), 'no placeholder, no %20, no phone number glued on');
   // The label that only arrives in Maps' own data: "Opening soon".
   assert.deepEqual([v['Soon Cafe'].fit, v['Soon Cafe'].open], [true, 'soon']);
   assert.deepEqual([v['Shield PPF Center'].fit, v['Shield PPF Center'].kind], [true, 'new']);
-  assert.ok(!calls.verify.includes('hello@glamcorner.example'), 'no mailbox check spent on a business that does not fit');
+  // Found by their email alone: a Facebook page, a directory listing, and a Facebook page on Bing. No website of their own.
+  for (const [n, e, ph] of [['Pearl Ladies Salon', 'pearl.salon.jlt@gmail.com', '+971584441209'], ['Lotus Beauty Centre', 'lotusbeauty@hotmail.com', undefined], ['Coral Nails & Beauty', 'coralnails@yahoo.com', '+971567771203']]) {
+    const x = await verdict(n);
+    assert.deepEqual([x.fit, x.site, x.mail.email, ((await byName(n)).phones[0] || {}).number], [true, 'none', e, ph], n);
+  }
+  assert.equal((await byName('Pearl Ladies Salon')).socials.facebook, 'https://www.facebook.com/pearlladiessalon/', 'their Facebook page');
+  assert.ok(!(await leads()).some((l) => (l.emails || []).some((e) => /yellowpages|^[abc]\.salon@/.test(e))), "never the directory's own address, never a list of businesses");
+  assert.equal(calls.verify.length + calls.dns.length, 0, 'no email checks any more');
 
   /* ---------------------------------------------------------------- Leads tab */
-  await dash.click('[data-view="leads"]');
+  await dash.click('[data-view="leads"][data-sec="email"]');
   await dash.waitForSelector('[data-rows] tr');
   const rowNames = () => dash.$$eval('[data-rows] tr .biz .n', (n) => n.map((x) => x.textContent));
-  // Email leads: the ones that fit and have an email that passed its checks.
+  // Email leads: the ones that fit and have an email. One without an email never shows here.
+  const EMAIL_LEADS = ['Bloom Beauty Lounge', 'Velvet Hair Studio', 'Old Town Salon', 'Henna House', 'Gloss Garage', 'Glow Salon', 'Nails by Rana', 'Pearl Ladies Salon', 'Lotus Beauty Centre', 'Coral Nails & Beauty'];
   const ready = await rowNames();
-  assert.deepEqual(new Set(ready), new Set(['Bloom Beauty Lounge', 'Old Town Salon', 'Gloss Garage', 'Glow Salon', 'Nails by Rana']), 'email leads');
+  assert.deepEqual(new Set(ready), new Set(EMAIL_LEADS), 'email leads');
   assert.ok(ready.indexOf('Bloom Beauty Lounge') < ready.indexOf('Glow Salon'), 'new first, weak websites after');
-  assert.match(await dash.textContent('[data-kpis]'), /5 to email[\s\S]*9 to WhatsApp \/ Instagram/);
-  assert.equal(await dash.textContent('[data-sec-count="email"]'), '5');
-  await dash.selectOption('[data-f="show"]', 'needemail');
-  await dash.waitForFunction(() => document.querySelectorAll('[data-rows] tr').length === 6);
-  assert.deepEqual(new Set(await rowNames()), new Set(['Velvet Hair Studio', 'Rose Petal Spa', 'Night Owl Salon', 'Henna House', 'Soon Cafe', 'Shield PPF Center']));
+  assert.match(await dash.textContent('[data-kpis]'), /10 to email[\s\S]*11 to WhatsApp/);
+  assert.equal(await dash.textContent('[data-sec-count="email"]'), '10');
+  await dash.selectOption('[data-f="show"]', 'none');
+  await dash.waitForFunction(() => document.querySelectorAll('[data-rows] tr').length === 7);
+  assert.deepEqual(new Set(await rowNames()), new Set(['Bloom Beauty Lounge', 'Nails by Rana', 'Old Town Salon', 'Henna House', 'Pearl Ladies Salon', 'Lotus Beauty Centre', 'Coral Nails & Beauty']), 'no website, with an email: never Night Owl, which has none');
   await dash.selectOption('[data-f="show"]', 'nofit');
   await dash.waitForFunction(() => document.querySelectorAll('[data-rows] tr').length === 1);
   assert.deepEqual(await rowNames(), ['Glam Corner Salon']);
@@ -275,7 +284,7 @@ try {
   await dash.waitForSelector('.drawer.open [data-fit-sec]');
   assert.match(await dash.textContent('[data-fit-sec]'), /Fits · Just opened, and they have no website/);
   assert.match(await dash.textContent('[data-fit-sec]'), /Google Maps: “Recently opened”[\s\S]*Their Instagram post: “/);
-  assert.match(await dash.textContent('[data-email-sec]'), /bloom\.beauty\.dxb@gmail\.com\s*Confirmed/);
+  assert.match(await dash.textContent('[data-email-sec]'), /bloom\.beauty\.dxb@gmail\.com\s*Ready/);
   assert.match(await dash.textContent('[data-cold-note]'), /They go in the next Export for cold email, with bloom\.beauty\.dxb@gmail\.com/);
   if (SHOTS) await dash.waitForTimeout(500), await dash.screenshot({ path: `${SHOTS}/2-drawer.png` });
   await dash.click('.drawer [data-act="close"]');
@@ -283,14 +292,12 @@ try {
   await dash.click(`tr[data-id="${gloss.id}"] [data-open]`);
   await dash.waitForSelector('.drawer.open [data-email-sec] .email-row');
   const gtext = await dash.textContent('[data-email-sec]');
-  assert.match(gtext, /gloss\.garage\.dxb@gmail\.com\s*Confirmed/);
-  assert.match(gtext, /sales@glossgarage\.com\s*Removed\s*Its domain cannot receive email/);
-  assert.match(gtext, /bookings@glossgarage\.example\s*Removed\s*Its domain does not exist/);
-  // An address you type is cleaned and checked like any other.
+  assert.match(gtext, /gloss\.garage\.dxb@gmail\.com\s*Ready/);
+  assert.ok(!/Check now/.test(gtext), 'no email check button');
+  // An address you type is cleaned like any other.
   await dash.fill('[data-add-email] [name="email"]', 'Owner@GlossGarage.con');
   await dash.press('[data-add-email] [name="email"]', 'Enter');
   await waitFor(async () => ((await lead(gloss.id)).emails || []).includes('owner@glossgarage.com'), 5000, 'typed email added');
-  await waitFor(async () => (((await lead(gloss.id)).emailCheck || {})['owner@glossgarage.com'] || {}).s === 'bad', 20000, 'typed email checked');
   await dash.click('.drawer [data-act="close"]');
   if (SHOTS) await dash.screenshot({ path: `${SHOTS}/1-leads.png` });
 
@@ -322,64 +329,54 @@ try {
   assert.match(f1.opts.filename, /^rizcoreach-cold-email-\d{4}-\d{2}-\d{2}\.csv$/);
   assert.equal(f1.opts.saveAs, true);
   assert.deepEqual(f1.head, ['business_name', 'first_name', 'email', 'website', 'instagram', 'phone', 'niche', 'area', 'source', 'notes', 'status']);
-  assert.deepEqual(Object.keys(f1.byName).sort(), ['Bloom Beauty Lounge', 'Gloss Garage', 'Glow Salon', 'Nails by Rana', 'Old Town Salon']);
+  assert.deepEqual(Object.keys(f1.byName).sort(), [...EMAIL_LEADS].sort());
   assert.deepEqual(f1.byName['Bloom Beauty Lounge'], { business_name: 'Bloom Beauty Lounge', first_name: '', email: 'bloom.beauty.dxb@gmail.com', website: '', instagram: 'bloombeautydxb', phone: '+971501112201', niche: 'Salons', area: 'JLT, Dubai', source: 'Google Maps', notes: 'new business', status: 'New' });
   assert.deepEqual([f1.byName['Gloss Garage'].email, f1.byName['Gloss Garage'].website, f1.byName['Gloss Garage'].notes], ['gloss.garage.dxb@gmail.com', 'https://glossgarage.example/', '']);
-  await dash.waitForFunction(() => /^5 leads saved for cold email/.test(document.querySelector('[data-toast]').textContent));
+  await dash.waitForFunction(() => /^10 leads saved for cold email/.test(document.querySelector('[data-toast]').textContent));
+  assert.deepEqual([f1.byName['Pearl Ladies Salon'].email, f1.byName['Pearl Ladies Salon'].website], ['pearl.salon.jlt@gmail.com', '']);
   assert.deepEqual([f1.byName['Nails by Rana'].source, f1.byName['Nails by Rana'].instagram, f1.byName['Glow Salon'].source, f1.byName['Glow Salon'].website], ['Instagram', 'nailsbyrana', 'Google', 'https://glowsalon.example/']);
   await waitFor(async () => !!(await byName('Bloom Beauty Lounge')).coldEmailExportedAt, 5000, 'marked exported');
   const hist = (await storage('contactHistory')).contactHistory;
   assert.equal(hist['p:+971501112201'][1], 'cold-email', 'remembered, so a later search never brings them back');
-  // The ones the mailbox check could not confirm go in only when you say so.
-  await sw.evaluate(async () => {
-    const { settings } = await chrome.storage.local.get('settings');
-    await chrome.storage.local.set({ settings: { ...settings, emailRisky: true } });
-  });
-  const f2 = await coldFile('export-cold');
-  assert.deepEqual(Object.keys(f2.byName), ['Velvet Hair Studio'], 'exported ones stay out, the unconfirmed one goes in');
-  assert.equal(f2.byName['Velvet Hair Studio'].notes, 'new business');
-  await sw.evaluate(async () => {
-    const { settings } = await chrome.storage.local.get('settings');
-    await chrome.storage.local.set({ settings: { ...settings, emailRisky: false } });
-  });
   // An address that bounced: never used again, on any lead.
   await dash.click('[data-view="settings"]');
   await dash.fill('[data-bounces]', 'Delivery failed for <gloss.garage.dxb@gmail.com>: mailbox unavailable');
   await dash.click('[data-act="bounces-add"]');
   await dash.waitForFunction(() => /^1 address remembered, found on 1 lead here/.test(document.querySelector('[data-bounces-out]').textContent));
-  assert.deepEqual((await verdict('Gloss Garage')).mail, { email: '', why: 'bad' });
-  await dash.click('[data-view="leads"]');
+  assert.equal((await verdict('Gloss Garage')).mail.email, 'bookings@glossgarage.example', 'the bounced one is never used: the next address goes');
+  await dash.click('[data-view="leads"][data-sec="email"]');
   await dash.check('[data-cold-include]');
   const f3 = await coldFile('export-cold');
-  assert.deepEqual(Object.keys(f3.byName).sort(), ['Bloom Beauty Lounge', 'Glow Salon', 'Nails by Rana', 'Old Town Salon'], 'Gloss Garage is out: its only good address bounced. Velvet is out: not confirmed');
+  assert.equal(f3.byName['Gloss Garage'].email, 'bookings@glossgarage.example', 'Gloss Garage: its Gmail bounced, so the next address goes');
+  assert.equal(Object.keys(f3.byName).length, 10);
   await dash.uncheck('[data-cold-include]');
 
-  /* ------------------------------------------ WhatsApp & Instagram leads: Google Contacts */
-  await dash.click('[data-section="contact"]');
-  await dash.waitForFunction(() => document.querySelectorAll('[data-rows] tr').length === 9);
-  assert.deepEqual(new Set(await rowNames()), new Set(['Nails by Rana', 'Bloom Beauty Lounge', 'Velvet Hair Studio', 'Old Town Salon', 'Rose Petal Spa', 'Night Owl Salon', 'Gloss Garage', 'Shield PPF Center', 'Glow Salon']), 'a phone or an Instagram');
+  /* ------------------------------------------ WhatsApp leads: Google Contacts */
+  await dash.click('[data-view="leads"][data-sec="contact"]');
+  assert.equal(await dash.$eval('[data-finder]', (d) => d.open), false, 'Find starts closed once there are leads');
+  await dash.click('[data-finder] > summary');
+  assert.ok(await dash.isVisible('[data-finder] [data-only="contact"] [value="igwa"]') && (await dash.isHidden('[data-finder] [data-only="email"] [value="mail"]')), 'the WhatsApp Find');
+  const WA_LEADS = ['Nails by Rana', 'Bloom Beauty Lounge', 'Velvet Hair Studio', 'Old Town Salon', 'Rose Petal Spa', 'Night Owl Salon', 'Gloss Garage', 'Shield PPF Center', 'Glow Salon', 'Pearl Ladies Salon', 'Coral Nails & Beauty'];
+  await dash.waitForFunction((n) => document.querySelectorAll('[data-rows] tr').length === n, WA_LEADS.length);
+  assert.deepEqual(new Set(await rowNames()), new Set(WA_LEADS), 'a WhatsApp or phone number');
   assert.match(await dash.textContent(`tr[data-id="${rana.id}"]`), /@nailsbyrana/);
   assert.match(await dash.textContent(`tr[data-id="${(await byName('Night Owl Salon')).id}"]`), /No Instagram found/);
   if (SHOTS) await dash.screenshot({ path: `${SHOTS}/6-contact-section.png` });
   const [contactsDl] = await Promise.all([dash.waitForEvent('download'), dash.click('[data-act="export-contacts"]')]);
   assert.match(contactsDl.suggestedFilename(), /^google-contacts-\d{4}-\d{2}-\d{2}\.csv$/);
   const [chead, ...crows] = parseCsv(fs.readFileSync(await contactsDl.path(), 'utf8'));
-  assert.equal(crows.length, 9);
+  assert.equal(crows.length, WA_LEADS.length);
   const crow = (name) => Object.fromEntries(chead.map((h, i) => [h, crows.find((r) => r[0] === name)[i]]));
   assert.deepEqual([crow('Bloom Beauty Lounge')['Phone 1 - Value'], crow('Bloom Beauty Lounge')['Website 2 - Label'], crow('Bloom Beauty Lounge')['Website 2 - Value']], ['+971501112201', 'Instagram', 'https://www.instagram.com/bloombeautydxb/']);
   assert.match(crow('Glow Salon')['Notes'], /^Weak website/);
-  await dash.waitForFunction(() => /^9 contacts saved, 3 with their Instagram/.test(document.querySelector('[data-toast]').textContent));
+  await dash.waitForFunction(() => /^11 contacts saved, 3 with their Instagram/.test(document.querySelector('[data-toast]').textContent));
   await dash.waitForFunction(() => document.querySelectorAll('[data-rows] tr').length === 0);
   assert.ok((await byName('Rose Petal Spa')).contactsExportedAt, 'exported ones leave the list');
-  await dash.click('[data-section="email"]');
+  await dash.click('[data-view="leads"][data-sec="email"]');
   await dash.uncheck('[data-cold-include]');
 
-  /* --------------------------------------- Find: businesses advertising their opening */
-  await dash.click('[data-view="find"]');
-  assert.match(await dash.inputValue('[data-hunt-form] [name="keywords"]'), /^grand opening\nnow open\n/);
-  await dash.fill('[data-hunt-form] [name="keywords"]', 'grand opening\nsoft opening');
-  await dash.fill('[data-hunt-form] [name="target"]', '5');
-  const [adTab] = await Promise.all([ctx.waitForEvent('page'), dash.click('[data-hunt-form] button[type="submit"]')]);
+  /* --------------------------------------- Businesses advertising their opening */
+  const [adTab] = await Promise.all([ctx.waitForEvent('page'), sw.evaluate(() => handlers['hunt:start']({ config: { name: 'Opening ads', keywords: ['grand opening', 'soft opening'], country: 'AE', target: 5, maxLikes: 60000, maxDays: 120 } }))]);
   await waitFor(async () => ((await storage('hunt')).hunt || {}).status === 'done', 90000, 'Ad Library search');
   await adTab.close();
   await settled('every check after the Ad Library search');
@@ -388,12 +385,24 @@ try {
   const freshLead = await byName('Fresh Bites Cafe');
   assert.match(freshLead.openSignals[0].text, /Grand opening this Saturday in Business Bay/);
   assert.deepEqual([freshLead.emailFrom['hello@freshbites.example'], freshLead.websiteSource], ['ad', 'email'], 'the email in their ad, and its domain checked as their website');
-  assert.deepEqual([fresh.fit, fresh.kind, fresh.mail.why], [true, 'new', 'risky']);
+  assert.deepEqual([fresh.fit, fresh.kind, fresh.mail.email], [true, 'new', 'hello@freshbites.example']);
+  // Find with the Ad Library ticked: it runs by itself, with the opening words, at most every 12 hours.
+  const tooSoon = await sw.evaluate(() => handlers['finder:start']({ config: { niche: 'Salons', sources: ['adlib'] } }).then(() => 'started', (e) => e.message));
+  assert.match(tooSoon, /searched less than 12 hours ago/);
+  await sw.evaluate(async () => {
+    const { hunt } = await chrome.storage.local.get('hunt');
+    await chrome.storage.local.set({ hunt: { ...hunt, startedAt: hunt.startedAt - 13 * 3600e3 } });
+  });
+  const [autoTab, autoRun] = await Promise.all([ctx.waitForEvent('page'), sw.evaluate(() => handlers['finder:start']({ config: { niche: 'Salons', sources: ['adlib'] } }))]);
+  assert.ok(autoRun.finder.adlib, 'the Ad Library opened');
+  assert.deepEqual((await storage('hunt')).hunt.keywords, await sw.evaluate(() => LH.OPENING_AD_KEYWORDS.map((k) => k.toLowerCase())));
+  await sw.evaluate(() => handlers['hunt:stop']({}));
+  await autoTab.close();
   assert.deepEqual([(await verdict('Old Mall Outlet')).kind, (await byName('Old Mall Outlet')).openSignals], ['none', undefined], 'the same words on an ad that ran for most of a year: no proof it is new');
   assert.deepEqual(await verdict('MegaMart Official').then((x) => [x.fit, x.why]), [false, 'An established brand, not a new business']);
   // A login wall in the Ad Library stops the search and says so. Nothing tries to get past it.
   world.adWall = true;
-  const [wallTab] = await Promise.all([ctx.waitForEvent('page'), dash.click('[data-hunt-form] button[type="submit"]')]);
+  const [wallTab] = await Promise.all([ctx.waitForEvent('page'), sw.evaluate(() => handlers['hunt:start']({ config: { name: 'Opening ads', keywords: ['grand opening'], country: 'AE', target: 5 } }))]);
   await waitFor(async () => ((await storage('alerts')).alerts || {}).adlib, 30000, 'Ad Library alert');
   assert.deepEqual([(await storage('hunt')).hunt.status, (await storage('hunt')).hunt.finishReason, (await storage('alerts')).alerts.adlib.text], ['stopped', 'blocked', 'Facebook asked you to log in']);
   await wallTab.close();
@@ -405,7 +414,7 @@ try {
 
   /* ------------------------------------- Google Maps shows a consent page: pause */
   world.mapsWall = true;
-  await sw.evaluate(() => handlers['finder:start']({ config: { niche: 'Salons', keywords: ['nail salon'], areas: ['JLT, Dubai'], cap: 5 } }));
+  await sw.evaluate(() => handlers['finder:start']({ config: { niche: 'Salons', keywords: ['nail salon'], areas: ['JLT, Dubai'], cap: 5, sources: ['maps'] } }));
   await waitFor(async () => ((await storage('alerts')).alerts || {}).maps, 60000, 'Maps alert');
   assert.equal((await storage('finder')).finder.status, 'paused');
   await dash.waitForSelector('[data-strip] [data-alert="maps"]');
@@ -415,6 +424,18 @@ try {
   await waitFor(async () => (await storage('finder')).finder.status === 'done', 60000, 'resumed run');
   assert.deepEqual(calls.maps.slice(-2), ['nail salon JLT, Dubai', 'nail salon JLT, Dubai'], 'the same search again, nothing skipped');
   assert.ok(!((await storage('alerts')).alerts || {}).maps);
+
+  /* ------------------------------- Bing asks to prove you are human: Bing pauses, the rest carry on */
+  world.bingWall = true;
+  await sw.evaluate(() => handlers['finder:start']({ config: { niche: 'Salons', keywords: ['nail studio'], areas: ['JLT, Dubai'], cap: 5, sources: ['maps', 'bing'] } }));
+  await waitFor(async () => ((await storage('alerts')).alerts || {}).bing, 60000, 'Bing alert');
+  await waitFor(async () => (await storage('finder')).finder.status === 'done', 60000, 'the run carried on without Bing');
+  assert.ok(calls.maps.includes('nail studio JLT, Dubai'), 'Google Maps still searched');
+  assert.equal((await storage('alerts')).alerts.bing.text, 'Bing says it sees unusual traffic');
+  world.bingWall = false;
+  await dash.waitForSelector('[data-strip] [data-alert="bing"]');
+  await dash.click('[data-strip] [data-act="bing-resume"]');
+  await waitFor(async () => !((await storage('alerts')).alerts || {}).bing, 5000, 'Bing resumed');
 
   /* ------------------------------------------- Instagram: + Add to Lead Hunter */
   const ig = await ctx.newPage();
@@ -437,182 +458,6 @@ try {
   if (SHOTS) await popup.screenshot({ path: `${SHOTS}/5-popup.png` });
   await popup.close();
   await dash.bringToFront();
-
-  /* ------------------------------ Intent Radar: Reddit, a Facebook group, LinkedIn jobs */
-  await sw.evaluate(async () => {
-    const { settings } = await chrome.storage.local.get('settings');
-    await chrome.storage.local.set({ settings: { ...settings, subreddits: 'dubai\nUAE', uaeOnlySubs: 'smallbusiness' } });
-  });
-  // Without an approved Reddit app id nothing is read in the background: Reddit refuses anyone not logged in.
-  assert.equal((await sw.evaluate(() => handlers['intent:run']({}))).tab, true);
-  assert.deepEqual(redditCalls, [], 'no background Reddit requests without an app id');
-  // Scan Reddit now opens a Reddit tab (where you are logged in) and reads your subreddits there.
-  const rd = await ctx.newPage();
-  await rd.goto('https://www.reddit.com/r/dubai/new/#lead-hunter-scan');
-  await rd.locator('.msg', { hasText: 'Read 8 posts' }).waitFor({ timeout: 45000 });
-  assert.equal(await rd.textContent('.msg'), 'Read 8 posts from 3 subreddits · 3 saved to the Intent tab · 1 sellers · 1 older than 14 days · 1 already saved · 1 not in the UAE');
-  assert.ok(!rd.url().includes('#lead-hunter-scan'), 'the start marker is removed');
-  assert.deepEqual(redditCalls, ['dubai?100', 'UAE?100', 'smallbusiness?100'], 'one request per subreddit, through the Reddit tab');
-  const runStats = ({ seen, saved, duplicates, nomatch, seller, old, foreign }) => ({ seen, saved, duplicates, nomatch, seller, old, foreign });
-  const radarRun = (await storage('intentState')).intentState.runs[0];
-  console.log('Reddit scan:', JSON.stringify(runStats(radarRun)));
-  assert.deepEqual(runStats(radarRun), { seen: 8, saved: 3, duplicates: 1, nomatch: 1, seller: 1, old: 1, foreign: 1 });
-  // Scan this page: the posts on the page (one already saved, one too old).
-  await rd.locator('button', { hasText: 'Scan this page' }).click();
-  await rd.locator('.msg', { hasText: 'Read 2 posts' }).waitFor();
-  assert.equal(await rd.textContent('.msg'), 'Read 2 posts · 0 saved to the Intent tab · 1 older than 14 days · 1 already saved');
-  // Reddit refusing (not logged in): it stops at once and reads the page instead. No alert for that.
-  redditMode.refuse = true;
-  await rd.locator('button', { hasText: 'Scan my subreddits' }).click();
-  await rd.locator('.msg', { hasText: 'From this page' }).waitFor();
-  assert.equal(await rd.textContent('.msg'), 'Reddit did not let Lead Hunter read your subreddits (403). If you are not logged in to Reddit, log in and try again. From this page: Read 2 posts · 0 saved to the Intent tab · 1 older than 14 days · 1 already saved');
-  assert.equal(redditCalls.length, 4, 'one refused request, then it stopped');
-  redditMode.refuse = false;
-  assert.ok(!((await storage('alerts')).alerts || {}).reddit);
-  // A Reddit block page pauses Reddit with an alert; nothing tries to get past it.
-  await rd.goto('https://www.reddit.com/r/blocked/new/');
-  await rd.locator('button', { hasText: 'Scan this page' }).click();
-  await rd.locator('.msg', { hasText: 'paused Reddit' }).waitFor();
-  assert.equal((await storage('alerts')).alerts.reddit.text, 'Reddit blocked this browser (log in to Reddit in this tab)');
-  await rd.locator('button', { hasText: 'Scan my subreddits' }).click();
-  await rd.locator('.msg', { hasText: 'Reddit scans are paused' }).waitFor();
-  assert.equal(redditCalls.length, 4, 'paused: no requests');
-  await sw.evaluate(() => handlers['intent:resume']({ source: 'reddit' }));
-  await rd.close();
-  assert.equal(await sw.evaluate(() => chrome.action.getBadgeText({})), '3', 'new posts on the icon');
-  await dash.bringToFront();
-  await dash.click('[data-view="intent"]');
-  await dash.waitForFunction(() => document.querySelectorAll('[data-intent-rows] .intent-card').length === 3);
-  const sums = await dash.$$eval('.intent-card .sum', (p) => p.map((x) => x.textContent));
-  assert.deepEqual(sums, ['Need a website for my bakery in JLT, any recommendations?', 'Business is slow, ads not working', 'How do I get clients for my cleaning company in Sharjah?'], 'newest first');
-  await waitFor(async () => (await sw.evaluate(() => chrome.action.getBadgeText({}))) === '', 5000, 'the badge clears once you look');
-  const first = await dash.textContent('.intent-card');
-  assert.match(first, /Reddit · r\/dubai\s*3h ago · u\/sarah_dxb\s*Website buyer\s*unverified/);
-  assert.ok(!(await dash.$('.intent-card [data-intent-opener], .intent-card [data-act="intent-copy"]')), 'no opener: you write your own');
-  assert.match(await dash.textContent('[data-intent-status]'), /AI check is off: add a free Google AI Studio key/);
-  assert.match(await dash.textContent('[data-intent-status]'), /Reddit: press Scan Reddit now \(it opens Reddit, where you need to be logged in\), last scan/);
-  const [redditTab] = await Promise.all([ctx.waitForEvent('page'), dash.click('[data-act="intent-run"]')]);
-  await redditTab.waitForLoadState('domcontentloaded');
-  assert.match(redditTab.url(), /^https:\/\/www\.reddit\.com\/r\/dubai\/new\//, 'opens your first subreddit');
-  await redditTab.close();
-  if (SHOTS) await dash.screenshot({ path: `${SHOTS}/22-intent.png` });
-  const firstId = await dash.getAttribute('.intent-card', 'data-intent-id');
-  await dash.click('.intent-card [data-act="intent-contacted"]');
-  await dash.waitForFunction(() => document.querySelectorAll('[data-intent-rows] .intent-card').length === 2);
-  assert.equal((await dash.evaluate((id) => LH.intentDb.get(id), firstId)).status, 'contacted');
-  await dash.click('.intent-card [data-act="intent-dismiss"]');
-  await dash.waitForFunction(() => document.querySelectorAll('[data-intent-rows] .intent-card').length === 1);
-  await dash.selectOption('[data-intent-f="status"]', 'all');
-  await dash.waitForFunction(() => document.querySelectorAll('[data-intent-rows] .intent-card').length === 3);
-  await dash.selectOption('[data-intent-f="status"]', 'new');
-  // A Facebook group you opened yourself: press Scan for leads.
-  const fbg = await ctx.newPage();
-  await fbg.goto('https://www.facebook.com/groups/dubaibiz/');
-  await fbg.locator('button', { hasText: 'Scan for leads' }).click();
-  await fbg.locator('.msg', { hasText: 'Read 3 posts' }).waitFor();
-  assert.equal(await fbg.textContent('.msg'), 'Read 3 posts · 1 saved to the Intent tab · 1 sellers · 1 older than 14 days');
-  const fbPost = await dash.evaluate(() => LH.intentDb.get('facebook:111'));
-  assert.deepEqual([fbPost.place, fbPost.author, fbPost.categories, fbPost.url], ['Dubai Business Owners', 'Sarah Khan', ['marketing'], 'https://www.facebook.com/groups/dubaibiz/posts/111/']);
-  assert.ok(Math.abs(fbPost.createdAt - (Date.now() - 2 * 36e5)) < 6e4, '"2h" read as two hours ago');
-  await fbg.close();
-  // LinkedIn jobs: a marketing role in the UAE is a company hiring for marketing, linked to your lead.
-  const lij = await ctx.newPage();
-  await lij.goto('https://www.linkedin.com/jobs/search/?keywords=marketing');
-  await lij.locator('button', { hasText: 'Scan for leads' }).click();
-  await lij.locator('.msg', { hasText: 'Read 3 jobs' }).waitFor();
-  assert.equal(await lij.textContent('.msg'), 'Read 3 jobs · 1 saved to the Intent tab · 1 not in the UAE');
-  const hire = await dash.evaluate(() => LH.intentDb.get('linkedin:job:901'));
-  assert.deepEqual([hire.categories, hire.title, hire.company], [['hiring'], 'Social Media Executive', 'Gloss Garage']);
-  const hiredLead = await lead(hire.leadId);
-  assert.equal(await sw.evaluate((n) => LH.normName(n), hiredLead.pageName), 'gloss garage');
-  assert.equal(hiredLead.hiring.url, 'https://www.linkedin.com/jobs/view/901/');
-  // A security check on LinkedIn: that source pauses and says so. Nothing tries to get past it.
-  await lij.goto('https://www.linkedin.com/feed/');
-  await lij.locator('button', { hasText: 'Scan for leads' }).click();
-  await lij.locator('.msg', { hasText: 'security check' }).waitFor();
-  assert.equal((await storage('alerts')).alerts.linkedin.text, 'LinkedIn showed a security check');
-  await dash.bringToFront();
-  await dash.waitForSelector('[data-intent-status] [data-alert="linkedin"]');
-  assert.match(await dash.textContent('[data-alert="linkedin"]'), /LinkedIn paused: LinkedIn showed a security check/);
-  await dash.click('[data-act="intent-resume"][data-source="linkedin"]');
-  await waitFor(async () => !(await storage('alerts')).alerts.linkedin, 5000, 'LinkedIn resumed');
-  await lij.close();
-  await dash.waitForFunction(() => document.querySelectorAll('[data-intent-rows] .intent-card').length === 3, null, { timeout: 5000 });
-
-  /* --------------------------------- AI check: Gemini (or Claude) confirms or rules out each post */
-  await dash.click('[data-view="settings"]');
-  // Claude works too, when it is the only key.
-  await dash.fill('[name="anthropicKey"]', 'sk-ant-wrong');
-  await dash.click('[data-act="ai-test"]');
-  await dash.waitForFunction(() => /^Not working: Claude did not accept your API key \(401\)/.test(document.querySelector('[data-ai-test]').textContent));
-  await dash.fill('[name="anthropicKey"]', CLAUDE.key);
-  await dash.click('[data-act="ai-test"]');
-  await dash.waitForFunction(() => document.querySelector('[data-ai-test]').textContent === 'Working. Claude read a test post: a buyer, needs website, score 90.');
-  const call = CLAUDE.calls.at(-1);
-  assert.deepEqual([call.version, call.browser, call.model, call.effort, call.format], ['2026-10-21', 'true', 'claude-haiku-5-5', 'low', 'json_schema']);
-  // The free Google AI Studio key: used whenever it is filled in.
-  await dash.fill('[name="geminiKey"]', 'AIza-wrong');
-  await dash.click('[data-act="ai-test"]');
-  await dash.waitForFunction(() => /^Not working: Google did not accept your API key \(400\)/.test(document.querySelector('[data-ai-test]').textContent));
-  await dash.fill('[name="geminiKey"]', GEMINI.key);
-  await dash.click('[data-act="ai-test"]');
-  await dash.waitForFunction(() => document.querySelector('[data-ai-test]').textContent === 'Working. Gemini read a test post: a buyer, needs website, score 90.');
-  const gcall = GEMINI.calls.at(-1);
-  assert.deepEqual([gcall.key, gcall.inUrl, gcall.model, gcall.mime, gcall.schema, gcall.system], [GEMINI.key, false, 'gemini-flash-lite-latest', 'application/json', true, true]);
-  // Every post the keywords caught, read by Gemini.
-  await dash.click('[data-view="intent"]');
-  await dash.waitForSelector('[data-act="intent-ai-all"]');
-  assert.match(await dash.textContent('[data-intent-status]'), /AI check \(Gemini\) is on: 5 posts not checked yet/);
-  const before = GEMINI.calls.length;
-  const claudeBefore = CLAUDE.calls.length;
-  await dash.click('[data-act="intent-ai-all"]');
-  await waitFor(async () => (await dash.evaluate(() => LH.intentDb.all())).every((p) => p.verified), 30000, 'every post checked by the AI');
-  assert.equal(GEMINI.calls.length - before, 5, 'one call per post');
-  assert.equal(CLAUDE.calls.length, claudeBefore, 'Gemini is used when both keys are set');
-  // Keys never go into a backup file.
-  await dash.click('[data-view="settings"]');
-  const [backupDl] = await Promise.all([dash.waitForEvent('download'), dash.click('[data-act="backup"]')]);
-  const backup = JSON.parse(fs.readFileSync(await backupDl.path(), 'utf8'));
-  assert.deepEqual(['geminiKey', 'anthropicKey', 'igToken', 'verifyKey'].map((k) => backup.settings[k]), ['', '', '', '']);
-  assert.ok(!('queueKey' in backup.settings), 'the old site key is gone');
-  assert.ok(backup.leads.length > 0);
-  await dash.click('[data-view="intent"]');
-  const checked = Object.fromEntries((await dash.evaluate(() => LH.intentDb.all())).map((p) => [p.id, p]));
-  console.log('AI check:', JSON.stringify(Object.values(checked).map((p) => [p.id, p.notBuyer ? 'not a buyer' : 'buyer', p.score, p.summary])));
-  assert.deepEqual([checked['reddit:d1'].ai.business_type, checked['reddit:d1'].score, checked['reddit:d1'].summary], ['bakery', 90, 'A bakery owner in JLT wants a website.']);
-  assert.equal(checked['reddit:s1'].notBuyer, true, 'asking in general, not hiring anyone');
-  // Not buyers are hidden unless you ask for them.
-  await dash.waitForFunction(() => document.querySelectorAll('[data-intent-rows] .intent-card').length === 2);
-  assert.match(await dash.textContent('[data-intent-rows]'), /AI: buyer, urgent[\s\S]*A salon owner in Al Barsha needs a social media manager\./);
-  assert.match(await dash.textContent('[data-intent-rows]'), /salon · Al Barsha, Dubai · needs marketing/);
-  await dash.check('[data-intent-f="notBuyers"]');
-  await dash.waitForFunction(() => document.querySelectorAll('[data-intent-rows] .intent-card').length === 3);
-  assert.match(await dash.textContent('[data-intent-rows]'), /AI: not a buyer/);
-  if (SHOTS) await dash.screenshot({ path: `${SHOTS}/23-intent-ai.png` });
-  await dash.uncheck('[data-intent-f="notBuyers"]');
-  // New posts are checked as they come in.
-  await sw.evaluate(() => saveIntent([{ id: 'reddit:g1', source: 'reddit', place: 'r/dubai', url: 'https://www.reddit.com/r/dubai/comments/g1/x/', author: 'u/omar_fit', title: 'Need a website for my gym in Al Quoz', text: '', createdAt: Date.now() - 36e5 }], 'reddit'));
-  await waitFor(async () => (await dash.evaluate(() => LH.intentDb.get('reddit:g1'))).verified, 20000, 'the new post checked by itself');
-  // A wrong key pauses the checks with an alert. Nothing else runs until you fix it.
-  await sw.evaluate(async () => {
-    const { settings } = await chrome.storage.local.get('settings');
-    await chrome.storage.local.set({ settings: { ...settings, geminiKey: 'AIza-expired' } });
-  });
-  await sw.evaluate(() => handlers['ai:check']({ ids: ['reddit:d1'] }));
-  await waitFor(async () => !!((await storage('alerts')).alerts || {}).ai, 20000, 'AI check paused');
-  await dash.waitForSelector('[data-intent-status] [data-alert="ai"]');
-  assert.match(await dash.textContent('[data-alert="ai"]'), /AI check paused: Google did not accept your API key \(400\)/);
-  await sw.evaluate(async (key) => {
-    const { settings } = await chrome.storage.local.get('settings');
-    await chrome.storage.local.set({ settings: { ...settings, geminiKey: key } });
-  }, GEMINI.key);
-  await dash.click('[data-act="intent-resume"][data-source="ai"]');
-  await waitFor(async () => !((await storage('alerts')).alerts || {}).ai && !((await storage('aiQueue')).aiQueue || []).length, 20000, 'AI check resumed');
-
-  // An owner announcing their own opening is a buyer of a website, even with "discount" in the post.
-  await sw.evaluate(() => saveIntent([{ id: 'reddit:o1', source: 'reddit', place: 'r/dubai', url: 'https://www.reddit.com/r/dubai/comments/o1/x/', author: 'u/lina_nails', title: 'Soft opening of my new nail studio in JLT next week!', text: '20% discount for the first clients', createdAt: Date.now() - 36e5 }], 'reddit'));
-  const openingPost = await waitFor(async () => dash.evaluate(() => LH.intentDb.get('reddit:o1')), 10000, 'opening post saved');
-  assert.ok(openingPost.categories.includes('opening'), JSON.stringify(openingPost.categories));
 
   console.log('E2E PASSED:', (await leads()).length, 'leads');
   await ctx.close();
