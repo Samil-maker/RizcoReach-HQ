@@ -122,7 +122,7 @@ def test_add_inbox(project, wizard, smtp, capsys):
     assert env["INBOX2_APP_PASSWORD"] == "abcdefghijklmnop" and env["INBOX1_APP_PASSWORD"] == "abcdefghijklmnop"
     assert db.get_state(db.connect(), "warmup_start:inbox2") == clock.today().isoformat()
     out = capsys.readouterr().out
-    assert "warms up for 14 days" in out and "100 a day: Monday 23 November" in out
+    assert "warms up for 14 days" in out and "100 a day: Monday 9 November" in out  # 500 a day from the first inbox already
     assert env["INBOX2_CAMPAIGN"] == "website"
 
 

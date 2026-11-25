@@ -67,6 +67,7 @@ ENV = {
     "INBOX1_EMAIL": "samilatrizcoreach@gmail.com",
     "INBOX1_PROVIDER": "gmail",
     "INBOX1_APP_PASSWORD": "abcd efgh ijkl mnop",
+    "DAILY_LIMIT": "50",  # most tests were written around 50 a day (the default is now 500, Gmail's own limit)
 }
 
 

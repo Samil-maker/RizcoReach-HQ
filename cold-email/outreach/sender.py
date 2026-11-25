@@ -438,8 +438,8 @@ class SendRun:
                     soonest = last_send + timedelta(seconds=schedule.FAST_GAP_SECONDS)
                 else:
                     last_gap = schedule.global_gap()
-                    # the next planned time, but never sooner than 3 minutes after this one
-                    soonest = last_send + timedelta(seconds=schedule.MIN_GAP_SECONDS + random.uniform(0, 60))
+                    # the next planned time, but never sooner than a minute after this one
+                    soonest = last_send + timedelta(seconds=schedule.MIN_GAP_SECONDS + random.uniform(0, 30))
                 planned = targets[key][0] if targets[key] else soonest
                 next_ok[key] = max(planned, soonest)
             elif targets[key]:

@@ -55,8 +55,8 @@ on your Desktop (or type `rizco dashboard` in Terminal). It runs on your Mac onl
   one campaign only, so nobody hears from RizcoReach and Elheen about the same thing. The name in the emails is
   `BOOKING_BRAND` in `.env` (Elheen unless you change it).
 - **More emails a day:** make a new Gmail account, then **Add an inbox** on the dashboard and choose what it sends
-  (Website, Meta ads or Both). Each inbox sends 50 a day (change it under Controls); a brand new account warms up
-  for 14 days first. The dashboard shows the date you'll reach 50 and 100 a day.
+  (Website, Meta ads or Both). Each inbox sends everything that is queued, up to 500 a day (Gmail's own limit for
+  a personal account; lower it under Controls if you want); a brand new account warms up for 14 days first.
 - **Send the rest now (1 a minute):** one click sends all of today's remaining emails about one a minute instead of
   spreading them over the day (still within each inbox's daily limit, 9:00 to 22:00 on weekdays). It goes back to
   normal the next day.
@@ -158,8 +158,9 @@ There is an empty template in `leads/sample/lead-template.csv`.
 
 ### The rules it always follows
 
-- **50 a day per inbox**, follow ups included (your choice; change it under Controls on the dashboard, 1 to 100).
-  More a day means more inboxes: leads are shared between the inboxes that send their campaign.
+- **Up to 500 a day per inbox**, follow ups included: in practice whatever is queued for the day goes out. 500 is
+  Gmail's own limit for a personal account (above it Gmail stops the account sending for a day). Lower it under
+  Controls on the dashboard if you want (1 to 500). Leads are shared between the inboxes that send their campaign.
 - **Brand new inboxes** only warm up for their first 14 days, then send their full daily amount. Every inbox keeps
   a little warm up going (about 4 a day) once there are two or more.
 - **Two campaigns.** Website: segments A new business, B no website, C outdated website, at the website price
@@ -190,17 +191,17 @@ There is an empty template in `leads/sample/lead-template.csv`.
   under 80 words, no dashes or semicolons, ends with the opt out line. All wording lives in `outreach/templates.py`.
 - **A/B test:** half of each segment gets version A (with the price line), half version B (without). After 100 sends
   each, the report names the winner and suggests the next test.
-- **Automatic pause** (until `rizco resume`): bounces over 3% of a day's emails, a reply that mentions spam or
-  reporting, or Gmail refusing our mail or login. The 3% counts against the whole day's emails, not just the
-  ones sent so far: at 50 a day 1 bounce (2%) carries on and 2 bounces (4%) pause.
+- **Automatic pause** (until you press **Resume sending** on the dashboard, or `rizco resume`): 3 bounces in one
+  day (`BOUNCE_PAUSE_AT` in `.env`), a reply that mentions spam or reporting, or Gmail refusing our mail or login.
+  One or two bounces carry on. After you resume, it counts 3 more before pausing again.
 - **suppression.csv:** everyone who said no, every hard bounce, anyone you add. Never emailed again.
 - **Never:** demo sites called client work, made up clients or numbers, or a reply sent for you.
 
 ### About sending from free @gmail.com addresses
 
 Cold email from a free Gmail is a high spam risk: filters trust personal addresses less for this, and a few spam
-reports can get the account limited. You chose 50 a day per inbox, which is more than most cold email guides
-advise for a free account (they say 20 to 30). Google's rules for free Gmail also don't allow bulk unsolicited
+reports can get the account limited. You chose to send everything that is queued (up to Gmail's 500 a day), which
+is far more than most cold email guides advise for a free account (they say 20 to 30). Google's rules for free Gmail also don't allow bulk unsolicited
 email or using several accounts to get around sending limits, so the more you send and the more free accounts you
 add, the bigger the chance one gets suspended. The automatic pauses are your safety net. Watch the warm up "landed
 in Spam" numbers on the dashboard, give each account its own recovery details, and keep things you can't lose
