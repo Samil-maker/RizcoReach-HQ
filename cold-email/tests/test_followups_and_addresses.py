@@ -155,7 +155,16 @@ def test_a_bounce_counts_against_the_whole_day(project, con, settings, fake_cloc
                     (i, "x%d@shop.ae" % i, "bounced" if i == 0 else "sent"))
     safety.note_planned(con, "2026-11-09", 50)
     safety.after_bounce(con, "2026-11-09", log=lambda *a: None)
-    assert not safety.paused(con)                                   # 1 of the day's 50 is 2%: carries on
+    assert not safety.paused(con)                                   # one bounce: carries on
     con.execute("UPDATE messages SET status='bounced' WHERE to_email='x1@shop.ae'")
     safety.after_bounce(con, "2026-11-09", log=lambda *a: None)
-    assert "2 of the 50 emails" in safety.paused(con)["reason"]      # 2 of 50 is 4%: pauses
+    assert not safety.paused(con)                                   # two: carries on
+    con.execute("UPDATE messages SET status='bounced' WHERE to_email='x2@shop.ae'")
+    safety.after_bounce(con, "2026-11-09", log=lambda *a: None)
+    assert "3 emails bounced" in safety.paused(con)["reason"]       # three in a day: pauses
+    safety.resume(con)
+    safety.after_bounce(con, "2026-11-09", log=lambda *a: None)
+    assert not safety.paused(con)                                   # after Resume it carries on
+    con.execute("UPDATE messages SET status='bounced' WHERE to_email IN ('x3@shop.ae', 'x4@shop.ae')")
+    safety.after_bounce(con, "2026-11-09", log=lambda *a: None)
+    assert not safety.paused(con)                                   # two more since you resumed

@@ -1,7 +1,7 @@
 """Automatic pauses. While paused nothing is sent until you run:  rizco resume
 
-Pauses happen when bounces go over 3% of a day's emails, when a reply mentions spam or reporting,
-or when the mail server starts refusing our emails or the login.
+Pauses happen when 3 emails bounce in one day (BOUNCE_PAUSE_AT in .env), when a reply mentions spam or reporting,
+or when the mail server starts refusing our emails or the login. Resume on the dashboard, or rizco resume.
 """
 from __future__ import annotations
 
@@ -9,7 +9,8 @@ from typing import Optional
 
 from . import clock, db
 
-BOUNCE_LIMIT = 0.03
+BOUNCE_LIMIT = 0.03          # shown in the report: over 3% of a day's emails is a lot
+BOUNCE_PAUSE_AT = 3          # bounces in one day that pause sending
 
 
 def paused(con) -> Optional[dict]:
@@ -58,15 +59,27 @@ def bounce_rate(con, sent_date: str):
     return bounced, day_total, (bounced / day_total if day_total else 0.0)
 
 
+def pause_at() -> int:
+    import os
+
+    try:
+        return max(1, int(os.environ.get("BOUNCE_PAUSE_AT") or BOUNCE_PAUSE_AT))
+    except ValueError:
+        return BOUNCE_PAUSE_AT
+
+
 def after_bounce(con, sent_date: str, log=print) -> None:
-    """Called each time a new bounce is recorded. Pauses if that day is over the limit."""
+    """Called each time a new bounce is recorded. Pauses once that day has had 3 bounces (BOUNCE_PAUSE_AT)."""
     bounced, sent, rate = bounce_rate(con, sent_date)
-    if sent and rate > BOUNCE_LIMIT:
+    limit = pause_at()
+    # Once you resume, the count starts again from what has bounced so far.
+    resumed_at = db.get_state(con, "bounces_ok:" + sent_date) or 0
+    if bounced - resumed_at >= limit:
+        db.set_state(con, "bounces_ok:" + sent_date, bounced)
         pause(
             con,
-            "bounces are over 3%% (%d of the %d emails on %s bounced)" % (bounced, sent, sent_date),
-            "Bounces hurt your inbox's reputation fast. Look at the bounced addresses in the report: if they "
-            "came from one lead file, that list is bad, so remove its unsent leads before resuming. At 50 emails "
-            "a day 2 bounces is already 4%, so this pauses quickly. That is on purpose.",
+            "%d emails bounced on %s (%d of %d)" % (bounced - resumed_at, sent_date, bounced, sent),
+            "Look at the bounced addresses in the report. If they came from one lead file, remove its unsent leads, "
+            "then press Resume sending and it carries on.",
             log,
         )

@@ -55,8 +55,10 @@ FREE_DOMAINS = {
     "proton.me", "protonmail.com", "gmx.com", "mail.com",
 }
 FREE_INBOX_CAP = 20          # kept for reference in messages; the limit you set wins
-DEFAULT_DAILY_LIMIT = 50     # emails a day per inbox, follow ups included (DAILY_LIMIT in .env, or the dashboard)
-MAX_DAILY_LIMIT = 100
+# Emails a day per inbox, follow ups included (DAILY_LIMIT in .env, or the dashboard). 500 is Gmail's own limit for
+# a personal account: above it Gmail stops the account sending for a day. Up to that, what is queued is the limit.
+DEFAULT_DAILY_LIMIT = 500
+MAX_DAILY_LIMIT = 500
 CAMPAIGNS = {"website": "Website", "ads": "Meta ads", "booking": "Elheen"}
 # "both" (from before Elheen) means the two RizcoReach campaigns. Any other mix is a list: "website,booking".
 BOTH = ("website", "ads")

@@ -90,7 +90,9 @@ def test_daily_limits(project, con, settings):
     assert schedule.limits(con, inbox, day)["cap"] == 50  # your setting: 50 a day per inbox from day one
     assert schedule.limits(con, config.load_settings(dict(ENV, INBOX1_DAILY_CAP="20")).inboxes[0], day)["cap"] == 20
     assert schedule.limits(con, config.load_settings(dict(ENV, DAILY_LIMIT="80")).inboxes[0], day)["cap"] == 80
-    assert schedule.limits(con, config.load_settings(dict(ENV, DAILY_LIMIT="500")).inboxes[0], day)["cap"] == 100
+    assert schedule.limits(con, config.load_settings(dict(ENV, DAILY_LIMIT="900")).inboxes[0], day)["cap"] == 500  # Gmail's limit
+    no_setting = {k: v for k, v in ENV.items() if k != "DAILY_LIMIT"}
+    assert schedule.limits(con, config.load_settings(no_setting).inboxes[0], day)["cap"] == 500  # what is queued is the limit
 
 
 def run_day(con, settings, fake_clock, when):
@@ -225,20 +227,22 @@ def test_out_of_office_pushes_the_next_email(project, con, settings, smtp, dns_p
     assert lead["status"] == "active" and lead["next_due"] == "2026-11-21"
 
 
-def test_bounce_over_3_percent_pauses(project, con, settings, smtp, dns_pass, fake_clock):
+def test_three_bounces_in_a_day_pause(project, con, settings, smtp, dns_pass, fake_clock):
     approve(con)
     add_leads(con, 5)
     run_day(con, settings, fake_clock, datetime(2026, 11, 9, 9, 0, tzinfo=clock.TZ))
     from test_checks import BOUNCE
 
-    mid = con.execute("SELECT message_id FROM messages WHERE to_email='owner2@shop2.ae'").fetchone()[0]
-    raw = BOUNCE.replace("gone@oldsalon.ae", "owner2@shop2.ae").replace("<abc123@gmail.com>", mid)
-    info = replies.process(con, settings, settings.inboxes[0], raw.encode())
-    assert info["label"] == "bounce (hard)"
-    assert db.lead_by_email(con, "owner2@shop2.ae")["status"] == "bounced"
+    for n in (0, 1, 2):
+        mid = con.execute("SELECT message_id FROM messages WHERE to_email='owner%d@shop%d.ae'" % (n, n)).fetchone()[0]
+        raw = BOUNCE.replace("gone@oldsalon.ae", "owner%d@shop%d.ae" % (n, n)).replace("<abc123@gmail.com>", mid)
+        info = replies.process(con, settings, settings.inboxes[0], raw.encode())
+        assert info["label"] == "bounce (hard)"
+        assert db.lead_by_email(con, "owner%d@shop%d.ae" % (n, n))["status"] == "bounced"
+        assert bool(safety.paused(con)) == (n == 2)  # one or two bounces: it carries on
     assert "owner2@shop2.ae" in suppression.load()
     p = safety.paused(con)
-    assert p and "1 of the 5" in p["reason"]
+    assert p and "3 emails bounced on 2026-11-09" in p["reason"]
     assert run_day(con, settings, fake_clock, datetime(2026, 11, 10, 9, 0, tzinfo=clock.TZ)) == 0
     safety.resume(con)
     assert not safety.paused(con)
@@ -269,7 +273,7 @@ def test_refused_address_is_a_bounce(project, con, settings, smtp, dns_pass, fak
     smtp.refuse["owner0@shop0.ae"] = (550, b"5.1.1 The email account that you tried to reach does not exist")
     run_day(con, settings, fake_clock, datetime(2026, 11, 9, 9, 0, tzinfo=clock.TZ))
     assert db.lead_by_email(con, "owner0@shop0.ae")["status"] == "bounced"
-    assert safety.paused(con)  # 1 of 1 sent that day bounced: over 3%
+    assert not safety.paused(con)  # one bounce: it carries on (3 in a day pause)
 
 
 def test_two_inboxes_share_leads(project, con, smtp, dns_pass, fake_clock):
@@ -282,7 +286,9 @@ def test_two_inboxes_share_leads(project, con, smtp, dns_pass, fake_clock):
     by_inbox = dict(con.execute("SELECT inbox, COUNT(*) FROM messages GROUP BY inbox").fetchall())
     assert by_inbox == {"inbox1": 10, "inbox2": 10}
     senders = [m["From"] for m in smtp.outbox]
-    assert len(set(senders[:4])) == 2  # they take turns from the start
+    # Both start early in the day (each inbox's emails are spread over the whole day, so the very first few can
+    # come from one of them: checking the first 4 failed about 1 run in 20).
+    assert all(min(i for i, f in enumerate(senders) if inbox in f) < 10 for inbox in ("samilatrizcoreach@gmail.com", "samil@rizcoreach-mail.com"))
 
 
 def test_dry_run_sends_nothing(project, con, settings, smtp, fake_clock, capsys):
@@ -315,7 +321,7 @@ def test_fifty_a_day_from_each_inbox_all_go_out_by_10pm(project, con, smtp, dns_
     rows = con.execute("SELECT inbox, sent_at FROM messages WHERE sent_date='2026-11-09' ORDER BY sent_at").fetchall()
     times = [clock.parse(r["sent_at"]) for r in rows]
     assert times[-1] <= clock.at(times[0].date(), 22) and times[0] >= clock.at(times[0].date(), 9)
-    assert all((b - a).total_seconds() >= 60 for a, b in zip(times, times[1:]))  # never two at once
+    assert all((b - a).total_seconds() >= 45 for a, b in zip(times, times[1:]))  # never two at once
     by_six = sum(1 for t in times if t.hour < 18)
     assert by_six >= len(times) * 0.65  # most go out during the working day
     per_hour = lambda hours: sum(1 for t in times if t.hour in hours) / len(hours)  # noqa: E731
@@ -324,7 +330,7 @@ def test_fifty_a_day_from_each_inbox_all_go_out_by_10pm(project, con, smtp, dns_
     for r in rows:
         by_inbox.setdefault(r["inbox"], []).append(clock.parse(r["sent_at"]))
     for key, ts in by_inbox.items():
-        assert len(ts) == 50 and all((b - a).total_seconds() >= 180 for a, b in zip(ts, ts[1:])), key
+        assert len(ts) == 50 and all((b - a).total_seconds() >= 60 for a, b in zip(ts, ts[1:])), key
 
 
 def test_late_start_catches_up_without_bursts(project, con, settings, smtp, dns_pass, fake_clock):
@@ -333,8 +339,8 @@ def test_late_start_catches_up_without_bursts(project, con, settings, smtp, dns_
     add_leads(con, 60)
     sent = run_day(con, settings, fake_clock, datetime(2026, 11, 9, 20, 45, tzinfo=clock.TZ))  # Mac woke at 20:45
     times = [clock.parse(r[0]) for r in con.execute("SELECT sent_at FROM messages WHERE sent_date='2026-11-09' ORDER BY sent_at")]
-    assert 0 < sent < 50 and times[-1] < clock.at(times[0].date(), 22)
-    assert all((b - a).total_seconds() >= 180 for a, b in zip(times, times[1:]))
+    assert 0 < sent <= 50 and times[-1] < clock.at(times[0].date(), 22)
+    assert all((b - a).total_seconds() >= 45 for a, b in zip(times, times[1:]))
     assert con.execute("SELECT COUNT(*) FROM leads WHERE status='queued'").fetchone()[0] == 60 - sent  # the rest wait
 
 

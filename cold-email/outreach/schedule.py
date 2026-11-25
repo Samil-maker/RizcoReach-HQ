@@ -1,6 +1,6 @@
 """Daily limits, sending hours, and who is due today.
 
-Each inbox sends up to its daily limit (50 by default, DAILY_LIMIT in .env or the dashboard), follow ups
+Each inbox sends up to its daily limit (500 by default, Gmail's own limit; DAILY_LIMIT in .env or the dashboard), follow ups
 included. A brand new inbox (added as brand new) sends no cold email in its first 14 days: it only warms
 up (see warmup.py). Each lead goes out from an inbox that sends its campaign (website or Meta ads), and
 only once that campaign's emails are approved.
@@ -23,9 +23,9 @@ LAST_PLANNED = (21, 45)         # the day's emails are planned to be out by then
 HOUR_WEIGHTS = {9: 1.0, 10: 1.5, 11: 1.5, 12: 1.0, 13: 1.5, 14: 1.5, 15: 1.1, 16: 1.1, 17: 1.0,
                 18: 0.7, 19: 0.6, 20: 0.6, 21: 0.5}
 FAST_GAP_SECONDS = 60                                 # "Send the rest now": about one email a minute
-MIN_GAP_SECONDS = 180                                 # never two emails from one inbox within 3 minutes
-GAP_SECONDS = (180, 540)                              # catching up after the Mac slept: 3 to 9 minutes apart
-GLOBAL_GAP_SECONDS = (60, 120)                        # and never two emails within a minute of each other
+MIN_GAP_SECONDS = 60                                  # never two emails from one inbox within a minute
+GAP_SECONDS = (60, 180)                               # catching up after the Mac slept: 1 to 3 minutes apart
+GLOBAL_GAP_SECONDS = (45, 90)                         # and never two emails within 45 seconds of each other
 # The follow ups, as days after the first email: close together at first, then about monthly for three months.
 # Every one replies in the same thread. Any reply, bounce or opt out stops the rest.
 FOLLOW_UP_DAYS = {1: 3, 2: 7, 3: 14, 4: 30, 5: 60, 6: 90}
@@ -119,8 +119,9 @@ def spread_times(n: int, start: datetime, end: datetime, rng=random) -> List[dat
     if n <= 0:
         return []
     minutes = int((end - start).total_seconds() // 60)
-    if minutes <= n * 3:
-        return [start + timedelta(minutes=3 * i) for i in range(n)]
+    if minutes <= n * 2:  # a full day: evenly spaced, at least MIN_GAP_SECONDS apart
+        step = max(MIN_GAP_SECONDS, minutes * 60 / n)
+        return [start + timedelta(seconds=step * i) for i in range(n)]
     weights, total = [], 0.0
     for m in range(minutes):
         total += HOUR_WEIGHTS.get((start + timedelta(minutes=m)).hour, 0.5)
