@@ -28,7 +28,7 @@ If a window asks to install "command line developer tools", click **Install** an
 - a **Gmail App Password**: it opens the right Google page and tells you what to click
   (sign in as samilatrizcoreach@gmail.com, turn on 2-Step Verification if asked, name it RizcoReach, copy the 16 letters, paste)
 - whether the test email landed in your **Inbox** (not Spam) and reads right
-- whether your Mac should wake itself at 8:55 on weekdays (it asks for your Mac password)
+- whether your Mac should wake itself at 7:55 every day (it asks for your Mac password)
 
 That's it. It updates itself once a day (outside sending hours, and only to a version whose tests pass).
 Pasting the same line again also updates it right away, without asking the questions again.
@@ -58,7 +58,7 @@ on your Desktop (or type `rizco dashboard` in Terminal). It runs on your Mac onl
   (Website, Meta ads or Both). Each inbox sends everything that is queued, up to 500 a day (Gmail's own limit for
   a personal account; lower it under Controls if you want); a brand new account warms up for 14 days first.
 - **Send the rest now (1 a minute):** one click sends all of today's remaining emails about one a minute instead of
-  spreading them over the day (still within each inbox's daily limit, 9:00 to 22:00 on weekdays). It goes back to
+  spreading them over the day (still within each inbox's daily limit, 8:00 to 23:00). It goes back to
   normal the next day.
 - **Your work, inside the email:** add screenshots of 3 or 4 websites you've built (drag them onto the dashboard or
   press Add pictures). When someone says "send me your work", the reply drafted in Gmail Drafts has those pictures
@@ -72,9 +72,9 @@ on your Desktop (or type `rizco dashboard` in Terminal). It runs on your Mac onl
 ## Your part
 
 - Drop lead files into the dashboard and answer the people who reply.
-- Keep the Mac on, plugged in and awake 9:00 to 22:00 on weekdays (you can use it as normal). If it sleeps, sending
+- Keep the Mac on, plugged in and awake 8:00 to 23:00 (you can use it as normal). If it sleeps, sending
   pauses, and when it wakes the rest of the day's emails are spread over the time that's left. Whatever doesn't
-  fit before 22:00 goes first the next weekday. Leads you add during the day go out the same day.
+  fit before 23:00 goes first the next day. Leads you add during the day go out the same day.
 - If the dashboard ever says **Sending is paused**, read why, fix it, then press **Resume sending**.
 
 ## What happens by itself
@@ -82,9 +82,9 @@ on your Desktop (or type `rizco dashboard` in Terminal). It runs on your Mac onl
 | When | What |
 |---|---|
 | Always | The dashboard at http://localhost:8321 (it starts when you log in) |
-| Once a day, evenings or weekends | Updates itself to the latest version, if its tests pass |
+| Once a day, when no emails are going out | Updates itself to the latest version, if its tests pass |
 | Every hour | New lead files are imported, cleaned and segmented. Replies are checked (All Mail and Spam), sequences stop for anyone who replied, answers are drafted into Gmail Drafts, people who said not now 60 days ago come back to check in, the report is updated, and you get a notification for interested people |
-| Mon to Fri 9:00 to 22:00 Dubai time | The day's emails go out one at a time, spread over the day (busiest 10 to 12 and 1 to 3, about three quarters out by 18:00), inboxes taking turns, follow ups first. The plan is refreshed every 15 minutes, so new leads join the same day |
+| Every day 8:00 to 23:00 Dubai time | The day's emails go out one at a time, spread over the day (busiest 10 to 12 and 1 to 3, fewer early morning and late evening), inboxes taking turns, follow ups first. The plan is refreshed every 15 minutes, so new leads join the same day |
 | Every hour, sending hours | If there's more to send today and the sender isn't running (say you added leads after it finished), it starts it |
 | Every hour, 9:00 to 21:00 | Warm up: your inboxes swap a few normal emails, open them, rescue any from Spam, reply, and file them in a "RizcoReach Warmup" folder |
 | Every send | SPF and DKIM must pass, the email must pass the style checks, and the inbox's daily limit must have room |
@@ -175,8 +175,8 @@ There is an empty template in `leads/sample/lead-template.csv`.
   call or WhatsApp every enquiry first to check they're genuine and interested, and only qualified people reach the
   business. The price is a one time setup fee, then a monthly fee: `ADS_SETUP_PRICE` and `ADS_MONTHLY_PRICE` in
   `.env` (850 AED each unless you change them). Version A of the first email states it, version B doesn't.
-- **Monday to Friday only, Dubai time:** spread from 9:00 to 21:45, never two emails from one inbox within 3
-  minutes or two from any inbox within a minute. Follow ups first, then new leads (new businesses first, since
+- **Every day, Dubai time:** spread from 8:00 to 22:45, never two emails from one inbox within a
+  minute or two from any inbox within 45 seconds. Set `SEND_WEEKENDS=no` in `.env` for Monday to Friday only. Follow ups first, then new leads (new businesses first, since
   "just opened" goes stale).
 - **Sequence:** the first email, then six follow ups on day 3, 7, 14, 30, 60 and 90, every one in the same thread
   and each from a different angle: the examples, a free homepage preview, why a website matters, a quick yes or

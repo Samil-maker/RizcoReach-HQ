@@ -146,7 +146,7 @@ def test_send_the_rest_now_button(server, con, fake_clock):
     r = server("/api/send-fast", body={})[1]
     assert r["ok"] and "1 email now, about one a minute" in r["message"] and schedule.fast_today(con)
     fake_clock.set(datetime(2026, 11, 9, 23, 0, tzinfo=clock.TZ))
-    assert "9:00 to 22:00" in server("/api/send-fast", body={})[1]["message"]  # outside sending hours
+    assert "8:00 to 23:00 every day" in server("/api/send-fast", body={})[1]["message"]  # outside sending hours
 
 
 def test_one_inbox_can_send_elheen_too(server, project):

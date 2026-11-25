@@ -186,9 +186,9 @@ def add_inbox_from_form(email: str, password: str, brand_new: bool, provider: st
         note = " Its domain doesn't pass SPF and DKIM yet, so it won't send until it does (run rizco check for the records)."
     if brand_new:
         db.set_state(con, "warmup_start:inbox%d" % slot, clock.today().isoformat())
-        ends = clock.next_weekday(clock.today() + timedelta(days=schedule.WARMUP_DAYS))
+        ends = schedule.next_send_day(clock.today() + timedelta(days=schedule.WARMUP_DAYS))
         return True, "Added %s. It warms up for 14 days, then sends %d a day from %s.%s" % (email, inbox.daily_limit, clock.nice(ends), note)
-    return True, "Added %s. It sends %d a day from the next weekday.%s" % (email, inbox.daily_limit, note)
+    return True, "Added %s. It sends %d a day from tomorrow.%s" % (email, inbox.daily_limit, note)
 
 
 def add_inbox() -> int:
@@ -242,11 +242,11 @@ def add_inbox() -> int:
     new = yes("Is this a brand new account (made in the last month)?")
     if new:
         db.set_state(con, "warmup_start:inbox%d" % slot, clock.today().isoformat())
-        ends = clock.next_weekday(clock.today() + timedelta(days=schedule.WARMUP_DAYS))
+        ends = schedule.next_send_day(clock.today() + timedelta(days=schedule.WARMUP_DAYS))
         print("\nAdded. %s warms up for 14 days: it swaps a few normal emails a day with your other inboxes." % email)
         print("Cold emails from it start on %s, %d a day." % (clock.nice(ends), inbox.daily_limit))
     else:
-        print("\nAdded. %s sends %d cold emails a day from the next weekday." % (email, inbox.daily_limit))
+        print("\nAdded. %s sends %d cold emails a day from tomorrow." % (email, inbox.daily_limit))
     s = settings_from(read_env())
     f = schedule.forecast(con, s.inboxes)
     print("\nAll your inboxes together:")
@@ -415,35 +415,35 @@ def run(again: bool = False) -> int:
     # ------------------------------------------------------------------ 5. automatic jobs
     bold("5 of 5  Automatic sending")
     print(launchd.install())
-    if launchd.IS_MAC and yes("Should your Mac wake itself at 8:55 on weekdays, so it never misses 9:00? "
+    if launchd.IS_MAC and yes("Should your Mac wake itself at 7:55 every day, so it never misses 8:00? "
                               "It will ask for your Mac login password"):
         r = subprocess.run(launchd.wake_command())
-        print("Done: your Mac wakes at 8:55 Dubai time on weekdays." if r.returncode == 0 else
-              "That didn't work. It's optional: just keep the Mac on and awake at 9:00 on weekdays.")
+        print("Done: your Mac wakes at 7:55 Dubai time every day." if r.returncode == 0 else
+              "That didn't work. It's optional: just keep the Mac on and awake from 8:00.")
 
     today, now = clock.today(), clock.now()
     in_hours = schedule.is_send_day(today) and bool(schedule.current_window_end(now) or schedule.next_window_start(now))
     started = False
-    if approved and queued and in_hours and now >= clock.at(today, 9) and launchd.IS_MAC \
-            and yes("Start today's emails now instead of waiting for the next 9:00?"):
+    if approved and queued and in_hours and now >= clock.at(today, *schedule.START) and launchd.IS_MAC \
+            and yes("Start today's emails now instead of waiting for the next 8:00?"):
         started = launchd.start_now()
         print("Started. Emails go out slowly in the background, a few minutes apart." if started else
-              "Couldn't start it. It runs by itself at the next 9:00.")
-    first_run = today if schedule.is_send_day(today) and now < clock.at(today, 9) else clock.next_weekday(today + timedelta(days=1))
+              "Couldn't start it. It runs by itself at the next 8:00.")
+    first_run = today if schedule.is_send_day(today) and now < clock.at(today, *schedule.START) else schedule.next_send_day(today + timedelta(days=1))
 
     bold("All set")
     print("What happens by itself:")
-    print("  Mon to Fri from 9:00 Dubai time: the day's emails go out slowly, follow ups included.")
+    print("  Every day from 8:00 to 23:00 Dubai time: the day's emails go out, follow ups included.")
     print("  Every hour: new lead files are imported and replies are checked. When someone is interested,")
     print("  your Mac shows a notification and a drafted answer appears in Gmail Drafts for %s." % sender_email)
     print("  The daily report is in the \"RizcoReach Reports\" folder on your Desktop.")
     if not approved:
         print("\nSending to businesses is still OFF until a test email is approved. Run this setup again for that.")
     elif not queued:
-        print("\nNext: drop your first lead file into the RizcoReach Leads folder. The first emails go out on the next weekday at 9:00.")
+        print("\nNext: drop your first lead file into the RizcoReach Leads folder. The first emails go out at the next 8:00.")
     else:
         print("\nEmails are going out now." if started else
-              "\nFirst emails go out %s at 9:00." % ("today" if first_run == today else clock.nice(first_run)))
+              "\nFirst emails go out %s at 8:00." % ("today" if first_run == today else clock.nice(first_run)))
     print("\nYour part: drop lead files into the dashboard, answer the interested people, and keep the Mac on.")
     _open_dashboard_soon()
     return 0

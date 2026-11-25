@@ -113,7 +113,7 @@ def add_leads(con, n, segment="B"):
         )
 
 
-def test_send_day_respects_limits_windows_and_gaps(project, con, settings, smtp, dns_pass, fake_clock, no_network_mail):
+def test_send_day_respects_limits_windows_and_gaps(project, con, settings, smtp, dns_pass, fake_clock, no_network_mail, monkeypatch):
     add_leads(con, 12)
     sent = run_day(con, settings, fake_clock, datetime(2026, 11, 9, 9, 0, tzinfo=clock.TZ))
     assert sent == 0, "nothing is sent before approval"
@@ -122,7 +122,7 @@ def test_send_day_respects_limits_windows_and_gaps(project, con, settings, smtp,
     assert sent == 12 and len(smtp.outbox) == 12  # all 12 leads fit in today's 50
     assert len(no_network_mail) >= 2  # replies were checked before sending and at the end of the day
     times = [clock.parse(r["sent_at"]) for r in con.execute("SELECT sent_at FROM messages ORDER BY id")]
-    assert all(clock.at(times[0].date(), 9) <= t <= clock.at(times[0].date(), 21, 46) for t in times)
+    assert all(clock.at(times[0].date(), 8) <= t <= clock.at(times[0].date(), 22, 46) for t in times)
     gaps = [(b - a).total_seconds() for a, b in zip(times, times[1:])]
     assert all(g >= 180 for g in gaps), gaps
     assert (times[-1] - times[0]).total_seconds() > 4 * 3600  # spread over the day, not a morning burst
@@ -133,10 +133,11 @@ def test_send_day_respects_limits_windows_and_gaps(project, con, settings, smtp,
     assert "http" not in body and body.rstrip().endswith("Just reply no and we won't email again")
     # a second run the same day sends nothing more
     assert run_day(con, settings, fake_clock, datetime(2026, 11, 9, 10, 30, tzinfo=clock.TZ)) == 0
-    # weekends: nothing
+    # weekends: nothing when SEND_WEEKENDS=no
+    monkeypatch.setenv("SEND_WEEKENDS", "no")
     assert run_day(con, settings, fake_clock, datetime(2026, 11, 14, 9, 0, tzinfo=clock.TZ)) == 0
     # after the windows: nothing
-    assert run_day(con, settings, fake_clock, datetime(2026, 11, 10, 22, 30, tzinfo=clock.TZ)) == 0
+    assert run_day(con, settings, fake_clock, datetime(2026, 11, 10, 23, 10, tzinfo=clock.TZ)) == 0
     variants = [r[0] for r in con.execute("SELECT variant FROM messages WHERE step=0")]
     assert abs(variants.count("A") - variants.count("B")) <= 1
 
@@ -291,9 +292,12 @@ def test_two_inboxes_share_leads(project, con, smtp, dns_pass, fake_clock):
     assert all(min(i for i, f in enumerate(senders) if inbox in f) < 10 for inbox in ("samilatrizcoreach@gmail.com", "samil@rizcoreach-mail.com"))
 
 
-def test_dry_run_sends_nothing(project, con, settings, smtp, fake_clock, capsys):
+def test_dry_run_sends_nothing(project, con, settings, smtp, fake_clock, capsys, monkeypatch):
     add_leads(con, 3)
-    fake_clock.set(datetime(2026, 11, 8, 12, 0, tzinfo=clock.TZ))  # a Sunday
+    fake_clock.set(datetime(2026, 11, 8, 12, 0, tzinfo=clock.TZ))  # a Sunday: emails go out every day by default
+    sender.SendRun(con, settings, dry_run=True).run()
+    assert "Plan for today, Sunday 8 November" in capsys.readouterr().out
+    monkeypatch.setenv("SEND_WEEKENDS", "no")                       # Monday to Friday only
     sender.SendRun(con, settings, dry_run=True).run()
     out = capsys.readouterr().out
     assert "This is what Monday 9 November would send" in out and "Subject: Shop 0 website" in out
@@ -320,7 +324,7 @@ def test_fifty_a_day_from_each_inbox_all_go_out_by_10pm(project, con, smtp, dns_
     assert sent == 100
     rows = con.execute("SELECT inbox, sent_at FROM messages WHERE sent_date='2026-11-09' ORDER BY sent_at").fetchall()
     times = [clock.parse(r["sent_at"]) for r in rows]
-    assert times[-1] <= clock.at(times[0].date(), 22) and times[0] >= clock.at(times[0].date(), 9)
+    assert times[-1] <= clock.at(times[0].date(), 23) and times[0] >= clock.at(times[0].date(), 8)
     assert all((b - a).total_seconds() >= 45 for a, b in zip(times, times[1:]))  # never two at once
     by_six = sum(1 for t in times if t.hour < 18)
     assert by_six >= len(times) * 0.65  # most go out during the working day
@@ -339,7 +343,7 @@ def test_late_start_catches_up_without_bursts(project, con, settings, smtp, dns_
     add_leads(con, 60)
     sent = run_day(con, settings, fake_clock, datetime(2026, 11, 9, 20, 45, tzinfo=clock.TZ))  # Mac woke at 20:45
     times = [clock.parse(r[0]) for r in con.execute("SELECT sent_at FROM messages WHERE sent_date='2026-11-09' ORDER BY sent_at")]
-    assert 0 < sent <= 50 and times[-1] < clock.at(times[0].date(), 22)
+    assert 0 < sent <= 50 and times[-1] < clock.at(times[0].date(), 23)
     assert all((b - a).total_seconds() >= 45 for a, b in zip(times, times[1:]))
     assert con.execute("SELECT COUNT(*) FROM leads WHERE status='queued'").fetchone()[0] == 60 - sent  # the rest wait
 
@@ -379,7 +383,7 @@ def test_leads_added_during_the_day_go_out_the_same_day(project, con, settings, 
     monkeypatch.setattr(sender.SendRun, "send_one", send_one)
     assert run_day(con, settings, fake_clock, datetime(2026, 11, 9, 9, 0, tzinfo=clock.TZ)) == 7
     late = [clock.parse(r[0]) for r in con.execute("SELECT sent_at FROM messages WHERE to_email LIKE 'late%'")]
-    assert len(late) == 4 and all(t > added[0] and t.hour < 22 for t in late)
+    assert len(late) == 4 and all(t > added[0] and t.hour < 23 for t in late)
 
 
 def test_hourly_job_starts_the_sender_when_there_is_more_to_send(project, con, settings, fake_clock, monkeypatch):
@@ -393,10 +397,12 @@ def test_hourly_job_starts_the_sender_when_there_is_more_to_send(project, con, s
     assert not cli.start_sending_if_needed(con, settings)                 # not approved yet
     approve(con)
     assert cli.start_sending_if_needed(con, settings) and len(started) == 1
-    fake_clock.set(datetime(2026, 11, 9, 21, 50, tzinfo=clock.TZ))
+    fake_clock.set(datetime(2026, 11, 9, 22, 50, tzinfo=clock.TZ))
     assert not cli.start_sending_if_needed(con, settings)                 # too late today
     fake_clock.set(datetime(2026, 11, 14, 11, 0, tzinfo=clock.TZ))
-    assert not cli.start_sending_if_needed(con, settings)                 # Saturday
+    monkeypatch.setenv("SEND_WEEKENDS", "no")
+    assert not cli.start_sending_if_needed(con, settings)                 # Saturday, with weekends off
+    monkeypatch.delenv("SEND_WEEKENDS")
     fake_clock.set(datetime(2026, 11, 10, 11, 0, tzinfo=clock.TZ))
     con.execute("UPDATE leads SET status='done'")
     assert not cli.start_sending_if_needed(con, settings)                 # nothing left to send

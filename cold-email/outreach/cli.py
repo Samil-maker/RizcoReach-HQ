@@ -310,7 +310,7 @@ def cmd_approve(args) -> int:
         lim = schedule.limits(con, i, clock.today())
         print("  %s: %s" % (i.email, lim["why"]))
     print("\nPreview the first day:   rizco send --dry-run")
-    print("Start sending:           rizco send   (or let the 9:00 job do it, see README step 7)")
+    print("Start sending:           rizco send   (or let the 8:00 job do it, see README step 7)")
     return 0
 
 
@@ -340,7 +340,7 @@ def cmd_send(args) -> int:
     if args.limit is not None:
         print("Sending at most %d emails today (the daily limit still applies)." % args.limit)
     with sender.Lock():
-        sender.log("Send started. Leave this window open, or let the 9:00 job run it. Ctrl+C stops it safely.")
+        sender.log("Send started. Leave this window open, or let the 8:00 job run it. Ctrl+C stops it safely.")
         try:
             run.run()
         except KeyboardInterrupt:
@@ -451,10 +451,10 @@ def cmd_launchd(args) -> int:
     for w in launchd.warnings():
         print("WARNING: " + w + "\n")
     print(launchd.install())
-    print("\nImportant: the job only runs if your Mac is on and awake at 9:00 (if it was asleep, it runs as soon as it")
+    print("\nImportant: the job only runs if your Mac is on and awake at 8:00 (if it was asleep, it runs as soon as it")
     print("wakes, and sends whatever fits in what is left of the windows). Keep it plugged in with the lid open.")
-    print("To make the Mac wake itself at 8:55 on weekdays, run once:")
-    print("  sudo pmset repeat wakeorpoweron MTWRF 08:55:00")
+    print("To make the Mac wake itself at 7:55 every day, run once:")
+    print("  sudo pmset repeat wakeorpoweron MTWRFSU 07:55:00")
     return 0
 
 
@@ -491,7 +491,7 @@ def cmd_auto(args) -> int:
                 sender.log(line.strip())
             if st["imported"]:
                 launchd.notify("RizcoReach: %d new leads imported" % st["imported"],
-                               "A %d, B %d, C %d, skipped %d. They go out from the next 9:00 run."
+                               "A %d, B %d, C %d, skipped %d. They go out from the next 8:00 run."
                                % (st["seg_A"], st["seg_B"], st["seg_C"], st["seg_SKIP"]))
         from . import warmup
 
@@ -502,7 +502,7 @@ def cmd_auto(args) -> int:
         if s.problems or not any(i.has_imap for i in s.inboxes):
             sender.log("Settings incomplete, not checking replies: " + " ".join(s.problems))
         elif sender.Lock.held("send"):
-            sender.log("The 9:00 send is running and checks replies itself.")
+            sender.log("The 8:00 send is running and checks replies itself.")
         else:
             found = replies.check_all(con, s, log=sender.log)
             hot = [r for r in found if r["label"] in ("interested", "question")]
@@ -629,7 +629,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("suppress", help="never email this address (or @domain.com) again")
     sp.add_argument("email")
     sp.add_argument("reason", nargs="?")
-    sp = sub.add_parser("launchd", help="the Mac job that sends at 9:00 on weekdays: install, uninstall, status, show")
+    sp = sub.add_parser("launchd", help="the Mac job that sends at 8:00 every day: install, uninstall, status, show")
     sp.add_argument("action", choices=["install", "uninstall", "status", "show"])
     sub.add_parser("help")
     return p

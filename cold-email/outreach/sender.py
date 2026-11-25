@@ -29,9 +29,9 @@ def log(*parts) -> None:
 
 
 class Lock:
-    """Stops two runs of the same job at once (for example the 9:00 job and you by hand)."""
+    """Stops two runs of the same job at once (for example the 8:00 job and you by hand)."""
 
-    MESSAGES = {"send": "Another send is already running (maybe the 9:00 job). Let it finish, or stop it first.",
+    MESSAGES = {"send": "Another send is already running (maybe the 8:00 job). Let it finish, or stop it first.",
                 "auto": "The hourly job is already running."}
 
     def __init__(self, name: str = "send"):
@@ -303,10 +303,10 @@ class SendRun:
             return 0
         if not schedule.is_send_day(today):
             if not self.dry:
-                log("It's %s in Dubai. No emails on Saturdays or Sundays." % today.strftime("%A"))
+                log("It's %s in Dubai. No emails at weekends (SEND_WEEKENDS=no in .env)." % today.strftime("%A"))
                 return 0
         if not self.dry and not schedule.current_window_end(clock.now()) and not schedule.next_window_start(clock.now()):
-            log("Today's sending hours (9:00 to 22:00 Dubai time) are over. Nothing sent.")
+            log("Today's sending hours (8:00 to 23:00 Dubai time) are over. Nothing sent.")
             return 0
 
         if not self.dry:  # lead files you dropped in since yesterday
@@ -323,7 +323,7 @@ class SendRun:
         if safety.paused(con) and not self.dry:
             return 0
 
-        day = today if schedule.is_send_day(today) else clock.next_weekday(today)
+        day = today if schedule.is_send_day(today) else schedule.next_send_day(today)
         if not self.dry and schedule.fast_today(con):
             self.fast = True
         plan = schedule.plan(con, s, day, inboxes, self.limit, preview=self.dry)
@@ -339,7 +339,7 @@ class SendRun:
             """Today's remaining emails, spread over the rest of the day. Picks up leads you added since."""
             left = None if self.limit is None else max(0, self.limit - self.sent)
             fresh = plan if first else schedule.plan(con, s, day, inboxes, left)
-            begin = max(clock.now(), clock.at(day, 9)) + timedelta(seconds=random.uniform(0, 120 if first else 20))
+            begin = max(clock.now(), clock.at(day, *schedule.START)) + timedelta(seconds=random.uniform(0, 120 if first else 20))
             end = clock.at(day, *schedule.LAST_PLANNED)
             gap = schedule.FAST_GAP_SECONDS if self.fast else schedule.MIN_GAP_SECONDS
             sent_today = con.execute("SELECT COUNT(*) FROM messages WHERE sent_date=? AND kind='campaign' "
@@ -383,7 +383,7 @@ class SendRun:
                 if nxt is None:
                     left = sum(len(q) for q in queues.values())
                     if left:
-                        log("It's %s, today's sending hours are over. %d emails move to the next weekday."
+                        log("It's %s, today's sending hours are over. %d emails move to tomorrow."
                             % (now.strftime("%H:%M"), left))
                     break
                 log("Waiting until %s to start sending (leave this running)." % nxt.strftime("%H:%M"))
@@ -474,7 +474,7 @@ class SendRun:
                   % (today.strftime("%A"), clock.nice(day)))
         else:
             print("Plan for today, %s (Dubai time). Nothing is being sent: this is a dry run." % clock.nice(day))
-        print("Emails go out one at a time, spread from 9:00 to 21:45 Dubai time (most of them during the day),")
+        print("Emails go out one at a time, spread from 8:00 to 22:45 Dubai time (most of them during the day),")
         print("inboxes taking turns. Follow ups first, then new leads.")
         p = safety.paused(con)
         if p:

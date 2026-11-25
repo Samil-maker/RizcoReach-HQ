@@ -370,7 +370,7 @@ def summary_lines(result: Dict) -> List[str]:
 
 @contextmanager
 def import_lock():
-    """One import at a time: the hourly job, the 9:00 send and you by hand take turns (waiting, not failing)."""
+    """One import at a time: the hourly job, the 8:00 send and you by hand take turns (waiting, not failing)."""
     path = config.path("data", "import.lock")
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w") as f:
