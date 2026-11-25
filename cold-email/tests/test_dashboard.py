@@ -149,6 +149,25 @@ def test_send_the_rest_now_button(server, con, fake_clock):
     assert "8:00 to 23:00 every day" in server("/api/send-fast", body={})[1]["message"]  # outside sending hours
 
 
+def test_dashboard_says_why_it_is_not_sending_now(server, con, fake_clock):
+    from datetime import datetime
+
+    from outreach import clock
+
+    con.execute("INSERT INTO leads(email, business, segment, status, next_step, imported_at, mx_status) "
+                "VALUES('a@shop.ae', 'Shop', 'B', 'queued', 0, '2026-11-01', 'ok')")
+    db.set_state(con, "approved", {"at": clock.iso()})
+    fake_clock.set(datetime(2026, 11, 25, 16, 8, tzinfo=clock.TZ))   # Wednesday afternoon
+    o = server("/api/overview")[1]
+    assert o["next"].startswith("1 email can go out today. Press Start sending")
+    con.execute("UPDATE leads SET status='done'")
+    assert server("/api/overview")[1]["next"].startswith("Nothing left to send today")
+    cap = o["stats"]["cap_today"]
+    con.executemany("INSERT INTO messages(inbox, kind, step, status, sent_date, to_email) VALUES('inbox1', 'campaign', 0, 'sent', ?, ?)",
+                    [("2026-11-25", "x%d@y.ae" % i) for i in range(cap)])
+    assert server("/api/overview")[1]["next"].startswith("Today's limit of %d is used up" % cap)
+
+
 def test_one_inbox_can_send_elheen_too(server, project):
     from outreach import config, setup_wizard
 

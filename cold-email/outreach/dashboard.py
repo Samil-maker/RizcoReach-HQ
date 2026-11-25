@@ -61,6 +61,24 @@ def _nice_time(iso: Optional[str]) -> str:
 
 # ----------------------------------------------------------------------------- read
 
+def _why_not_sending(con, s: config.Settings, today, sent_today: int, cap_today: int, queued: int) -> str:
+    """Inside today's sending hours with the sender stopped: can it send now, and if not, why not."""
+    ready = [i for i in s.inboxes if i.password]
+    left = sum(len(v["items"]) for v in schedule.plan(con, s, today, ready).values()) if ready else 0
+    later = "%s at 8:00" % clock.nice(schedule.next_send_day(today + timedelta(days=1)))
+    if left:
+        return "%d email%s can go out today. Press Start sending to send %s now" % (left, "" if left == 1 else "s", "it" if left == 1 else "them")
+    if not ready:
+        return "No inbox has its app password yet. Add one under Inboxes"
+    if cap_today and sent_today >= cap_today:
+        return ("Today's limit of %d is used up. Raise Emails a day under Controls to send more today, "
+                "or it carries on %s" % (cap_today, later))
+    if queued:
+        return ("%d new lead%s waiting, but none can go out today: check each inbox's Sends setting and that the "
+                "campaign's test email is approved. Otherwise %s" % (queued, " is" if queued == 1 else "s are", later))
+    return "Nothing left to send today: drop in a new lead file and it goes out today. Otherwise %s" % later
+
+
 def overview(con, s: config.Settings) -> Dict:
     today, now = clock.today(), clock.now()
     t, monday = today.isoformat(), clock.week_start(today).isoformat()
@@ -105,8 +123,8 @@ def overview(con, s: config.Settings) -> Dict:
         nxt = "Sending now, spread until about 22:45"
     elif schedule.is_send_day(today) and now < clock.at(today, *schedule.START):
         nxt = "Today at 8:00"
-    elif schedule.is_send_day(today) and schedule.current_window_end(now) and sent_today < cap_today and sum(queue.values()):
-        nxt = "Not running right now. Press Start sending to send the rest of today's emails"
+    elif schedule.is_send_day(today) and schedule.current_window_end(now):
+        nxt = _why_not_sending(con, s, today, sent_today, cap_today, sum(queue.values()))
     else:
         nxt = "%s at 8:00" % clock.nice(schedule.next_send_day(today + timedelta(days=1)))
     return {
