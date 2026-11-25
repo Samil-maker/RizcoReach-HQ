@@ -52,7 +52,15 @@ class Mailbox:
         except (OSError, imaplib.IMAP4.error) as e:
             raise MailboxError("could not reach %s:%s (%s)" % (self.inbox.imap_host, self.inbox.imap_port, e))
         try:
-            self.conn.login(self.inbox.username, self.inbox.password)
+            if self.inbox.uses_google_login:
+                from . import google_oauth
+
+                try:
+                    google_oauth.login_imap(self.conn, self.inbox)
+                except google_oauth.OAuthError as e:
+                    raise MailboxError(str(e))
+            else:
+                self.conn.login(self.inbox.username, self.inbox.password)
         except imaplib.IMAP4.error as e:
             raise MailboxError("the IMAP server refused the login: %s" % _s(e))
         return self

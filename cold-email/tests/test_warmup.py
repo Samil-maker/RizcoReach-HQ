@@ -107,7 +107,7 @@ def test_warm_up_between_two_inboxes(project, con, smtp, fake_clock, monkeypatch
     (project / ".env").write_text("# test\n")
     s = config.load_settings(dict(ENV, INBOX2_EMAIL="rizco.two@gmail.com", INBOX2_APP_PASSWORD="abcdefghijklmnop"))
     db.set_state(con, "warmup_start:inbox2", "2026-11-09")
-    assert schedule.limits(con, s.inbox("inbox2"), datetime(2026, 11, 9).date())["cap"] == 0  # no cold email yet
+    assert schedule.limits(con, s.inbox("inbox2"), datetime(2026, 11, 9).date())["cap"] == 5  # a few cold emails from day 1
 
     fake_clock.set(datetime(2026, 11, 9, 10, 0, tzinfo=clock.TZ))
     stats = warmup.run(con, s, log=lambda *a: None, rng=Dice())

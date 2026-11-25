@@ -49,7 +49,7 @@ def cmd_check(args) -> int:
     print("   WhatsApp number:  %s" % (names.format_whatsapp(s.whatsapp) or "(empty)"))
     print("   Test emails go to: %s" % (s.test_email_to or "(empty: set TEST_EMAIL_TO)"))
     for i in s.inboxes:
-        print("   %s: %s via %s, App Password %s" % (i.key, i.email, i.label, config.mask(i.password)))
+        print("   %s: %s via %s, %s" % (i.key, i.email, i.label, "signs in with Google" if i.uses_google_login else "App Password %s" % config.mask(i.password)))
         print("      sending: %s:%s   replies: %s:%s" % (i.smtp_host, i.smtp_port, i.imap_host, i.imap_port))
     for w in s.warnings:
         print("\n   WARNING: " + w)
@@ -76,7 +76,7 @@ def cmd_check(args) -> int:
             all_ok = False
 
         print("\n   SMTP login (sending), sends nothing:")
-        if not inbox.password:
+        if not inbox.can_login:
             print("   SKIPPED: no App Password yet")
             all_ok = False
         else:
@@ -530,7 +530,7 @@ def start_sending_if_needed(con, s: Settings) -> bool:
         return False
     if not schedule.is_send_day(today) or not schedule.current_window_end(now) or now >= clock.at(today, *schedule.LAST_PLANNED):
         return False
-    left = sum(len(v["items"]) for v in schedule.plan(con, s, today, [i for i in s.inboxes if i.password]).values())
+    left = sum(len(v["items"]) for v in schedule.plan(con, s, today, safety.sendable(con, s.inboxes)).values())
     if not left:
         return False
     sender.log("%d emails can still go out today. Starting the sender." % left)

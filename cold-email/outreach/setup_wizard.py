@@ -92,6 +92,8 @@ def desktop_shortcuts() -> Optional[Path]:
 
 def connect(inbox: config.Inbox) -> bool:
     """Gets a working App Password for this inbox (keeps one that already works) and saves it in .env."""
+    if inbox.uses_google_login:
+        return True  # Connect with Google: nothing to type
     if inbox.password:
         try:
             mailer.login_test(inbox)
@@ -141,15 +143,20 @@ def connect(inbox: config.Inbox) -> bool:
     return False
 
 
-def add_inbox_from_form(email: str, password: str, brand_new: bool, provider: str = "", campaign: str = "website") -> Tuple[bool, str]:
-    """The dashboard's "Add inbox" form: checks everything first and only saves an inbox that works."""
+def add_inbox_from_form(email: str, password: str, brand_new: bool, provider: str = "", campaign: str = "website",
+                        refresh_token: str = "") -> Tuple[bool, str]:
+    """The dashboard's "Add inbox" form, or Connect with Google (a refresh token instead of a password): checks
+    everything first and only saves an inbox that works."""
     con = db.connect()
     env = read_env()
     email = (email or "").strip().lower()
     password = re.sub(r"\s", "", password or "")
     if not config.EMAIL_RE.match(email):
         return False, "That doesn't look like an email address."
-    if email in {i.email for i in settings_from(env).inboxes}:
+    existing = next((i for i in settings_from(env).inboxes if i.email == email), None)
+    if existing and refresh_token:
+        return _reconnect(existing, env, refresh_token)
+    if existing:
         return False, "%s is already one of your sending inboxes." % email
     if email == env.get("TEST_EMAIL_TO", "").lower():
         return False, "That's your test address. Use a separate account for sending."
@@ -162,13 +169,16 @@ def add_inbox_from_form(email: str, password: str, brand_new: bool, provider: st
     if provider not in config.PROVIDERS:
         return False, "Unknown provider %r." % provider
     key = "INBOX%d" % slot
-    trial = dict(env, **{key + "_EMAIL": email, key + "_PROVIDER": provider, key + "_APP_PASSWORD": password})
+    secret = {key + "_REFRESH_TOKEN": refresh_token} if refresh_token else {key + "_APP_PASSWORD": password}
+    trial = dict(env, **{key + "_EMAIL": email, key + "_PROVIDER": provider}, **secret)
     inbox = settings_from(trial).inbox("inbox%d" % slot)
-    if inbox.is_google and not re.fullmatch(r"[a-zA-Z]{16}", password):
+    if inbox.is_google and not refresh_token and not re.fullmatch(r"[a-zA-Z]{16}", password):
         return False, "An App Password is exactly 16 letters (Google shows them in 4 groups of 4)."
     try:
         mailer.login_test(inbox)
     except mailer.SendError as e:
+        if e.kind == "auth" and refresh_token:
+            return False, "Gmail didn't let %s sign in: %s" % (email, e)
         if e.kind == "auth":
             return False, "Gmail didn't accept that App Password. Make sure you created it while signed in as %s." % email
         return False, ("Couldn't add it: %s." % e) if "closed the connection" in str(e) else "Couldn't reach the mail server: %s" % e
@@ -180,15 +190,27 @@ def add_inbox_from_form(email: str, password: str, brand_new: bool, provider: st
         return False, "Sending works but reading replies didn't: %s" % e
     rep = dnscheck.check_inbox(inbox)
     campaign = campaign if campaign in ("website", "ads", "both", "booking") else "website"
-    write_env({key + "_EMAIL": email, key + "_PROVIDER": provider, key + "_APP_PASSWORD": password, key + "_CAMPAIGN": campaign})
+    write_env(dict({key + "_EMAIL": email, key + "_PROVIDER": provider, key + "_CAMPAIGN": campaign}, **secret))
     note = "" if campaign == "website" else (" It sends %s emails." % {"ads": "Meta ads", "booking": "Elheen", "both": "both website and Meta ads"}[campaign])
     if not rep.can_send:
         note = " Its domain doesn't pass SPF and DKIM yet, so it won't send until it does (run rizco check for the records)."
     if brand_new:
         db.set_state(con, "warmup_start:inbox%d" % slot, clock.today().isoformat())
-        ends = schedule.next_send_day(clock.today() + timedelta(days=schedule.WARMUP_DAYS))
-        return True, "Added %s. It warms up for 14 days, then sends %d a day from %s.%s" % (email, inbox.daily_limit, clock.nice(ends), note)
+        return True, "Added %s. %s%s" % (email, schedule.ramp_text(), note)
     return True, "Added %s. It sends %d a day from tomorrow.%s" % (email, inbox.daily_limit, note)
+
+
+def _reconnect(inbox: config.Inbox, env: dict, refresh_token: str) -> Tuple[bool, str]:
+    """Connect with Google for an inbox you already have: its new sign in replaces the old one (or its App Password)."""
+    key = inbox.key.upper()
+    trial = dict(env, **{key + "_REFRESH_TOKEN": refresh_token})
+    fresh = settings_from(trial).inbox(inbox.key)
+    try:
+        mailer.login_test(fresh)
+    except mailer.SendError as e:
+        return False, "Gmail didn't let %s sign in: %s" % (inbox.email, e)
+    write_env({key + "_REFRESH_TOKEN": refresh_token, key + "_APP_PASSWORD": ""})
+    return True, "Reconnected %s. It signs in with Google now." % inbox.email
 
 
 def add_inbox() -> int:
@@ -242,9 +264,7 @@ def add_inbox() -> int:
     new = yes("Is this a brand new account (made in the last month)?")
     if new:
         db.set_state(con, "warmup_start:inbox%d" % slot, clock.today().isoformat())
-        ends = schedule.next_send_day(clock.today() + timedelta(days=schedule.WARMUP_DAYS))
-        print("\nAdded. %s warms up for 14 days: it swaps a few normal emails a day with your other inboxes." % email)
-        print("Cold emails from it start on %s, %d a day." % (clock.nice(ends), inbox.daily_limit))
+        print("\nAdded %s. %s" % (email, schedule.ramp_text()))
     else:
         print("\nAdded. %s sends %d cold emails a day from tomorrow." % (email, inbox.daily_limit))
     s = settings_from(read_env())

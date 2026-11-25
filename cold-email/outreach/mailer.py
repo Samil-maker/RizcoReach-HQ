@@ -57,6 +57,19 @@ def _connect(inbox: Inbox, timeout: int = 30) -> smtplib.SMTP:
     return server
 
 
+def _login(server: smtplib.SMTP, inbox: Inbox) -> None:
+    """The App Password, or the inbox's Google sign in (Connect with Google)."""
+    if inbox.uses_google_login:
+        from . import google_oauth
+
+        try:
+            google_oauth.login_smtp(server, inbox)
+        except google_oauth.OAuthError as e:
+            raise SendError("auth", str(e))
+        return
+    server.login(inbox.username, inbox.password)
+
+
 def _classify(code: Optional[int], text: str) -> str:
     t = (text or "").lower()
     if code in (535, 534, 530) or "authentication" in t or "username and password not accepted" in t or "application-specific password" in t:
@@ -94,7 +107,7 @@ def send(inbox: Inbox, msg: EmailMessage) -> None:
         raise SendError("network", "could not reach %s: %s" % (inbox.smtp_host, e))
     try:
         try:
-            server.login(inbox.username, inbox.password)
+            _login(server, inbox)
         except smtplib.SMTPAuthenticationError as e:
             raise SendError("auth", "the server refused the login: %s" % _text(e.smtp_error), e.smtp_code)
         try:
@@ -145,7 +158,7 @@ def _login_once(inbox: Inbox) -> str:
     except (socket.gaierror, socket.timeout, ConnectionError, OSError) as e:
         raise SendError("network", "could not reach %s:%s (%s)" % (inbox.smtp_host, inbox.smtp_port, e))
     try:
-        server.login(inbox.username, inbox.password)
+        _login(server, inbox)
     except smtplib.SMTPAuthenticationError as e:
         raise SendError("auth", _text(e.smtp_error), e.smtp_code)
     finally:

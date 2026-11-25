@@ -149,8 +149,12 @@ class SendRun:
     def ready_inboxes(self) -> List[Inbox]:
         con, ok = self.con, []
         for inbox in self.s.inboxes:
-            if not inbox.password:
-                log("%s: no App Password in .env, skipping this inbox" % inbox.email)
+            if not inbox.can_login:
+                log("%s: no App Password or Google sign in in .env, skipping this inbox" % inbox.email)
+                continue
+            p = safety.inbox_paused(con, inbox.key)
+            if p:
+                log("%s: paused (%s). Resume it on the dashboard." % (inbox.email, p.get("reason", "")))
                 continue
             cached = db.get_state(con, "dns_ok:" + inbox.key)
             if cached == clock.today().isoformat():
@@ -234,13 +238,13 @@ class SendRun:
                                    stop_reason="address refused by the server: %s" % e)
                     suppression.add(con, lead["email"], "hard bounce")
                     log("%s was refused (%s). Marked as a bounce." % (lead["email"], e))
-                    safety.after_bounce(con, row["sent_date"], log)
-                    return "stop_all" if safety.paused(con) else "skipped"
+                    safety.after_bounce(con, row["sent_date"], log, inbox)
+                    return "stop_inbox" if safety.inbox_paused(con, inbox.key) else "skipped"
                 self._record(row, status="failed", error=str(e))
                 what = {"auth": "the mail server refused the login", "temporary": "the mail server is refusing mail for now",
                         "policy": "the mail server refused our email"}.get(e.kind, "sending failed")
-                safety.pause(con, "%s (%s)" % (what, inbox.email), str(e)[:300], log)
-                return "stop_all"
+                safety.pause_inbox(con, inbox, what, str(e)[:300], log)
+                return "stop_inbox"
         self._record(row, status="sent")
         first_date = clock.parse(lead["first_sent_at"]).date() if lead["first_sent_at"] else now.date()
         due = schedule.next_due_after(step, first_date, now.date())

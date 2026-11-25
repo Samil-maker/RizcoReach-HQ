@@ -1,7 +1,8 @@
 """Automatic pauses. While paused nothing is sent until you run:  rizco resume
 
-Pauses happen when 3 emails bounce in one day (BOUNCE_PAUSE_AT in .env), when a reply mentions spam or reporting,
-or when the mail server starts refusing our emails or the login. Resume on the dashboard, or rizco resume.
+Each inbox looks after itself: when 3 of its emails bounce in one day (BOUNCE_PAUSE_AT in .env), a reply to it
+mentions spam or reporting, or its mail server refuses the login or our emails, only that inbox pauses. The others
+carry on. Resume it on the dashboard (Inboxes). Pause sending on the dashboard, or rizco resume, is for everything.
 """
 from __future__ import annotations
 
@@ -29,6 +30,38 @@ def pause(con, reason: str, detail: str = "", log=print) -> None:
     from . import launchd
 
     launchd.notify("RizcoReach: sending paused", reason)
+
+
+def inbox_paused(con, key: str) -> Optional[dict]:
+    return db.get_state(con, "inbox_paused:" + key)
+
+
+def pause_inbox(con, inbox, reason: str, detail: str = "", log=print) -> None:
+    """Stops one inbox until you resume it. The other inboxes keep sending."""
+    if inbox_paused(con, inbox.key):
+        return
+    db.set_state(con, "inbox_paused:" + inbox.key, {"reason": reason, "detail": detail, "at": clock.iso()})
+    db.log_event(con, "inbox_paused", "%s %s" % (reason, detail), None, inbox.key)
+    log("\n*** %s PAUSED: %s" % (inbox.email, reason))
+    if detail:
+        log("    %s" % detail)
+    log("    The other inboxes carry on. Resume this one on the dashboard (Inboxes) once you have looked into it.\n")
+    from . import launchd
+
+    launchd.notify("RizcoReach: %s paused" % inbox.email, reason)
+
+
+def resume_inbox(con, key: str) -> Optional[dict]:
+    p = inbox_paused(con, key)
+    if p:
+        db.del_state(con, "inbox_paused:" + key)
+        db.log_event(con, "inbox_resumed", p.get("reason", ""), None, key)
+    return p
+
+
+def sendable(con, inboxes) -> list:
+    """The inboxes that can sign in and are not paused."""
+    return [i for i in inboxes if i.can_login and not inbox_paused(con, i.key)]
 
 
 def resume(con) -> Optional[dict]:
@@ -68,8 +101,21 @@ def pause_at() -> int:
         return BOUNCE_PAUSE_AT
 
 
-def after_bounce(con, sent_date: str, log=print) -> None:
-    """Called each time a new bounce is recorded. Pauses once that day has had 3 bounces (BOUNCE_PAUSE_AT)."""
+def after_bounce(con, sent_date: str, log=print, inbox=None) -> None:
+    """Called each time a new bounce is recorded. The inbox that sent it pauses once it has had 3 bounces that day
+    (BOUNCE_PAUSE_AT); the others carry on. Without an inbox, all sending pauses after 3 bounces that day."""
+    if inbox is not None:
+        row = con.execute("SELECT SUM(status='bounced') AS b, COUNT(*) AS n FROM messages WHERE sent_date=? AND inbox=? "
+                          "AND kind='campaign' AND status IN ('sent', 'bounced')", (sent_date, inbox.key)).fetchone()
+        bounced, sent = row["b"] or 0, row["n"] or 0
+        key = "bounces_ok:%s:%s" % (sent_date, inbox.key)
+        resumed_at = db.get_state(con, key) or 0
+        if bounced - resumed_at >= pause_at():
+            db.set_state(con, key, bounced)
+            pause_inbox(con, inbox, "%d of its emails bounced on %s (%d of %d)" % (bounced - resumed_at, sent_date, bounced, sent),
+                        "Look at the bounced addresses in the report. If they came from one lead file, remove its unsent "
+                        "leads, then press Resume next to this inbox.", log)
+        return
     bounced, sent, rate = bounce_rate(con, sent_date)
     limit = pause_at()
     # Once you resume, the count starts again from what has bounced so far.

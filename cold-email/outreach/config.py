@@ -126,6 +126,16 @@ class Inbox:
     save_to_sent: bool = False
     daily_limit: int = DEFAULT_DAILY_LIMIT
     campaigns: tuple = ("website",)   # which campaigns this inbox sends for
+    refresh_token: str = field(default="", repr=False)   # Connect with Google: signs in without an App Password
+    oauth_client: tuple = field(default=("", ""), repr=False)   # (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET)
+
+    @property
+    def uses_google_login(self) -> bool:
+        return bool(self.refresh_token)
+
+    @property
+    def can_login(self) -> bool:
+        return bool(self.password or self.refresh_token)
 
     @property
     def domain(self) -> str:
@@ -154,7 +164,7 @@ class Inbox:
 
     @property
     def has_imap(self) -> bool:
-        return bool(self.imap_host and self.password)
+        return bool(self.imap_host and self.can_login)
 
 
 @dataclass
@@ -264,8 +274,12 @@ def load_settings(env: Optional[Dict[str, str]] = None) -> Settings:
         )
         inbox.daily_limit = min(inbox.cap_override or s.daily_limit, s.daily_limit)
         inbox.campaigns = campaigns_from(get(p + "CAMPAIGN") or "website")
-        if not password:
-            s.problems.append("%sAPP_PASSWORD is empty for %s (README step 3 shows how to get one)." % (p, email))
+        inbox.refresh_token = get(p + "REFRESH_TOKEN")
+        inbox.oauth_client = (get("GOOGLE_CLIENT_ID"), get("GOOGLE_CLIENT_SECRET"))
+        if inbox.refresh_token and not all(inbox.oauth_client):
+            s.problems.append("%s signs in with Google, but GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET is missing from .env." % email)
+        if not inbox.can_login:
+            s.problems.append("%sAPP_PASSWORD is empty for %s (README step 3 shows how to get one, or use Connect with Google)." % (p, email))
         if not inbox.smtp_host or not inbox.imap_host:
             s.problems.append("%s needs %sSMTP_HOST and %sIMAP_HOST (provider is custom)." % (email, p, p))
         if provider == "gmail" and not inbox.is_free:
