@@ -38,6 +38,72 @@ class _State:
     token = secrets.token_urlsafe(24)
     jobs: Dict[str, Dict] = {}
     lock = threading.Lock()
+    google: Dict[str, Dict] = {}   # Connect with Google sign ins in progress, by their state value
+
+
+GOOGLE_REDIRECT = "http://127.0.0.1:%d/" % PORT   # where Google sends you back (a "Desktop app" client allows any local port)
+
+
+def _google_ready() -> bool:
+    from . import google_oauth
+    from .setup_wizard import read_env
+
+    return google_oauth.configured(read_env())
+
+
+def google_start(campaign: str, brand_new: bool) -> Dict:
+    """The Google sign in link for a new inbox. Your browser opens it; Google sends you back to the dashboard."""
+    from . import google_oauth
+    from .setup_wizard import read_env
+
+    cid, secret = google_oauth.client(read_env())
+    if not (cid and secret):
+        return {"ok": False, "setup": True, "message": "Do the one time Google setup first (the steps above)."}
+    state = secrets.token_urlsafe(24)
+    verifier, challenge = google_oauth.pkce()
+    with _State.lock:
+        now = time.time()
+        for k in [k for k, v in _State.google.items() if now - v["at"] > 3600]:
+            del _State.google[k]
+        _State.google[state] = {"verifier": verifier, "campaign": campaign, "brand_new": brand_new, "at": now, "result": None}
+    return {"ok": True, "state": state, "url": google_oauth.auth_url(cid, GOOGLE_REDIRECT, state, challenge)}
+
+
+def google_finish(q: Dict[str, str]) -> Dict:
+    """Google sent you back with a code: swap it for the inbox's sign in, then add (or reconnect) the inbox."""
+    from . import google_oauth
+    from .setup_wizard import add_inbox_from_form, read_env
+
+    with _State.lock:
+        pending = _State.google.get(q.get("state", ""))
+    if not pending or time.time() - pending["at"] > 1800 or pending["result"]:
+        return {"ok": False, "message": "This sign in link has expired or was used already. Press Connect with Google again on the dashboard."}
+    if q.get("error"):
+        result = {"ok": False, "message": "Google didn't connect the inbox (%s). Press Connect with Google to try again." % q["error"]}
+    else:
+        cid, secret = google_oauth.client(read_env())
+        try:
+            email, refresh = google_oauth.exchange(cid, secret, q.get("code", ""), GOOGLE_REDIRECT, pending["verifier"])
+            ok, message = add_inbox_from_form(email, "", pending["brand_new"], campaign=pending["campaign"], refresh_token=refresh)
+            if ok and launchd.IS_MAC:
+                launchd.install()
+            result = {"ok": ok, "message": message, "email": email}
+        except google_oauth.OAuthError as e:
+            result = {"ok": False, "message": "Couldn't connect: %s." % e}
+    with _State.lock:
+        pending["result"] = result
+    return result
+
+
+def _google_page(result: Dict) -> bytes:
+    import html as h
+
+    color = "#1a7f37" if result.get("ok") else "#b42318"
+    return ("<!doctype html><html><head><meta charset='utf-8'><title>RizcoReach</title><meta name='viewport' content='width=device-width'>"
+            "<style>body{font:16px system-ui,sans-serif;max-width:560px;margin:12vh auto;padding:0 20px;color:#1d1d1f}"
+            "p{line-height:1.5}a{color:#0a66c2}</style></head><body><h2 style='color:%s'>%s</h2><p>%s</p>"
+            "<p><a href='%s'>Back to the dashboard</a> (you can close this tab).</p></body></html>"
+            % (color, "Inbox connected" if result.get("ok") else "Not connected", h.escape(result.get("message", "")), URL)).encode()
 
 
 def settings() -> config.Settings:
@@ -63,7 +129,7 @@ def _nice_time(iso: Optional[str]) -> str:
 
 def _why_not_sending(con, s: config.Settings, today, sent_today: int, cap_today: int, queued: int) -> str:
     """Inside today's sending hours with the sender stopped: can it send now, and if not, why not."""
-    ready = [i for i in s.inboxes if i.password]
+    ready = [i for i in s.inboxes if i.can_login]
     left = sum(len(v["items"]) for v in schedule.plan(con, s, today, ready).values()) if ready else 0
     later = "%s at 8:00" % clock.nice(schedule.next_send_day(today + timedelta(days=1)))
     if left:
@@ -89,7 +155,8 @@ def overview(con, s: config.Settings) -> Dict:
     for i in s.inboxes:
         lim = schedule.limits(con, i, today)
         w = warmup.summary(con, i.key)
-        inboxes.append({"email": i.email, "status": lim["why"], "warming": bool(lim.get("warming")), "sent": lim["sent"],
+        held = safety.inbox_paused(con, i.key)
+        inboxes.append({"key": i.key, "paused": held.get("reason", "") if held else "", "google": i.uses_google_login, "email": i.email, "status": lim["why"], "warming": bool(lim.get("warming")), "sent": lim["sent"],
                         "cap": lim["cap"], "warm_sent": w["sent"], "warm_spam": w["spam"], "warm_checked": w["checked"],
                         "sends": " and ".join(config.CAMPAIGNS[c] for c in i.campaigns), "campaigns": ",".join(i.campaigns)})
     campaigns = []
@@ -131,6 +198,7 @@ def overview(con, s: config.Settings) -> Dict:
         "today": "%s %d %s" % (today.strftime("%A"), today.day, today.strftime("%B")),
         "paused": paused, "approved": approved, "running": running, "next": nxt,
         "can_start": bool(approved and not paused and not running and schedule.current_window_end(now) and launchd.IS_MAC),
+        "google_ready": _google_ready(),
         "problems": s.problems,
         "inboxes": inboxes,
         "campaigns": campaigns,
@@ -373,7 +441,7 @@ def post(path: str, body: Dict, raw: bytes, headers) -> Dict:
             return {"ok": False, "message": "Sending isn't approved yet (run the setup line once more)."}
         if not schedule.is_send_day(now.date()) or not schedule.current_window_end(now):
             return {"ok": False, "message": "Emails only go out %s, Dubai time. Try again then." % schedule.hours_text()}
-        left = sum(len(v["items"]) for v in schedule.plan(con, s, now.date(), [i for i in s.inboxes if i.password]).values())
+        left = sum(len(v["items"]) for v in schedule.plan(con, s, now.date(), safety.sendable(con, s.inboxes)).values())
         if not left:
             return {"ok": False, "message": "Nothing left to send today: no new leads waiting, or today's limit is used up."}
         schedule.set_fast(con)
@@ -433,6 +501,25 @@ def post(path: str, body: Dict, raw: bytes, headers) -> Dict:
         if updates:
             write_env(updates)
         return {"ok": True, "message": "Saved."}
+    if path == "/api/google-setup":
+        from .setup_wizard import write_env
+
+        cid, secret = str(body.get("client_id") or "").strip(), str(body.get("client_secret") or "").strip()
+        if not cid.endswith(".apps.googleusercontent.com"):
+            return {"ok": False, "message": "The client id ends in .apps.googleusercontent.com. Copy it from the client you made."}
+        if len(secret) < 10:
+            return {"ok": False, "message": "Paste the client secret too."}
+        write_env({"GOOGLE_CLIENT_ID": cid, "GOOGLE_CLIENT_SECRET": secret})
+        return {"ok": True, "message": "Saved. Now press Connect with Google."}
+    if path == "/api/google-start":
+        campaign = body.get("campaign") if body.get("campaign") in ("website", "ads", "both", "booking") else "website"
+        return google_start(campaign, bool(body.get("brand_new")))
+    if path == "/api/inbox-resume":
+        key = str(body.get("key") or "")
+        if not settings().inbox(key):
+            return {"ok": False, "message": "No such inbox."}
+        safety.resume_inbox(con, key)
+        return {"ok": True, "message": "Resumed. It sends again on the next run."}
     if path == "/api/add-inbox":
         campaign = body.get("campaign") if body.get("campaign") in ("website", "ads", "both", "booking") else "website"
         return {"job": _job(_add_inbox_job, body.get("email", ""), body.get("password", ""), bool(body.get("brand_new")), campaign)}
@@ -475,6 +562,9 @@ class Handler(BaseHTTPRequestHandler):
         url = urlsplit(self.path)
         if url.path == "/health":
             return self._reply(200, {"ok": True, "app": "rizcoreach"})
+        if url.path == "/" and "state" in url.query:  # Google sent you back from Connect with Google
+            q = {k: v[0] for k, v in parse_qs(url.query).items()}
+            return self._reply(200, _google_page(google_finish(q)), "text/html; charset=utf-8")
         if url.path == "/":
             page = (Path(__file__).with_name("dashboard.html")).read_text(encoding="utf-8")
             return self._reply(200, page.replace("__TOKEN__", _State.token).encode(), "text/html; charset=utf-8")
@@ -497,6 +587,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self._reply(200, {"text": report.write(con, s).read_text(encoding="utf-8")})
             if url.path == "/api/portfolio":
                 return self._reply(200, portfolio.listing())
+            if url.path == "/api/google-result":
+                pending = _State.google.get(q.get("state", ""))
+                return self._reply(200, {"done": bool(pending and pending["result"]), **((pending or {}).get("result") or {})})
             if url.path == "/api/job":
                 job = _State.jobs.get(q.get("id", ""))
                 return self._reply(200 if job else 404, job or {"error": "unknown job"})

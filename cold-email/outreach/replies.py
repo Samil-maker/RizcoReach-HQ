@@ -83,7 +83,7 @@ def process(con, settings: Settings, inbox: Inbox, raw: bytes, folder: str = "IN
     received = _received(msg)
 
     if classify.is_bounce(msg):
-        return _process_bounce(con, msg, raw, mid, inbox, folder, received, matcher, log)
+        return _process_bounce(con, msg, raw, mid, inbox, folder, received, matcher, log, settings)
 
     lead_id = matcher.lead_for(msg)
     if not lead_id:
@@ -124,8 +124,8 @@ def process(con, settings: Settings, inbox: Inbox, raw: bytes, folder: str = "IN
             draft = templates.draft_reply(result.label, lead, result.text, settings, pictures=pictures)
         db.log_event(con, "reply", result.label, lead_id, inbox.key)
         if result.complaint:
-            safety.pause(con, "a reply from %s mentions spam or reporting" % sender,
-                         'They wrote: "%s". Read it in your inbox before you resume.' % result.text[:200].replace("\n", " "), log)
+            safety.pause_inbox(con, inbox, "a reply from %s mentions spam or reporting" % sender,
+                               'They wrote: "%s". Read it in your inbox before you resume.' % result.text[:200].replace("\n", " "), log)
 
     saved = bool(draft and settings.save_drafts and mailbox is not None and _save_draft(mailbox, inbox, settings, msg, lead, draft))
     if draft and templates.PICTURES in draft:
@@ -147,7 +147,7 @@ def process(con, settings: Settings, inbox: Inbox, raw: bytes, folder: str = "IN
     return info
 
 
-def _process_bounce(con, msg, raw, mid, inbox, folder, received, matcher, log) -> Optional[Dict]:
+def _process_bounce(con, msg, raw, mid, inbox, folder, received, matcher, log, settings=None) -> Optional[Dict]:
     addresses, kind, ids = classify.bounce_details(msg, raw)
     lead_id = next((matcher.by_mid[i] for i in ids if i in matcher.by_mid), None)
     if lead_id is None:
@@ -184,7 +184,8 @@ def _process_bounce(con, msg, raw, mid, inbox, folder, received, matcher, log) -
     )
     db.log_event(con, "bounce", kind, lead_id, inbox.key)
     if sent:
-        safety.after_bounce(con, sent["sent_date"], log)
+        sender_inbox = (settings.inbox(sent["inbox"]) if settings else None) or inbox  # the inbox that sent it
+        safety.after_bounce(con, sent["sent_date"], log, sender_inbox)
     return {"lead": lead["email"], "business": lead["business"], "label": "bounce (%s)" % kind}
 
 

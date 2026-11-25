@@ -54,9 +54,11 @@ on your Desktop (or type `rizco dashboard` in Terminal). It runs on your Mac onl
   Elheen emails stay off until you read them and press **Approve Elheen emails** under Campaigns. Each business gets
   one campaign only, so nobody hears from RizcoReach and Elheen about the same thing. The name in the emails is
   `BOOKING_BRAND` in `.env` (Elheen unless you change it).
-- **More emails a day:** make a new Gmail account, then **Add an inbox** on the dashboard and choose what it sends
-  (Website, Meta ads or Both). Each inbox sends everything that is queued, up to 500 a day (Gmail's own limit for
-  a personal account; lower it under Controls if you want); a brand new account warms up for 14 days first.
+- **More emails a day:** make a new Gmail account, then **Add an inbox** on the dashboard, choose what it sends
+  and press **Connect with Google**: pick the account, press Allow. No 2-Step Verification, no App Password (new
+  Gmail accounts often can't make one). The first time there is a one time setup (below). A brand new account
+  starts with 5 cold emails a day on day 1 and rises by itself (12 from day 8, 25 from day 15, then 40), warming up
+  every day with your other inboxes. An inbox you already had sends everything queued, up to 500 a day.
 - **Send the rest now (1 a minute):** one click sends all of today's remaining emails about one a minute instead of
   spreading them over the day (still within each inbox's daily limit, 8:00 to 23:00). It goes back to
   normal the next day.
@@ -106,7 +108,7 @@ Writes today's report now (it also updates every hour by itself).
 | Command | What it does |
 |---|---|
 | `rizco dashboard` | opens the dashboard (and puts its icon on your Desktop) |
-| `rizco add-inbox` | adds another sending inbox (brand new ones warm up for 14 days first) |
+| `rizco add-inbox` | adds another sending inbox with an App Password (Connect with Google is on the dashboard) |
 | `rizco leads` | opens the folder where you drop lead files |
 | `rizco reports` | opens the folder with the daily reports |
 | `rizco status` | limits, queue, pause state at a glance |
@@ -161,8 +163,11 @@ There is an empty template in `leads/sample/lead-template.csv`.
 - **Up to 500 a day per inbox**, follow ups included: in practice whatever is queued for the day goes out. 500 is
   Gmail's own limit for a personal account (above it Gmail stops the account sending for a day). Lower it under
   Controls on the dashboard if you want (1 to 500). Leads are shared between the inboxes that send their campaign.
-- **Brand new inboxes** only warm up for their first 14 days, then send their full daily amount. Every inbox keeps
-  a little warm up going (about 4 a day) once there are two or more.
+- **Brand new inboxes** send from day 1, a few at first, rising by themselves: 5 a day in week 1, 12 in week 2, 25
+  in week 3, then up to 40 a day (a new free Gmail stays at 40 at most; more gets new accounts suspended). They warm
+  up hardest in their first 14 days, and every inbox keeps a little warm up going (about 4 a day) once there are two.
+- **Each inbox looks after itself.** 3 bounces in a day, a reply that mentions spam, or its mail server refusing the
+  login or our emails pauses only that inbox (the dashboard shows why, with a Resume button). The others carry on.
 - **Two campaigns.** Website: segments A new business, B no website, C outdated website, at the website price
   (749 AED unless you change it), nothing upfront, paid once they're happy with it. Every email also says "We also
   offer SEO and management. That includes Google Maps updates, edits, fixes and any changes you need" without a
@@ -206,6 +211,25 @@ email or using several accounts to get around sending limits, so the more you se
 add, the bigger the chance one gets suspended. The automatic pauses are your safety net. Watch the warm up "landed
 in Spam" numbers on the dashboard, give each account its own recovery details, and keep things you can't lose
 (like your portfolio folder) out of them.
+
+### Connect with Google (one time setup, about 10 minutes)
+
+New Gmail accounts often can't make an App Password, so inboxes sign in with Google instead, the way mail apps do.
+For that you make your own free Google Cloud app once; the dashboard shows these steps under Add an inbox:
+
+1. console.cloud.google.com, signed in as your main Gmail: make a project called RizcoReach Mail.
+2. Google Auth Platform > Get started: app name RizcoReach Mail, your email, Audience **External**, Create.
+3. Data access > Add or remove scopes: paste `https://mail.google.com/` under Manually add scopes, Add to table,
+   Update, Save.
+4. Audience > **Publish app** (In production). If it stays in Testing, Google signs your inboxes out every 7 days.
+5. Clients > Create client > **Desktop app**, name RizcoReach, Create. Paste the client id and secret on the
+   dashboard and press Save (they go in `.env` as `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`).
+
+Then each new inbox is one click: Connect with Google, pick the account, Allow. Google shows "Google hasn't verified
+this app": it's your own app, press Advanced, then Go to RizcoReach Mail. Its sign in is saved in `.env` as
+`INBOXn_REFRESH_TOKEN` (like a password, only on your Mac). If Google ever signs an inbox out (you changed its
+password, or removed the app's access), that inbox pauses and says so: press Connect with Google again for it.
+An unverified app can be used by up to 100 Google accounts, far more than you need.
 
 The cheap way past this: a separate domain only for outreach (about $10 a year, not rizcoreach.ae, so your main
 domain is never at risk) with Zoho Mail Lite inboxes (about $1 an inbox a month; the free Zoho plan has no

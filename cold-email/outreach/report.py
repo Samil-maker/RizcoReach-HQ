@@ -140,7 +140,7 @@ def build(con, settings: Settings, weekly: Optional[bool] = None) -> str:
         w = warmup.summary(con, inbox.key)
         warm = "%d sent, %d of %d landed in Spam" % (w["sent"], w["spam"], w["checked"]) if w["sent"] else (
             "starts once you have 2 inboxes" if len(settings.inboxes) < 2 else "none yet")
-        status = "warming up, no cold email yet" if lim.get("warming") else "week %d" % lim["week"]
+        status = lim["why"] if lim.get("warming") else "week %d" % lim["week"]
         L.append("| %s | %d | %d (%s) | %d | %s |" % (inbox.email, lim["sent"], lim["cap"], status, week, warm))
     f = schedule.forecast(con, settings.inboxes)
     goals = ", ".join("%d a day: %s" % (t, clock.nice(d) if hasattr(d, "day") else d) for t, d in f["reach"].items())

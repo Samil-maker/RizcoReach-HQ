@@ -1,7 +1,7 @@
 """Free warm up: your own inboxes email each other the way people do.
 
-A brand new inbox spends its first 14 days only warming up, then starts cold email at its daily limit, and
-keeps a little warm up going after that. Every inbox takes part once you have two or more.
+A brand new inbox warms up the most in its first 14 days (while its cold emails start small and rise, see
+schedule.RAMP), and keeps a little warm up going every day after that. Every inbox takes part once you have two or more.
 
 Every hour (the hourly job), between 9:00 and 21:00 Dubai time:
   - each inbox starts a few short conversations with your other inboxes
@@ -180,7 +180,7 @@ def receive(con, inbox: Inbox, rng=random) -> List:
 
 def run(con, s: Settings, log=print, rng=random) -> Dict:
     ensure_schema(con)
-    inboxes = [i for i in s.inboxes if i.password and i.imap_host]
+    inboxes = [i for i in s.inboxes if i.can_login and i.imap_host]
     stats = {"sent": 0, "received": 0, "spam": 0}
     if len(inboxes) < 2:
         return stats

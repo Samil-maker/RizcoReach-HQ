@@ -240,13 +240,18 @@ def test_three_bounces_in_a_day_pause(project, con, settings, smtp, dns_pass, fa
         info = replies.process(con, settings, settings.inboxes[0], raw.encode())
         assert info["label"] == "bounce (hard)"
         assert db.lead_by_email(con, "owner%d@shop%d.ae" % (n, n))["status"] == "bounced"
-        assert bool(safety.paused(con)) == (n == 2)  # one or two bounces: it carries on
     assert "owner2@shop2.ae" in suppression.load()
-    p = safety.paused(con)
-    assert p and "3 emails bounced on 2026-11-09" in p["reason"]
-    assert run_day(con, settings, fake_clock, datetime(2026, 11, 10, 9, 0, tzinfo=clock.TZ)) == 0
-    safety.resume(con)
-    assert not safety.paused(con)
+    # Each bounce counts against the inbox that sent it: one that reaches 3 in a day pauses, the others carry on.
+    held = {i.key: safety.inbox_paused(con, i.key) for i in settings.inboxes}
+    counts = dict(con.execute("SELECT inbox, COUNT(*) FROM messages WHERE status='bounced' GROUP BY inbox").fetchall())
+    for key, n in counts.items():
+        assert bool(held[key]) == (n >= 3), (key, n)
+    assert not safety.paused(con), "sending as a whole never stops for bounces"
+    for key, p in held.items():
+        if p:
+            assert "of its emails bounced on 2026-11-09" in p["reason"]
+            safety.resume_inbox(con, key)
+            assert not safety.inbox_paused(con, key)
 
 
 def test_spam_complaint_pauses_and_suppresses(project, con, settings, smtp, dns_pass, fake_clock):
@@ -257,7 +262,9 @@ def test_spam_complaint_pauses_and_suppresses(project, con, settings, smtp, dns_
     raw = REPLY.format(mid=mid).replace("Yes please send me some examples", "Stop spamming me or I will report you")
     info = replies.process(con, settings, settings.inboxes[0], raw.encode())
     assert info["label"] == "opt_out"
-    assert safety.paused(con) and "owner0@shop0.ae" in suppression.load()
+    sent_by = con.execute("SELECT inbox FROM messages").fetchone()[0]
+    assert safety.inbox_paused(con, "inbox1") and "owner0@shop0.ae" in suppression.load(), "the inbox that got the reply pauses"
+    assert not safety.paused(con)
 
 
 def test_smtp_rejection_pauses(project, con, settings, smtp, dns_pass, fake_clock):
@@ -265,7 +272,8 @@ def test_smtp_rejection_pauses(project, con, settings, smtp, dns_pass, fake_cloc
     add_leads(con, 3)
     smtp.fail_data = (550, b"5.4.5 Daily user sending limit exceeded")
     run_day(con, settings, fake_clock, datetime(2026, 11, 9, 9, 0, tzinfo=clock.TZ))
-    assert len(smtp.outbox) == 0 and "refused" in safety.paused(con)["reason"]
+    assert len(smtp.outbox) == 0 and not safety.paused(con)
+    assert all("refused" in safety.inbox_paused(con, i.key)["reason"] for i in settings.inboxes), "each inbox the server refused pauses itself"
 
 
 def test_refused_address_is_a_bounce(project, con, settings, smtp, dns_pass, fake_clock):
@@ -348,21 +356,20 @@ def test_late_start_catches_up_without_bursts(project, con, settings, smtp, dns_
     assert con.execute("SELECT COUNT(*) FROM leads WHERE status='queued'").fetchone()[0] == 60 - sent  # the rest wait
 
 
-def test_warming_inbox_sends_no_cold_email_and_forecast(project, con, fake_clock):
+def test_new_inbox_starts_small_and_rises_by_itself(project, con, fake_clock):
     (project / ".env").write_text("# test\n")
     s = config.load_settings(dict(ENV, INBOX2_EMAIL="rizco.two@gmail.com", INBOX2_APP_PASSWORD="abcdefghijklmnop"))
     one, two = s.inboxes
     fake_clock.set(datetime(2026, 11, 9, 9, 0, tzinfo=clock.TZ))
     db.set_state(con, "warmup_start:inbox2", "2026-11-09")
-    assert schedule.limits(con, two, clock.today())["cap"] == 0
-    assert "warming up, day 1 of 14" in schedule.limits(con, two, clock.today())["why"]
-    assert schedule.cap_on(con, two, datetime(2026, 11, 20).date()) == 0
-    assert schedule.cap_on(con, two, datetime(2026, 11, 23).date()) == 50   # first weekday after 14 days
-    assert schedule.cap_on(con, one, datetime(2026, 11, 9).date()) == 50
-    f = schedule.forecast(con, [one, two], targets=(50, 100, 150))
-    assert f["today"] == 50 and f["full"] == 100
-    assert f["reach"][50] == datetime(2026, 11, 9).date() and f["reach"][100] == datetime(2026, 11, 23).date()
-    assert f["reach"][150] == "needs 1 more inbox"
+    assert schedule.limits(con, two, clock.today())["cap"] == 5, "cold email from day 1, a few"
+    assert "new inbox, day 1: 5 a day, rising by itself" in schedule.limits(con, two, clock.today())["why"]
+    assert [schedule.cap_on(con, two, datetime(2026, 11, d).date()) for d in (15, 16, 22, 23, 29, 30)] == [5, 12, 12, 25, 25, 40]
+    assert schedule.cap_on(con, one, datetime(2026, 11, 9).date()) == 50, "an inbox that wasn't added as new is not ramped"
+    f = schedule.forecast(con, [one, two], targets=(50, 90, 100))
+    assert f["today"] == 55 and f["full"] == 90, "a new free Gmail stays at 40 a day"
+    assert f["reach"][50] == datetime(2026, 11, 9).date() and f["reach"][90] == datetime(2026, 11, 30).date()
+    assert f["reach"][100] == "needs 1 more inbox"
 
 
 def test_leads_added_during_the_day_go_out_the_same_day(project, con, settings, smtp, dns_pass, fake_clock, monkeypatch):

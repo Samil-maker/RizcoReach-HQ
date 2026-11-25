@@ -1,8 +1,8 @@
 """Daily limits, sending hours, and who is due today.
 
 Each inbox sends up to its daily limit (500 by default, Gmail's own limit; DAILY_LIMIT in .env or the dashboard), follow ups
-included. A brand new inbox (added as brand new) sends no cold email in its first 14 days: it only warms
-up (see warmup.py). Each lead goes out from an inbox that sends its campaign (website or Meta ads), and
+included. A brand new inbox (added as brand new) starts small on its first day and rises by itself (RAMP), while it
+warms up every day (see warmup.py); a new free Gmail stays at 40 a day after that (NEW_GMAIL_CAP). Each lead goes out from an inbox that sends its campaign (website or Meta ads), and
 only once that campaign's emails are approved.
 Emails go out every day (SEND_WEEKENDS=no in .env for Monday to Friday only), spread from 8:00 to 22:45 Dubai time.
 """
@@ -33,7 +33,11 @@ GLOBAL_GAP_SECONDS = (45, 90)                         # and never two emails wit
 FOLLOW_UP_DAYS = {1: 3, 2: 7, 3: 14, 4: 30, 5: 60, 6: 90}
 LAST_STEP = max(FOLLOW_UP_DAYS)
 NOT_NOW_CHECK_IN_DAYS = 60   # someone who said "not now" is back on your Reply to these list after this many days
-WARMUP_DAYS = 14                                      # a brand new inbox only warms up for its first 14 days
+WARMUP_DAYS = 14                                      # a brand new inbox warms up the most in its first 14 days
+# A brand new inbox's cold emails a day, by days since it was added: 5 in its first week, 12 in its second, 25 in its
+# third, then its daily limit (at most NEW_GMAIL_CAP for a free Gmail address).
+RAMP = ((7, 5), (14, 12), (21, 25))
+NEW_GMAIL_CAP = 40
 
 
 def ramp_start(con, inbox_key: str) -> Optional[date]:
@@ -67,39 +71,58 @@ def warmup_start(con, inbox_key: str) -> Optional[date]:
 
 
 def warmup_ends(con, inbox_key: str) -> Optional[date]:
-    """The first day a brand new inbox may send cold email, or None if it is not warming up."""
+    """The day a brand new inbox's busiest warm up ends, or None if it was not added as brand new."""
     start = warmup_start(con, inbox_key)
-    if not start or ramp_start(con, inbox_key):
+    return start + timedelta(days=WARMUP_DAYS) if start else None
+
+
+def ramp_cap(con, inbox: Inbox, day: date) -> Optional[int]:
+    """A brand new inbox's cold emails a day on this day, or None when no ramp applies (it was not added as new)."""
+    start = warmup_start(con, inbox.key)
+    if not start:
         return None
-    return start + timedelta(days=WARMUP_DAYS)
+    days = max(0, (day - start).days)
+    for upto, n in RAMP:
+        if days < upto:
+            return n
+    return NEW_GMAIL_CAP if inbox.is_free else None
+
+
+def ramp_text() -> str:
+    (w1, a), (w2, b), (w3, c) = RAMP
+    return ("It starts with %d cold emails a day and rises by itself: %d a day from day %d, %d from day %d, then up to %d a "
+            "day from day %d (a free Gmail stays at most %d). It also warms up every day with your other inboxes."
+            % (a, b, w1 + 1, c, w2 + 1, NEW_GMAIL_CAP, w3 + 1, NEW_GMAIL_CAP))
+
+
+def cap_for(con, inbox: Inbox, day: date) -> int:
+    ramp = ramp_cap(con, inbox, day)
+    return inbox.daily_limit if ramp is None else min(inbox.daily_limit, ramp)
 
 
 def limits(con, inbox: Inbox, day: date) -> Dict:
-    ends = warmup_ends(con, inbox.key)
     sent = sent_on(con, inbox.key, day)
-    if ends and day < ends:
-        days_in = (day - warmup_start(con, inbox.key)).days + 1
-        return {"week": 0, "cap": 0, "sent": sent, "remaining": 0, "warming": True,
-                "why": "warming up, day %d of %d: no cold emails until %s" % (days_in, WARMUP_DAYS, clock.nice(next_send_day(ends)))}
-    cap = inbox.daily_limit
+    cap = cap_for(con, inbox, day)
+    start = warmup_start(con, inbox.key)
+    days_in = (day - start).days + 1 if start else 0
+    ramping = bool(start) and days_in <= RAMP[-1][0]
+    why = "new inbox, day %d: %d a day, rising by itself" % (days_in, cap) if ramping else "%d a day" % cap
     return {"week": week_number(con, inbox.key, day), "cap": cap, "sent": sent, "remaining": max(0, cap - sent),
-            "why": "%d a day" % cap, "warming": False}
+            "why": why, "warming": ramping}
 
 
 def cap_on(con, inbox: Inbox, day: date) -> int:
-    """What this inbox may send on a future day (nothing while a brand new inbox warms up)."""
+    """What this inbox may send on a future day (a brand new inbox follows its ramp)."""
     if not is_send_day(day):
         return 0
-    ends = warmup_ends(con, inbox.key)
-    if ends and day < next_send_day(ends):
-        return 0
-    return inbox.daily_limit
+    return cap_for(con, inbox, day)
 
 
 def forecast(con, inboxes: List[Inbox], targets=(50, 100)) -> Dict:
     """Emails a day possible on the next sending day and when each target is reached with these inboxes."""
     today = next_send_day(clock.today())
-    full = sum(i.daily_limit for i in inboxes)
+    # Once every new inbox has finished its ramp (a free Gmail added as new stays at NEW_GMAIL_CAP).
+    full = sum(cap_for(con, i, today + timedelta(days=365)) for i in inboxes)
     out: Dict = {"today": sum(cap_on(con, i, today) for i in inboxes), "reach": {}, "full": full}
     per = max([i.daily_limit for i in inboxes] or [config.DEFAULT_DAILY_LIMIT])
     for target in targets:

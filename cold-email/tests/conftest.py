@@ -81,6 +81,7 @@ class FakeSMTP:
     """Stands in for smtplib.SMTP_SSL. Collects every message."""
 
     outbox = []
+    auths = []
     refuse = {}       # address -> (code, text): that recipient is refused
     fail_data = None  # (code, text): the server refuses everything
 
@@ -91,6 +92,15 @@ class FakeSMTP:
         if password != "abcdefghijklmnop":
             import smtplib
 
+            raise smtplib.SMTPAuthenticationError(535, b"5.7.8 Username and Password not accepted")
+
+    def auth(self, mechanism, authobject, initial_response_ok=True):
+        # Connect with Google: XOAUTH2 with the access token Google gave (good-token in the tests).
+        import smtplib
+
+        said = authobject()
+        FakeSMTP.auths.append((mechanism, said))
+        if mechanism != "XOAUTH2" or "auth=Bearer good-token" not in said:
             raise smtplib.SMTPAuthenticationError(535, b"5.7.8 Username and Password not accepted")
 
     def send_message(self, msg):
@@ -130,6 +140,7 @@ def no_network_mail(monkeypatch):
 @pytest.fixture
 def smtp(monkeypatch):
     FakeSMTP.outbox = []
+    FakeSMTP.auths = []
     FakeSMTP.refuse = {}
     FakeSMTP.fail_data = None
     monkeypatch.setattr(mailer, "_connect", lambda inbox, timeout=30: FakeSMTP())

@@ -168,3 +168,27 @@ def test_a_bounce_counts_against_the_whole_day(project, con, settings, fake_cloc
     con.execute("UPDATE messages SET status='bounced' WHERE to_email IN ('x3@shop.ae', 'x4@shop.ae')")
     safety.after_bounce(con, "2026-11-09", log=lambda *a: None)
     assert not safety.paused(con)                                   # two more since you resumed
+
+
+def test_three_bounces_pause_only_the_inbox_that_sent_them(project, con, fake_clock):
+    from conftest import ENV
+    from outreach import config
+
+    settings = config.load_settings(dict(ENV, INBOX2_EMAIL="rizco.two@gmail.com", INBOX2_APP_PASSWORD="abcdefghijklmnop"))
+    fake_clock.set(datetime(2026, 11, 9, 10, 0, tzinfo=clock.TZ))
+    one, two = settings.inboxes[:2]
+    for i in range(6):
+        con.execute("INSERT INTO messages(lead_id, inbox, kind, step, to_email, status, sent_date, sent_at) "
+                    "VALUES(?, ?, 'campaign', 0, ?, ?, '2026-11-09', '2026-11-09T09:30:00+04:00')",
+                    (i, "inbox1" if i < 4 else "inbox2", "x%d@shop.ae" % i, "bounced" if i in (0, 1, 4) else "sent"))
+    safety.after_bounce(con, "2026-11-09", lambda *a: None, one)
+    safety.after_bounce(con, "2026-11-09", lambda *a: None, two)
+    assert not safety.inbox_paused(con, "inbox1") and not safety.inbox_paused(con, "inbox2")
+    con.execute("UPDATE messages SET status='bounced' WHERE to_email='x2@shop.ae'")
+    safety.after_bounce(con, "2026-11-09", lambda *a: None, one)
+    assert "3 of its emails bounced" in safety.inbox_paused(con, "inbox1")["reason"]
+    assert not safety.inbox_paused(con, "inbox2") and not safety.paused(con), "the other inbox and sending carry on"
+    assert [i.key for i in safety.sendable(con, settings.inboxes)] == ["inbox2"]
+    safety.resume_inbox(con, "inbox1")
+    safety.after_bounce(con, "2026-11-09", lambda *a: None, one)
+    assert not safety.inbox_paused(con, "inbox1"), "after Resume it counts again from there"
