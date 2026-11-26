@@ -341,6 +341,7 @@ Mussafah, Abu Dhabi`),
     ['Restaurants', 'restaurants', 'restaurant|cafeteria|shawarma|burger|pizza|grill restaurant|biryani|indian restaurant|arabic restaurant|asian restaurant', 'mcdonald\'s|kfc|pizza hut|subway|hardee\'s|burger king|domino\'s'],
     ['Cafes', 'cafes', 'cafe|coffee shop|specialty coffee|karak|tea house|juice bar|dessert cafe', 'starbucks|costa|tim hortons|dunkin|caribou'],
     ['Bakeries and sweets', 'bakeries and sweet shops', 'bakery|cake shop|sweets shop|pastry shop|chocolate shop|dessert shop|kunafa', ''],
+    ['Catering', 'catering companies', 'catering|catering services|event catering|cloud kitchen|meal prep', ''],
     ['Salons', 'beauty salons', 'ladies salon|beauty salon|hair salon|beauty center|makeup studio|bridal salon', ''],
     ['Barbers', 'barber shops', 'barber shop|gents salon|barbershop|mens grooming', ''],
     ['Nails and lashes', 'nail and lash studios', 'nail salon|nail studio|lash studio|brow bar|lash extensions', ''],
@@ -364,7 +365,7 @@ Mussafah, Abu Dhabi`),
     ['Perfumes, flowers and gifts', 'perfume and gift shops', 'perfume shop|oud|flower shop|gift shop|balloon shop|chocolate gifts', ''],
     ['Jewellery and watches', 'jewellery shops', 'jewellery shop|gold shop|watch shop|watch repair', ''],
     ['Phones and electronics', 'phone and electronics shops', 'mobile phone shop|mobile repair|computer repair|electronics shop|gaming shop|cctv installation', 'sharaf dg|jumbo|emax|etisalat|du '],
-    ['Grocery and specialty food', 'food shops', 'grocery|mini mart|roastery|butchery|organic shop|dates shop|spices shop|fish market', 'carrefour|lulu|spinneys|waitrose|choithrams|union coop'],
+    ['Specialty food shops', 'specialty food shops', 'roastery|butchery|organic shop|dates shop|spices shop|fish market', 'carrefour|lulu|spinneys|waitrose|choithrams|union coop|supermarket|hypermarket|grocery|mini mart'],
     ['Typing and business setup', 'business services', 'typing center|business setup|document clearing|pro services|tax consultant|accounting firm|auditing|translation services', ''],
     ['Real estate', 'real estate brokers', 'real estate broker|real estate agency|property management|holiday homes', 'emaar|damac|nakheel|sobha'],
     ['Travel and tourism', 'travel companies', 'travel agency|tours|desert safari|yacht rental|visa services|umrah', ''],
@@ -584,7 +585,7 @@ Mussafah, Abu Dhabi`),
     areas: LH.parseLines(n && n.areas).slice(0, 300),
   });
   // Built in kinds taken out in 4.0: an edited copy saved in Settings goes too.
-  const REMOVED_PRESETS = new Set(['spas and massage', 'catering and cloud kitchens']);
+  const REMOVED_PRESETS = new Set(['spas and massage', 'catering and cloud kitchens', 'grocery and specialty food']);
   /** The presets in use: the ones edited in Settings, or the defaults. Lists saved before presets had areas are replaced by the defaults. */
   LH.nichesFor = (settings) => {
     const s = settings || {};
@@ -707,7 +708,7 @@ Mussafah, Abu Dhabi`),
     googleDailyCap: 120, // Google searches a day, all kinds together (Google shows a captcha when it sees too many)
     googleIgAuto: true, // look up the Instagram of businesses that fit and have none, on Google
     fbEmailAuto: true, // read the email on the Facebook page of leads that fit and have none, in the check tab
-    bingDailyCap: 150, // Bing searches a day (a second search engine with its own results)
+    bingDailyCap: 300, // Bing searches a day (a second search engine with its own results)
     adlibEveryHours: 12, // a Find run also searches the Ad Library for opening ads when the last search is this old
     nameMatch: 0.92, // how close two names in the same area must be to count as one business (Jaro-Winkler, 0.8 to 1)
     niches: null, // the kinds of business you changed or added (the built in ones are LH.DEFAULT_PRESETS)

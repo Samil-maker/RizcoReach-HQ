@@ -133,6 +133,8 @@ const SECTION_HINT = {
   contact: 'Businesses with no website, or a dead or weak one, and a WhatsApp or phone number. Their Instagram shows if they are real and active. Export them to Google Contacts and message them on WhatsApp.',
 };
 const exportedIn = (l, section) => (section === 'contact' ? l.contactsExportedAt : l.coldEmailExportedAt);
+/** Each tab shows what its own Find found (leads found before 4.1, by the Ad Library or by you, show in both). */
+const foundFor = (l, section) => !l.foundFor || !l.foundFor.length || l.foundFor.includes(section);
 /** New leads that match someone you contacted, exported or imported before: hidden unless asked for. */
 const contactedBefore = (l) => (l.status === 'new' && !l.contactedAt ? LH.historyHit(l, S.history) : null);
 /** Everything the table needs to know about a lead, worked out once per render. */
@@ -153,6 +155,7 @@ function filtered({ withExported = false, show = null } = {}) {
     if (f.status && f.status !== 'all' && l.status !== f.status) continue;
     if (!f.exported && !withExported && exportedIn(l, S.section) && f.show !== 'all') continue;
     if (!f.contactedBefore && contactedBefore(l)) continue;
+    if (f.show !== 'all' && !foundFor(l, S.section)) continue;
     if (f.source && foundOn(l) !== f.source) continue;
     const r = facts(l, now);
     if (f.niche && r.niche !== f.niche) continue;
@@ -288,8 +291,8 @@ function sectionCounts() {
   for (const l of S.leads.values()) {
     if (!LH.coldEmailOpen(l) || !LH.fit(l, S.settings, now).fit) continue;
     c.fits++;
-    if (!l.coldEmailExportedAt && LH.sendableEmail(l, S.settings).email) c.email++;
-    if (!l.contactsExportedAt && (LH.whatsappTarget(l) || l.phones.length)) c.contact++;
+    if (!l.coldEmailExportedAt && foundFor(l, 'email') && LH.sendableEmail(l, S.settings).email) c.email++;
+    if (!l.contactsExportedAt && foundFor(l, 'contact') && (LH.whatsappTarget(l) || l.phones.length)) c.contact++;
   }
   return c;
 }
@@ -923,7 +926,7 @@ function initFind() {
     if (n) pickPreset(n.dataset.findPreset);
     if (e.target.closest('[data-act="finder-reset"]')) {
       if (!confirm(`Forget which ${S.findPreset} searches have run? The next run starts from the first one again.`)) return;
-      await send({ type: 'finder:reset', preset: S.findPreset });
+      await send({ type: 'finder:reset', preset: S.findPreset, mode: S.section });
       renderPresetProgress();
     }
   });

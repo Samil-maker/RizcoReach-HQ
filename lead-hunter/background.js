@@ -4,7 +4,7 @@
    - Checks each lead's website (down, parked, working) and finds phones, emails and socials on it
    - Marks leads saved by Export for cold email (the cold email system on the Mac sends the emails)
    finder.js finds businesses on Google Maps, Google and Bing, bounces.js remembers addresses that bounced. */
-importScripts('lib/common.js', 'lib/emails.js', 'lib/fit.js', 'lib/site-audit.js', 'lib/prospects.js');
+importScripts('lib/common.js', 'lib/catalog.js', 'lib/emails.js', 'lib/fit.js', 'lib/site-audit.js', 'lib/prospects.js');
 const LH = self.LH;
 
 const DASHBOARD = chrome.runtime.getURL('dashboard/dashboard.html');
@@ -433,7 +433,7 @@ function notify(title, message) {
 }
 
 /* ---------------------------------------------------------------- enrichment */
-const MAX_PARALLEL = 4;
+const MAX_PARALLEL = 8; // websites checked at once
 const running = new Set();
 
 async function enqueue(ids, front = false) {

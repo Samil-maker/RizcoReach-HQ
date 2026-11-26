@@ -93,7 +93,7 @@ function googlePage(q, start) {
       gResult('https://www.instagram.com/nailsbyrana/', 'Nails by Rana (@nailsbyrana) • Instagram photos and videos', '1,204 Followers, 300 Following, 88 Posts - Home nail salon in Al Barsha 💅 Book: ranas.nails@gmail.com · WhatsApp 052 333 9911'),
       gResult('https://www.instagram.com/p/C9xyz/', 'Instagram post', 'random@gmail.com'),
     ];
-  else if (q.startsWith('"ladies salon" "JLT, Dubai" ('))
+  else if (q.startsWith('"ladies salon" JLT Dubai ('))
     list = [
       // A Facebook page and a directory listing that show an email: two businesses with no website of their own.
       gResult('https://www.facebook.com/pearlladiessalon/', 'Pearl Ladies Salon - Home | Facebook', 'Pearl Ladies Salon, JLT Cluster D. Bookings pearl.salon.jlt@gmail.com or 058 444 1209'),
@@ -115,7 +115,7 @@ function bingPage(q) {
   let list = [];
   if (q === 'ladies salon JLT, Dubai')
     list = [bResult('https://glowsalon.example/', 'Glow Salon - Hair and Nails JLT', 'Glow Salon in JLT. Email info@glowsalon.example'), bResult('https://www.yelp.com/x', 'The best salons near JLT', '')];
-  else if (q.startsWith('"ladies salon" "JLT, Dubai" ('))
+  else if (q.startsWith('"ladies salon" JLT Dubai ('))
     list = [bResult('https://www.facebook.com/coralnailsjlt/', 'Coral Nails & Beauty | Facebook', 'Coral Nails & Beauty, JLT. coralnails@yahoo.com, WhatsApp 056 777 1203')];
   const body = list.length ? list.join('') : '<li class="b_no">There are no results for this question.</li>';
   return `<!doctype html><html><head><meta charset="utf-8"><title>${q} - Search</title></head><body><ol id="b_results">${body}</ol></body></html>`;

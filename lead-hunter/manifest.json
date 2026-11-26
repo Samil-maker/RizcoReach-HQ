@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "RizcoReach Lead Hunter",
   "short_name": "Lead Hunter",
-  "version": "4.0.0",
+  "version": "4.1.0",
   "description": "Finds UAE businesses with no website or a weak one: their email for cold email, their WhatsApp for messaging.",
   "minimum_chrome_version": "111",
   "icons": {

@@ -253,7 +253,10 @@
    * its RizcoReach Leads folder, checks every email, website and duplicate again, writes the emails and sends them.
    * Lead Hunter only picks who goes in and says where we saw them; it writes no email text.
    */
-  LH.COLD_EMAIL_HEAD = ['business_name', 'first_name', 'email', 'website', 'instagram', 'phone', 'niche', 'area', 'source', 'notes', 'status'];
+  LH.COLD_EMAIL_HEAD = ['business_name', 'first_name', 'email', 'website', 'instagram', 'phone', 'niche', 'area', 'source', 'notes', 'status', 'segment'];
+  /** The cold email system's segment: A just opened, B no website, C a website that is down, parked or weak. Lead
+      Hunter already checked the website, so the cold email system takes this as it is instead of judging it again. */
+  LH.coldSegment = (f) => (f.open ? 'A' : f.site === 'none' ? 'B' : 'C');
   // They replied, booked a meeting, signed, said no, or you skipped them: the cold email system leaves them alone.
   const COLD_CLOSED = ['replied', 'meeting', 'won', 'lost', 'skip'];
   // The old email queue (before 2.3) already emailed them. Queued but never sent counts as not emailed.
@@ -332,6 +335,7 @@
         LH.coldEmailSource(l),
         f.open ? 'new business' : '',
         (LH.STATUSES.find((x) => x.id === l.status) || {}).label || l.status || '',
+        LH.coldSegment(f),
       ]);
     }
     return { head: LH.COLD_EMAIL_HEAD, rows, ids, skipped, waiting };
@@ -456,7 +460,7 @@
         'booking',
       ]);
     }
-    return { head: [...LH.COLD_EMAIL_HEAD, 'campaign'], rows, ids, skipped };
+    return { head: [...LH.COLD_EMAIL_HEAD.filter((h) => h !== 'segment'), 'campaign'], rows, ids, skipped };
   };
   LH.elheenFilename = (date = new Date()) => `rizcoreach-elheen-${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}.csv`;
 

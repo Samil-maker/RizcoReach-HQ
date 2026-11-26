@@ -25,6 +25,7 @@ function mergeProspect(lead, item, ctx) {
     lead.nameFrom = item.source;
   }
   if (ctx.niche && !lead.niche) lead.niche = ctx.niche;
+  if (ctx.mode) lead.foundFor = [...new Set([...(lead.foundFor || []), ctx.mode])]; // which tab's Find found it
   if (ctx.area && !lead.area) lead.area = ctx.area;
   const kw = (ctx.keyword || '').toLowerCase();
   if (kw && !lead.keywords.includes(kw)) lead.keywords.push(kw);
@@ -455,6 +456,8 @@ let finderBusy = false;
    `cap` searches per run. Finished searches are remembered per preset (`searchDone`), so the next run carries on
    where the last one stopped. */
 const comboKey = (keyword, area) => `${keyword.toLowerCase()}|${area.toLowerCase()}`;
+/* Each tab's Find keeps its own list of finished searches: an email run never uses up the WhatsApp run's searches. */
+const bucket = (preset, mode) => (mode === 'contact' ? `${preset}#contact` : preset);
 async function searchesDone(preset) {
   const { searchDone = {} } = await store.get('searchDone');
   return searchDone[preset] || {};
@@ -478,6 +481,7 @@ const FREE_MAIL_Q = '("@gmail.com" OR "@hotmail.com" OR "@yahoo.com" OR "@outloo
 const IG_MAIL = '("@gmail.com" OR "@hotmail.com" OR "@outlook.com" OR "@yahoo.com" OR "email")';
 const IG_WA = '("whatsapp" OR "wa.me" OR "+971" OR "call us")';
 /** The searches for these keyword and area pairs, in order, for the chosen sources. */
+const plainArea = (area) => String(area || '').replace(/,/g, ' ').replace(/\s+/g, ' ').trim();
 function buildQueue(pairs, sources) {
   const want = SOURCES.filter((x) => (sources || ['maps']).includes(x));
   const out = [];
@@ -496,12 +500,12 @@ function buildQueue(pairs, sources) {
     if (want.includes('maps')) out.push({ src: 'maps', q: `${keyword} ${area}`, keyword, area, niche });
     if (want.includes('web')) out.push({ src: 'web', engine: 'google', kind: 'web', q: `${keyword} ${area}`, keyword, area, niche });
     if (want.includes('mail')) {
-      out.push({ src: 'mail', engine: 'google', kind: 'mail', q: `"${keyword}" "${area}" ${FREE_MAIL_Q}`, keyword, area, niche });
+      out.push({ src: 'mail', engine: 'google', kind: 'mail', q: `"${keyword}" ${plainArea(area)} ${FREE_MAIL_Q}`, keyword, area, niche });
       perCity('mailfb', 'google', 'mail', (city) => `site:facebook.com "${keyword}" "${city}" ${FREE_MAIL_Q}`, keyword, area, niche);
     }
     if (want.includes('bing')) {
       out.push({ src: 'bing', engine: 'bing', kind: 'web', q: `${keyword} ${area}`, keyword, area, niche });
-      out.push({ src: 'bingmail', engine: 'bing', kind: 'mail', q: `"${keyword}" "${area}" ${FREE_MAIL_Q}`, keyword, area, niche });
+      out.push({ src: 'bingmail', engine: 'bing', kind: 'mail', q: `"${keyword}" ${plainArea(area)} ${FREE_MAIL_Q}`, keyword, area, niche });
     }
     if (want.includes('ig')) perCity('ig', 'google', 'ig', (city) => `site:instagram.com "${keyword}" "${city}" ${IG_MAIL}`, keyword, area, niche);
     if (want.includes('igwa')) perCity('igwa', 'google', 'ig', (city) => `site:instagram.com "${keyword}" "${city}" ${IG_WA}`, keyword, area, niche);
@@ -509,15 +513,15 @@ function buildQueue(pairs, sources) {
   return out;
 }
 /** What is left of a preset: its searches in order, minus the finished ones. */
-async function presetQueue(preset, keywords, areas, sources) {
-  const done = await searchesDone(preset.name);
+async function presetQueue(preset, keywords, areas, sources, mode = 'email') {
+  const done = await searchesDone(bucket(preset.name, mode));
   const all = buildQueue(keywords.flatMap((keyword) => areas.map((area) => ({ keyword, area, niche: preset.name }))), sources);
   return { all: all.length, left: all.filter((x) => !done[doneKey(x)]) };
 }
 /* "All types": area by area, the main keyword of every preset, then their second keyword. Each search is
    remembered under its own preset, so running that preset later carries on from here. */
 const ALL_TYPES = 'All types';
-async function mixQueue(presets, settings, sources) {
+async function mixQueue(presets, settings, sources, mode = 'email') {
   const { searchDone = {} } = await store.get('searchDone');
   const areas = LH.presetAreas(null, settings);
   const pairs = [];
@@ -525,7 +529,7 @@ async function mixQueue(presets, settings, sources) {
     for (const area of areas)
       for (const p of presets) if (p.keywords[round]) pairs.push({ keyword: p.keywords[round], area, niche: p.name });
   const all = buildQueue(pairs, sources);
-  return { all: all.length, left: all.filter((x) => !(searchDone[x.niche] || {})[doneKey(x)]) };
+  return { all: all.length, left: all.filter((x) => !(searchDone[bucket(x.niche, mode)] || {})[doneKey(x)]) };
 }
 const modeOf = (cfg) => (cfg && cfg.mode === 'contact' ? 'contact' : 'email');
 const sourcesOf = (cfg) => {
@@ -560,11 +564,11 @@ async function startFinder(cfg) {
   const preset = presets.find((n) => n.name === cfg.niche) || presets[0];
   let queue;
   const sources = sourcesOf(cfg);
-  if (mix) queue = await mixQueue(presets, settings, sources);
+  if (mix) queue = await mixQueue(presets, settings, sources, modeOf(cfg));
   else {
     const keywords = LH.parseKeywords(cfg.keywords && cfg.keywords.length ? cfg.keywords : preset.keywords);
     if (!keywords.length) throw new Error('Pick a preset or add keywords.');
-    queue = await presetQueue(preset, keywords, cfg.areas && cfg.areas.length ? LH.parseLines(cfg.areas).slice(0, 300) : LH.presetAreas(preset, settings), sources);
+    queue = await presetQueue(preset, keywords, cfg.areas && cfg.areas.length ? LH.parseLines(cfg.areas).slice(0, 300) : LH.presetAreas(preset, settings), sources, modeOf(cfg));
   }
   const { all, left } = queue;
   const adlib = sources.includes('adlib');
@@ -606,14 +610,12 @@ async function startFinder(cfg) {
 }
 
 /** Forget a preset's finished searches, so the next run starts from its first keyword again. */
-async function resetPreset(name) {
+async function resetPreset(name, mode = 'email') {
   await locked(async () => {
     const { searchDone = {} } = await store.get('searchDone');
-    if (name === ALL_TYPES) await store.set({ searchDone: {} });
-    else {
-      delete searchDone[name];
-      await store.set({ searchDone });
-    }
+    if (name === ALL_TYPES) for (const k of Object.keys(searchDone)) if (k.endsWith('#contact') === (mode === 'contact')) delete searchDone[k];
+    if (name !== ALL_TYPES) delete searchDone[bucket(name, mode)];
+    await store.set({ searchDone });
   });
 }
 
@@ -660,7 +662,7 @@ async function runMaps(fid) {
     if (!q) return patchFinder(fid, { mapsDone: true });
     const niche = q.niche || f.niche;
     const engine = q.engine || (q.src === 'maps' ? '' : 'google'); // 3.x runs had no engine: theirs were all Google
-    const ctx = { finderId: fid, niche, keyword: q.keyword, area: q.city || (q.src === 'ig' ? LH.cityOf(q.area, 'Dubai') : q.area), country: f.country };
+    const ctx = { finderId: fid, niche, keyword: q.keyword, area: q.city || (q.src === 'ig' ? LH.cityOf(q.area, 'Dubai') : q.area), country: f.country, mode: f.mode || 'email' };
     try {
       let items;
       if (engine) {
@@ -673,7 +675,7 @@ async function runMaps(fid) {
         items = LH.googleItems(results, q.kind || q.src, f.country);
       } else items = await mapsBrowserSearch(q.q);
       await ingestProspects(items, ctx);
-      await markSearchDone(niche, q);
+      await markSearchDone(bucket(niche, f.mode), q);
       await patchFinder(fid, (x) => ({ mapsI: x.mapsI + 1 }));
       await sleep(jitter(2500, 5000)); // one search at a time, a human pace between them
     } catch (e) {
@@ -827,7 +829,10 @@ async function queueIgFind(ids, front = false) {
   });
   runIgFind();
 }
-const wantsIgFind = (l, settings) => !!l && !LH.igHandle(l) && !(l.igFind && l.igFind.at) && !!l.pageName && LH.coldEmailOpen(l) && LH.fit(l, settings).fit;
+// Google searches are the scarce part: for an email lead, only a business with no email yet is worth one (its bio
+// may have the email); a WhatsApp lead's Instagram is looked up to see whether the business is real and active.
+const emailOnly = (l) => !!(l.foundFor && l.foundFor.length && !l.foundFor.includes('contact'));
+const wantsIgFind = (l, settings) => !!l && !(emailOnly(l) && LH.goodEmails(l).length) && !LH.igHandle(l) && !(l.igFind && l.igFind.at) && !!l.pageName && LH.coldEmailOpen(l) && LH.fit(l, settings).fit;
 function igFindAuto(leads, settings) {
   if (!settings.googleIgAuto) return;
   queueIgFind((leads || []).filter((l) => wantsIgFind(l, settings)).map((l) => l.id));
@@ -974,7 +979,7 @@ Object.assign(handlers, {
     await queueIgFind(ids, true);
     return { queued: ids.length, left: await googleLeft() };
   },
-  'finder:reset': async (msg) => (await resetPreset(String(msg.preset || '')), { ok: true }),
+  'finder:reset': async (msg) => (await resetPreset(String(msg.preset || ''), modeOf(msg)), { ok: true }),
   /** How far each preset has got: searches in total and finished, for these sources. */
   'finder:progress': async (msg) => {
     const settings = await getSettings();
@@ -982,10 +987,10 @@ Object.assign(handlers, {
     const out = {};
     const presets = LH.presetsFor(settings);
     for (const p of presets) {
-      const { all, left } = await presetQueue(p, p.keywords, LH.presetAreas(p, settings), sources);
+      const { all, left } = await presetQueue(p, p.keywords, LH.presetAreas(p, settings), sources, modeOf(msg));
       out[p.name] = { total: all, done: all - left.length };
     }
-    const mix = await mixQueue(presets, settings, sources);
+    const mix = await mixQueue(presets, settings, sources, modeOf(msg));
     out[ALL_TYPES] = { total: mix.all, done: mix.all - mix.left.length };
     return { progress: out };
   },

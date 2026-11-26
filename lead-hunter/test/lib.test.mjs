@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { SAMPLE_ADS, searchResponse, makeAd } from './fixtures.mjs';
 
 await import('../lib/common.js');
+await import('../lib/catalog.js');
 await import('../lib/emails.js');
 await import('../lib/fit.js');
 await import('../lib/extract-ads.js');
@@ -176,7 +177,7 @@ test('presets: every kind of business is built in; yours are added, your edits w
   assert.equal(LH.nicheOf({ keywords: ['vat consultant'] }, {}), 'Accountants');
   assert.equal(LH.nicheOf({ keywords: ['ceramic coating dubai'] }, {}), 'Car', 'a longer search term still matches');
   assert.equal(LH.nicheOf({ keywords: ['zeppelin rides'] }, {}), '');
-  assert.equal(LH.nicheOf({ niche: 'Yacht charters' }, {}), 'Yacht charters', 'a niche stored on a prospect is kept');
+  assert.equal(LH.nicheOf({ niche: 'Quill widgets' }, {}), 'Quill widgets', 'a niche stored on a prospect is kept');
   assert.deepEqual(LH.parseKeywords('a, B\n\nc,a'), ['a', 'b', 'c']);
 });
 
@@ -194,7 +195,7 @@ test('old settings keys are dropped', () => {
   // 3.0: the Meta ads client finder, the heat score, the quality signals and PageSpeed are gone.
   const v2 = LH.withDefaults({ heatWeights: { ads: {} }, heatHot: 70, weakChecks: [], pagespeedKey: 'k', adCheckAll: true, followerMin: 1, targetNiches: ['Car'], igToken: 't', verifyKey: 'q' });
   for (const k of ['heatWeights', 'heatHot', 'weakChecks', 'pagespeedKey', 'adCheckAll', 'followerMin', 'targetNiches']) assert.ok(!(k in v2), k);
-  assert.deepEqual([v2.igToken, v2.newDays, v2.bingDailyCap], ['t', 120, 150], 'what still works is kept, new settings get their defaults');
+  assert.deepEqual([v2.igToken, v2.newDays, v2.bingDailyCap], ['t', 120, 300], 'what still works is kept, new settings get their defaults');
   // 4.0: Intent Radar and the email check are gone.
   const v3 = LH.withDefaults({ verifyKey: 'q', emailRisky: true, subreddits: 'dubai', geminiKey: 'g', aiAuto: true });
   for (const k of ['verifyKey', 'emailRisky', 'subreddits', 'geminiKey', 'aiAuto']) assert.ok(!(k in v3), k);
