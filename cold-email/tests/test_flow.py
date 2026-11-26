@@ -470,3 +470,20 @@ def test_pressing_send_the_rest_now_during_a_normal_day(project, con, settings, 
     assert run_day(con, settings, fake_clock, datetime(2026, 11, 9, 9, 0, tzinfo=clock.TZ)) == 12
     times = [clock.parse(r[0]) for r in con.execute("SELECT sent_at FROM messages ORDER BY sent_at")]
     assert (times[-1] - pressed[0]).total_seconds() < 15 * 60       # the other 11 within about 12 minutes
+
+
+def test_lead_hunter_file_is_taken_as_it_is(project, con, monkeypatch):
+    """Lead Hunter already judged each website: its segment column wins, so a weak site the cold email system would
+    call good (or couldn't check) still goes out instead of being skipped."""
+    from outreach import sitecheck
+
+    monkeypatch.setattr(sitecheck, "check_site", lambda url: {"state": "ok", "final_url": url, "https": True, "mobile": True, "checked_at": "2026-11-26T10:00:00+04:00"})
+    header = ["business_name", "first_name", "email", "website", "instagram", "phone", "niche", "area", "source", "notes", "status", "segment"]
+    rows = [["Glow Salon", "", "info@glowsalon.ae", "https://glowsalon.ae/", "", "", "Salons", "JLT, Dubai", "Google Maps", "", "New", "C"],
+            ["Bloom Nails", "", "bloomnails@gmail.com", "", "", "", "Salons", "JLT, Dubai", "Google", "", "New", "B"],
+            ["Fresh Cafe", "", "hello@freshcafe.ae", "https://freshcafe.ae/", "", "", "Cafes", "JLT, Dubai", "Google Maps", "new business", "New", "A"]]
+    path = write_csv(project, "rizcoreach-cold-email-2026-11-26.csv", rows, header)
+    r = importer.import_file(con, path, log=lambda *a: None)
+    got = {l["email"]: l["segment"] for l in con.execute("SELECT email, segment FROM leads")}
+    assert got == {"info@glowsalon.ae": "C", "bloomnails@gmail.com": "B", "hello@freshcafe.ae": "A"}, got
+    assert r["stats"].get("seg_SKIP", 0) == 0

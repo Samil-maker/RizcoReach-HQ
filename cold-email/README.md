@@ -156,6 +156,9 @@ Each imported file moves to `leads/processed/` with a `.rejected.csv` saying why
 
 Columns are matched by name (`Company`, `E-mail`, `Mobile`, `Location`, and so on). Useful ones: business_name,
 email (both needed), first_name, website, instagram, phone, niche, area, source, notes, segment (forces A, B, C or SKIP).
+Lead Hunter's cold email file has the segment column, so its leads go in exactly as Lead Hunter judged them: its
+website check is not done twice. What can still leave a lead out: an address on the never-email list, one already
+imported, or an email domain that cannot receive email at all (it would only bounce).
 There is an empty template in `leads/sample/lead-template.csv`.
 
 ### The rules it always follows

@@ -5,6 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 await import('../lib/common.js');
+await import('../lib/catalog.js');
 await import('../lib/emails.js');
 await import('../lib/fit.js');
 await import('../lib/site-audit.js');
@@ -146,17 +147,19 @@ test('tags say why at a glance', () => {
 
 /* -------------------------------------------------------------- the cold email file */
 test('columns: exactly these, in this order, and the file name', () => {
-  assert.deepEqual(LH.COLD_EMAIL_HEAD, ['business_name', 'first_name', 'email', 'website', 'instagram', 'phone', 'niche', 'area', 'source', 'notes', 'status']);
+  assert.deepEqual(LH.COLD_EMAIL_HEAD, ['business_name', 'first_name', 'email', 'website', 'instagram', 'phone', 'niche', 'area', 'source', 'notes', 'status', 'segment']);
+  // The segment, so the cold email system takes Lead Hunter's word for the website instead of skipping leads.
+  assert.deepEqual([LH.coldSegment({ open: { kind: 'google' }, site: 'weak' }), LH.coldSegment({ site: 'none' }), LH.coldSegment({ site: 'weak' }), LH.coldSegment({ site: 'parked' })], ['A', 'B', 'C', 'C']);
   const r = exp([fresh({ pageName: 'GLOSSY PPF L.L.C | Ceramic Coating Dubai', socials: { instagram: 'https://www.instagram.com/glossyppf/' }, phones: [{ number: '+97143334444', source: 'google' }, { number: '+971559998877', source: 'whatsapp-site' }] })]);
   assert.equal(r.rows.length, 1);
   assert.deepEqual(
     Object.fromEntries(LH.COLD_EMAIL_HEAD.map((h) => [h, col(r.rows[0], h)])),
-    { business_name: 'Glossy PPF', first_name: '', email: 'hi@glossy.example', website: '', instagram: 'glossyppf', phone: '+971559998877', niche: 'Car', area: 'Al Quoz, Dubai', source: 'Google Maps', notes: 'new business', status: 'New' },
+    { business_name: 'Glossy PPF', first_name: '', email: 'hi@glossy.example', website: '', instagram: 'glossyppf', phone: '+971559998877', niche: 'Car', area: 'Al Quoz, Dubai', source: 'Google Maps', notes: 'new business', status: 'New', segment: 'A' },
   );
   assert.equal(LH.coldEmailFilename(new Date(2026, 10, 8)), 'rizcoreach-cold-email-2026-11-08.csv');
   const csv = LH.toCsv([r.head, ...r.rows]).split('\r\n');
-  assert.equal(csv[0], 'business_name,first_name,email,website,instagram,phone,niche,area,source,notes,status');
-  assert.match(csv[1], /^Glossy PPF,,hi@glossy\.example,,glossyppf,\+971559998877,Car,"Al Quoz, Dubai",Google Maps,new business,New$/);
+  assert.equal(csv[0], 'business_name,first_name,email,website,instagram,phone,niche,area,source,notes,status,segment');
+  assert.match(csv[1], /^Glossy PPF,,hi@glossy\.example,,glossyppf,\+971559998877,Car,"Al Quoz, Dubai",Google Maps,new business,New,A$/);
 });
 
 test('who goes in: no website, or one that is down, parked or weak, with an email; who stays out, and why', () => {

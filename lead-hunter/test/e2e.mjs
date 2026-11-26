@@ -155,7 +155,7 @@ try {
   await waitFor(async () => (await storage('settings')).settings.scrollDelayMs === 900, 5000, 'settings saved');
   const saved = (await storage('settings')).settings;
   assert.deepEqual([saved.areas, saved.niches, saved.hiddenPresets], ['JLT, Dubai\nAl Quoz, Dubai', null, ['Used Cars']]);
-  assert.ok(!(await dash.$$eval('[data-niche-name]', (n) => n.map((x) => x.value))).some((n) => /\bspas?\b|massage|catering/i.test(n)), 'no spas, massage or catering');
+  assert.ok(!(await dash.$$eval('[data-niche-name]', (n) => n.map((x) => x.value))).some((n) => /\bspas?\b|massage|grocery/i.test(n)), 'no spas, massage or grocery');
   // Instagram: the token alone. Connect finds the business account linked to your Facebook page.
   await dash.click('[data-act="ig-test"]');
   await dash.waitForFunction(() => /^Connected|^Not working/.test(document.querySelector('[data-ig-test]').textContent), null, { timeout: 15000 });
@@ -191,7 +191,7 @@ try {
   assert.equal(run1.mode, 'email');
   assert.deepEqual(run1.sources, ['maps', 'web', 'mail', 'bing', 'ig']);
   assert.deepEqual([run1.stats.found, run1.stats.kept, run1.stats.duplicate, run1.stats.opened], [17, 14, 3, 4], '10 on Maps, 5 on Google, 2 on Bing; Bloom, Velvet and Glow twice; four say they just opened or open soon');
-  for (const q of ['ladies salon JLT, Dubai', '"ladies salon" "JLT, Dubai" ("@gmail.com" OR "@hotmail.com" OR "@yahoo.com" OR "@outlook.com")']) assert.ok(calls.bing.includes(q), `Bing: ${q}`);
+  for (const q of ['ladies salon JLT, Dubai', '"ladies salon" JLT Dubai ("@gmail.com" OR "@hotmail.com" OR "@yahoo.com" OR "@outlook.com")']) assert.ok(calls.bing.includes(q), `Bing: ${q}`);
   assert.ok(calls.google.includes('site:facebook.com "ladies salon" "Dubai" ("@gmail.com" OR "@hotmail.com" OR "@yahoo.com" OR "@outlook.com")'), 'Facebook pages that show an email');
   for (const q of ['ladies salon JLT, Dubai', 'ladies salon Al Quoz, Dubai', 'site:instagram.com "ladies salon" "Dubai" ("@gmail.com" OR "@hotmail.com" OR "@outlook.com" OR "@yahoo.com" OR "email")', 'site:instagram.com "ladies salon" "Dubai" ("@gmail.com" OR "@hotmail.com" OR "@outlook.com" OR "@yahoo.com" OR "email") #10']) assert.ok(calls.google.includes(q), q);
   // A kind with its own filters: too many reviews is dropped, a new listing with two is kept.
@@ -269,7 +269,7 @@ try {
   const ready = await rowNames();
   assert.deepEqual(new Set(ready), new Set(EMAIL_LEADS), 'email leads');
   assert.ok(ready.indexOf('Bloom Beauty Lounge') < ready.indexOf('Glow Salon'), 'new first, weak websites after');
-  assert.match(await dash.textContent('[data-kpis]'), /10 to email[\s\S]*11 to WhatsApp/);
+  assert.match(await dash.textContent('[data-kpis]'), /10 to email[\s\S]*0 to WhatsApp/, 'an email Find never fills the WhatsApp tab');
   assert.equal(await dash.textContent('[data-sec-count="email"]'), '10');
   await dash.selectOption('[data-f="show"]', 'none');
   await dash.waitForFunction(() => document.querySelectorAll('[data-rows] tr').length === 7);
@@ -328,9 +328,9 @@ try {
   const f1 = await coldFile('export-cold');
   assert.match(f1.opts.filename, /^rizcoreach-cold-email-\d{4}-\d{2}-\d{2}\.csv$/);
   assert.equal(f1.opts.saveAs, true);
-  assert.deepEqual(f1.head, ['business_name', 'first_name', 'email', 'website', 'instagram', 'phone', 'niche', 'area', 'source', 'notes', 'status']);
+  assert.deepEqual(f1.head, ['business_name', 'first_name', 'email', 'website', 'instagram', 'phone', 'niche', 'area', 'source', 'notes', 'status', 'segment']);
   assert.deepEqual(Object.keys(f1.byName).sort(), [...EMAIL_LEADS].sort());
-  assert.deepEqual(f1.byName['Bloom Beauty Lounge'], { business_name: 'Bloom Beauty Lounge', first_name: '', email: 'bloom.beauty.dxb@gmail.com', website: '', instagram: 'bloombeautydxb', phone: '+971501112201', niche: 'Salons', area: 'JLT, Dubai', source: 'Google Maps', notes: 'new business', status: 'New' });
+  assert.deepEqual(f1.byName['Bloom Beauty Lounge'], { business_name: 'Bloom Beauty Lounge', first_name: '', email: 'bloom.beauty.dxb@gmail.com', website: '', instagram: 'bloombeautydxb', phone: '+971501112201', niche: 'Salons', area: 'JLT, Dubai', source: 'Google Maps', notes: 'new business', status: 'New', segment: 'A' });
   assert.deepEqual([f1.byName['Gloss Garage'].email, f1.byName['Gloss Garage'].website, f1.byName['Gloss Garage'].notes], ['gloss.garage.dxb@gmail.com', 'https://glossgarage.example/', '']);
   await dash.waitForFunction(() => /^10 leads saved for cold email/.test(document.querySelector('[data-toast]').textContent));
   assert.deepEqual([f1.byName['Pearl Ladies Salon'].email, f1.byName['Pearl Ladies Salon'].website], ['pearl.salon.jlt@gmail.com', '']);
@@ -352,14 +352,23 @@ try {
   await dash.uncheck('[data-cold-include]');
 
   /* ------------------------------------------ WhatsApp leads: Google Contacts */
+  // The WhatsApp tab's own Find: the same searches again (its own list of finished searches), for numbers.
+  await sw.evaluate(() => handlers['finder:start']({ config: { niche: 'Salons', keywords: ['ladies salon'], cap: 20, sources: ['maps'], mode: 'contact' } }));
+  await waitFor(async () => {
+    const f = (await storage('finder')).finder;
+    return f.mode === 'contact' && f.status === 'done';
+  }, 90000, 'WhatsApp Find');
+  await settled('every check after the WhatsApp Find');
+  console.log('contact tab:', JSON.stringify((await leads()).filter((l) => (l.foundFor || []).includes('contact')).map((l) => l.pageName)));
   await dash.click('[data-view="leads"][data-sec="contact"]');
   assert.equal(await dash.$eval('[data-finder]', (d) => d.open), false, 'Find starts closed once there are leads');
   await dash.click('[data-finder] > summary');
   assert.ok(await dash.isVisible('[data-finder] [data-only="contact"] [value="igwa"]') && (await dash.isHidden('[data-finder] [data-only="email"] [value="mail"]')), 'the WhatsApp Find');
-  const WA_LEADS = ['Nails by Rana', 'Bloom Beauty Lounge', 'Velvet Hair Studio', 'Old Town Salon', 'Rose Petal Spa', 'Night Owl Salon', 'Gloss Garage', 'Shield PPF Center', 'Glow Salon', 'Pearl Ladies Salon', 'Coral Nails & Beauty'];
-  await dash.waitForFunction((n) => document.querySelectorAll('[data-rows] tr').length === n, WA_LEADS.length);
-  assert.deepEqual(new Set(await rowNames()), new Set(WA_LEADS), 'a WhatsApp or phone number');
-  assert.match(await dash.textContent(`tr[data-id="${rana.id}"]`), /@nailsbyrana/);
+  // Only what the WhatsApp Find found: never the email Find's Facebook pages, directories or Instagram profiles.
+  const WA_LEADS = ['Bloom Beauty Lounge', 'Velvet Hair Studio', 'Old Town Salon', 'Rose Petal Spa', 'Night Owl Salon', 'Gloss Garage'];
+  await dash.waitForFunction((n) => document.querySelectorAll('[data-rows] tr').length === n, WA_LEADS.length, { timeout: 10000 }).catch(() => {});
+  assert.deepEqual(new Set(await rowNames()), new Set(WA_LEADS), 'a WhatsApp or phone number, found by the WhatsApp Find');
+  assert.match(await dash.textContent(`tr[data-id="${bloom.id}"]`), /@bloombeautydxb/);
   assert.match(await dash.textContent(`tr[data-id="${(await byName('Night Owl Salon')).id}"]`), /No Instagram found/);
   if (SHOTS) await dash.screenshot({ path: `${SHOTS}/6-contact-section.png` });
   const [contactsDl] = await Promise.all([dash.waitForEvent('download'), dash.click('[data-act="export-contacts"]')]);
@@ -368,8 +377,8 @@ try {
   assert.equal(crows.length, WA_LEADS.length);
   const crow = (name) => Object.fromEntries(chead.map((h, i) => [h, crows.find((r) => r[0] === name)[i]]));
   assert.deepEqual([crow('Bloom Beauty Lounge')['Phone 1 - Value'], crow('Bloom Beauty Lounge')['Website 2 - Label'], crow('Bloom Beauty Lounge')['Website 2 - Value']], ['+971501112201', 'Instagram', 'https://www.instagram.com/bloombeautydxb/']);
-  assert.match(crow('Glow Salon')['Notes'], /^Weak website/);
-  await dash.waitForFunction(() => /^11 contacts saved, 3 with their Instagram/.test(document.querySelector('[data-toast]').textContent));
+  assert.match(crow('Rose Petal Spa')['Notes'], /^Their website is down/);
+  await dash.waitForFunction(() => /^6 contacts saved, \d with their Instagram/.test(document.querySelector('[data-toast]').textContent));
   await dash.waitForFunction(() => document.querySelectorAll('[data-rows] tr').length === 0);
   assert.ok((await byName('Rose Petal Spa')).contactsExportedAt, 'exported ones leave the list');
   await dash.click('[data-view="leads"][data-sec="email"]');

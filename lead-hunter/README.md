@@ -17,7 +17,7 @@ own say. **Strict** (Settings > Who fits) brings back the old rule: only new bus
 
 ## Install (2 minutes)
 
-1. Unzip `lead-hunter-extension-4.0.0.zip` (or download this repo and use the `lead-hunter` folder).
+1. Unzip `lead-hunter-extension-4.1.0.zip` (or download this repo and use the `lead-hunter` folder).
 2. In Chrome, open `chrome://extensions`.
 3. Turn on **Developer mode** (top right).
 4. Click **Load unpacked** and choose the folder.
@@ -30,9 +30,12 @@ Settings > Your data), or replace the folder's files and press the reload icon o
 
 Pick a kind of business, or **All types** (every kind, area by area), tick where to search, and press **Find**.
 Each search runs in a background tab at a human pace. Each kind remembers which searches have run, so the next run
-carries on from there (**Start over** resets it). 49 kinds are built in (salons, restaurants, cafes, clinics, gyms,
-garages, interiors, home maintenance, contracting, trading companies, spare parts, MEP and AC, logistics,
-workshops, shops, schools, events and more).
+carries on from there (**Start over** resets it); the email tab and the WhatsApp tab each keep their own list, and
+what each tab's Find finds shows only in that tab. 50 kinds are built in, each with about 100 search terms (salons,
+restaurants, cafes, catering, clinics, gyms, garages, interiors, home maintenance, contracting, trading companies,
+spare parts, MEP and AC, logistics, workshops, shops, schools, events and more; no spas, massage or groceries), and
+230 areas across every emirate: Dubai, Sharjah, Abu Dhabi, Ajman, Al Ain, Ras Al Khaimah, Umm Al Quwain, Fujairah
+and Al Dhafra (Settings > Areas).
 
 **Email leads** searches:
 
@@ -52,7 +55,8 @@ workshops, shops, schools, events and more).
 **WhatsApp leads** searches Google Maps (phone numbers), Instagram profiles whose bio shows a WhatsApp number, and
 the Ad Library.
 
-Searches a day: **Google 120, Bing 150** (Settings). When one engine's limit is reached its searches wait for the
+Searches a day: **Google 120, Bing 300** (Settings). Google is the scarce one: an email run only spends a Google
+search on a business's Instagram when it still has no email. When one engine's limit is reached its searches wait for the
 next run and the others carry on. A captcha or "verify you are human" page pauses that engine with an alert at the
 top; nothing tries to get past it.
 
@@ -88,7 +92,9 @@ panel) are never used again, on any lead.
 **Export for cold email** saves every business shown that fits and has an email, as
 `rizcoreach-cold-email-YYYY-MM-DD.csv` with Chrome's Save As: save it in your **RizcoReach Leads** folder and the
 cold email system imports it. Columns: business_name, first_name, email, website, instagram, phone, niche, area,
-source, notes, status. `notes` says `new business` when there is proof they just opened. **Export for Elheen** makes
+source, notes, status, segment. `notes` says `new business` when there is proof they just opened. `segment` is
+Lead Hunter's verdict (A just opened, B no website, C a website that is down, parked or weak): the cold email
+system takes it as it is instead of judging the website again, so every lead in the file gets its emails. **Export for Elheen** makes
 the file for the Elheen booking campaign.
 
 Left out, and the toast says how many of each: no email, a broken or bounced email, a good website, replied /
